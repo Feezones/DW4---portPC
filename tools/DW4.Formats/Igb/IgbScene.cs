@@ -14,6 +14,11 @@ public sealed class IgbMeshPart
     public List<(float X, float Y, float Z)> Normals { get; } = [];
     public List<(float U, float V)> TexCoords { get; } = [];
     public List<uint> Colors { get; } = [];
+    /// <summary>Raiz de cena (nó logo abaixo do igSceneInfo) de onde a geometria foi alcançada; -1 sem cena.</summary>
+    public int SceneRoot { get; init; } = -1;
+    /// <summary>Pesos de pele (um float por vértice no DW4) e índice local de matriz (um byte por vértice).</summary>
+    public List<float> BlendWeights { get; } = [];
+    public List<int> BlendIndices { get; } = [];
     public List<int> Triangles { get; } = [];
     /// <summary>Uma linha por fluxo de vértices: slot externo, bloco de memória, tamanho, passo por vértice e se foi decodificado.</summary>
     public List<string> Notes { get; } = [];
@@ -53,6 +58,7 @@ public sealed class IgbScene
     public Dictionary<int, IgbImage> Images { get; } = [];
     public List<string> Notes { get; } = [];
     public int TransformCount { get; private set; }
+    int _root = -1;
 
     IgbScene(IgbFile f, byte[] data)
     {
@@ -72,7 +78,12 @@ public sealed class IgbScene
         if (roots.Count > 0)
         {
             s.Notes.Add($"{roots.Count} raiz(es) de cena a partir de igSceneInfo");
-            foreach (var root in roots) s.Visit(root, null, -1, []);
+            foreach (var root in roots)
+            {
+                s._root = root.Index;
+                s.Visit(root, null, -1, []);
+            }
+            s._root = -1;
         }
         else
         {
@@ -128,7 +139,7 @@ public sealed class IgbScene
         }
     }
 
-    List<IgbObject> AttrList(IgbObject attrSet)
+    public List<IgbObject> AttrList(IgbObject attrSet)
     {
         var list = new List<IgbObject>();
         foreach (var r in Refs(attrSet))
@@ -140,7 +151,7 @@ public sealed class IgbScene
     }
 
     // igObjectList: primeiro Int = quantidade; MemoryRef = vetor de i32 com índices de objetos.
-    List<IgbObject> ObjectList(IgbObject list)
+    public List<IgbObject> ObjectList(IgbObject list)
     {
         var result = new List<IgbObject>();
         var countField = list.Fields.FirstOrDefault(v => v.Desc.ShortName == "Int");
@@ -153,7 +164,7 @@ public sealed class IgbScene
     }
 
     // igTextureBindAttr -> igTextureAttr -> igImage (até três níveis de ObjectRef).
-    int FindImage(IgbObject start)
+    public int FindImage(IgbObject start)
     {
         var queue = new Queue<(IgbObject, int)>();
         queue.Enqueue((start, 0));
@@ -167,9 +178,14 @@ public sealed class IgbScene
         return -1;
     }
 
-    void AddGeometry(IgbObject geom, float[]? world, int image)
+    void AddGeometry(IgbObject geom, float[]? world, int image) => Parts.Add(BuildPart(geom, world, image));
+
+    /// <summary>Lê um igGeometryAttr sem transformação nem textura (usado para malhas de pele).</summary>
+    public IgbMeshPart ReadGeometry(IgbObject geom) => BuildPart(geom, null, -1);
+
+    IgbMeshPart BuildPart(IgbObject geom, float[]? world, int image)
     {
-        var part = new IgbMeshPart { GeometryIndex = geom.Index, ImageIndex = image };
+        var part = new IgbMeshPart { GeometryIndex = geom.Index, ImageIndex = image, SceneRoot = _root };
         IgbObject? va = null, ia = null, pla = null;
         foreach (var r in Refs(geom))
         {
@@ -178,20 +194,30 @@ public sealed class IgbScene
             else if (_f.Is(r, "igPrimLengthArray")) pla = (IgbObject)r!;
         }
         part.PrimitiveType = geom.Fields.FirstOrDefault(v => v.Desc.ShortName == "Enum")?.AsInt32(_le) ?? -1;
-        if (va == null) { part.Notes.Add("sem igVertexArray"); Parts.Add(part); return; }
+        if (va == null) { part.Notes.Add("sem igVertexArray"); return part; }
 
         part.VertexCount = va.Fields.FirstOrDefault(v => v.Desc.ShortName == "UnsignedInt")?.AsInt32(_le) ?? 0;
         var fmt = va.Fields.FirstOrDefault(v => v.Desc.ShortName == "Struct");
         if (fmt != null && fmt.Raw.Length >= 4) part.VertexFormat = (uint)I32(fmt.Raw, 0);
         int n = part.VertexCount;
 
+        // Pele (igb-blender: MemoryRef no slot 7 = pesos, slot 8 = índices). No DW4: 4 B (float) e 1 B por vértice.
+        var weights = Memory(va.Fields.FirstOrDefault(v => v.Desc.ShortName == "MemoryRef" && v.Desc.Slot == 7));
+        var blendIdx = Memory(va.Fields.FirstOrDefault(v => v.Desc.ShortName == "MemoryRef" && v.Desc.Slot == 8));
+        if (n > 0 && weights.Length == 4 * n && blendIdx.Length == n)
+        {
+            for (int i = 0; i < n; i++) part.BlendWeights.Add(F32(weights, 4 * i));
+            for (int i = 0; i < n; i++) part.BlendIndices.Add(blendIdx[i]);
+        }
+        else if (weights.Length > 0 || blendIdx.Length > 0)
+            part.Notes.Add($"pele não reconhecida: pesos {weights.Length} B, índices {blendIdx.Length} B para {n} vértices");
+
         var extRef = va.Fields.FirstOrDefault(v => v.Desc.ShortName == "MemoryRef");
         var ext = Memory(extRef);
         if (ext.Length is not (76 or 80))
         {
             part.Notes.Add($"vértices sem igExternalIndexedEntry (bloco de {ext.Length} B, passo {(n > 0 ? ext.Length / (double)n : 0):0.##}): não decodificado");
-            Parts.Add(part);
-            return;
+            return part;
         }
         for (int s = 0; s < ext.Length / 4; s++)
         {
@@ -273,7 +299,7 @@ public sealed class IgbScene
         else part.Notes.Add($"tipo de primitiva {part.PrimitiveType} não tratado");
         if (part.Triangles.Count > 0 && part.Triangles.Max() >= part.Positions.Count && part.Positions.Count > 0)
             part.Notes.Add($"índice máximo {part.Triangles.Max()} >= {part.Positions.Count} posições");
-        Parts.Add(part);
+        return part;
     }
 
     void ReadImage(IgbObject img)
