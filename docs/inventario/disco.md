@@ -39,9 +39,29 @@ DolphinTool: "Problems Found: No". Comparação com o Redump: **pendente** (o si
 
 `Get-Item`, `Get-FileHash -Algorithm SHA256/MD5`, leitura de 64 bytes com `[System.IO.File]::Open(f,'Open','Read','ReadWrite')`, `DolphinTool header -i`, `DolphinTool verify -i` e `verify -a md5`. DolphinTool usado: o do pacote em `C:\Jogos\RE-DIGITAL\Digimon World 4\Dolphin\`.
 
+## Conteúdo do disco (extração de 2026-10-24)
+
+Comando: `DolphinTool extract -i <rvz> -o D:\dw4-work\extracted -q` (exit 0). Cópia de trabalho em `D:\dw4-work\extracted\` no PC; nada disso vai para o Git. O `.rvz` foi marcado somente leitura (`attrib +R`) e o SHA-256 conferiu antes e depois.
+
+**FATO:** o sistema de arquivos tem só 4 arquivos (`fst.bin` de 99 bytes). Total extraído: 9 arquivos, 1.209.321.634 bytes. Quase todo o jogo (1.203.879.936 bytes, 99,5%) está dentro de dois contêineres AFS.
+
+| Arquivo | Bytes | 4 primeiros bytes | Interpretação | Confiança |
+|---|---|---|---|---|
+| `files/ndmw.afs` | 692.326.400 | `AFS\0` | Contêiner AFS; ver `formatos/afs.md` | HIPÓTESE forte |
+| `files/area.afs` | 511.553.536 | `AFS\0` | Contêiner AFS; nome sugere áreas/mapas | HIPÓTESE |
+| `sys/main.dol` | 5.196.512 | `00 00 01 00` | Executável DOL (PowerPC); 1ª seção de texto no offset 0x100 | HIPÓTESE forte |
+| `sys/apploader.img` | 121.784 | `2004/05/20` | Apploader do SDK Nintendo; a data é do apploader, não do jogo | FATO (formato documentado) |
+| `files/ndmw.igb` | 107.527 | `00 01 00 00` | Possível formato IGB (Intrinsic Alchemy); ver `formatos/igb.md` | HIPÓTESE fraca |
+| `sys/bi2.bin` | 8.192 | `00 00 00 00` | Informações de boot (bi2) | FATO (estrutura padrão GC) |
+| `files/opening.bnr` | 6.496 | `BNR1` | Banner GameCube NTSC (ícone/título no menu do console) | FATO (assinatura documentada) |
+| `sys/boot.bin` | 1.088 | `GDJE` | Cabeçalho do disco, Game ID GDJEB2 | FATO |
+| `sys/fst.bin` | 99 | `01 00 00 00` | Tabela do sistema de arquivos (4 entradas) | FATO |
+
+Lista completa com SHA-256, 16 bytes de cabeçalho e entropia: [`arquivos.csv`](arquivos.csv).
+
 ## Pendente
 
-1. Marcar o `.rvz` como somente leitura (`attrib +R`).
-2. Listar o sistema de arquivos do disco (FST) com offset, tamanho e hash de cada arquivo → `arquivos.csv`.
-3. Classificar arquivos por assinatura e entropia.
-4. Analisar `boot.bin`, `bi2.bin`, `apploader.img` e o executável `main.dol` só por leitura de cabeçalho.
+1. Ler as tabelas internas dos dois AFS (offset, tamanho e nome de cada entrada) e validar a hipótese de formato.
+2. Classificar as entradas dos AFS por assinatura e entropia.
+3. Investigar `ndmw.igb`.
+4. Analisar o cabeçalho de `main.dol` (seções, endereços) só por leitura.
