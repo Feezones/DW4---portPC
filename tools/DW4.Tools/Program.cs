@@ -41,6 +41,7 @@ try
         "igb-gltf" when args.Length >= 4 => IgbGltf(args[1], args[2], args[3], args[4..]),
         "igb-colisao" when args.Length == 5 => IgbColisao(args[1], args[2], args[3], args[4]),
         "igb-cena" when args.Length == 5 => IgbCena(args[1], args[2], args[3], args[4]),
+        "igb-seq" when args.Length is 4 or 5 => IgbSeq(args[1], args[2], args[3], args.Length == 5 ? args[4] : null),
         "igb-camera" when args.Length == 4 => IgbCamera(args[1], args[2], args[3]),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
@@ -76,7 +77,8 @@ static int Usage()
           dw4 igb-gltf     <arquivo.afs> <indice> <pasta-de-trabalho> [--quat=as] [--trans=rest|anim] [--dxt=gc] [--todas-peles] [--anim=N] [--ator=NOME]
                            (personagem com esqueleto, pele e animações em glTF, fora do repositório)
           dw4 igb-colisao  <arquivo.afs> <indice> <no-raiz> <pasta-de-trabalho>   (malha de colisão em glTF, nó "-colonly" para a Godot)
-          dw4 igb-cena     <arquivo.afs> <indice> <no-raiz> <pasta-de-trabalho>   (cenário de uma raiz em glTF com texturas)
+          dw4 igb-cena     <arquivo.afs> <indice> <no-raiz|todas> <pasta-de-trabalho>   (cenário ou objeto estático em glTF com texturas)
+          dw4 igb-seq      <arquivo.afs> <indice> <pasta-de-trabalho> [--ator=NOME]   (sequências beModelCtrlData em JSON e texto)
           dw4 igb-camera   <arquivo.afs> <indice> <pasta-de-trabalho>   (volumes de câmera da fase em JSON, fora do repositório)
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
@@ -1036,14 +1038,15 @@ int IgbCena(string path, string which, string rootArg, string outDir)
     if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
     using var afs = AfsArchive.Open(path);
     if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
-    int rootIndex = int.Parse(rootArg, inv);
+    bool allRoots = rootArg == "todas";
+    int rootIndex = allRoots ? -1 : int.Parse(rootArg, inv);
     using var ms = new MemoryStream();
     afs.CopyEntry(afs.Entries[idx], ms);
     var data = ms.ToArray();
     var scene = IgbScene.Read(IgbFile.Read(data), data);
-    var parts = scene.Parts.Where(p => p.SceneRoot == rootIndex && p.Positions.Count > 0 && p.Triangles.Count > 0).ToList();
+    var parts = scene.Parts.Where(p => (allRoots || p.SceneRoot == rootIndex) && p.Positions.Count > 0 && p.Triangles.Count > 0).ToList();
     if (parts.Count == 0) { Console.Error.WriteLine($"nenhuma geometria na raiz {rootIndex}; raízes: {string.Join(", ", scene.Parts.Select(p => p.SceneRoot).Distinct())}"); return 1; }
-    var dir = Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_cena_{rootIndex}");
+    var dir = Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_cena_{(allRoots ? "todas" : rootIndex.ToString(inv))}");
     Directory.CreateDirectory(dir);
     var g = new GltfBuilder();
     var report = new StringBuilder();
@@ -1090,6 +1093,58 @@ int IgbCena(string path, string which, string rootArg, string outDir)
     File.WriteAllText(Path.Combine(dir, "relatorio.txt"), report.ToString());
     Console.Write(report);
     Console.WriteLine($"{parts.Count} geometrias, {parts.Sum(p => p.Positions.Count)} vértices, {parts.Sum(p => p.Triangles.Count) / 3} triângulos, {materialOfImage.Count} materiais -> {dir}");
+    return 0;
+}
+
+// Grava as sequências de controle de um ator (SQ_WAIT, SQ_ATCK1…) com os comandos em ordem, em JSON e em texto.
+int IgbSeq(string path, string which, string outDir, string? option)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    string? actor = option != null && option.StartsWith("--ator=", StringComparison.Ordinal) ? option[7..] : null;
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    var notes = new List<string>();
+    var seqs = IgbSequences.Read(IgbFile.Read(data), data, actor, notes);
+    foreach (var n in notes) Console.WriteLine($"nota: {n}");
+    if (seqs.Count == 0) { Console.Error.WriteLine("nenhuma sequência"); return 1; }
+    string Fmt(object v) => v switch
+    {
+        string s => $"\"{s}\"",
+        float x => x.ToString("0.####", inv),
+        float[] a => "(" + string.Join(", ", a.Select(x => x.ToString("0.####", inv))) + ")",
+        _ => Convert.ToString(v, inv) ?? "",
+    };
+    JsonNode? Node(object v) => v switch
+    {
+        string s => JsonValue.Create(s),
+        float x => JsonValue.Create(x),
+        int i => JsonValue.Create(i),
+        bool b => JsonValue.Create(b),
+        float[] a => new JsonArray(a.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray()),
+        _ => null,
+    };
+    var root = new JsonObject();
+    var text = new StringBuilder();
+    foreach (var (name, cmds) in seqs.OrderBy(k => k.Key, StringComparer.Ordinal))
+    {
+        text.AppendLine($"{name} ({cmds.Count} comandos)");
+        var arr = new JsonArray();
+        foreach (var c in cmds)
+        {
+            text.AppendLine($"  #{c.Index,-6} {c.Kind,-10} {string.Join(" ", c.Values.Select(Fmt))}");
+            arr.Add(new JsonObject { ["k"] = c.Kind, ["v"] = new JsonArray(c.Values.Select(Node).ToArray()) });
+        }
+        root[name] = arr;
+    }
+    Directory.CreateDirectory(full);
+    var stem = $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}{(actor == null ? "" : "_" + actor)}_seq";
+    File.WriteAllText(Path.Combine(full, stem + ".json"), root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    File.WriteAllText(Path.Combine(full, stem + ".txt"), text.ToString());
+    Console.WriteLine($"{seqs.Count} sequências, {seqs.Values.Sum(c => c.Count)} comandos -> {Path.Combine(full, stem)}.json/.txt");
     return 0;
 }
 

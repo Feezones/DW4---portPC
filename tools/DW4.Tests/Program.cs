@@ -217,6 +217,43 @@ Test("Câmera por volumes: escolha do volume e pose com recuo e inclinação", (
     True(Vector3.Distance(pos, expected) < 1e-3f, $"câmera {pos}, esperado {expected}");
 });
 
+Test("Sequência: bloco do estilo, sonda de conversa pulada, caixa no quadro certo e janela de combo", () =>
+{
+    SeqCommand C(string k, params object[] v) => new(k, v);
+    var seqs = new Dictionary<string, List<SeqCommand>>
+    {
+        ["SQ_ATCK1"] =
+        [
+            C("LABEL", "dual"), C("ACTION", "VATCD1"), C("WCHECK", "Action"),
+            C("LABEL", "slash"),
+            C("HITBOX", "Set", 60000, 1f, 1f, new[] { 0f, 4, 7 }, new[] { 3f, 3, 3 }), C("ACTION", "TALKWF"), C("WCHECK", "Action"), C("MOVE", "Stop", 1f, 4f),
+            C("HITBOX", "Set", 10000, 9f, 2f, new[] { 0f, 4, 14 }, new[] { 8f, 8, 8 }),
+            C("ACTION", "VATCS1"), C("WCHECK", "Atck01"), C("ACTION", "KATCS1"), C("WCHECK", "Atck02"), C("JUMP", "SQ_ATCKTM"),
+        ],
+    };
+    var r = new SequenceRunner(seqs, _ => 20f);
+    const float frame = 1 / SequenceRunner.FramesPerSecond;
+    True(r.Start("SQ_ATCK1", "slash"), "início");
+    Equal("VATCS1", r.Action, "primeira ação (sonda de conversa pulada)");
+    Equal("Stop", r.Move?.S(0), "MOVE guardado");
+    for (int i = 0; i < 9; i++) r.Tick(frame, false);
+    Equal(1, r.ActiveHitBoxes().Count(), "caixa ativa no quadro 9");
+    Equal(new Vector3(0, 4, 14), r.ActiveHitBoxes().First().Position, "posição da caixa");
+    for (int i = 0; i < 2; i++) r.Tick(frame, false);
+    Equal(0, r.ActiveHitBoxes().Count(), "caixa desligada no quadro 11");
+    for (int i = 0; i < 10; i++) r.Tick(frame, false);
+    True(!r.Running && r.Next == null, "sem apertar, o combo termina");
+
+    r.Start("SQ_ATCK1", "slash");
+    r.Tick(frame, true);
+    for (int i = 0; i < 20; i++) r.Tick(frame, false);
+    Equal("KATCS1", r.Action, "com o botão na janela, segue o combo");
+    r.Tick(frame, true);
+    for (int i = 0; i < 20; i++) r.Tick(frame, false);
+    True(!r.Running && r.Next == "SQ_ATCKTM", "fim do combo pula para SQ_ATCKTM");
+    True(!r.Start("SQ_ATCK1", "gun"), "estilo inexistente");
+});
+
 // ---------- dados do jogo (opcional) ----------
 
 if (args.Length == 1)
@@ -368,6 +405,27 @@ if (args.Length == 1)
         var parts = IgbScene.Read(IgbFile.Read(data), data).Parts.Where(p => p.SceneRoot == 1862).ToList();
         Equal(36, parts.Count, "geometrias");
         Equal(458, parts.Sum(p => p.Triangles.Count) / 3, "triângulos");
+    });
+
+    Test("Jogo: SQ_ATCK1 do Guilmon, bloco slash: arco de 5 caixas 10000 nos quadros 9 a 13, depois VATCS1", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[857], ms);
+        var data = ms.ToArray();
+        var notes = new List<string>();
+        var seqs = IgbSequences.Read(IgbFile.Read(data), data, null, notes);
+        Equal(28, seqs.Count, "sequências");
+        Equal(156, seqs["SQ_ATCK1"].Count, "comandos de SQ_ATCK1");
+        var game = seqs.ToDictionary(k => k.Key, k => k.Value.Select(c => new SeqCommand(c.Kind, c.Values)).ToList());
+        var r = new SequenceRunner(game, _ => 30f);
+        True(r.Start("SQ_ATCK1", "slash"), "bloco slash");
+        Equal("VATCS1", r.Action, "primeira ação");
+        var boxes = r.ActionHitBoxes.Where(h => h.Type == 10000).ToList();
+        Equal(5, boxes.Count, "caixas 10000");
+        Equal("9,10,11,12,13", string.Join(",", boxes.Select(b => b.StartFrame)), "quadros iniciais");
+        True(boxes.All(b => b.Frames == 2 && b.Size == new Vector3(8, 8, 8)), "duração 2 e tamanho 8");
+        Equal(new Vector3(-9, 4, 8), boxes[0].Position, "primeira caixa à esquerda");
     });
 
     Test("Jogo: câmera da dng1 (#180) tem 18 volumes; #181 só muda o recuo; câmera sempre acima do alvo", () =>

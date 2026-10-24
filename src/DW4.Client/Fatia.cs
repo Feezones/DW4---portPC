@@ -13,7 +13,7 @@ namespace DW4.Client;
 /// Regras (câmera, movimento) ficam em DW4.Gameplay; aqui só entrada, física da Godot e apresentação.
 /// Recursos lidos em tempo de execução da pasta DW4_FATIA (fora do repositório), gerada por:
 ///   dw4 igb-cena ndmw.afs 179 2877 &lt;fatia&gt;\cenario · dw4 igb-colisao ndmw.afs 179 1862 &lt;fatia&gt;\colisao
-///   dw4 igb-gltf ndmw.afs 857 &lt;fatia&gt;\guilmon · dw4 igb-gltf ndmw.afs 179 &lt;fatia&gt;\numemon --ator=e_nume · dw4 igb-camera ndmw.afs 180 e 181 &lt;fatia&gt;
+///   dw4 igb-gltf ndmw.afs 857 &lt;fatia&gt;\guilmon · dw4 igb-seq ndmw.afs 857 &lt;fatia&gt;\guilmon · dw4 igb-cena ndmw.afs 967 todas &lt;fatia&gt;\arma · dw4 igb-gltf ndmw.afs 179 &lt;fatia&gt;\numemon --ator=e_nume · dw4 igb-camera ndmw.afs 180 e 181 &lt;fatia&gt;
 /// </summary>
 public partial class Fatia : Node3D
 {
@@ -32,6 +32,19 @@ public partial class Fatia : Node3D
     Node3D? _model;
     AnimationPlayer? _anim;
     string? _animWait, _animRun;
+    // Ataque: sequência SQ_ATCK1 do Guilmon no bloco do estilo da arma (w_sword01 = "slash", FATO pelo beWeaponSeqData).
+    const string WeaponStyle = "slash";
+    // HIPÓTESE: osso da mão direita para prender a arma (beWeaponAttachData só existe no executável).
+    const string WeaponBone = "RArm04";
+    SequenceRunner? _runner;
+    int _lastSerial;
+    bool _attackHeld, _showBoxes;
+    CharacterBody3D? _enemy;
+    AnimationPlayer? _enemyAnim;
+    string? _enemyWait, _enemyHurt;
+    int _hits;
+    readonly HashSet<HitBox> _hitThisAction = [];
+    readonly List<MeshInstance3D> _boxMeshes = [];
     Camera3D _camera = null!;
     Label _hud = null!;
     readonly List<string> _problems = [];
@@ -62,19 +75,34 @@ public partial class Fatia : Node3D
                     if (n != null) _anim.GetAnimation(n).LoopMode = Animation.LoopModeEnum.Linear;
                 if (_animWait != null) _anim.Play(_animWait);
             }
+            var seqFile = System.IO.Directory.Exists(System.IO.Path.Combine(_dir, "guilmon"))
+                ? System.IO.Directory.EnumerateFiles(System.IO.Path.Combine(_dir, "guilmon"), "*_seq.json", System.IO.SearchOption.AllDirectories).FirstOrDefault() : null;
+            if (seqFile == null) _problems.Add("falta o *_seq.json do Guilmon (dw4 igb-seq ndmw.afs 857 <fatia>\\guilmon)");
+            else _runner = new SequenceRunner(SeqCommand.LoadAll(System.IO.File.ReadAllText(seqFile)), AnimFrames);
+            var skeleton = FindAll<Skeleton3D>(_model).FirstOrDefault();
+            if (Load("arma", "cena.gltf") is { } weapon && skeleton != null)
+            {
+                if (skeleton.FindBone(WeaponBone) < 0) _problems.Add($"osso {WeaponBone} não existe para a arma");
+                var attach = new BoneAttachment3D { BoneName = WeaponBone };
+                skeleton.AddChild(attach);
+                attach.AddChild(weapon);
+            }
         }
 
         if (Load("numemon", "personagem.gltf") is { } numemon)
         {
             // Caixa de corpo do Numemon (igAABox do HIT): 8 × 14 × 8, FATO; forma de cápsula é aproximação.
-            var enemy = new CharacterBody3D { Position = EnemyAt, RotationDegrees = new Vector3(0, -90, 0) };
+            var enemy = _enemy = new CharacterBody3D { Position = EnemyAt, RotationDegrees = new Vector3(0, -90, 0) };
             enemy.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 4f, Height = 14f }, Position = new Vector3(0, 7, 0) });
             enemy.AddChild(numemon);
             AddChild(enemy);
-            if (FindAll<AnimationPlayer>(numemon).FirstOrDefault() is { } ea && Pick(ea.GetAnimationList(), "waitG", "wait") is { } w)
+            _enemyAnim = FindAll<AnimationPlayer>(numemon).FirstOrDefault();
+            if (_enemyAnim != null && Pick(_enemyAnim.GetAnimationList(), "waitG", "wait") is { } w)
             {
-                ea.GetAnimation(w).LoopMode = Animation.LoopModeEnum.Linear;
-                ea.Play(w);
+                _enemyWait = w;
+                _enemyHurt = Pick(_enemyAnim.GetAnimationList(), "Sdmg01", "dmg");
+                _enemyAnim.GetAnimation(w).LoopMode = Animation.LoopModeEnum.Linear;
+                _enemyAnim.Play(w);
             }
         }
 
@@ -96,6 +124,7 @@ public partial class Fatia : Node3D
         if (e is InputEventKey { Pressed: true, Echo: false } k)
         {
             if (k.Keycode == Key.F1 && _cameraSets.Length > 1) _cameraSet = (_cameraSet + 1) % _cameraSets.Length;
+            if (k.Keycode == Key.F2) _showBoxes = !_showBoxes;
             if (k.Keycode == Key.F5) { _player.Position = Start; _player.Velocity = Vector3.Zero; _move.Stop(); }
             if (k.Keycode == Key.Escape) GetTree().Quit();
         }
@@ -118,6 +147,14 @@ public partial class Fatia : Node3D
         var right = forward.Cross(Vector3.Up);
         var dir = right * input.X - forward * input.Y;
 
+        bool attackDown = Input.IsKeyPressed(Key.J) || Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsJoyButtonPressed(0, JoyButton.X);
+        bool attackPressed = attackDown && !_attackHeld;
+        _attackHeld = attackDown;
+        bool attacking = _runner?.Running == true;
+        if (_runner != null && !attacking && attackPressed) attacking = _runner.Start("SQ_ATCK1", WeaponStyle);
+        else if (attacking) _runner!.Tick(dt, attackPressed);
+        if (attacking) { dir = Vector3.Zero; _move.Stop(); }
+
         var v = _move.Step(new NVector2(dir.X, dir.Z), dt);
         var vel = _player.Velocity;
         vel.X = v.X;
@@ -127,9 +164,24 @@ public partial class Fatia : Node3D
         _player.MoveAndSlide();
         if (_model != null) _model.Rotation = new Vector3(0, _move.Facing, 0);
 
-        bool moving = v.LengthSquared() > 1f;
-        var want = moving ? _animRun : _animWait;
-        if (_anim != null && want != null && _anim.CurrentAnimation != want) _anim.Play(want, 0.13f); // ~8 quadros a 60 Hz (MOTIONSET Float@4 = 8, hipótese)
+        if (_runner?.Running == true)
+        {
+            if (_runner.ActionSerial != _lastSerial)
+            {
+                _lastSerial = _runner.ActionSerial;
+                _hitThisAction.Clear();
+                if (_anim != null && _runner.Action != null && AnimName(_runner.Action) is { } an) _anim.Play(an, 0.13f);
+            }
+            CheckHits();
+        }
+        else
+        {
+            bool moving = v.LengthSquared() > 1f;
+            var want = moving ? _animRun : _animWait;
+            if (_anim != null && want != null && _anim.CurrentAnimation != want) _anim.Play(want, 0.13f); // ~8 quadros a 60 Hz (MOTIONSET Float@4 = 8, hipótese)
+        }
+        if (_enemyAnim != null && _enemyWait != null && !_enemyAnim.IsPlaying()) _enemyAnim.Play(_enemyWait);
+        DrawBoxes();
 
         UpdateCamera();
     }
@@ -152,8 +204,58 @@ public partial class Fatia : Node3D
         _hud.Text = $"pos ({p.X:0.0}, {p.Y:0.0}, {p.Z:0.0})  vel {_move.Velocity.Length():0.0} u/s\n" +
             $"câmera {(_cameraSet == 0 ? "#180" : "#181 (afastada)")} volume {_zone}  [F1 troca, F5 reinicia, Esc sai]\n" +
             $"animações: parado = {_animWait ?? "-"}, correndo = {_animRun ?? "-"}\n" +
+            $"ataque [J, clique ou X]: {(_runner?.Running == true ? $"{_runner.Action} quadro {_runner.ActionFrame:0}/{_runner.ActionLength:0}" : "-")}  acertos no Numemon: {_hits}  [F2 caixas]\n" +
             "movimento, gravidade e ponto inicial PROVISÓRIOS (não medidos no jogo)" +
             (_problems.Count > 0 ? "\n" + string.Join("\n", _problems) : "");
+    }
+
+    // Ação do jogo ("VATCS1") → animação do glTF com o mesmo nome sem diferenciar maiúsculas ("vatcS1").
+    string? AnimName(string action) =>
+        _anim?.GetAnimationList().FirstOrDefault(n => string.Equals(n, action, StringComparison.OrdinalIgnoreCase));
+
+    float? AnimFrames(string action) =>
+        AnimName(action) is { } n && _anim != null ? (float)_anim.GetAnimation(n).Length * SequenceRunner.FramesPerSecond : null;
+
+    // Caixa local (x lateral, y altura, z à frente) no mundo, girada pela direção do personagem.
+    Vector3 BoxCenter(HitBox h) => _player.GlobalPosition + new Vector3(h.Position.X, h.Position.Y, h.Position.Z).Rotated(Vector3.Up, _move.Facing);
+
+    void CheckHits()
+    {
+        if (_runner == null || _enemy == null) return;
+        var e = _enemy.GlobalPosition;
+        foreach (var h in _runner.ActiveHitBoxes().Where(h => h.Type == 10000))
+        {
+            if (_hitThisAction.Contains(h)) continue;
+            // Caixa de dano contra a caixa de corpo do Numemon (8 × 14 × 8), em eixos do mundo: aproximação.
+            var c = BoxCenter(h);
+            if (Math.Abs(c.X - e.X) <= h.Size.X / 2 + 4 && Math.Abs(c.Z - e.Z) <= h.Size.Z / 2 + 4 && c.Y + h.Size.Y / 2 >= e.Y && c.Y - h.Size.Y / 2 <= e.Y + 14)
+            {
+                _hitThisAction.UnionWith(_runner.ActionHitBoxes);
+                _hits++;
+                if (_enemyAnim != null && _enemyHurt != null) _enemyAnim.Play(_enemyHurt, 0.05f);
+                break;
+            }
+        }
+    }
+
+    void DrawBoxes()
+    {
+        var active = _showBoxes && _runner?.Running == true ? _runner.ActiveHitBoxes().ToList() : new List<HitBox>();
+        while (_boxMeshes.Count < active.Count)
+        {
+            var m = new MeshInstance3D { Mesh = new BoxMesh(), MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(1, 0, 0, 0.35f), Transparency = BaseMaterial3D.TransparencyEnum.Alpha, ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded } };
+            AddChild(m);
+            _boxMeshes.Add(m);
+        }
+        for (int i = 0; i < _boxMeshes.Count; i++)
+        {
+            _boxMeshes[i].Visible = i < active.Count;
+            if (i >= active.Count) continue;
+            var h = active[i];
+            _boxMeshes[i].GlobalPosition = BoxCenter(h);
+            _boxMeshes[i].Rotation = new Vector3(0, _move.Facing, 0);
+            _boxMeshes[i].Scale = new Vector3(h.Size.X, h.Size.Y, h.Size.Z);
+        }
     }
 
     Node3D? Load(string sub, string fileName)

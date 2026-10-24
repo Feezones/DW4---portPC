@@ -163,6 +163,22 @@ public sealed class IgbScene
         return result;
     }
 
+    /// <summary>Índices de todos os objetos alcançáveis a partir de um objeto, por ObjectRef e pelo conteúdo de igObjectList.</summary>
+    public HashSet<int> Reachable(IgbObject start)
+    {
+        var seen = new HashSet<int>();
+        var queue = new Queue<IgbObject>();
+        queue.Enqueue(start);
+        while (queue.Count > 0)
+        {
+            var o = queue.Dequeue();
+            if (!seen.Add(o.Index)) continue;
+            foreach (var r in Refs(o)) if (r is IgbObject ro) queue.Enqueue(ro);
+            if (_f.Is(o, "igObjectList")) foreach (var r in ObjectList(o)) queue.Enqueue(r);
+        }
+        return seen;
+    }
+
     // igTextureBindAttr -> igTextureAttr -> igImage (até três níveis de ObjectRef).
     public int FindImage(IgbObject start)
     {

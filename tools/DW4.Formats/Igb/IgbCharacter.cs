@@ -76,15 +76,7 @@ public sealed class IgbCharacter
             var info = f.Slots.OfType<IgbObject>().FirstOrDefault(o => f.Is(o, "beAction2Info") && Field(o, "String", 2)?.Text == actor);
             var db = info == null ? null : Refs(info).FirstOrDefault(r => f.Is(r, "igAnimationDatabase"));
             if (db == null) { c.Notes.Add($"ator \"{actor}\" sem beAction2Info → igAnimationDatabase"); return c; }
-            only = [];
-            var queue = new Queue<IgbObject>([db]);
-            while (queue.Count > 0)
-            {
-                var o = queue.Dequeue();
-                if (!only.Add(o.Index)) continue;
-                foreach (var r in Refs(o)) queue.Enqueue(r);
-                if (f.Is(o, "igObjectList")) foreach (var r in scene.ObjectList(o)) queue.Enqueue(r);
-            }
+            only = scene.Reachable(db);
             c.Notes.Add($"ator \"{actor}\": igAnimationDatabase #{db.Index}, {only.Count} objetos alcançáveis");
         }
         bool Mine(IgbObject o) => only == null || only.Contains(o.Index);
