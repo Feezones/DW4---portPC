@@ -570,6 +570,7 @@ int IgbAnim(string path, string? which)
     var rates = new Dictionary<int, int>();
     var failures = new List<string>();
     var inexact = new List<string>();
+    var extraHist = new Dictionary<int, int>();
     using var afs = AfsArchive.Open(path);
     IEnumerable<AfsEntry> entries = afs.Entries;
     if (which != null)
@@ -604,7 +605,13 @@ int IgbAnim(string path, string? which)
                 var clip = Enbaya.Decode(data.AsSpan((int)mb.FileOffset, mb.Size), le);
                 rates[clip.SampleRate] = rates.GetValueOrDefault(clip.SampleRate) + 1;
                 if (clip.ConsumedExactly) exact++;
-                else if (inexact.Count < 15) inexact.Add($"#{e.Index} {e.Name} fonte #{src.Index}: {string.Join(", ", clip.Consumption)}");
+                else
+                {
+                    extraHist[clip.ExtraSamples] = extraHist.GetValueOrDefault(clip.ExtraSamples) + 1;
+                    if (inexact.Count < 15)
+                        inexact.Add($"#{e.Index} {e.Name} fonte #{src.Index}: {clip.Duration.ToString("0.###", inv)} s, {clip.Poses.Count} amostras, " +
+                            $"+{clip.ExtraSamples} passos possíveis nos deltas que sobraram; {string.Join(", ", clip.Consumption.Where(c => c.Split(": ")[1].Split('/') is var x && x[0] != x[1]))}");
+                }
                 if (which != null)
                     Console.WriteLine($"fonte #{src.Index}: bloco {mb.Size} B (cabeçalho+dados {clip.TotalLength} B), {clip.TrackCount} trilhas, {clip.SampleRate} Hz, " +
                         $"{clip.Duration.ToString("0.###", inv)} s, {clip.Poses.Count} amostras, quantização {clip.QuantizationError.ToString("G6", inv)}, " +
@@ -620,6 +627,7 @@ int IgbAnim(string path, string? which)
     }
     Console.WriteLine($"{sources} fontes Enbaya em {files} arquivos: {exact} com consumo exato, {sources - exact - failed} inexatas, {failed} com erro");
     Console.WriteLine("taxas de amostragem: " + string.Join(", ", rates.OrderBy(k => k.Key).Select(k => $"{k.Key} Hz ×{k.Value}")));
+    if (extraHist.Count > 0) Console.WriteLine("inexatas por passos a mais possíveis: " + string.Join(", ", extraHist.OrderBy(k => k.Key).Select(k => $"+{k.Key} ×{k.Value}")));
     foreach (var x in inexact) Console.WriteLine($"  inexata {x}");
     foreach (var x in failures) Console.WriteLine($"  erro {x}");
     return failed == 0 ? 0 : 3;

@@ -20,6 +20,8 @@ public sealed class EnbayaClip
     public List<string> Consumption { get; } = [];
     public bool ConsumedExactly { get; set; } = true;
     public int TotalLength { get; init; }
+    /// <summary>Diagnóstico: passos que ainda caberiam nos deltas que sobraram depois da duração (0 = nenhum).</summary>
+    public int ExtraSamples { get; set; }
 }
 
 /// <summary>
@@ -141,7 +143,60 @@ public static class Enbaya
         float sampleTime = 0;
         while (duration - sampleTime > 0.00001f)
         {
-            if (sample > 0)
+            Step(sample > 0);
+            sample++;
+            float time = Math.Min(sample * sps, duration);
+            for (int t = 0; t < trackCount; t++)
+            {
+                var p = pose[t];
+                pose[t] = Normalize([
+                    accum[t, 0] * q + p.Qx, accum[t, 1] * q + p.Qy, accum[t, 2] * q + p.Qz, accum[t, 3] * q + p.Qw,
+                    accum[t, 4] * q + p.Tx, accum[t, 5] * q + p.Ty, accum[t, 6] * q + p.Tz]);
+            }
+            clip.Times.Add(time);
+            clip.Poses.Add((EnbayaPose[])pose.Clone());
+            sampleTime = sample * sps;
+            if (sample > 100000) throw new InvalidDataException("amostras demais");
+        }
+        int deltaEnd = pTrI2 + trI2;
+        bool deltasLeft = ti2 + (ti2c > 0 ? 1 : 0) < deltaEnd;
+        // Conferência: no fim, cada subfluxo deve ter sido lido exatamente até o próprio limite
+        // (os de 2 e 4 bits podem sobrar bits no último byte).
+        Check("i8 iniciais", ii8, pInitI8, initI8);
+        Check("i16 iniciais", ii16, pInitI16, initI16);
+        Check("i32 iniciais", ii32, pInitI32, initI32);
+        Check("i2 iniciais", ii2 + (ii2c > 0 ? 1 : 0), pInitI2, initI2);
+        Check("i2 de delta", ti2 + (ti2c > 0 ? 1 : 0), pTrI2, trI2);
+        Check("i4 de delta", ti4 + (ti4c > 0 ? 1 : 0), pTrI4, trI4);
+        Check("i8 de delta", ti8, pTrI8, trI8);
+        Check("i16 de delta", ti16, pTrI16, trI16);
+        Check("i32 de delta", ti32, pTrI32, trI32);
+        Check("u2 de estado", su2 + (su2c > 0 ? 1 : 0), pStU2, stU2);
+        Check("u8 de estado", su8, pStU8, stU8);
+        Check("u16 de estado", su16, pStU16, stU16);
+        Check("u32 de estado", su32, pStU32, stU32);
+        // Diagnóstico: se sobraram deltas, quantas amostras a mais o fluxo ainda teria (sem alterar o resultado).
+        if (deltasLeft)
+        {
+            int extra = 0;
+            try
+            {
+                while (ti2 < deltaEnd - 1 || (ti2 == deltaEnd - 1 && ti2c < 4))
+                {
+                    Step(true);
+                    extra++;
+                    if (extra > 100000) break;
+                }
+            }
+            catch (IndexOutOfRangeException) { }
+            catch (ArgumentOutOfRangeException) { }
+            clip.ExtraSamples = extra;
+        }
+        return clip;
+
+        void Step(bool advanceState)
+        {
+            if (advanceState)
             {
                 // liga e desliga componentes conforme as distâncias em StateValue (enb_state_step_forward)
                 int comps = trackCount * 7;
@@ -164,37 +219,7 @@ public static class Enbaya
             for (int t = 0; t < trackCount; t++)
                 for (int c = 0; c < 7; c++)
                     if ((flags[t] & (1 << c)) != 0) accum[t, c] += DeltaValue();
-            sample++;
-            float time = Math.Min(sample * sps, duration);
-            for (int t = 0; t < trackCount; t++)
-            {
-                var p = pose[t];
-                pose[t] = Normalize([
-                    accum[t, 0] * q + p.Qx, accum[t, 1] * q + p.Qy, accum[t, 2] * q + p.Qz, accum[t, 3] * q + p.Qw,
-                    accum[t, 4] * q + p.Tx, accum[t, 5] * q + p.Ty, accum[t, 6] * q + p.Tz]);
-            }
-            clip.Times.Add(time);
-            clip.Poses.Add((EnbayaPose[])pose.Clone());
-            sampleTime = sample * sps;
-            if (sample > 100000) throw new InvalidDataException("amostras demais");
         }
-
-        // Conferência: no fim, cada subfluxo deve ter sido lido exatamente até o próprio limite
-        // (os de 2 e 4 bits podem sobrar bits no último byte).
-        Check("i8 iniciais", ii8, pInitI8, initI8);
-        Check("i16 iniciais", ii16, pInitI16, initI16);
-        Check("i32 iniciais", ii32, pInitI32, initI32);
-        Check("i2 iniciais", ii2 + (ii2c > 0 ? 1 : 0), pInitI2, initI2);
-        Check("i2 de delta", ti2 + (ti2c > 0 ? 1 : 0), pTrI2, trI2);
-        Check("i4 de delta", ti4 + (ti4c > 0 ? 1 : 0), pTrI4, trI4);
-        Check("i8 de delta", ti8, pTrI8, trI8);
-        Check("i16 de delta", ti16, pTrI16, trI16);
-        Check("i32 de delta", ti32, pTrI32, trI32);
-        Check("u2 de estado", su2 + (su2c > 0 ? 1 : 0), pStU2, stU2);
-        Check("u8 de estado", su8, pStU8, stU8);
-        Check("u16 de estado", su16, pStU16, stU16);
-        Check("u32 de estado", su32, pStU32, stU32);
-        return clip;
 
         static EnbayaPose Normalize(float[] v)
         {
