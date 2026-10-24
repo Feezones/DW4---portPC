@@ -76,7 +76,8 @@ Leitura feita por `dw4 igb-export` em `area.afs` #598 (stag, logotipo) e #3 (dng
 | Fluxos de vértices | slot 0 posição float×3, slot 1 normal float×3, slot 11 UV float×2; passos 12/12/8 B batem com o nº de vértices | alta nas amostras |
 | `igImage` | 8 bpp indexado (formato 65536), índices em ordem **linear** (não em blocos GX), linhas de **baixo para cima** | alta: logotipo BANDAI e folha de status legíveis depois de inverter |
 | `igClut` | formato 7 = RGBA8888, 256 cores, alfa até 255 | alta: cores corretas |
-| UV | v = 0 na base da imagem (convenção OpenGL); sem inversão no OBJ | hipótese, conferir com modelo texturizado |
+| UV | v = 0 na base da imagem (convenção OpenGL); sem inversão no OBJ | alta: captura na Godot do #598 mostra o logotipo legível e na orientação certa |
+| Alfa | a paleta tem alfa (cantos do logotipo); o material OBJ importado é opaco | fato; no port, materiais com alfa precisam de recorte ou mistura |
 | Interface (#3) | quads de 6 vértices só com posição e sem textura associada pelo grafo | fato; como são desenhados ainda é desconhecido |
 
 A primeira versão do exportador gravava as duas leituras (linhas e blocos 8×4). Só a linear deu imagem coerente; a variante em blocos foi removida.

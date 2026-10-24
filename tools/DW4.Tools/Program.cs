@@ -6,6 +6,7 @@ using DW4.Formats.Analysis;
 using DW4.Formats.Igb;
 using DW4.Formats.Images;
 using DW4.Formats.Lua;
+using DW4.Formats.Sofdec;
 using System.Buffers.Binary;
 
 // Ferramenta de linha de comando da Fase 1. Só lê os contêineres; a única escrita é afs-extract,
@@ -32,6 +33,7 @@ try
         "igb-dump" when args.Length is 3 or 4 => IgbDump(args[1], args[2], args.Length == 4 ? args[3] : null),
         "igb-lua" when args.Length == 2 => IgbLua(args[1]),
         "igb-export" when args.Length == 4 => IgbExport(args[1], args[2], args[3]),
+        "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
         _ => Usage(),
     };
@@ -58,6 +60,7 @@ static int Usage()
           dw4 igb-dump     <arquivo.afs> <indice> [classe]   (ou <arquivo.igb> - [classe])
           dw4 igb-lua      <arquivo.afs>
           dw4 igb-export   <arquivo.afs> <indice> <pasta-de-trabalho>   (OBJ + PNG + relatório, fora do repositório)
+          dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
         """);
     return 1;
@@ -553,6 +556,40 @@ int IgbExport(string path, string which, string outDir)
     Console.Write(report);
     Console.WriteLine($"{exported} de {scene.Parts.Count} geometrias e {texture.Count} imagens gravadas em {dir}");
     return 0;
+}
+
+// Separa os fluxos de um vídeo Sofdec (MPEG-PS) de um AFS: vídeo em .m1v e áudio em .adx, numa pasta fora do repositório.
+int SfdDemux(string path, string which, string outDir)
+{
+    var root = Path.GetFullPath(outDir);
+    if (InsideGitRepo(root)) { Console.Error.WriteLine($"recusado: {root} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    var entry = afs.Entries[idx];
+    using var ms = new MemoryStream();
+    afs.CopyEntry(entry, ms);
+    var data = ms.ToArray();
+    if (Classifier.Classify(data) != ContentKind.MpegPs) { Console.Error.WriteLine("o item não começa com pacote MPEG-PS"); return 1; }
+
+    var (streams, packs, problems) = MpegPs.Demux(data);
+    Directory.CreateDirectory(root);
+    var stem = Path.Combine(root, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}");
+    Console.WriteLine($"{path} #{idx} ({entry.Name}, {entry.Size} B): {packs} pacotes, {streams.Count} fluxos, {problems.Count} problemas");
+    foreach (var p in problems.Take(10)) Console.WriteLine($"  problema: {p}");
+    foreach (var s in streams.Values.OrderBy(s => s.StreamId))
+    {
+        var bytes = s.Payload.ToArray();
+        string kind = s.StreamId switch { >= 0xE0 and <= 0xEF => "vídeo", >= 0xC0 and <= 0xDF => "áudio", 0xBD => "privado 1", _ => "?" };
+        string ext = s.StreamId switch { >= 0xE0 and <= 0xEF => "m1v", >= 0xC0 and <= 0xDF => "adx", _ => "bin" };
+        string detail = "";
+        if (kind == "vídeo" && MpegPs.SequenceHeader(bytes) is (int w, int h, int fr))
+            detail = $"; sequência {w}x{h}, código de quadros {fr}";
+        if (kind == "áudio") detail = $"; reconhecido como {Classifier.Classify(bytes)}";
+        var file = $"{stem}_{s.StreamId:X2}.{ext}";
+        File.WriteAllBytes(file, bytes);
+        Console.WriteLine($"  fluxo 0x{s.StreamId:X2} ({kind}): {s.Packets} pacotes, {bytes.Length} B{detail}; início {ByteStats.Hex(bytes.AsSpan(0, Math.Min(16, bytes.Length)))} -> {file}");
+    }
+    return problems.Count == 0 ? 0 : 3;
 }
 
 // Procura os scripts referenciados por objetos beLuaData* e classifica o conteúdo (bytecode Lua, texto ou binário).
