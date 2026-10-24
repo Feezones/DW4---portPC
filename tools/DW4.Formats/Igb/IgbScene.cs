@@ -304,27 +304,19 @@ public sealed class IgbScene
     }
 
     /// <summary>
-    /// Converte uma imagem indexada de 8 bits com paleta de 4 bytes para RGBA. Com tiled = true, lê os índices em
-    /// blocos de 8×4 (layout C8 da GX do GameCube); com false, em linhas. Qual dos dois é o certo se decide olhando.
+    /// Converte uma imagem indexada de 8 bits com paleta RGBA8888 (igClut formato 7) para RGBA com a primeira linha no topo.
+    /// No DW4 os índices estão em ordem linear (a leitura em blocos GX 8×4 saiu embaralhada em todas as amostras) e as linhas
+    /// vêm de baixo para cima (a leitura direta mostrou os logotipos e textos invertidos na vertical).
     /// </summary>
-    public static byte[]? IndexedToRgba(IgbImage img, bool tiled)
+    public static byte[]? IndexedToRgba(IgbImage img)
     {
         int w = img.Width, h = img.Height;
         if (img.BitsPerPixel != 8 || img.Pixels.Length < w * h || img.Palette.Length < 4 * 256) return null;
         var rgba = new byte[w * h * 4];
-        int src = 0;
-        if (tiled)
-        {
-            for (int by = 0; by < h; by += 4)
-                for (int bx = 0; bx < w; bx += 8)
-                    for (int y = by; y < by + 4; y++)
-                        for (int x = bx; x < bx + 8; x++, src++)
-                            if (x < w && y < h) Put(x, y, img.Pixels[src]);
-        }
-        else for (int i = 0; i < w * h; i++) Put(i % w, i / w, img.Pixels[i]);
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                img.Palette.AsSpan(4 * img.Pixels[y * w + x], 4).CopyTo(rgba.AsSpan(4 * ((h - 1 - y) * w + x)));
         return rgba;
-
-        void Put(int x, int y, byte index) => img.Palette.AsSpan(4 * index, 4).CopyTo(rgba.AsSpan(4 * (y * w + x)));
     }
 
     IEnumerable<IgbSlot?> Refs(IgbObject o) =>

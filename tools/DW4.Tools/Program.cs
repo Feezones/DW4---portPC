@@ -496,7 +496,7 @@ int IgbExport(string path, string which, string outDir)
     report.AppendLine($"slots: {f.Slots.Count}; problemas do leitor: {f.Problems.Count}; igTransform visitados: {scene.TransformCount}");
     foreach (var n in scene.Notes) report.AppendLine(n);
 
-    // Imagens: as duas leituras possíveis dos índices (linhas e blocos GX 8×4), para decidir olhando.
+    // Imagens indexadas de 8 bits, gravadas com a primeira linha no topo.
     var texture = new Dictionary<int, string>();
     foreach (var img in scene.Images.Values)
     {
@@ -505,17 +505,15 @@ int IgbExport(string path, string which, string outDir)
         for (int i = 3; i < img.Palette.Length; i += 4) maxAlpha = Math.Max(maxAlpha, img.Palette[i]);
         report.AppendLine($"imagem #{img.Index} \"{img.Name}\" {img.Width}x{img.Height} formato {img.PixelFormat} {img.BitsPerPixel} bpp, " +
             $"{img.Pixels.Length} B; paleta formato {img.PaletteFormat} ×{img.PaletteCount} ({img.Palette.Length} B), alfa máx {maxAlpha}, início {pal}");
-        foreach (var (tiled, suffix) in new[] { (false, "linhas"), (true, "gx") })
-        {
-            var rgba = IgbScene.IndexedToRgba(img, tiled);
-            if (rgba == null) { report.AppendLine("    não decodificada (só 8 bpp com paleta de 256×4 B por enquanto)"); break; }
-            var file = $"img{img.Index:D4}_{suffix}.png";
-            using (var fs = File.Create(Path.Combine(dir, file))) Png.WriteRgba(fs, img.Width, img.Height, rgba);
-            if (tiled) texture[img.Index] = file;
-        }
+        var rgba = IgbScene.IndexedToRgba(img);
+        if (rgba == null) { report.AppendLine("    não decodificada (só 8 bpp com paleta de 256×4 B por enquanto)"); continue; }
+        var file = $"img{img.Index:D4}.png";
+        using (var fs = File.Create(Path.Combine(dir, file))) Png.WriteRgba(fs, img.Width, img.Height, rgba);
+        texture[img.Index] = file;
     }
 
-    // Geometria: um objeto OBJ por igGeometryAttr; V invertido (hipótese: origem da UV no canto superior esquerdo).
+    // Geometria: um objeto OBJ por igGeometryAttr. UV sem inversão: a imagem já sai com o topo em cima e v = 0 é a base,
+    // como no OBJ (hipótese coerente com as linhas da imagem guardadas de baixo para cima; conferir no modelo).
     var obj = new StringBuilder();
     var mtl = new StringBuilder();
     obj.AppendLine("# exportado por dw4 igb-export; amostra de inspeção, não é recurso final");
@@ -538,7 +536,7 @@ int IgbExport(string path, string which, string outDir)
         if (texture.ContainsKey(part.ImageIndex)) obj.AppendLine($"usemtl img{part.ImageIndex:D4}");
         foreach (var (x, y, z) in part.Positions) obj.AppendLine(FormattableString.Invariant($"v {x} {y} {z}"));
         bool uv = part.TexCoords.Count == part.Positions.Count, nrm = part.Normals.Count == part.Positions.Count;
-        if (uv) foreach (var (u, v) in part.TexCoords) obj.AppendLine(FormattableString.Invariant($"vt {u} {1 - v}"));
+        if (uv) foreach (var (u, v) in part.TexCoords) obj.AppendLine(FormattableString.Invariant($"vt {u} {v}"));
         if (nrm) foreach (var (x, y, z) in part.Normals) obj.AppendLine(FormattableString.Invariant($"vn {x} {y} {z}"));
         string V(int i)
         {
