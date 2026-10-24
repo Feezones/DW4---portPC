@@ -545,6 +545,29 @@ if (args.Length == 1)
         True(ActionAnimations.Loops(acts, "KATCS1") && !ActionAnimations.Loops(acts, "VATCS1"), "LP e OS");
     });
 
+    Test("Jogo: 12 tabelas beDataBase na dng1 (area #3); w_sword01 com TSUYOSA 60..199; Guilmon e Numemon nas tabelas", () =>
+    {
+        using var afs = AfsArchive.Open(areaPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[3], ms);
+        var data = ms.ToArray();
+        var notes = new List<string>();
+        var tables = IgbDatabase.Read(IgbFile.Read(data), data, notes);
+        Equal(0, notes.Count, $"notas: {string.Join("; ", notes)}");
+        Equal("abChip,armor1,armor2,conItem,eneatk,enemy,impItem,insItem,pcTech,shinka,wazaPanel,weapon",
+            string.Join(",", tables.Select(t => t.Name).Order(StringComparer.Ordinal)), "tabelas");
+        var weapon = tables.First(t => t.Name == "weapon");
+        Equal(277, weapon.Rows, "linhas de weapon");
+        var sword = weapon.RowsWhere("MODEL", "w_sword01").ToList();
+        Equal(5, sword.Count, "variantes da w_sword01");
+        Equal("60,81,109,148,199", string.Join(",", sword.Select(r => Convert.ToInt32(weapon.Column("TSUYOSA")!.Cells[r]))), "TSUYOSA");
+        Equal(649, tables.First(t => t.Name == "enemy").Rows, "linhas de enemy");
+        Equal(22, tables.First(t => t.Name == "enemy").RowsWhere("MODEL", "e_nume").Count(), "linhas do e_nume");
+        var shinka = tables.First(t => t.Name == "shinka");
+        Equal(16, shinka.Rows, "linhas de shinka");
+        True(shinka.RowsWhere("MODEL_NAME", "p_girumon").Any(), "Guilmon na shinka");
+    });
+
     Test("Jogo: IA do Numemon (#179, e_nume) tem MAP00 e MAP01 com 4 listas e faixas 36²/45²/150² e 22²/40²/150²", () =>
     {
         using var afs = AfsArchive.Open(ndmwPath);
