@@ -430,6 +430,9 @@ if (args.Length == 1)
             .ToDictionary(k => k.Key, k => k.Value.Select(c => new SeqCommand(c.Kind, c.Values)).ToList());
         Equal(183, acts.Count, "ações (beAction2Data)");
         Equal("vatcS", ActionAnimations.Motion(acts, "VATCS1"), "animação de VATCS1");
+        Equal(11f, ActionAnimations.Length(acts, "VATCS1", m => m == "vatcS" ? 11f : null), "VATCS1 espera o fim da animação");
+        Equal(60f, ActionAnimations.Length(acts, "KATCS1", _ => 7f), "KATCS1 espera 60 quadros");
+        True(ActionAnimations.Loops(acts, "KATCS1") && !ActionAnimations.Loops(acts, "VATCS1"), "LP e OS");
     });
 
     Test("Jogo: câmera da dng1 (#180) tem 18 volumes; #181 só muda o recuo; câmera sempre acima do alvo", () =>

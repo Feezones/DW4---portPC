@@ -140,3 +140,17 @@ ACTION "VATCS1" · WCHECK "Atck01" · ACTION "KATCS1" · WCHECK "Atck02" · ACTI
 ```
 
 **HIPÓTESE (a medir):** a sequência pula para o bloco cujo LABEL é o estilo da arma equipada. Os HITBOX agendam caixas de dano (tipo 10000) para a ação seguinte: começam no quadro f, duram d quadros, ficam na posição local (x lateral, y altura, z à frente) e têm o tamanho dado. ACTION toca a animação (`VATCS1` → `vatcS1`). WCHECK "Action" espera a animação acabar, e "Atck0N" é a janela de combo que espera o próximo botão. JUMP desvia para outra sequência. O tipo 60000 seria a sonda de conversa. Taxa dos quadros (30 ou 60 Hz) **DESCONHECIDA**.
+
+### Ações (`beAction2Data`)
+
+Cada ACTION de uma sequência tem uma `beAction2Data` de mesmo nome, com a lista de comandos `beAction2*`. **FATO** (Guilmon, 183 ações):
+
+| Ação | Comandos |
+|---|---|
+| VATCS1 | MOTIONSET "vatcS" "RR" 3 "OS" · WAITCHECK "Motion" 0 |
+| KATCS1 | MOTIONSET "katcS02" "RR" 6 "LP" · WAITCHECK "Frame" 60 |
+| KATCS2 | MOTIONSET "katcS02" "RR" 4 "LP" |
+
+O nome da animação vem do MOTIONSET. O nome da ação não serve: "vatcS1" não existe, e KATCS1 e KATCS2 usam a mesma "katcS02". **FATO.** **HIPÓTESE:** o terceiro campo é a mistura de entrada em quadros; "OS" toca uma vez e "LP" repete; WAITCHECK "Motion" espera o fim da animação e "Frame" N espera N quadros.
+
+Na fatia (2026-10-24, modo `DW4_DEMO`): o combo VATCS1 → KATCS1 → KATCS2 roda, o primeiro acerto no Numemon cai no quadro 10 do vatcS (janela das caixas: 9 a 13) e o Numemon reage com `Sdmg01`. Nada disso foi comparado ainda com o jogo.

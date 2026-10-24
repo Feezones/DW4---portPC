@@ -193,7 +193,11 @@ public partial class Fatia : Node3D
             {
                 _lastSerial = _runner.ActionSerial;
                 _hitThisAction.Clear();
-                if (_anim != null && _runner.Action != null && AnimName(_runner.Action) is { } an) _anim.Play(an, 0.13f);
+                if (_anim != null && _runner.Action != null && AnimName(_runner.Action) is { } an)
+                {
+                    _anim.GetAnimation(an).LoopMode = ActionAnimations.Loops(_actions, _runner.Action) ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
+                    _anim.Play(an, ActionAnimations.Blend(_actions, _runner.Action) / SequenceRunner.FramesPerSecond);
+                }
             }
             CheckHits();
         }
@@ -236,8 +240,8 @@ public partial class Fatia : Node3D
     string? AnimName(string action) =>
         ActionAnimations.Motion(_actions, action) is { } motion ? _anim?.GetAnimationList().FirstOrDefault(n => n == motion) : null;
 
-    float? AnimFrames(string action) =>
-        AnimName(action) is { } n && _anim != null ? (float)_anim.GetAnimation(n).Length * SequenceRunner.FramesPerSecond : null;
+    float? AnimFrames(string action) => ActionAnimations.Length(_actions, action, motion =>
+        _anim != null && _anim.HasAnimation(motion) ? (float)_anim.GetAnimation(motion).Length * SequenceRunner.FramesPerSecond : null);
 
     // Caixa local (x lateral, y altura, z à frente) no mundo, girada pela direção do personagem.
     Vector3 BoxCenter(HitBox h) => _player.GlobalPosition + new Vector3(h.Position.X, h.Position.Y, h.Position.Z).Rotated(Vector3.Up, _move.Facing);

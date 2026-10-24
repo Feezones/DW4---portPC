@@ -48,6 +48,25 @@ public static class ActionAnimations
 {
     public static string? Motion(IReadOnlyDictionary<string, List<SeqCommand>> actions, string action) =>
         actions.TryGetValue(action, out var cmds) ? cmds.FirstOrDefault(c => c.Kind == "MOTIONSET")?.S(0) : null;
+
+    /// <summary>Quadros de mistura de entrada (MOTIONSET Float@4: 3, 6, 8…; HIPÓTESE).</summary>
+    public static float Blend(IReadOnlyDictionary<string, List<SeqCommand>> actions, string action) =>
+        actions.TryGetValue(action, out var cmds) && cmds.FirstOrDefault(c => c.Kind == "MOTIONSET") is { } m ? m.F(2) : 0;
+
+    /// <summary>A animação repete ("LP") em vez de tocar uma vez ("OS").</summary>
+    public static bool Loops(IReadOnlyDictionary<string, List<SeqCommand>> actions, string action) =>
+        actions.TryGetValue(action, out var cmds) && cmds.FirstOrDefault(c => c.Kind == "MOTIONSET")?.S(3) == "LP";
+
+    /// <summary>
+    /// Duração da ação em quadros. HIPÓTESE: WAITCHECK "Frame" N espera N quadros; "Motion" (ou nenhum) espera o fim da
+    /// animação, cujo tamanho vem de <paramref name="motionFrames"/>.
+    /// </summary>
+    public static float? Length(IReadOnlyDictionary<string, List<SeqCommand>> actions, string action, Func<string, float?> motionFrames)
+    {
+        if (!actions.TryGetValue(action, out var cmds)) return null;
+        if (cmds.FirstOrDefault(c => c.Kind == "WAITCHECK" && c.S(0) == "Frame") is { } w) return w.F(1);
+        return Motion(actions, action) is { } m ? motionFrames(m) : null;
+    }
 }
 
 /// <summary>Caixa de dano agendada por um HITBOX: tipo, quadro inicial e duração relativos à ação, posição local e tamanho.</summary>
