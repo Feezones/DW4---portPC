@@ -43,6 +43,8 @@ try
         "igb-cena" when args.Length == 5 => IgbCena(args[1], args[2], args[3], args[4]),
         "igb-seq" when args.Length is 4 or 5 => IgbSeq(args[1], args[2], args[3], args.Length == 5 ? args[4] : null),
         "dtm-entradas" when args.Length is 2 or 3 => DtmEntradas(args[1], args.Length == 3 ? args[2] : null),
+        "dolphin-ram" when args.Length == 3 => DolphinRam(args[1], args[2]),
+        "ram-busca" when args.Length >= 4 => RamBusca(args[1], args[2], args[3], args[4..]),
         "igb-camera" when args.Length == 4 => IgbCamera(args[1], args[2], args[3]),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
@@ -81,6 +83,8 @@ static int Usage()
           dw4 igb-cena     <arquivo.afs> <indice> <no-raiz|todas> <pasta-de-trabalho>   (cenário ou objeto estático em glTF com texturas)
           dw4 igb-seq      <arquivo.afs> <indice> <pasta-de-trabalho> [--ator=NOME]   (sequências beModelCtrlData em JSON e texto)
           dw4 dtm-entradas <gravacao.dtm> [saida.csv]   (linha do tempo das entradas de uma gravação do Dolphin)
+          dw4 dolphin-ram  <estado.sav> <saida.bin>   (MEM1 de 24 MiB de um save state do Dolphin, fora do repositório)
+          dw4 ram-busca    <a.bin> <b.bin> <quadros-entre-eles> [--y=40]   (contadores de quadro e posições candidatas)
           dw4 igb-camera   <arquivo.afs> <indice> <pasta-de-trabalho>   (volumes de câmera da fase em JSON, fora do repositório)
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
@@ -1210,6 +1214,56 @@ int DtmEntradas(string path, string? csvPath)
         csv?.WriteLine(string.Create(inv, $"{i},{Frame(i)},{p.Buttons:X4},{p.StickX},{p.StickY},{p.CStickX},{p.CStickY},{p.TriggerL},{p.TriggerR}"));
     }
     csv?.Dispose();
+    return 0;
+}
+
+// Extrai a MEM1 de um save state do Dolphin (para achar onde o jogo guarda posição, quadro etc.).
+int DolphinRam(string savPath, string outPath)
+{
+    var full = Path.GetFullPath(outPath);
+    if (InsideGitRepo(Path.GetDirectoryName(full)!)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    var file = File.ReadAllBytes(savPath);
+    var gameId = Encoding.ASCII.GetString(file, 0, 6);
+    var state = DW4.Formats.Dolphin.SaveState.Decompress(file);
+    int at = DW4.Formats.Dolphin.SaveState.FindMem1(state, gameId);
+    Console.WriteLine($"{gameId}: estado descomprimido {state.Length} B; MEM1 em 0x{at:X}");
+    if (at < 0) return 1;
+    File.WriteAllBytes(full, state.AsSpan(at, DW4.Formats.Dolphin.SaveState.Mem1Size).ToArray());
+    Console.WriteLine($"MEM1 -> {full}");
+    return 0;
+}
+
+// Compara duas MEM1 separadas por N quadros: (1) u32 que avançaram N, N/2 ou 2N (contadores de quadro); (2) trincas de
+// float (x, y, z) com y perto do chão dado e x, z dentro de ±1000 nas duas, mostrando quais mudaram (posições candidatas).
+int RamBusca(string aPath, string bPath, string framesArg, string[] options)
+{
+    var a = File.ReadAllBytes(aPath);
+    var b = File.ReadAllBytes(bPath);
+    long frames = long.Parse(framesArg, inv);
+    float floor = 40;
+    foreach (var o in options.Where(o => o.StartsWith("--y=", StringComparison.Ordinal))) floor = float.Parse(o[4..], inv);
+    int n = Math.Min(a.Length, b.Length);
+    Console.WriteLine($"contadores (u32, alinhados) com avanço ≈ {frames}, {frames / 2} ou {frames * 2} (±3):");
+    int shown = 0;
+    for (int i = 0; i + 4 <= n && shown < 60; i += 4)
+    {
+        long d = (long)BinaryPrimitives.ReadUInt32BigEndian(b.AsSpan(i)) - BinaryPrimitives.ReadUInt32BigEndian(a.AsSpan(i));
+        foreach (var k in new[] { frames, frames / 2, frames * 2 })
+            if (Math.Abs(d - k) <= 3) { Console.WriteLine($"  0x{0x80000000 + i:X8}: {BinaryPrimitives.ReadUInt32BigEndian(a.AsSpan(i))} -> {BinaryPrimitives.ReadUInt32BigEndian(b.AsSpan(i))} (Δ {d})"); shown++; break; }
+    }
+    static float F(byte[] m, int i) => BinaryPrimitives.ReadSingleBigEndian(m.AsSpan(i));
+    static bool Plausible(float x, float y, float z, float floor) =>
+        float.IsFinite(x) && float.IsFinite(z) && Math.Abs(y - floor) < 0.5f && Math.Abs(x) < 1000 && Math.Abs(z) < 1000 && (Math.Abs(x) > 0.01f || Math.Abs(z) > 0.01f);
+    Console.WriteLine($"trincas (x, y≈{floor}, z) plausíveis nas duas e que mudaram:");
+    shown = 0;
+    for (int i = 0; i + 12 <= n && shown < 200; i += 4)
+    {
+        float ax = F(a, i), ay = F(a, i + 4), az = F(a, i + 8), bx = F(b, i), by = F(b, i + 4), bz = F(b, i + 8);
+        if (!Plausible(ax, ay, az, floor) || !Plausible(bx, by, bz, floor)) continue;
+        if (Math.Abs(ax - bx) < 0.01f && Math.Abs(az - bz) < 0.01f) continue;
+        Console.WriteLine(string.Create(inv, $"  0x{0x80000000 + i:X8}: ({ax:0.###}, {ay:0.###}, {az:0.###}) -> ({bx:0.###}, {by:0.###}, {bz:0.###})"));
+        shown++;
+    }
     return 0;
 }
 

@@ -274,6 +274,13 @@ Test("DTM do Dolphin: cabeçalho e leituras do controle", () =>
     True(dtm.Inputs[1].Has(DW4.Formats.Dolphin.GcPadInput.R) && !dtm.Inputs[1].Has(DW4.Formats.Dolphin.GcPadInput.A), "R");
 });
 
+Test("LZ4: bloco com literais e cópia sobreposta", () =>
+{
+    // "abcabcabcabcX": 3 literais "abc", cópia de 9 a partir de 3 atrás (sobreposta), depois o literal final "X"
+    byte[] block = [0x35, (byte)'a', (byte)'b', (byte)'c', 3, 0, 0x10, (byte)'X'];
+    Equal("abcabcabcabcX", Encoding.ASCII.GetString(DW4.Formats.Dolphin.Lz4.DecompressBlock(block, 13)), "saída");
+});
+
 // ---------- dados do jogo (opcional) ----------
 
 if (args.Length == 1)
