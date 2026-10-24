@@ -294,7 +294,7 @@ if (args.Length == 1)
         Equal("6278B0561D3A7D51EFA4BB11A103557B34A6B76A331FD1644537065C6934D62B", Convert.ToHexString(SHA256.HashData(streams[0xE0].Payload.ToArray())), "SHA-256 do vídeo");
     });
 
-    Test("Jogo: Guilmon (#857) tem 31 ossos, 26 matrizes, pele rígida e 60 animações", () =>
+    Test("Jogo: Guilmon (#857) tem 31 ossos, 26 matrizes, pele rígida e 82 animações", () =>
     {
         using var afs = AfsArchive.Open(ndmwPath);
         using var ms = new MemoryStream();
@@ -305,7 +305,7 @@ if (args.Length == 1)
         Equal(26, ch.InverseBind.Count, "matrizes de pele");
         Equal("JointRoot", ch.Bones[2].Name, "osso 2");
         Equal(19, ch.Bones[28].Parent, "pai de Tail01");
-        Equal(60, ch.Animations.Count, "animações");
+        Equal(82, ch.Animations.Count, "animações");
         var high = ch.Skins.Single(k => k.Name == "HighAppearance");
         Equal(29, high.MatrixPalette.Count, "paleta");
         Equal(806, high.Parts[0].BlendIndices.Count, "índices de pele");

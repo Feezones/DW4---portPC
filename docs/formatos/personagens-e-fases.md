@@ -50,7 +50,7 @@ Nada disso foi interpretado ainda.
 | Peles | 3 `igSkin`: "HighAppearance", "LowAppearance" (níveis de detalhe) e "KageAppearance" (sombra, sem normal e com UV zerada) | alta |
 | Paleta | `igBlendMatrixSelect` → `igIntList` com 29 entradas: índice local do vértice → matriz de pele | alta: os vértices nunca usam as 3 entradas que apontam para 0 sem motivo |
 | Pele por vértice | `igVertexArray1_1` MemoryRef@7 = 1 float por vértice (sempre 1,0), MemoryRef@8 = 1 byte por vértice (índice local) | alta: pele rígida, um osso por vértice |
-| Animações | 60 `igAnimation` (waitS/D/A/G, runD/S/A/G, guard*, dead*, item*, stun*, sleep*, ldmg*, sdmg*, jump*…); Long@9 = duração em nanossegundos | alta: confere com a duração das fontes |
+| Animações | 82 `igAnimation` (waitS/D/A/G, runD/S/A/G, guard*, dead*, item*, stun*, sleep*, ldmg*, sdmg*, jump*…); Long@9 = duração em nanossegundos | alta: confere com a duração das fontes |
 | Trilhas | `igAnimationTrack` String@2 = osso, ObjectRef@3 → `igEnbayaTransformSource` (Int@2 = trilha dentro da fonte, ObjectRef@3 = fonte) | alta |
 | Enbaya | 7554 fontes, todas a 30 Hz e com 31 trilhas por fonte no Guilmon. 7274 consomem os dados exatamente. Em 280 sobram deltas para mais 1 ou 2 passos depois da duração | o motivo das sobras é desconhecido; as poses dentro da duração não mudam |
 
