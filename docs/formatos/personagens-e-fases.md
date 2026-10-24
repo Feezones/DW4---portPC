@@ -53,3 +53,11 @@ Nada disso foi interpretado ainda.
 | Animações | 60 `igAnimation` (waitS/D/A/G, runD/S/A/G, guard*, dead*, item*, stun*, sleep*, ldmg*, sdmg*, jump*…); Long@9 = duração em nanossegundos | alta: confere com a duração das fontes |
 | Trilhas | `igAnimationTrack` String@2 = osso, ObjectRef@3 → `igEnbayaTransformSource` (Int@2 = trilha dentro da fonte, ObjectRef@3 = fonte) | alta |
 | Enbaya | 7554 fontes, todas a 30 Hz e com 31 trilhas por fonte no Guilmon. 7274 consomem os dados exatamente. Em 280 sobram deltas para mais 1 ou 2 passos depois da duração | o motivo das sobras é desconhecido; as poses dentro da duração não mudam |
+
+## Colisão da fase dng1 (#179), conferida em 2026-10-24
+
+**FATO (conferido visualmente):** a raiz de cena #1729 ("BG01", 36 geometrias sem nome e sem material, 458 faces) é a malha de colisão da fase. A visão de cima sobreposta ao cenário visual (#3372 "BG02", 26.352 faces) coincide nas salas, nos corredores e nas escadas. A colisão é feita de volumes simples (piso e paredes de cerca de 40 unidades de altura). Há também um cilindro separado fora do mapa, provavelmente um gatilho (geometria sob `igTransform`, ligada ao `beHitLandModelInfo` #42).
+
+**FATO:** os `igSwitch` apontados por `beHitLandModelInfo` (ObjectRef@7 e @8) são justamente os grupos dessa malha, além de "g_box" (caixas quebráveis).
+
+**HIPÓTESE:** `beHitLandModelInfo` Int@10 (4, 2, 1, 2, 1026) é um tipo ou uma máscara de superfície. `g_ddamagefloor` (165 geometrias) é piso que causa dano.
