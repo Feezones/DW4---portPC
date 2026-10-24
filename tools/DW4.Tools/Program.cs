@@ -34,6 +34,7 @@ try
         "igb-lua" when args.Length == 2 => IgbLua(args[1]),
         "igb-export" when args.Length == 4 => IgbExport(args[1], args[2], args[3]),
         "igb-anim" when args.Length is 2 or 3 => IgbAnim(args[1], args.Length == 3 ? args[2] : null),
+        "igb-mem" when args.Length is 4 or 5 => IgbMem(args[1], args[2], args[3], args.Length == 5 ? args[4] : "hex"),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
@@ -63,6 +64,7 @@ static int Usage()
           dw4 igb-lua      <arquivo.afs>
           dw4 igb-export   <arquivo.afs> <indice> <pasta-de-trabalho>   (OBJ + PNG + relatório, fora do repositório)
           dw4 igb-anim     <arquivo.afs> [indice]   (decodifica as animações Enbaya; sem índice, resume o arquivo todo)
+          dw4 igb-mem      <arquivo.afs> <indice> <slot> [hex|u8|i32|u32|f32|hist]   (conteúdo de um bloco de memória, ou de um igDataList)
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
@@ -633,6 +635,50 @@ int IgbAnim(string path, string? which)
     return failed == 0 ? 0 : 3;
 
     string Pose(EnbayaPose p) => FormattableString.Invariant($"q=({p.Qx:0.###} {p.Qy:0.###} {p.Qz:0.###} {p.Qw:0.###}) t=({p.Tx:0.###} {p.Ty:0.###} {p.Tz:0.###})");
+}
+
+// Mostra um bloco de memória inteiro (ou o bloco de dados de um objeto que tenha um MemoryRef, como igIntList).
+int IgbMem(string path, string which, string slotArg, string mode)
+{
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    var f = IgbFile.Read(data);
+    bool le = f.Header.LittleEndian;
+    if (!int.TryParse(slotArg, NumberStyles.None, inv, out int slot) || slot >= f.Slots.Count) { Console.Error.WriteLine("slot inválido"); return 1; }
+    var target = f.Slots[slot];
+    if (target is IgbObject o)
+    {
+        var mr = o.Fields.FirstOrDefault(v => v.Desc.ShortName == "MemoryRef");
+        int r = mr?.AsInt32(le) ?? -1;
+        Console.WriteLine($"#{slot} {o.TypeName}: " + string.Join("; ", o.Fields.Select(v => $"{v.Desc.ShortName}@{v.Desc.Slot}={FormatField(f, v)}")));
+        if (r < 0 || r >= f.Slots.Count || f.Slots[r] is not IgbMemoryBlock) { Console.WriteLine("sem bloco de memória"); return 0; }
+        target = f.Slots[r];
+    }
+    var mb = (IgbMemoryBlock)target;
+    var mem = MemoryOf(data, mb);
+    Console.WriteLine($"#{mb.Index} {mb.TypeName}: {mem.Length} B ({mode})");
+    var sb = new StringBuilder();
+    int width = mode switch { "u8" or "hist" or "hex" => 1, "f32" or "i32" or "u32" => 4, _ => 1 };
+    var values = new List<string>();
+    var hist = new SortedDictionary<int, int>();
+    for (int i = 0; i + width <= mem.Length; i += width)
+    {
+        switch (mode)
+        {
+            case "u8": values.Add(mem[i].ToString(inv)); break;
+            case "hist": hist[mem[i]] = hist.GetValueOrDefault(mem[i]) + 1; break;
+            case "i32": values.Add((le ? BinaryPrimitives.ReadInt32LittleEndian(mem.AsSpan(i)) : BinaryPrimitives.ReadInt32BigEndian(mem.AsSpan(i))).ToString(inv)); break;
+            case "u32": values.Add((le ? BinaryPrimitives.ReadUInt32LittleEndian(mem.AsSpan(i)) : BinaryPrimitives.ReadUInt32BigEndian(mem.AsSpan(i))).ToString(inv)); break;
+            case "f32": values.Add((le ? BinaryPrimitives.ReadSingleLittleEndian(mem.AsSpan(i)) : BinaryPrimitives.ReadSingleBigEndian(mem.AsSpan(i))).ToString("0.#####", inv)); break;
+            default: values.Add(mem[i].ToString("X2", inv)); break;
+        }
+    }
+    if (mode == "hist") Console.WriteLine(string.Join(" ", hist.Select(kv => $"{kv.Key}:{kv.Value}")));
+    else for (int i = 0; i < values.Count; i += 16) Console.WriteLine($"{i * width,6:X}: {string.Join(" ", values.Skip(i).Take(16))}");
+    return 0;
 }
 
 // Levantamento por IGB: quantos objetos de classes-chave (geometria, imagem, esqueleto, animação, colisão) e nomes de
