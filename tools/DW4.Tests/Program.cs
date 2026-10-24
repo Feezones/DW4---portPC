@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
+using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 using DW4.Formats.Afs;
@@ -8,6 +9,7 @@ using DW4.Formats.Igb;
 using DW4.Formats.Images;
 using DW4.Formats.Lua;
 using DW4.Formats.Sofdec;
+using DW4.Gameplay;
 
 // Verificador dos leitores de formato, sem pacotes externos.
 // Sem argumentos: só testes sintéticos (dados montados aqui, nada do jogo).
@@ -196,6 +198,146 @@ Test("MPEG-PS: pacote MPEG-1, PES com PTS, fim e preenchimento de setor", () =>
     True(MpegPs.Demux(ps.ToArray()[..20]).Problems.Count > 0, "PES cortado não foi apontado");
 });
 
+Test("Câmera por volumes: escolha do volume e pose com recuo e inclinação", () =>
+{
+    // Volume 1 com inclinação de 55° (linha Z da rotação = (0, sen, cos), como nas matrizes B do jogo) e recuo 135.
+    float t = 55 * MathF.PI / 180;
+    var b = Matrix4x4.CreateRotationX(-t) * Matrix4x4.CreateTranslation(0, 10, 0);
+    var zones = new CameraZones(
+    [
+        new CameraZone(0, new Vector3(-5, 0, -5), new Vector3(5, 200, 5), Matrix4x4.CreateTranslation(0, 0, 50), Matrix4x4.Identity),
+        new CameraZone(1, new Vector3(0, 0, 0), new Vector3(100, 200, 100), Matrix4x4.CreateTranslation(0, 0, 135), b),
+    ], Matrix4x4.CreateTranslation(0, 1, 0));
+    Equal(1, zones.Select(new Vector3(10, 40, 20)), "dentro do volume 1");
+    Equal(0, zones.Select(new Vector3(-50, 40, -50)), "fora de todos, sem volume atual");
+    Equal(1, zones.Select(new Vector3(-50, 40, -50), current: 1), "fora de todos, mantém o atual");
+    var (pos, look) = zones.Pose(1, new Vector3(10, 40, 20));
+    True(Vector3.Distance(look, new Vector3(10, 51, 20)) < 1e-3f, $"pivô {look}");
+    var expected = new Vector3(10, 51 + 135 * MathF.Sin(t), 20 + 135 * MathF.Cos(t));
+    True(Vector3.Distance(pos, expected) < 1e-3f, $"câmera {pos}, esperado {expected}");
+});
+
+Test("Sequência: bloco do estilo, sonda de conversa pulada, caixa no quadro certo e janela de combo", () =>
+{
+    SeqCommand C(string k, params object[] v) => new(k, v);
+    var seqs = new Dictionary<string, List<SeqCommand>>
+    {
+        ["SQ_ATCK1"] =
+        [
+            C("LABEL", "dual"), C("ACTION", "VATCD1"), C("WCHECK", "Action"),
+            C("LABEL", "slash"),
+            C("HITBOX", "Set", 60000, 1f, 1f, new[] { 0f, 4, 7 }, new[] { 3f, 3, 3 }), C("ACTION", "TALKWF"), C("WCHECK", "Action"), C("MOVE", "Stop", 1f, 4f),
+            C("HITBOX", "Set", 10000, 9f, 2f, new[] { 0f, 4, 14 }, new[] { 8f, 8, 8 }),
+            C("ACTION", "VATCS1"), C("WCHECK", "Atck01"), C("ACTION", "KATCS1"), C("WCHECK", "Atck02"), C("JUMP", "SQ_ATCKTM"),
+        ],
+    };
+    var r = new SequenceRunner(seqs, _ => 20f);
+    const float frame = 1 / SequenceRunner.FramesPerSecond;
+    True(r.Start("SQ_ATCK1", "slash"), "início");
+    Equal("VATCS1", r.Action, "primeira ação (sonda de conversa pulada)");
+    Equal("Stop", r.Move?.S(0), "MOVE guardado");
+    for (int i = 0; i < 9; i++) r.Tick(frame, false);
+    Equal(1, r.ActiveHitBoxes().Count(), "caixa ativa no quadro 9");
+    Equal(new Vector3(0, 4, 14), r.ActiveHitBoxes().First().Position, "posição da caixa");
+    for (int i = 0; i < 2; i++) r.Tick(frame, false);
+    Equal(0, r.ActiveHitBoxes().Count(), "caixa desligada no quadro 11");
+    for (int i = 0; i < 10; i++) r.Tick(frame, false);
+    True(!r.Running && r.Next == null, "sem apertar, o combo termina");
+
+    r.Start("SQ_ATCK1", "slash");
+    r.Tick(frame, true);
+    for (int i = 0; i < 20; i++) r.Tick(frame, false);
+    Equal("KATCS1", r.Action, "com o botão na janela, segue o combo");
+    r.Tick(frame, true);
+    for (int i = 0; i < 20; i++) r.Tick(frame, false);
+    True(!r.Running && r.Next == "SQ_ATCKTM", "fim do combo pula para SQ_ATCKTM");
+    True(!r.Start("SQ_ATCK1", "gun"), "estilo inexistente");
+
+    // Numemon: caixas do golpe depois da ACTION valem para ela.
+    seqs["SQ_NUME"] =
+    [
+        C("HITBOX", "Set", 70000, 0f, -1f, new[] { 0f, 7, 0 }, new[] { 9.5f, 14, 9.5f }), C("MOVE", "Stop", 1f, 4f), C("ACTION", "NATK01"),
+        C("HITBOX", "Set", 70004, 10f, 5f, new[] { 6.3f, 1.5f, 2.2f }, new[] { 2.5f, 3, 2.5f }), C("WCHECK", "Action"), C("JUMP", "SQ_WAIT"),
+    ];
+    True(r.Start("SQ_NUME", null), "início do golpe do Numemon");
+    Equal(2, r.ActionHitBoxes.Count, "corpo e golpe na ação NATK01");
+    for (int i = 0; i < 11; i++) r.Tick(frame, false);
+    True(r.ActiveHitBoxes().Any(h => h.Type == 70004), "golpe ativo no quadro 11");
+    True(!r.Invincible, "sem MUTEKI");
+    seqs["SQ_SDMG"] = [C("LABEL", "common"), C("MUTEKI", "ON", -1), C("MOVE", "Back", 1.6f, 5f), C("ACTION", "SDMGC1"), C("WCHECK", "Moving"), C("JUMP", "SQ_WAIT")];
+    True(r.Start("SQ_SDMG", "common") && r.Invincible && r.Move?.S(0) == "Back", "dano: invencível e recuando");
+    for (int i = 0; i < 21; i++) r.Tick(frame, false);
+    True(!r.Running && !r.Invincible, "fim do dano tira o MUTEKI");
+});
+
+Test("IA: faixa pela distância, sorteio acumulado em 16, troca de mapa e espera de sequência externa", () =>
+{
+    AiChoice A(string s, float ang, float v, int t) => new(s, ang, v, t);
+    var near = new AiMap("MAP00", [36 * 36, 45 * 45, 150 * 150], 0.1f,
+        [[A("SQ_CHMOD1", 0, 0, 12), A("SQ_WALK", 1.7453f, 15, 16)], [A("SQ_WAIT", 0, 21, 16)], [A("SQ_WALK", 0, 30, 16)], [A("SQ_SILENT", 0, 60, 16)]]);
+    var close = new AiMap("MAP01", [22 * 22, 40 * 40, 150 * 150], 0.1f,
+        [[A("SQ_ATCK1", 0, 0, 16)], [A("SQ_WALK", 0, 20, 16)], [A("SQ_CHMOD0", 0, 0, 16)], [A("SQ_SILENT", 0, 60, 16)]]);
+    Equal(0, near.Band(35 * 35), "faixa 0");
+    Equal(2, near.Band(100 * 100), "faixa 2");
+    Equal(3, near.Band(200 * 200), "fora");
+    Equal("SQ_CHMOD1", near.Pick(10, 11)?.Sequence, "sorteio 11 < 12");
+    Equal("SQ_WALK", near.Pick(10, 12)?.Sequence, "sorteio 12 passa para a próxima");
+    var seqs = new Dictionary<string, List<SeqCommand>>
+    {
+        ["SQ_CHMOD0"] = [new("AIMAP", ["MAP00"]), new("JUMP", ["SQ_WAIT"])],
+        ["SQ_CHMOD1"] = [new("AIMAP", ["MAP01"]), new("JUMP", ["SQ_WAIT"])],
+    };
+    int roll = 0;
+    var b = new EnemyBrain([near, close], seqs, () => roll);
+    const float frame = 1 / EnemyBrain.FramesPerSecond;
+    var self = Vector3.Zero;
+    b.Tick(frame, self, new Vector3(0, 0, 10), 0);
+    Equal("MAP01", b.Map.Name, "CHMOD1 troca para o MAP01");
+    b.Tick(frame, self, new Vector3(0, 0, 10), 0);
+    Equal("SQ_ATCK1", b.External, "a menos de 22, ataca");
+    b.Tick(frame, self, new Vector3(0, 0, 100), 0);
+    Equal("SQ_ATCK1", b.External, "espera a sequência externa");
+    b.Release();
+    b.Tick(frame, self, new Vector3(30, 0, 0), 0);
+    True(b.Walking, "entre 22 e 40, anda");
+    True(Math.Abs(b.Yaw - 0.1f) < 1e-4f, $"gira no máximo 0,1 rad por quadro ({b.Yaw})");
+    for (int i = 0; i < 25; i++) b.Tick(frame, self, new Vector3(30, 0, 0), b.Yaw);
+    True(Math.Abs(b.Yaw - MathF.PI / 2) < 1e-3f, "termina virado para o alvo");
+});
+
+Test("DTM do Dolphin: cabeçalho e leituras do controle", () =>
+{
+    var file = new byte[DW4.Formats.Dolphin.DtmFile.HeaderSize + 16];
+    "DTM\x1A"u8.CopyTo(file);
+    "GDJEB2"u8.CopyTo(file.AsSpan(4));
+    file[11] = 1;
+    file[12] = 1;
+    BinaryPrimitives.WriteUInt64LittleEndian(file.AsSpan(13), 1);
+    BinaryPrimitives.WriteUInt64LittleEndian(file.AsSpan(21), 2);
+    int at = DW4.Formats.Dolphin.DtmFile.HeaderSize;
+    file[at] = 1 << 1; file[at + 4] = 128; file[at + 5] = 255; // A + analógico para cima
+    file[at + 8 + 1] = 1 << 3; file[at + 12] = 128; file[at + 13] = 128; // R = bit 11 = bit 3 do segundo byte
+    var dtm = DW4.Formats.Dolphin.DtmFile.Read(file);
+    Equal("GDJEB2", dtm.GameId, "jogo");
+    True(dtm.FromSaveState, "save state");
+    Equal(2, dtm.Inputs.Count, "leituras");
+    True(dtm.Inputs[0].Has(DW4.Formats.Dolphin.GcPadInput.A) && dtm.Inputs[0].Stick.Y > 0.99f, "A e analógico para cima");
+    True(dtm.Inputs[1].Has(DW4.Formats.Dolphin.GcPadInput.R) && !dtm.Inputs[1].Has(DW4.Formats.Dolphin.GcPadInput.A), "R");
+});
+
+Test("LZ4: bloco com literais e cópia sobreposta", () =>
+{
+    // "abcabcabcabcX": 3 literais "abc", cópia de 9 a partir de 3 atrás (sobreposta), depois o literal final "X"
+    byte[] block = [0x35, (byte)'a', (byte)'b', (byte)'c', 3, 0, 0x10, (byte)'X'];
+    Equal("abcabcabcabcX", Encoding.ASCII.GetString(DW4.Formats.Dolphin.Lz4.DecompressBlock(block, 13)), "saída");
+});
+
+Test("GDB: soma de verificação dos pacotes", () =>
+{
+    Equal("63", DW4.Formats.Dolphin.GdbClient.Checksum("c"), "c");
+    Equal("3f", DW4.Formats.Dolphin.GdbClient.Checksum("?"), "?");
+});
+
 // ---------- dados do jogo (opcional) ----------
 
 if (args.Length == 1)
@@ -347,6 +489,89 @@ if (args.Length == 1)
         var parts = IgbScene.Read(IgbFile.Read(data), data).Parts.Where(p => p.SceneRoot == 1862).ToList();
         Equal(36, parts.Count, "geometrias");
         Equal(458, parts.Sum(p => p.Triangles.Count) / 3, "triângulos");
+    });
+
+    Test("Jogo: SQ_ATCK1 do Guilmon, bloco slash: arco de 5 caixas 10000 nos quadros 9 a 13, depois VATCS1 (animação vatcS)", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[857], ms);
+        var data = ms.ToArray();
+        var notes = new List<string>();
+        var seqs = IgbSequences.Read(IgbFile.Read(data), data, null, notes);
+        Equal(28, seqs.Count, "sequências");
+        Equal(156, seqs["SQ_ATCK1"].Count, "comandos de SQ_ATCK1");
+        var game = seqs.ToDictionary(k => k.Key, k => k.Value.Select(c => new SeqCommand(c.Kind, c.Values)).ToList());
+        var r = new SequenceRunner(game, _ => 30f);
+        True(r.Start("SQ_ATCK1", "slash"), "bloco slash");
+        Equal("VATCS1", r.Action, "primeira ação");
+        var boxes = r.ActionHitBoxes.Where(h => h.Type == 10000).ToList();
+        Equal(5, boxes.Count, "caixas 10000");
+        Equal("9,10,11,12,13", string.Join(",", boxes.Select(b => b.StartFrame)), "quadros iniciais");
+        True(boxes.All(b => b.Frames == 2 && b.Size == new Vector3(8, 8, 8)), "duração 2 e tamanho 8");
+        Equal(new Vector3(-9, 4, 8), boxes[0].Position, "primeira caixa à esquerda");
+        var acts = IgbSequences.ReadActions(IgbFile.Read(data), data, null, notes)
+            .ToDictionary(k => k.Key, k => k.Value.Select(c => new SeqCommand(c.Kind, c.Values)).ToList());
+        Equal(183, acts.Count, "ações (beAction2Data)");
+        Equal("vatcS", ActionAnimations.Motion(acts, "VATCS1"), "animação de VATCS1");
+        Equal(11f, ActionAnimations.Length(acts, "VATCS1", m => m == "vatcS" ? 11f : null), "VATCS1 espera o fim da animação");
+        Equal(60f, ActionAnimations.Length(acts, "KATCS1", _ => 7f), "KATCS1 espera 60 quadros");
+        True(ActionAnimations.Loops(acts, "KATCS1") && !ActionAnimations.Loops(acts, "VATCS1"), "LP e OS");
+    });
+
+    Test("Jogo: IA do Numemon (#179, e_nume) tem MAP00 e MAP01 com 4 listas e faixas 36²/45²/150² e 22²/40²/150²", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[179], ms);
+        var data = ms.ToArray();
+        var notes = new List<string>();
+        var maps = IgbSequences.ReadAiMaps(IgbFile.Read(data), data, "e_nume", notes);
+        Equal("MAP00,MAP01", string.Join(",", maps.Select(m => m.Name).Order()), "mapas do Numemon");
+        var m0 = maps.First(m => m.Name == "MAP00");
+        var m1 = maps.First(m => m.Name == "MAP01");
+        Equal("1296,2025,22500", string.Join(",", m0.Values.Take(3)), "faixas do MAP00");
+        Equal("484,1600,22500", string.Join(",", m1.Values.Take(3)), "faixas do MAP01");
+        Equal("3,4,5,1", string.Join(",", m0.Lists.Select(l => l.Count)), "itens por lista no MAP00");
+        Equal("4,5,4,1", string.Join(",", m1.Lists.Select(l => l.Count)), "itens por lista no MAP01");
+        Equal("SQ_ATCK1", m1.Lists[0][0].Values[0], "MAP01 ataca de perto");
+        Equal(16, m1.Lists[0][^1].Values[3], "último limiar é 16");
+        Equal("NEAR", m0.Strings.FirstOrDefault(), "critério do alvo");
+    });
+
+    Test("Jogo: câmera da dng1 (#180) tem 18 volumes; #181 só muda o recuo; câmera sempre acima do alvo", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        IgbCameraSet Read(int i)
+        {
+            using var ms = new MemoryStream();
+            afs.CopyEntry(afs.Entries[i], ms);
+            var data = ms.ToArray();
+            return IgbCameraSet.Read(IgbFile.Read(data), data);
+        }
+        var near = Read(180);
+        var far = Read(181);
+        Equal(18, near.Boxes.Count, "volumes #180");
+        Equal(18, far.Boxes.Count, "volumes #181");
+        Equal(135f, near.Boxes[0].Distance, "recuo do volume 0");
+        Equal(90f, near.Boxes[1].Distance, "recuo do volume 1 (#180)");
+        Equal(120f, far.Boxes[2].Distance, "recuo do volume 2 (#181)");
+        for (int i = 0; i < 18; i++)
+        {
+            True(near.Boxes[i].Min.SequenceEqual(far.Boxes[i].Min) && near.Boxes[i].Max.SequenceEqual(far.Boxes[i].Max), $"caixa {i} difere");
+            True(near.Boxes[i].B.SequenceEqual(far.Boxes[i].B), $"B {i} difere");
+        }
+        static Matrix4x4 M(float[] m) => new(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15]);
+        var zones = new CameraZones(near.Boxes.Select(b => new CameraZone(b.Index, new Vector3(b.Min[0], b.Min[1], b.Min[2]),
+            new Vector3(b.Max[0], b.Max[1], b.Max[2]), M(b.A), M(b.B))), M(near.Common));
+        foreach (var z in zones.Zones)
+        {
+            var target = ((z.Min + z.Max) / 2) with { Y = z.Min.Y };
+            int sel = zones.Select(target);
+            True(sel == 0 || zones.Zones.First(x => x.Index == sel).Contains(target), $"volume {sel} escolhido não contém o centro de {z.Index}");
+            var (pos, look) = zones.Pose(z.Index, target);
+            True(pos.Y > look.Y, $"volume {z.Index}: câmera abaixo do alvo ({pos} olhando {look})");
+        }
     });
 }
 else Console.WriteLine("(sem pasta do jogo: só testes sintéticos; passe a pasta files\\ da cópia de trabalho para conferir os dados)");

@@ -1,0 +1,18 @@
+; Cliente da fatia vertical (Fase 3). Os recursos do jogo NÃO ficam aqui: são lidos em tempo de execução da pasta
+; de trabalho indicada por DW4_FATIA (padrão D:\dw4-work\fatia), gerada pelas ferramentas a partir do disco do usuário.
+
+config_version=5
+
+[application]
+
+config/name="DW4 - fatia vertical"
+run/main_scene="res://Fatia.tscn"
+config/features=PackedStringArray("4.7", "C#", "Forward Plus")
+
+[dotnet]
+
+project/assembly_name="DW4.Client"
+
+[physics]
+
+common/physics_ticks_per_second=60

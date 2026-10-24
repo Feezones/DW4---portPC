@@ -40,6 +40,14 @@ try
         "igb-tree" when args.Length is 3 or 4 => IgbTree(args[1], args[2], args.Length == 4 ? int.Parse(args[3], inv) : 6),
         "igb-gltf" when args.Length >= 4 => IgbGltf(args[1], args[2], args[3], args[4..]),
         "igb-colisao" when args.Length == 5 => IgbColisao(args[1], args[2], args[3], args[4]),
+        "igb-cena" when args.Length == 5 => IgbCena(args[1], args[2], args[3], args[4]),
+        "igb-seq" when args.Length is 4 or 5 => IgbSeq(args[1], args[2], args[3], args.Length == 5 ? args[4] : null),
+        "dtm-entradas" when args.Length is 2 or 3 => DtmEntradas(args[1], args.Length == 3 ? args[2] : null),
+        "dolphin-ram" when args.Length == 3 => DolphinRam(args[1], args[2]),
+        "ram-busca" when args.Length >= 4 => RamBusca(args[1], args[2], args[3], args[4..]),
+        "dolphin-gdb-teste" when args.Length == 2 => DolphinGdbTeste(args[1]),
+        "dolphin-gdb" when args.Length >= 4 => DolphinGdb(args[1], args[2], args[3..]),
+        "igb-camera" when args.Length == 4 => IgbCamera(args[1], args[2], args[3]),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
@@ -71,9 +79,16 @@ static int Usage()
           dw4 igb-anim     <arquivo.afs> [indice]   (decodifica as animações Enbaya; sem índice, resume o arquivo todo)
           dw4 igb-mem      <arquivo.afs> <indice> <slot> [hex|u8|i32|u32|f32|hist]   (conteúdo de um bloco de memória, ou de um igDataList)
           dw4 igb-tree     <arquivo.afs> <indice> [profundidade]   (grafo de cena com nomes de nós)
-          dw4 igb-gltf     <arquivo.afs> <indice> <pasta-de-trabalho> [--quat=as] [--trans=rest|anim] [--dxt=gc] [--todas-peles] [--anim=N]
+          dw4 igb-gltf     <arquivo.afs> <indice> <pasta-de-trabalho> [--quat=as] [--trans=rest|anim] [--dxt=gc] [--todas-peles] [--anim=N] [--ator=NOME]
                            (personagem com esqueleto, pele e animações em glTF, fora do repositório)
           dw4 igb-colisao  <arquivo.afs> <indice> <no-raiz> <pasta-de-trabalho>   (malha de colisão em glTF, nó "-colonly" para a Godot)
+          dw4 igb-cena     <arquivo.afs> <indice> <no-raiz|todas> <pasta-de-trabalho>   (cenário ou objeto estático em glTF com texturas)
+          dw4 igb-seq      <arquivo.afs> <indice> <pasta-de-trabalho> [--ator=NOME]   (sequências beModelCtrlData em JSON e texto)
+          dw4 dtm-entradas <gravacao.dtm> [saida.csv]   (linha do tempo das entradas de uma gravação do Dolphin)
+          dw4 dolphin-ram  <estado.sav> <saida.bin>   (MEM1 de 24 MiB de um save state do Dolphin, fora do repositório)
+          dw4 ram-busca    <a.bin> <b.bin> <quadros-entre-eles> [--y=40]   (contadores de quadro e posições candidatas)
+          dw4 dolphin-gdb  <porta> <pasta> <quadro>... [--contador=0x814541D8] [--amostra=ENDERECO,TAM]   (MEM1 nos quadros pedidos, via servidor GDB do Dolphin)
+          dw4 igb-camera   <arquivo.afs> <indice> <pasta-de-trabalho>   (volumes de câmera da fase em JSON, fora do repositório)
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
@@ -784,6 +799,7 @@ int IgbGltf(string path, string which, string outDir, string[] options)
         gcBlocks = options.Contains("--dxt=gc"), animTrans = options.Contains("--trans=anim"), allSkins = options.Contains("--todas-peles");
     int maxAnims = int.MaxValue;
     foreach (var o in options.Where(o => o.StartsWith("--anim=", StringComparison.Ordinal))) maxAnims = int.Parse(o[7..], inv);
+    string? actor = options.Where(o => o.StartsWith("--ator=", StringComparison.Ordinal)).Select(o => o[7..]).LastOrDefault();
     using var afs = AfsArchive.Open(path);
     if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
     var entry = afs.Entries[idx];
@@ -791,13 +807,13 @@ int IgbGltf(string path, string which, string outDir, string[] options)
     afs.CopyEntry(entry, ms);
     var data = ms.ToArray();
     var f = IgbFile.Read(data);
-    var ch = IgbCharacter.Read(f, data);
+    var ch = IgbCharacter.Read(f, data, actor);
     var report = new StringBuilder();
     report.AppendLine($"{path} #{idx} ({entry.Name}); opções: {string.Join(' ', options)}");
     foreach (var n in ch.Notes) report.AppendLine($"nota: {n}");
     if (ch.Bones.Count == 0) { Console.Write(report); Console.Error.WriteLine("sem esqueleto"); return 1; }
 
-    var dir = Path.Combine(root, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_gltf");
+    var dir = Path.Combine(root, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}{(actor == null ? "" : "_" + actor)}_gltf");
     Directory.CreateDirectory(dir);
     var g = new GltfBuilder();
 
@@ -1020,6 +1036,379 @@ int IgbColisao(string path, string which, string rootArg, string outDir)
     float minY = float.MaxValue, maxY = float.MinValue;
     for (int i = 1; i < pos.Count; i += 3) { minY = Math.Min(minY, pos[i]); maxY = Math.Max(maxY, pos[i]); }
     Console.WriteLine($"{parts.Count} geometrias, {pos.Count / 3} vértices, {tris.Count / 3} triângulos, y de {minY:0.##} a {maxY:0.##} -> {dir}");
+    return 0;
+}
+
+// Exporta as geometrias visuais de uma raiz de cena (ex.: "BG02" da dng1) como glTF estático com normais, UV e um
+// material por imagem. As imagens de formato 14 usam o layout de PC (confirmado na Fase 2).
+int IgbCena(string path, string which, string rootArg, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    bool allRoots = rootArg == "todas";
+    int rootIndex = allRoots ? -1 : int.Parse(rootArg, inv);
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    var scene = IgbScene.Read(IgbFile.Read(data), data);
+    var parts = scene.Parts.Where(p => (allRoots || p.SceneRoot == rootIndex) && p.Positions.Count > 0 && p.Triangles.Count > 0).ToList();
+    if (parts.Count == 0) { Console.Error.WriteLine($"nenhuma geometria na raiz {rootIndex}; raízes: {string.Join(", ", scene.Parts.Select(p => p.SceneRoot).Distinct())}"); return 1; }
+    var dir = Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_cena_{(allRoots ? "todas" : rootIndex.ToString(inv))}");
+    Directory.CreateDirectory(dir);
+    var g = new GltfBuilder();
+    var report = new StringBuilder();
+    var materialOfImage = new Dictionary<int, int>();
+    int Material(int image)
+    {
+        if (materialOfImage.TryGetValue(image, out int m)) return m;
+        string? uri = null;
+        bool alpha = false;
+        if (scene.Images.TryGetValue(image, out var img) && IgbScene.ToRgba(img) is { } rgba)
+        {
+            uri = $"img{image:D4}.png";
+            using var fs = File.Create(Path.Combine(dir, uri));
+            Png.WriteRgba(fs, img.Width, img.Height, rgba);
+            for (int i = 3; i < rgba.Length; i += 4) if (rgba[i] < 255) { alpha = true; break; }
+            report.AppendLine($"imagem #{image} \"{img.Name}\" {img.Width}x{img.Height} formato {img.PixelFormat}{(alpha ? ", com alfa" : "")}");
+        }
+        else report.AppendLine($"imagem #{image}: {(image < 0 ? "sem textura" : "não decodificada")}");
+        return materialOfImage[image] = g.AddMaterial(uri ?? "sem_textura", uri, alpha);
+    }
+    var prims = new JsonArray();
+    foreach (var part in parts)
+    {
+        int nv = part.Positions.Count;
+        var pos = new List<float>(); foreach (var (x, y, z) in part.Positions) pos.AddRange([x, y, z]);
+        var attrs = new JsonObject { ["POSITION"] = g.AddFloats(pos, 3, "VEC3", true, minMax: true) };
+        if (part.Normals.Count == nv)
+        {
+            var nrm = new List<float>(); foreach (var (x, y, z) in part.Normals) nrm.AddRange([x, y, z]);
+            attrs["NORMAL"] = g.AddFloats(nrm, 3, "VEC3", true);
+        }
+        if (part.TexCoords.Count == nv)
+        {
+            var uv = new List<float>(); foreach (var (u, v) in part.TexCoords) uv.AddRange([u, 1 - v]); // glTF: origem no topo
+            attrs["TEXCOORD_0"] = g.AddFloats(uv, 2, "VEC2", true);
+        }
+        prims.Add(new JsonObject { ["attributes"] = attrs, ["indices"] = g.AddIndices(part.Triangles), ["mode"] = 4, ["material"] = Material(part.ImageIndex) });
+    }
+    int mesh = g.AddMesh(new JsonObject { ["name"] = "cena", ["primitives"] = prims });
+    g.AddRootNode(g.AddNode(new JsonObject { ["name"] = "cena", ["mesh"] = mesh }));
+    g.Save(dir, "cena");
+    var byImage = parts.GroupBy(p => p.ImageIndex).OrderByDescending(x => x.Count()).Select(x => $"#{x.Key}: {x.Count()}");
+    report.AppendLine($"geometrias por imagem: {string.Join(", ", byImage)}");
+    File.WriteAllText(Path.Combine(dir, "relatorio.txt"), report.ToString());
+    Console.Write(report);
+    Console.WriteLine($"{parts.Count} geometrias, {parts.Sum(p => p.Positions.Count)} vértices, {parts.Sum(p => p.Triangles.Count) / 3} triângulos, {materialOfImage.Count} materiais -> {dir}");
+    return 0;
+}
+
+// Grava as sequências de controle de um ator (SQ_WAIT, SQ_ATCK1…) com os comandos em ordem, em JSON e em texto.
+int IgbSeq(string path, string which, string outDir, string? option)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    string? actor = option != null && option.StartsWith("--ator=", StringComparison.Ordinal) ? option[7..] : null;
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    var notes = new List<string>();
+    var seqs = IgbSequences.Read(IgbFile.Read(data), data, actor, notes);
+    foreach (var n in notes) Console.WriteLine($"nota: {n}");
+    if (seqs.Count == 0) { Console.Error.WriteLine("nenhuma sequência"); return 1; }
+    string Fmt(object v) => v switch
+    {
+        string s => $"\"{s}\"",
+        float x => x.ToString("0.####", inv),
+        float[] a => "(" + string.Join(", ", a.Select(x => x.ToString("0.####", inv))) + ")",
+        _ => Convert.ToString(v, inv) ?? "",
+    };
+    JsonNode? Node(object v) => v switch
+    {
+        string s => JsonValue.Create(s),
+        float x => JsonValue.Create(x),
+        int i => JsonValue.Create(i),
+        bool b => JsonValue.Create(b),
+        float[] a => new JsonArray(a.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray()),
+        _ => null,
+    };
+    notes.Clear();
+    var acts = IgbSequences.ReadActions(IgbFile.Read(data), data, actor, notes);
+    foreach (var n in notes) Console.WriteLine($"nota: {n}");
+    var text = new StringBuilder();
+    JsonObject Section(string title, Dictionary<string, List<IgbSeqCommand>> lists)
+    {
+        var obj = new JsonObject();
+        text.AppendLine($"=== {title} ===");
+        foreach (var (name, cmds) in lists.OrderBy(k => k.Key, StringComparer.Ordinal))
+        {
+            text.AppendLine($"{name} ({cmds.Count} comandos)");
+            var arr = new JsonArray();
+            foreach (var c in cmds)
+            {
+                text.AppendLine($"  #{c.Index,-6} {c.Kind,-10} {string.Join(" ", c.Values.Select(Fmt))}");
+                arr.Add(new JsonObject { ["k"] = c.Kind, ["v"] = new JsonArray(c.Values.Select(Node).ToArray()) });
+            }
+            obj[name] = arr;
+        }
+        return obj;
+    }
+    var root = new JsonObject { ["sequences"] = Section("sequências (beModelCtrlData)", seqs), ["actions"] = Section("ações (beAction2Data)", acts) };
+    notes.Clear();
+    var maps = IgbSequences.ReadAiMaps(IgbFile.Read(data), data, actor, notes);
+    foreach (var n in notes) Console.WriteLine($"nota: {n}");
+    if (maps.Count > 0)
+    {
+        text.AppendLine("=== mapas de IA (beModelCtrlAIMap) ===");
+        var arr = new JsonArray();
+        foreach (var m in maps)
+        {
+            text.AppendLine($"#{m.Index} {m.Name} {string.Join(" ", m.Values.Select(x => Fmt(x)))} {string.Join(" ", m.Strings.Select(x => Fmt(x)))}");
+            var lists = new JsonArray();
+            for (int i = 0; i < m.Lists.Count; i++)
+            {
+                text.AppendLine($"  lista {i}: " + string.Join(" | ", m.Lists[i].Select(c => $"#{c.Index} {string.Join(" ", c.Values.Select(Fmt))}")));
+                lists.Add(new JsonArray(m.Lists[i].Select(c => (JsonNode?)new JsonArray(c.Values.Select(Node).ToArray())).ToArray()));
+            }
+            arr.Add(new JsonObject
+            {
+                ["name"] = m.Name,
+                ["values"] = new JsonArray(m.Values.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray()),
+                ["strings"] = new JsonArray(m.Strings.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray()),
+                ["lists"] = lists,
+            });
+        }
+        root["aimaps"] = arr;
+    }
+    Directory.CreateDirectory(full);
+    var stem = $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}{(actor == null ? "" : "_" + actor)}_seq";
+    File.WriteAllText(Path.Combine(full, stem + ".json"), root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    File.WriteAllText(Path.Combine(full, stem + ".txt"), text.ToString());
+    Console.WriteLine($"{seqs.Count} sequências ({seqs.Values.Sum(c => c.Count)} comandos), {acts.Count} ações ({acts.Values.Sum(c => c.Count)} comandos), {maps.Count} mapas de IA -> {Path.Combine(full, stem)}.json/.txt");
+    return 0;
+}
+
+// Linha do tempo das entradas de uma gravação do Dolphin: trechos com o analógico/direcional parado ou na mesma direção
+// e cada botão apertado, com o quadro de vídeo (2 leituras por quadro nesta gravação, conferido no cabeçalho).
+int DtmEntradas(string path, string? csvPath)
+{
+    var dtm = DW4.Formats.Dolphin.DtmFile.Read(File.ReadAllBytes(path));
+    double perFrame = dtm.FrameCount > 0 ? (double)dtm.Inputs.Count / dtm.FrameCount : 1;
+    Console.WriteLine($"{dtm.GameId}: {dtm.FrameCount} quadros, {dtm.Inputs.Count} leituras ({perFrame:0.###} por quadro), save state: {dtm.FromSaveState}, atraso: {dtm.LagCount}");
+    int Frame(int i) => (int)(i / perFrame);
+    string Dir(DW4.Formats.Dolphin.GcPadInput p)
+    {
+        var (x, y) = p.Stick;
+        if (p.Has(DW4.Formats.Dolphin.GcPadInput.Up)) y = 1;
+        if (p.Has(DW4.Formats.Dolphin.GcPadInput.Down)) y = -1;
+        if (p.Has(DW4.Formats.Dolphin.GcPadInput.Left)) x = -1;
+        if (p.Has(DW4.Formats.Dolphin.GcPadInput.Right)) x = 1;
+        double mag = Math.Sqrt(x * x + y * y);
+        if (mag < 0.2) return "parado";
+        string[] names = ["L", "NE", "N", "NO", "O", "SO", "S", "SE"];
+        int sector = (int)Math.Round(Math.Atan2(y, x) / (Math.PI / 4) + 8) % 8;
+        return $"{names[sector]} {Math.Min(mag, 1):0.0}";
+    }
+    TextWriter? csv = null;
+    if (csvPath != null)
+    {
+        var full = Path.GetFullPath(csvPath);
+        if (InsideGitRepo(Path.GetDirectoryName(full)!)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+        csv = new StreamWriter(full);
+        csv.WriteLine("leitura,quadro,botoes,stick_x,stick_y,cstick_x,cstick_y,gatilho_l,gatilho_r");
+    }
+    string lastDir = "";
+    int dirStart = 0;
+    ushort lastButtons = 0;
+    for (int i = 0; i <= dtm.Inputs.Count; i++)
+    {
+        var p = i < dtm.Inputs.Count ? dtm.Inputs[i] : default;
+        string d = i < dtm.Inputs.Count ? Dir(p) : "fim";
+        if (d != lastDir)
+        {
+            if (i > 0) Console.WriteLine($"  quadros {Frame(dirStart),6}–{Frame(i) - 1,6} ({(Frame(i) - Frame(dirStart)) / 60.0,6:0.00} s) movimento {lastDir}");
+            lastDir = d;
+            dirStart = i;
+        }
+        if (i == dtm.Inputs.Count) break;
+        ushort pressed = (ushort)(p.Buttons & ~lastButtons & 0x0FFF);
+        if (pressed != 0) Console.WriteLine($"  quadro {Frame(i),6}: aperta {DW4.Formats.Dolphin.GcPadInput.Names(pressed)}");
+        ushort released = (ushort)(lastButtons & ~p.Buttons & 0x0FFF);
+        if (released != 0) Console.WriteLine($"  quadro {Frame(i),6}: solta {DW4.Formats.Dolphin.GcPadInput.Names(released)}");
+        lastButtons = p.Buttons;
+        csv?.WriteLine(string.Create(inv, $"{i},{Frame(i)},{p.Buttons:X4},{p.StickX},{p.StickY},{p.CStickX},{p.CStickY},{p.TriggerL},{p.TriggerR}"));
+    }
+    csv?.Dispose();
+    return 0;
+}
+
+// Extrai a MEM1 de um save state do Dolphin (para achar onde o jogo guarda posição, quadro etc.).
+int DolphinRam(string savPath, string outPath)
+{
+    var full = Path.GetFullPath(outPath);
+    if (InsideGitRepo(Path.GetDirectoryName(full)!)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    var file = File.ReadAllBytes(savPath);
+    var gameId = Encoding.ASCII.GetString(file, 0, 6);
+    var state = DW4.Formats.Dolphin.SaveState.Decompress(file);
+    int at = DW4.Formats.Dolphin.SaveState.FindMem1(state, gameId);
+    Console.WriteLine($"{gameId}: estado descomprimido {state.Length} B; MEM1 em 0x{at:X}");
+    if (at < 0) return 1;
+    File.WriteAllBytes(full, state.AsSpan(at, DW4.Formats.Dolphin.SaveState.Mem1Size).ToArray());
+    Console.WriteLine($"MEM1 -> {full}");
+    return 0;
+}
+
+// Compara duas MEM1 separadas por N quadros: (1) u32 que avançaram N, N/2 ou 2N (contadores de quadro); (2) trincas de
+// float (x, y, z) com y perto do chão dado e x, z dentro de ±1000 nas duas, mostrando quais mudaram (posições candidatas).
+int RamBusca(string aPath, string bPath, string framesArg, string[] options)
+{
+    var a = File.ReadAllBytes(aPath);
+    var b = File.ReadAllBytes(bPath);
+    long frames = long.Parse(framesArg, inv);
+    float floor = 40;
+    foreach (var o in options.Where(o => o.StartsWith("--y=", StringComparison.Ordinal))) floor = float.Parse(o[4..], inv);
+    int n = Math.Min(a.Length, b.Length);
+    Console.WriteLine($"contadores (u32, alinhados) com avanço ≈ {frames}, {frames / 2} ou {frames * 2} (±3):");
+    int shown = 0;
+    for (int i = 0; i + 4 <= n && shown < 60; i += 4)
+    {
+        long d = (long)BinaryPrimitives.ReadUInt32BigEndian(b.AsSpan(i)) - BinaryPrimitives.ReadUInt32BigEndian(a.AsSpan(i));
+        foreach (var k in new[] { frames, frames / 2, frames * 2 })
+            if (Math.Abs(d - k) <= 3) { Console.WriteLine($"  0x{0x80000000 + i:X8}: {BinaryPrimitives.ReadUInt32BigEndian(a.AsSpan(i))} -> {BinaryPrimitives.ReadUInt32BigEndian(b.AsSpan(i))} (Δ {d})"); shown++; break; }
+    }
+    static float F(byte[] m, int i) => BinaryPrimitives.ReadSingleBigEndian(m.AsSpan(i));
+    static bool Plausible(float x, float y, float z, float floor) =>
+        float.IsFinite(x) && float.IsFinite(z) && Math.Abs(y - floor) < 0.5f && Math.Abs(x) < 1000 && Math.Abs(z) < 1000 && (Math.Abs(x) > 0.01f || Math.Abs(z) > 0.01f);
+    Console.WriteLine($"trincas (x, y≈{floor}, z) plausíveis nas duas e que mudaram:");
+    shown = 0;
+    for (int i = 0; i + 12 <= n && shown < 200; i += 4)
+    {
+        float ax = F(a, i), ay = F(a, i + 4), az = F(a, i + 8), bx = F(b, i), by = F(b, i + 4), bz = F(b, i + 8);
+        if (!Plausible(ax, ay, az, floor) || !Plausible(bx, by, bz, floor)) continue;
+        if (Math.Abs(ax - bx) < 0.01f && Math.Abs(az - bz) < 0.01f) continue;
+        Console.WriteLine(string.Create(inv, $"  0x{0x80000000 + i:X8}: ({ax:0.###}, {ay:0.###}, {az:0.###}) -> ({bx:0.###}, {by:0.###}, {bz:0.###})"));
+        shown++;
+    }
+    return 0;
+}
+
+// Diagnóstico do servidor GDB do Dolphin: mostra as respostas brutas de leitura antes e depois de continuar e interromper.
+int DolphinGdbTeste(string portArg)
+{
+    using var gdb = DW4.Formats.Dolphin.GdbClient.Connect("127.0.0.1", int.Parse(portArg, inv), TimeSpan.FromMinutes(2));
+    string Show(string r) => r.Length > 80 ? r[..80] + "…" : r;
+    Console.WriteLine($"?            -> {Show(gdb.Query("?"))}");
+    Console.WriteLine($"qSupported   -> {Show(gdb.Query("qSupported"))}");
+    foreach (var (addr, len) in new (uint, int)[] { (0x80000000, 8), (0x00000000, 8), (0x814541D8, 4), (0x014541D8, 4) })
+        Console.WriteLine($"m{addr:x},{len:x} (parado)  -> \"{Show(gdb.ReadRaw(addr, len))}\"");
+    Console.WriteLine($"g            -> {Show(gdb.Query("g"))}");
+    gdb.Continue();
+    Thread.Sleep(500);
+    Console.WriteLine($"Ctrl-C       -> {Show(gdb.Interrupt())}");
+    for (int i = 0; i < 5; i++)
+    {
+        Console.WriteLine($"m80000000,8 (depois, tentativa {i}) -> \"{Show(gdb.ReadRaw(0x80000000, 8))}\"");
+        Console.WriteLine($"m814541d8,4 (depois, tentativa {i}) -> \"{Show(gdb.ReadRaw(0x814541D8, 4))}\"");
+        Thread.Sleep(100);
+    }
+    foreach (var st in gdb.Stray) Console.WriteLine($"byte inesperado: {st}");
+    try { gdb.Continue(); } catch (IOException) { }
+    return 0;
+}
+
+// Acompanha a reprodução de um filme no Dolphin pelo servidor GDB: para a cada ~100 ms, lê o contador de 30 Hz do jogo
+// (0x814541D8, achado comparando save states; quadro de vídeo ≈ 2 × contador + 6 nesta gravação) e grava a MEM1 inteira
+// quando o quadro passa de cada alvo. Com --amostra, grava também um trecho pequeno de memória em toda parada (CSV).
+int DolphinGdb(string portArg, string outDir, string[] rest)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    Directory.CreateDirectory(full);
+    uint counterAddr = 0x814541D8;
+    int runMs = 300, stallSeconds = 120;
+    var targets = new List<long>();
+    var samples = new List<(uint Addr, int Len)>();
+    foreach (var r in rest)
+    {
+        if (r.StartsWith("--contador=", StringComparison.Ordinal)) counterAddr = Convert.ToUInt32(r[11..], 16);
+        else if (r.StartsWith("--continuar=", StringComparison.Ordinal)) runMs = int.Parse(r[12..], inv);
+        else if (r.StartsWith("--parado=", StringComparison.Ordinal)) stallSeconds = int.Parse(r[9..], inv);
+        else if (r.StartsWith("--amostra=", StringComparison.Ordinal)) { var p = r[10..].Split(','); samples.Add((Convert.ToUInt32(p[0], 16), int.Parse(p[1], inv))); }
+        else targets.Add(long.Parse(r, inv));
+    }
+    targets.Sort();
+    using var gdb = DW4.Formats.Dolphin.GdbClient.Connect("127.0.0.1", int.Parse(portArg, inv), TimeSpan.FromMinutes(2));
+    Console.WriteLine($"conectado; parada inicial: {gdb.Query("?")}");
+    using var log = new StreamWriter(Path.Combine(full, "amostras.csv"));
+    log.WriteLine("hora_ms,pc,contador,quadro,pilha_hash" + string.Concat(samples.Select(s => $",0x{s.Addr:X8}")));
+    var clock = System.Diagnostics.Stopwatch.StartNew();
+    int ti = 0;
+    uint lastCounter = uint.MaxValue;
+    var lastChange = clock.Elapsed;
+    while (ti < targets.Count || samples.Count > 0)
+    {
+        gdb.Continue();
+        Thread.Sleep(runMs);
+        var stop = gdb.Interrupt();
+        // PC na resposta de parada ("T05" + "40:XXXXXXXX;…") e um resumo da pilha, para saber se a emulação anda.
+        int pcAt = stop.IndexOf("40:", StringComparison.Ordinal);
+        string pc = pcAt >= 0 && pcAt + 11 <= stop.Length ? stop.Substring(pcAt + 3, 8) : "?";
+        uint counter = BinaryPrimitives.ReadUInt32BigEndian(gdb.Read(counterAddr, 4));
+        long frame = 2L * counter + 6;
+        var stack = gdb.Read(0x80576000, 0x1000);
+        uint stackHash = 2166136261;
+        foreach (var bt in stack) stackHash = (stackHash ^ bt) * 16777619;
+        var line = new StringBuilder(string.Create(inv, $"{clock.ElapsedMilliseconds},{pc},{counter},{frame},{stackHash:X8}"));
+        foreach (var (addr, len) in samples) line.Append(',').Append(Convert.ToHexString(gdb.Read(addr, len)));
+        log.WriteLine(line);
+        if (counter != lastCounter) { lastCounter = counter; lastChange = clock.Elapsed; }
+        else if (clock.Elapsed - lastChange > TimeSpan.FromSeconds(stallSeconds)) { Console.WriteLine($"contador parado há {stallSeconds} s: fim do filme?"); break; }
+        while (ti < targets.Count && frame >= targets[ti])
+        {
+            var mem = new byte[DW4.Formats.Dolphin.SaveState.Mem1Size];
+            for (int at = 0; at < mem.Length; at += 0x1000) gdb.Read(0x80000000u + (uint)at, 0x1000).CopyTo(mem, at);
+            var file = Path.Combine(full, $"q{frame:D5}.bin");
+            File.WriteAllBytes(file, mem);
+            Console.WriteLine($"alvo {targets[ti]}: quadro {frame} (contador {counter}) -> {file}");
+            ti++;
+        }
+    }
+    try { gdb.Continue(); } catch (IOException) { }
+    foreach (var st in gdb.Stray) Console.WriteLine($"byte inesperado: {st}");
+    Console.WriteLine($"fim: {clock.Elapsed.TotalSeconds:0} s");
+    return 0;
+}
+
+// Grava os volumes de câmera de uma fase (beCameraBoxData) em JSON: caixa, recuo A e pivô/inclinação B por volume.
+int IgbCamera(string path, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    var cam = IgbCameraSet.Read(IgbFile.Read(data), data);
+    foreach (var n in cam.Notes) Console.WriteLine($"nota: {n}");
+    if (cam.Boxes.Count == 0) { Console.Error.WriteLine("nenhum volume de câmera"); return 1; }
+    JsonArray Arr(float[] v) => new(v.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray());
+    var boxes = new JsonArray();
+    foreach (var b in cam.Boxes)
+    {
+        boxes.Add(new JsonObject { ["index"] = b.Index, ["min"] = Arr(b.Min), ["max"] = Arr(b.Max), ["a"] = Arr(b.A), ["b"] = Arr(b.B) });
+        double tilt = Math.Acos(Math.Clamp(b.B[5], -1, 1)) * 180 / Math.PI;
+        Console.WriteLine(string.Create(inv, $"{b.Index,2}: ({b.Min[0]}, {b.Min[1]}, {b.Min[2]}) -> ({b.Max[0]}, {b.Max[1]}, {b.Max[2]})  d = {b.Distance}  inclinação {tilt:0.#}°  B.t = ({b.B[12]}, {b.B[13]}, {b.B[14]})"));
+    }
+    Directory.CreateDirectory(full);
+    var file = Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_camera.json");
+    var root = new JsonObject { ["source"] = $"{Path.GetFileName(path)} #{idx}", ["common"] = Arr(cam.Common), ["boxes"] = boxes };
+    File.WriteAllText(file, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    Console.WriteLine($"{cam.Boxes.Count} volumes -> {file}");
     return 0;
 }
 

@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DW4.Formats\DW4.Formats.csproj" />
+    <ProjectReference Include="..\..\src\DW4.Gameplay\DW4.Gameplay.csproj" />
   </ItemGroup>
 
 </Project>
