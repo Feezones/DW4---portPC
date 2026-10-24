@@ -236,6 +236,12 @@ public partial class Fatia : Node3D
         }
 
         var v = _move.Step(new NVector2(dir.X, dir.Z), dt);
+        // MOVE da sequência em andamento (recuo do dano: "Back"), na velocidade proporcional ao "Move" 0,7 (HIPÓTESE).
+        if (attacking && _runner!.Move is { } mv && mv.S(0) is "Back" or "Move")
+        {
+            float sign = mv.S(0) == "Back" ? -1 : 1;
+            v = new NVector2(MathF.Sin(_move.Facing), MathF.Cos(_move.Facing)) * (sign * _move.MaxSpeed * mv.F(1) / GuilmonMove);
+        }
         var vel = _player.Velocity;
         vel.X = v.X;
         vel.Z = v.Y;
@@ -341,7 +347,13 @@ public partial class Fatia : Node3D
             {
                 _hitThisAction.UnionWith(_runner.ActionHitBoxes);
                 _hits++;
-                if (_brain != null && _enemyRunner != null) { _brain.Force("SQ_SDMG"); _enemyStarted = false; }
+                if (_brain != null && _enemyRunner != null)
+                {
+                    _brain.Force("SQ_SDMG");
+                    _enemyStarted = false;
+                    var to = _player.GlobalPosition - e;
+                    _enemyYaw = MathF.Atan2(to.X, to.Z); // HIPÓTESE: vira para quem bateu
+                }
                 else if (_enemyAnim != null && _enemyHurt != null) _enemyAnim.Play(_enemyHurt, 0.05f);
                 break;
             }
@@ -418,6 +430,13 @@ public partial class Fatia : Node3D
             {
                 _enemyHitThisAction.UnionWith(_enemyRunner.ActionHitBoxes);
                 _hitsTaken++;
+                // Reação do Guilmon: SQ_SDMG do jogo (bloco do estilo da arma, ou "common"), virado para quem bateu (HIPÓTESE).
+                if (_runner != null && (_runner.Start("SQ_SDMG", WeaponStyle) || _runner.Start("SQ_SDMG", "common")))
+                {
+                    var to = _enemy!.GlobalPosition - g;
+                    _move.Stop();
+                    _move.Face(MathF.Atan2(to.X, to.Z));
+                }
                 break;
             }
         }
