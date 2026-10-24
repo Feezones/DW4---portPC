@@ -20,6 +20,7 @@ try
         "afs-csv" when args.Length == 3 => AfsCsv(args[1], args[2]),
         "afs-verify" when args.Length == 3 => AfsVerify(args[1], args[2]),
         "afs-extract" when args.Length >= 4 => AfsExtract(args[1], args[2], args[3..]),
+        "afs-classify" when args.Length == 2 => AfsClassify(args[1]),
         _ => Usage(),
     };
 }
@@ -37,6 +38,7 @@ static int Usage()
           dw4 afs-csv     <arquivo.afs> <saida.csv>
           dw4 afs-verify  <arquivo.afs> <inventario.csv>
           dw4 afs-extract <arquivo.afs> <pasta-de-trabalho> <indice> [indice...]   (máx. 20)
+          dw4 afs-classify <arquivo.afs>
         """);
     return 1;
 }
@@ -153,6 +155,29 @@ int AfsExtract(string path, string outDir, string[] indexArgs)
         using var check = File.OpenRead(file);
         var sha = Convert.ToHexString(SHA256.HashData(check));
         Console.WriteLine($"#{idx} {e.Name} {e.Size} bytes -> {file} sha256 {sha}");
+    }
+    return 0;
+}
+
+int AfsClassify(string path)
+{
+    using var afs = AfsArchive.Open(path);
+    var kinds = afs.Entries.Select(e => (e, kind: Classifier.Classify(afs.ReadHead(e, 0x1000)))).ToList();
+
+    Console.WriteLine($"{path}: {afs.Entries.Count} entradas");
+    foreach (var g in kinds.GroupBy(k => k.kind).OrderByDescending(g => g.Count()))
+        Console.WriteLine($"  {g.Key,-8} {g.Count(),5} entradas {g.Sum(k => (long)k.e.Size),12} bytes");
+
+    Console.WriteLine("por categoria:");
+    foreach (var g in kinds.GroupBy(k => k.e.Name ?? "(sem nome)").OrderBy(g => g.Key, StringComparer.Ordinal))
+        Console.WriteLine($"  {g.Key,-10} " + string.Join(", ", g.GroupBy(k => k.kind).Select(k => $"{k.Key} {k.Count()}")));
+
+    var unknown = kinds.Where(k => k.kind == ContentKind.Unknown).ToList();
+    if (unknown.Count > 0)
+    {
+        Console.WriteLine("não classificadas (até 30):");
+        foreach (var (e, _) in unknown.Take(30))
+            Console.WriteLine($"  #{e.Index} {e.Name} {e.Size} bytes  {ByteStats.Hex(afs.ReadHead(e, 16))}");
     }
     return 0;
 }

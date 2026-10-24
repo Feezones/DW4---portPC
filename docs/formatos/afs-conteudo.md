@@ -19,3 +19,21 @@ Observação: entropia de 3 a 5,5 sugere que a maioria dos dados não está comp
 - MPEG-PS: ffmpeg (já disponível na nuvem) para validar uma amostra.
 - ADX: vgmstream (código aberto) e ffmpeg (tem decodificador ADX). Validar uma amostra antes de qualquer conversão em lote.
 - Demais grupos: análise manual de estrutura (ImHex ou script próprio).
+
+## Amostras extraídas (Fase 1, 2026-10-24)
+
+Extraídas com `dw4 afs-extract` para `D:\dw4-work\amostras\` (fora do repositório). Lidas só por cabeçalho e strings.
+
+| Amostra | Tamanho | SHA-256 | Resultado | Confiança |
+|---|---|---|---|---|
+| area #0 AEU_ | 39.522.304 | 8DED12DA…7D99D88E29 | Sofdec (MPEG-PS): strings "SofdecStream", "Sofdec CRAFT/Console Ver.2.91", nome original `dmwxop6M.sfd`, 08/03/2005 | FATO (formato do contêiner) |
+| ndmw #0 soun | 4.401.152 | 7A531251…9F7B28F794 | ADX "(c)CRI", 2 canais, 48000 Hz, 3.908.784 amostras (~81,4 s), provável loop | FATO (assinatura); duração calculada do cabeçalho |
+| ndmw #64 soun | 36.864 | BA6DF3AE…E15DDF04 | ADX "(c)CRI", 1 canal, 24000 Hz, 60.094 amostras (~2,5 s) | FATO (assinatura) |
+| area #3 dng1 | 447.581 | AE4455F2…A4925369 | IGB do Alchemy | FATO |
+| area #696 Load | 130.288 | 2AE48038…ED951A94449 | IGB do Alchemy | FATO |
+| ndmw #79 BecT | 306.654 | 5C11136C…D23306B4C1 | IGB do Alchemy | FATO |
+| ndmw #80 dng1 | 3.270 | 6855B17F…D15161F6F6 | IGB do Alchemy | FATO |
+
+Evidência IGB: os bytes 0x20–0x3F são idênticos aos de `ndmw.igb` (`56 06 00 00 30 00 00 00 DA FA 00 00 06 00 00 F0|B0 15 00 00 00 01 00 00 …`) e o arquivo começa com a tabela de tipos `ig*MetaField`. O 1º u32, que parecia "assinatura" variada, é um campo de tamanho do cabeçalho IGB.
+
+Correção da Fase 0: os grupos "Load", "pequenos fixos" e "grandes de cenário" acima, antes DESCONHECIDOS, são IGB nas amostras testadas. A contagem total por tipo sai do comando `dw4 afs-classify`, que usa o u32 0xFADA em 0x28 como marca de IGB.
