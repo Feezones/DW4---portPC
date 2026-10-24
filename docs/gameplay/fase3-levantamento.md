@@ -154,3 +154,7 @@ Cada ACTION de uma sequência tem uma `beAction2Data` de mesmo nome, com a lista
 O nome da animação vem do MOTIONSET. O nome da ação não serve: "vatcS1" não existe, e KATCS1 e KATCS2 usam a mesma "katcS02". **FATO.** **HIPÓTESE:** o terceiro campo é a mistura de entrada em quadros; "OS" toca uma vez e "LP" repete; WAITCHECK "Motion" espera o fim da animação e "Frame" N espera N quadros.
 
 Na fatia (2026-10-24, modo `DW4_DEMO`): o combo VATCS1 → KATCS1 → KATCS2 roda, o primeiro acerto no Numemon cai no quadro 10 do vatcS (janela das caixas: 9 a 13) e o Numemon reage com `Sdmg01`. Nada disso foi comparado ainda com o jogo.
+
+### Animações de parado e andando por estilo
+
+O sufixo das animações é a letra do estilo (S = slash, G = gun…). A fatia usava `waitG`/`runG`, que são as de arma de fogo, e por isso o Guilmon andava de braços erguidos (notado pelo usuário em 2026-10-24). Agora a escolha vem dos dados: SQ_WAIT e SQ_WALK → bloco do estilo → primeira ACTION → MOTIONSET. **HIPÓTESE:** essas sequências também são divididas por LABEL de estilo, como SQ_ATCK1.

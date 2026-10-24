@@ -49,6 +49,24 @@ public static class ActionAnimations
     public static string? Motion(IReadOnlyDictionary<string, List<SeqCommand>> actions, string action) =>
         actions.TryGetValue(action, out var cmds) ? cmds.FirstOrDefault(c => c.Kind == "MOTIONSET")?.S(0) : null;
 
+    /// <summary>
+    /// Primeira ACTION do bloco do estilo numa sequência (ex.: SQ_WAIT, bloco "slash" → "WAITS1"), ou da sequência
+    /// inteira quando ela não tem LABEL. Serve para escolher as animações de parado e andando conforme a arma.
+    /// </summary>
+    public static string? FirstAction(IReadOnlyDictionary<string, List<SeqCommand>> sequences, string sequence, string? style)
+    {
+        if (!sequences.TryGetValue(sequence, out var cmds)) return null;
+        int start = 0;
+        if (style != null && cmds.Any(c => c.Kind == "LABEL"))
+        {
+            start = cmds.FindIndex(c => c.Kind == "LABEL" && c.S(0) == style) + 1;
+            if (start == 0) return null;
+        }
+        for (int i = start; i < cmds.Count && cmds[i].Kind != "LABEL"; i++)
+            if (cmds[i].Kind == "ACTION") return cmds[i].S(0);
+        return null;
+    }
+
     /// <summary>Quadros de mistura de entrada (MOTIONSET Float@4: 3, 6, 8…; HIPÓTESE).</summary>
     public static float Blend(IReadOnlyDictionary<string, List<SeqCommand>> actions, string action) =>
         actions.TryGetValue(action, out var cmds) && cmds.FirstOrDefault(c => c.Kind == "MOTIONSET") is { } m ? m.F(2) : 0;

@@ -35,4 +35,7 @@ public sealed class PadMovement
     }
 
     public void Stop() => Velocity = Vector2.Zero;
+
+    /// <summary>Vira o personagem para um ângulo em torno de Y (0 = +Z), sem mexer na velocidade.</summary>
+    public void Face(float angle) => Facing = angle;
 }

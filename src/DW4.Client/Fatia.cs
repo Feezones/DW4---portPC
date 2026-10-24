@@ -74,12 +74,6 @@ public partial class Fatia : Node3D
             _anim = FindAll<AnimationPlayer>(_model).FirstOrDefault();
             if (_anim != null)
             {
-                var names = _anim.GetAnimationList();
-                _animWait = Pick(names, "waitG", "wait");
-                _animRun = Pick(names, "runG", "run");
-                foreach (var n in new[] { _animWait, _animRun })
-                    if (n != null) _anim.GetAnimation(n).LoopMode = Animation.LoopModeEnum.Linear;
-                if (_animWait != null) _anim.Play(_animWait);
             }
             var seqFile = System.IO.Directory.Exists(System.IO.Path.Combine(_dir, "guilmon"))
                 ? System.IO.Directory.EnumerateFiles(System.IO.Path.Combine(_dir, "guilmon"), "*_seq.json", System.IO.SearchOption.AllDirectories).FirstOrDefault() : null;
@@ -89,7 +83,21 @@ public partial class Fatia : Node3D
                 var json = System.IO.File.ReadAllText(seqFile);
                 _actions = SeqCommand.LoadActions(json);
                 if (_actions.Count == 0) _problems.Add("o *_seq.json não tem ações: regere com o igb-seq atual");
-                _runner = new SequenceRunner(SeqCommand.LoadAll(json), AnimFrames);
+                var sequences = SeqCommand.LoadAll(json);
+                _runner = new SequenceRunner(sequences, AnimFrames);
+                // Parado e andando conforme o estilo da arma: SQ_WAIT / SQ_WALK → primeira ACTION do bloco → MOTIONSET.
+                // (Antes era "waitG"/"runG": o G é o estilo gun, por isso os braços erguidos.)
+                if (ActionAnimations.FirstAction(sequences, "SQ_WAIT", WeaponStyle) is { } wa) _animWait = AnimName(wa);
+                if (ActionAnimations.FirstAction(sequences, "SQ_WALK", WeaponStyle) is { } ra) _animRun = AnimName(ra);
+            }
+            if (_anim != null)
+            {
+                var names = _anim.GetAnimationList();
+                _animWait ??= Pick(names, "waitS", "wait");
+                _animRun ??= Pick(names, "runS", "run");
+                foreach (var n in new[] { _animWait, _animRun })
+                    if (n != null) _anim.GetAnimation(n).LoopMode = Animation.LoopModeEnum.Linear;
+                if (_animWait != null) _anim.Play(_animWait);
             }
             var skeleton = FindAll<Skeleton3D>(_model).FirstOrDefault();
             if (Load("arma", "cena.gltf") is { } weapon && skeleton != null)
@@ -169,7 +177,16 @@ public partial class Fatia : Node3D
         bool attackPressed = attackDown && !_attackHeld;
         _attackHeld = attackDown;
         bool attacking = _runner?.Running == true;
-        if (_runner != null && !attacking && attackPressed) attacking = _runner.Start("SQ_ATCK1", WeaponStyle);
+        if (_runner != null && !attacking && attackPressed)
+        {
+            attacking = _runner.Start("SQ_ATCK1", WeaponStyle);
+            if (attacking && !_demo && !Input.IsJoyButtonPressed(0, JoyButton.X) && MouseGround() is { } aim)
+            {
+                // DECISÃO DO PORT PARA PC (não é do original): o golpe sai na direção do cursor do mouse.
+                var to = aim - _player.GlobalPosition;
+                if (to.X * to.X + to.Z * to.Z > 0.01f) _move.Face(MathF.Atan2(to.X, to.Z));
+            }
+        }
         else if (attacking) _runner!.Tick(dt, attackPressed);
         if (attacking) { dir = Vector3.Zero; _move.Stop(); }
         if (_demo && _tick < 30 && _enemy != null)
@@ -234,6 +251,17 @@ public partial class Fatia : Node3D
             $"ataque [J, clique ou X]: {(_runner?.Running == true ? $"{_runner.Action} → {(_runner.Action == null ? "-" : AnimName(_runner.Action) ?? "sem animação")} quadro {_runner.ActionFrame:0}/{_runner.ActionLength:0}" : "-")}  acertos no Numemon: {_hits}  [F2 caixas]\n" +
             "movimento, gravidade e ponto inicial PROVISÓRIOS (não medidos no jogo)" +
             (_problems.Count > 0 ? "\n" + string.Join("\n", _problems) : "");
+    }
+
+    // Ponto do chão (na altura do personagem) sob o cursor do mouse.
+    Vector3? MouseGround()
+    {
+        var mouse = GetViewport().GetMousePosition();
+        var origin = _camera.ProjectRayOrigin(mouse);
+        var normal = _camera.ProjectRayNormal(mouse);
+        if (Math.Abs(normal.Y) < 1e-4f) return null;
+        float t = (_player.GlobalPosition.Y - origin.Y) / normal.Y;
+        return t > 0 ? origin + normal * t : null;
     }
 
     // Ação do jogo ("VATCS1") → MOTIONSET da beAction2Data de mesmo nome → animação do glTF.
