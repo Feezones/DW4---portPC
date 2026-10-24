@@ -4,6 +4,7 @@ using System.Text;
 using DW4.Formats.Afs;
 using DW4.Formats.Analysis;
 using DW4.Formats.Igb;
+using DW4.Formats.Lua;
 using System.Buffers.Binary;
 
 // Ferramenta de linha de comando da Fase 1. Só lê os contêineres; a única escrita é afs-extract,
@@ -29,6 +30,7 @@ try
         "igb-check" when args.Length == 2 => IgbCheck(args[1]),
         "igb-dump" when args.Length is 3 or 4 => IgbDump(args[1], args[2], args.Length == 4 ? args[3] : null),
         "igb-lua" when args.Length == 2 => IgbLua(args[1]),
+        "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
         _ => Usage(),
     };
 }
@@ -53,6 +55,7 @@ static int Usage()
           dw4 igb-check    <arquivo.afs | arquivo.igb>
           dw4 igb-dump     <arquivo.afs> <indice> [classe]   (ou <arquivo.igb> - [classe])
           dw4 igb-lua      <arquivo.afs>
+          dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
         """);
     return 1;
 }
@@ -511,6 +514,105 @@ int IgbLua(string path)
     Console.WriteLine($"strings em objetos beLua* ({names.Count}, até 60):");
     foreach (var n in names.Take(60)) Console.WriteLine($"  {n}");
     return 0;
+}
+
+// Lê todos os chunks Lua 4.0 referenciados por beLuaDataObject, valida a estrutura e resume o uso de nomes globais.
+// Com pasta de trabalho, grava uma listagem (estilo luac -l) por chunk distinto; nunca dentro de um repositório.
+int LuaScan(string path, string? outDir)
+{
+    string? full = null;
+    if (outDir != null)
+    {
+        full = Path.GetFullPath(outDir);
+        if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+        Directory.CreateDirectory(full);
+    }
+
+    int chunks = 0, failed = 0, functions = 0, instructions = 0, written = 0;
+    var globals = new Dictionary<string, int>(StringComparer.Ordinal);
+    var methods = new Dictionary<string, int>(StringComparer.Ordinal);
+    var opcodes = new int[Lua40Chunk.OpNames.Length + 1];
+    var failures = new List<string>();
+    var seenHashes = new HashSet<string>();
+
+    foreach (var (id, _, data) in IgbSources(path))
+    {
+        IgbFile f;
+        try { f = IgbFile.Read(data); }
+        catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentOutOfRangeException) { continue; }
+
+        // nomes: beLuaData (String = nome do script, ObjectRef = beLuaDataObject)
+        var namesByTarget = new Dictionary<int, List<string>>();
+        foreach (var o in f.Slots.OfType<IgbObject>().Where(o => o.TypeName == "beLuaData"))
+        {
+            var nm = o.Fields.FirstOrDefault(v => v.Text != null)?.Text ?? "?";
+            var rf = o.Fields.FirstOrDefault(v => v.Desc.ShortName == "ObjectRef");
+            if (rf == null) continue;
+            int t = rf.AsInt32(f.Header.LittleEndian);
+            if (!namesByTarget.TryGetValue(t, out var list)) namesByTarget[t] = list = [];
+            list.Add(nm);
+        }
+
+        foreach (var o in f.Slots.OfType<IgbObject>().Where(o => o.TypeName == "beLuaDataObject"))
+        {
+            foreach (var v in o.Fields.Where(v => v.Desc.ShortName == "MemoryRef"))
+            {
+                int r = v.AsInt32(f.Header.LittleEndian);
+                if (r < 0 || r >= f.Slots.Count || f.Slots[r] is not IgbMemoryBlock mb || mb.Size == 0) continue;
+                var mem = MemoryOf(data, mb);
+                if (!Lua40Chunk.LooksLikeChunk(mem)) continue;
+                chunks++;
+                Lua40Function main;
+                try { main = Lua40Chunk.Read(mem); }
+                catch (InvalidDataException ex)
+                {
+                    failed++;
+                    if (failures.Count < 20) failures.Add($"{id} #{o.Index}: {ex.Message}");
+                    continue;
+                }
+                foreach (var fn in Lua40Chunk.All(main))
+                {
+                    functions++;
+                    foreach (var ins in fn.Code)
+                    {
+                        instructions++;
+                        int op = Lua40Chunk.Op(ins);
+                        opcodes[Math.Min(op, opcodes.Length - 1)]++;
+                        int u = Lua40Chunk.ArgU(ins);
+                        if ((op == 12 || op == 19) && u < fn.Strings.Count && fn.Strings[u] is { } g)
+                            globals[g] = globals.GetValueOrDefault(g) + 1;
+                        if ((op == 14 || op == 16) && u < fn.Strings.Count && fn.Strings[u] is { } m)
+                            methods[m] = methods.GetValueOrDefault(m) + 1;
+                    }
+                }
+                if (full != null)
+                {
+                    var hash = Convert.ToHexString(SHA256.HashData(mem));
+                    if (!seenHashes.Add(hash)) continue;
+                    var names = namesByTarget.GetValueOrDefault(o.Index) ?? ["sem_nome"];
+                    var safe = string.Concat(names[0].Select(c => char.IsLetterOrDigit(c) || c is '_' or '.' ? c : '_'));
+                    var file = Path.Combine(full, $"{safe}.{hash[..8]}.lst");
+                    using var w = new StreamWriter(file, false, new UTF8Encoding(false));
+                    w.WriteLine($"-- origem: {path} {id}, objeto #{o.Index}, bloco #{r} ({mb.Size} B), sha256 {hash}");
+                    w.WriteLine($"-- nomes: {string.Join(", ", names)}");
+                    Lua40Chunk.List(main, w);
+                    written++;
+                }
+            }
+        }
+    }
+
+    Console.WriteLine($"{chunks} chunks Lua 4.0: {chunks - failed} lidos sem erro, {failed} com erro; {functions} funções, {instructions} instruções");
+    foreach (var fl in failures) Console.WriteLine($"  erro {fl}");
+    if (full != null) Console.WriteLine($"{written} listagens distintas gravadas em {full}");
+    Console.WriteLine("opcodes:");
+    Console.WriteLine("  " + string.Join(", ", Enumerable.Range(0, opcodes.Length).Where(i => opcodes[i] > 0)
+        .Select(i => $"{(i < Lua40Chunk.OpNames.Length ? Lua40Chunk.OpNames[i] : "inválido")} {opcodes[i]}")));
+    Console.WriteLine($"globais lidas/escritas ({globals.Count} distintas, até 150 mais usadas):");
+    foreach (var (k, n) in globals.OrderByDescending(g => g.Value).Take(150)) Console.WriteLine($"  {n,6}  {k}");
+    Console.WriteLine($"campos/métodos acessados ({methods.Count} distintos, até 60):");
+    foreach (var (k, n) in methods.OrderByDescending(g => g.Value).Take(60)) Console.WriteLine($"  {n,6}  {k}");
+    return failed == 0 ? 0 : 3;
 }
 
 static bool InsideGitRepo(string dir)
