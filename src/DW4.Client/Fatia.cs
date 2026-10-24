@@ -91,7 +91,7 @@ public partial class Fatia : Node3D
                 // SQ_WALK (bloco slash) → RUNNS1, cujos MOTIONSET são "waitS" e depois "runS": o andar é o último.
                 // HIPÓTESE: o primeiro é a transição de parado para andando.
                 _animRun = ActionAnimations.BlockActions(sequences, "SQ_WALK", WeaponStyle)
-                    .SelectMany(a => ActionAnimations.Motions(_actions, a)).LastOrDefault() is { } rm && _anim!.HasAnimation(rm) ? rm : null;
+                    .SelectMany(a => ActionAnimations.Motions(_actions, a)).LastOrDefault() is { } rm && _anim != null && _anim.HasAnimation(rm) ? rm : null;
             }
             if (_anim != null)
             {
