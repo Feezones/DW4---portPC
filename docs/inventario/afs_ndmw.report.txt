@@ -1,0 +1,283 @@
+﻿arquivo: D:\dw4-work\extracted\files\ndmw.afs  tamanho: 692326400
+magic: 41 46 53 00  N: 973  fim da tabela: 0x1E70
+offsets estritamente crescentes: True
+alinhados a 0x800: 973 / 973 ; alinhados a 0x20: 973 / 973
+offset+tamanho > tamanho do arquivo: 0
+sobreposicoes com a entrada anterior: 0
+entradas com tamanho 0: 0
+lacunas entre entradas: min 0 max 2042 soma 905680
+primeira entrada: offset 0x2000; ultima termina em 0x294350D2
+par extra em 0x1E70: offset 0x29435800 tamanho 46704 (N*0x30 = 46704)
+  [0] 'soun'  data/hora 2004 1 26 18 14 12  u32 973
+  [1] 'soun'  data/hora 2004 5 1 16 42 50  u32 8192
+  [2] 'soun'  data/hora 2004 5 1 16 18 4  u32 4401152
+  [3] 'soun'  data/hora 2004 5 1 19 18 6  u32 4409344
+  [4] 'soun'  data/hora 2004 1 9 16 34 46  u32 4401152
+  [5] 'soun'  data/hora 2004 6 23 14 26 0  u32 8810496
+  [6] 'soun'  data/hora 2004 1 9 16 34 0  u32 4401152
+  [7] 'soun'  data/hora 2004 1 9 16 32 48  u32 13211648
+  [8] 'soun'  data/hora 2004 10 1 3 48 4  u32 4364288
+  [9] 'soun'  data/hora 2004 1 9 16 30 36  u32 17575936
+  [10] 'soun'  data/hora 2004 1 9 16 30 48  u32 3352576
+  [11] 'soun'  data/hora 2004 4 6 23 2 14  u32 20928512
+  [12] 'soun'  data/hora 2004 5 26 14 46 34  u32 1078942
+  [13] 'soun'  data/hora 2004 4 8 12 24 40  u32 22007808
+  [14] 'soun'  data/hora 2004 1 9 20 0 58  u32 5187584
+  [15] 'soun'  data/hora 2004 5 30 1 44 48  u32 27195392
+  [16] 'soun'  data/hora 2004 5 25 22 6 38  u32 5187584
+  [17] 'soun'  data/hora 2004 1 13 21 8 50  u32 32382976
+  [18] 'soun'  data/hora 2004 5 25 22 58 50  u32 695362
+  [19] 'soun'  data/hora 2004 8 25 13 38 8  u32 33079296
+nomes ASCII imprimiveis validos: 973 / 973
+--- por assinatura (4 bytes) ---
+30 02 00 00 '0...': 108 entradas, 2040608 bytes, entropia 3.02-3.71, ex: dng1, dng1, dng1
+90 00 00 00 '....': 98 entradas, 320490 bytes, entropia 4.18-4.19, ex: dng1, dng1, dng1
+80 00 00 24 '...$': 26 entradas, 18018572 bytes, entropia 6.51-7.52, ex: soun, soun, soun
+58 03 00 00 'X...': 24 entradas, 593517 bytes, entropia 3.50-3.62, ex: dng2, dng2, dng2
+E8 01 00 00 '....': 22 entradas, 1646758 bytes, entropia 5.72-7.14, ex: stag, stag, stag
+98 03 00 00 '....': 21 entradas, 421739 bytes, entropia 3.48-3.62, ex: dng1, dng1, dng1
+38 05 00 00 '8...': 18 entradas, 688334 bytes, entropia 3.41-3.56, ex: dng3, dng3, dng3
+E8 02 00 00 '....': 17 entradas, 369679 bytes, entropia 3.04-4.03, ex: dng1, dng1, dng1
+AC 05 00 00 '....': 16 entradas, 401996 bytes, entropia 5.19-5.97, ex: _com, _com, _com
+0C 04 00 00 '....': 16 entradas, 6486808 bytes, entropia 5.95-6.48, ex: dng1, dng1, dng2
+A4 03 00 00 '....': 15 entradas, 257871 bytes, entropia 5.22-6.34, ex: _com, _com, _com
+98 05 00 00 '....': 15 entradas, 618681 bytes, entropia 3.43-3.55, ex: dng3, dng3, dng3
+58 04 00 00 'X...': 15 entradas, 414885 bytes, entropia 3.47-3.52, ex: dng1, dng1, dng1
+D8 04 00 00 '....': 15 entradas, 786723 bytes, entropia 3.27-3.52, ex: dng3, dng3, dng3
+80 00 07 FC '....': 14 entradas, 57174016 bytes, entropia 6.92-7.23, ex: soun, soun, soun
+88 01 00 00 '....': 14 entradas, 482550 bytes, entropia 4.76-6.87, ex: stag, stag, stag
+F8 02 00 00 '....': 12 entradas, 190374 bytes, entropia 3.45-3.68, ex: dngq, dngq, dngq
+78 03 00 00 'x...': 12 entradas, 206376 bytes, entropia 3.50-3.62, ex: dng1, dng1, dng1
+C8 01 00 00 '....': 12 entradas, 715272 bytes, entropia 5.91-7.30, ex: stag, stag, stag
+78 02 00 00 'x...': 12 entradas, 131099 bytes, entropia 3.59-3.62, ex: stag, stag, stag
+24 04 00 00 '$...': 11 entradas, 218711 bytes, entropia 5.13-6.01, ex: _com, _com, _com
+6C 03 00 00 'l...': 10 entradas, 2567634 bytes, entropia 6.26-6.82, ex: dng1, dng4, stag
+B8 03 00 00 '....': 10 entradas, 176502 bytes, entropia 3.54-5.72, ex: dngq, dngq, dngq
+D8 08 00 00 '....': 10 entradas, 1932714 bytes, entropia 2.88-6.35, ex: _com, _com, _com
+2C 04 00 00 ',...': 10 entradas, 4278886 bytes, entropia 6.13-6.43, ex: dng1, dng1, dng2
+98 04 00 00 '....': 9 entradas, 336909 bytes, entropia 3.47-3.57, ex: dng2, dng2, dng2
+B8 04 00 00 '....': 9 entradas, 415707 bytes, entropia 3.44-3.51, ex: dng4, dng4, dng4
+D8 03 00 00 '....': 9 entradas, 198390 bytes, entropia 3.46-3.51, ex: dng1, dng1, dng1
+A8 01 00 00 '....': 8 entradas, 312928 bytes, entropia 5.64-6.23, ex: stag, stag, stag
+4C 04 00 00 'L...': 7 entradas, 3580970 bytes, entropia 6.16-6.36, ex: dng2, dng2, dng3
+4C 03 00 00 'L...': 6 entradas, 1619908 bytes, entropia 6.44-6.62, ex: dng3, stag, stag
+18 04 00 00 '....': 6 entradas, 199008 bytes, entropia 3.42-3.53, ex: dng2, dng2, dng2
+F8 03 00 00 '....': 6 entradas, 171444 bytes, entropia 3.49-3.59, ex: dng1, dng1, dng1
+38 04 00 00 '8...': 6 entradas, 146196 bytes, entropia 3.43-3.48, ex: dng1, dng1, dng1
+CC 03 00 00 '....': 6 entradas, 2336770 bytes, entropia 6.11-6.48, ex: dng3, dng3, dngq
+18 05 00 00 '....': 6 entradas, 285102 bytes, entropia 3.48-3.56, ex: dng1, dng1, dng1
+08 02 00 00 '....': 6 entradas, 536290 bytes, entropia 6.74-7.22, ex: stag, stag, stag
+58 02 00 00 'X...': 6 entradas, 70491 bytes, entropia 3.61-3.68, ex: dngq, dngq, dngq
+C4 01 00 00 '....': 6 entradas, 120087 bytes, entropia 3.34-3.83, ex: stag, stag, stag
+F8 08 00 00 '....': 6 entradas, 999070 bytes, entropia 3.39-5.01, ex: _com, _com, _com
+98 02 00 00 '....': 6 entradas, 104757 bytes, entropia 3.40-3.65, ex: dngq, dngq, dngq
+C8 03 00 00 '....': 5 entradas, 146435 bytes, entropia 4.06-4.29, ex: dng1, dng2, dng3
+84 0F 00 00 '....': 5 entradas, 1631328 bytes, entropia 3.10-3.34, ex: stag, _com, _com
+A4 0F 00 00 '....': 5 entradas, 1616813 bytes, entropia 3.01-3.12, ex: _com, _com, _com
+8C 03 00 00 '....': 5 entradas, 1853698 bytes, entropia 6.19-6.60, ex: dng2, dng2, stag
+EC 03 00 00 '....': 5 entradas, 1611210 bytes, entropia 5.90-6.50, ex: dng1, dng3, dngq
+AC 03 00 00 '....': 5 entradas, 1769974 bytes, entropia 6.35-6.50, ex: dng3, dng4, stag
+EC 04 00 00 '....': 4 entradas, 4612294 bytes, entropia 5.73-5.92, ex: dng4, dngq, dngq
+2C 03 00 00 ',...': 4 entradas, 376510 bytes, entropia 6.56-6.97, ex: dngq, dngq, stag
+8C 06 00 00 '....': 4 entradas, 143209 bytes, entropia 5.41-5.89, ex: _com, _com, _com
+0C 06 00 00 '....': 4 entradas, 134553 bytes, entropia 5.28-5.97, ex: _com, _com, _com
+A8 03 00 00 '....': 4 entradas, 147224 bytes, entropia 2.87-4.16, ex: dng3, dngq, dngq
+64 0F 00 00 'd...': 4 entradas, 1288820 bytes, entropia 3.05-3.12, ex: _com, _com, _com
+38 16 00 00 '8...': 4 entradas, 1685880 bytes, entropia 3.38-3.42, ex: _com, _com, _com
+38 17 00 00 '8...': 4 entradas, 2339694 bytes, entropia 3.35-3.42, ex: _com, _com, _com
+18 16 00 00 '....': 4 entradas, 1691526 bytes, entropia 3.41-3.43, ex: _com, _com, _com
+8C 04 00 00 '....': 4 entradas, 2677626 bytes, entropia 6.10-6.26, ex: dng4, dng4, dngq
+8C 05 00 00 '....': 4 entradas, 91973 bytes, entropia 5.17-5.53, ex: _com, _com, _com
+F8 01 00 00 '....': 3 entradas, 22560 bytes, entropia 3.76-3.76, ex: stag, stag, stag
+98 17 00 00 '....': 3 entradas, 1797377 bytes, entropia 3.40-3.44, ex: _com, _com, _com
+B8 02 00 00 '....': 3 entradas, 106908 bytes, entropia 3.44-3.44, ex: dngq, dngq, dngq
+B8 06 00 00 '....': 3 entradas, 185766 bytes, entropia 3.55-3.56, ex: stag, stag, stag
+A4 01 00 00 '....': 3 entradas, 14676 bytes, entropia 3.95-3.95, ex: stag, stag, stag
+18 17 00 00 '....': 3 entradas, 1639345 bytes, entropia 3.37-3.43, ex: _com, _com, _com
+98 06 00 00 '....': 3 entradas, 238680 bytes, entropia 3.39-3.39, ex: stag, stag, stag
+44 0F 00 00 'D...': 3 entradas, 788641 bytes, entropia 3.02-3.04, ex: _com, _com, _com
+D8 05 00 00 '....': 3 entradas, 141429 bytes, entropia 3.48-3.48, ex: dng4, dng4, dng4
+7C 01 00 00 '|...': 3 entradas, 405994 bytes, entropia 4.51-7.07, ex: BecT, stag, stag
+68 03 00 00 'h...': 3 entradas, 78779 bytes, entropia 3.48-3.56, ex: dngq, dngq, dngq
+CC 04 00 00 '....': 3 entradas, 2385578 bytes, entropia 6.14-6.15, ex: dngq, dngq, dngq
+18 02 00 00 '....': 3 entradas, 25080 bytes, entropia 3.67-3.67, ex: stag, stag, stag
+04 02 00 00 '....': 3 entradas, 59055 bytes, entropia 3.62-3.62, ex: stag, stag, stag
+AC 04 00 00 '....': 3 entradas, 2033526 bytes, entropia 5.64-6.14, ex: dng1, stag, stag
+78 05 00 00 'x...': 3 entradas, 122295 bytes, entropia 3.31-3.31, ex: dng3, dng3, dng3
+F0 03 00 00 '....': 2 entradas, 111384 bytes, entropia 4.51-4.63, ex: dngq, dngq
+10 04 00 00 '....': 2 entradas, 56262 bytes, entropia 4.20-4.24, ex: dngq, dngq
+30 85 00 00 '0...': 2 entradas, 7017536 bytes, entropia 3.62-3.74, ex: dng3, dngq
+A8 0C 00 00 '....': 2 entradas, 330241 bytes, entropia 3.14-3.32, ex: stag, stag
+68 01 00 00 'h...': 2 entradas, 41774 bytes, entropia 5.98-6.18, ex: stag, stag
+6C 04 00 00 'l...': 2 entradas, 1108880 bytes, entropia 6.13-6.17, ex: dng3, dngq
+08 04 00 00 '....': 2 entradas, 87700 bytes, entropia 3.71-3.73, ex: dng1, dng2
+98 16 00 00 '....': 2 entradas, 830916 bytes, entropia 3.42-3.46, ex: _com, _com
+2C 06 00 00 ',...': 2 entradas, 58824 bytes, entropia 5.35-5.81, ex: _com, _com
+78 17 00 00 'x...': 2 entradas, 1181358 bytes, entropia 3.45-3.48, ex: _com, _com
+58 17 00 00 'X...': 2 entradas, 1171810 bytes, entropia 3.34-3.46, ex: _com, _com
+B8 16 00 00 '....': 2 entradas, 841434 bytes, entropia 3.41-3.44, ex: _com, _com
+E0 8F 00 00 '....': 2 entradas, 8699404 bytes, entropia 3.48-3.63, ex: dng2, stag
+00 00 00 00 '....': 2 entradas, 5124 bytes, entropia 4.26-4.26, ex: stag, stag
+6C 06 00 00 'l...': 2 entradas, 61521 bytes, entropia 5.43-5.54, ex: _com, _com
+34 72 00 00 '4r..': 1 entradas, 2660946 bytes, entropia 4.07-4.07, ex: stag
+78 16 00 00 'x...': 1 entradas, 428011 bytes, entropia 3.38-3.38, ex: _com
+58 16 00 00 'X...': 1 entradas, 422791 bytes, entropia 3.43-3.43, ex: _com
+7C 05 00 00 '|...': 1 entradas, 24755 bytes, entropia 5.48-5.48, ex: _com
+CC 69 00 00 '.i..': 1 entradas, 2952446 bytes, entropia 4.08-4.08, ex: stag
+48 88 00 00 'H...': 1 entradas, 4664046 bytes, entropia 3.59-3.59, ex: stag
+70 97 00 00 'p...': 1 entradas, 4889020 bytes, entropia 3.28-3.28, ex: stag
+F8 15 00 00 '....': 1 entradas, 439163 bytes, entropia 3.37-3.37, ex: _com
+A8 0D 00 00 '....': 1 entradas, 174218 bytes, entropia 3.27-3.27, ex: stag
+F4 05 00 00 '....': 1 entradas, 40896 bytes, entropia 4.37-4.37, ex: stag
+54 8F 00 00 'T...': 1 entradas, 4636382 bytes, entropia 3.53-3.53, ex: stag
+D8 15 00 00 '....': 1 entradas, 419859 bytes, entropia 3.36-3.36, ex: _com
+E8 0E 00 00 '....': 1 entradas, 265586 bytes, entropia 3.51-3.51, ex: stag
+B8 00 00 00 '....': 1 entradas, 750802 bytes, entropia 3.01-3.01, ex: _com
+04 04 00 00 '....': 1 entradas, 27733 bytes, entropia 5.80-5.80, ex: _com
+E4 04 00 00 '....': 1 entradas, 51255 bytes, entropia 6.16-6.16, ex: _com
+B8 05 00 00 '....': 1 entradas, 31456 bytes, entropia 5.68-5.68, ex: _com
+A4 81 00 00 '....': 1 entradas, 3527646 bytes, entropia 3.73-3.73, ex: stag
+E0 70 00 00 '.p..': 1 entradas, 2986904 bytes, entropia 3.87-3.87, ex: stag
+C4 03 00 00 '....': 1 entradas, 27597 bytes, entropia 6.21-6.21, ex: _com
+70 91 00 00 'p...': 1 entradas, 4792068 bytes, entropia 3.38-3.38, ex: stag
+C0 84 00 00 '....': 1 entradas, 3814606 bytes, entropia 3.57-3.57, ex: stag
+08 06 00 00 '....': 1 entradas, 22132 bytes, entropia 5.19-5.19, ex: _com
+20 74 00 00 ' t..': 1 entradas, 4975354 bytes, entropia 3.98-3.98, ex: stag
+00 05 00 00 '....': 1 entradas, 32259 bytes, entropia 5.91-5.91, ex: _com
+78 06 00 00 'x...': 1 entradas, 34841 bytes, entropia 5.71-5.71, ex: _com
+78 91 00 00 'x...': 1 entradas, 4980130 bytes, entropia 3.38-3.38, ex: stag
+4C 06 00 00 'L...': 1 entradas, 35789 bytes, entropia 5.80-5.80, ex: _com
+88 99 00 00 '....': 1 entradas, 4802422 bytes, entropia 3.21-3.21, ex: stag
+18 20 00 00 '. ..': 1 entradas, 460488 bytes, entropia 3.72-3.72, ex: stag
+E0 2B 00 00 '.+..': 1 entradas, 545680 bytes, entropia 3.72-3.72, ex: stag
+AC 6B 00 00 '.k..': 1 entradas, 3457178 bytes, entropia 4.04-4.04, ex: stag
+C4 66 00 00 '.f..': 1 entradas, 2469522 bytes, entropia 4.12-4.12, ex: stag
+5C 01 00 00 '\...': 1 entradas, 49596 bytes, entropia 7.06-7.06, ex: stag
+2C 61 00 00 ',a..': 1 entradas, 2140814 bytes, entropia 4.12-4.12, ex: stag
+D0 7D 00 00 '.}..': 1 entradas, 3327596 bytes, entropia 3.76-3.76, ex: stag
+74 3E 00 00 't>..': 1 entradas, 1193352 bytes, entropia 3.99-3.99, ex: stag
+34 65 00 00 '4e..': 1 entradas, 2452164 bytes, entropia 4.24-4.24, ex: stag
+20 19 00 00 ' ...': 1 entradas, 581008 bytes, entropia 3.61-3.61, ex: stag
+0C 02 00 00 '....': 1 entradas, 50940 bytes, entropia 7.00-7.00, ex: stag
+C0 05 00 00 '....': 1 entradas, 38918 bytes, entropia 4.40-4.40, ex: stag
+24 03 00 00 '$...': 1 entradas, 17524 bytes, entropia 3.80-3.80, ex: stag
+28 45 00 00 '(E..': 1 entradas, 1299254 bytes, entropia 4.11-4.11, ex: stag
+34 70 00 00 '4p..': 1 entradas, 2753466 bytes, entropia 4.02-4.02, ex: stag
+F8 00 00 00 '....': 1 entradas, 67424 bytes, entropia 7.48-7.48, ex: stag
+F8 16 00 00 '....': 1 entradas, 603147 bytes, entropia 3.46-3.46, ex: _com
+B4 89 00 00 '....': 1 entradas, 4547718 bytes, entropia 3.53-3.53, ex: stag
+14 77 00 00 '.w..': 1 entradas, 4479276 bytes, entropia 3.73-3.73, ex: stag
+34 86 00 00 '4...': 1 entradas, 4339244 bytes, entropia 3.61-3.61, ex: stag
+B8 17 00 00 '....': 1 entradas, 581125 bytes, entropia 3.38-3.38, ex: _com
+E8 75 00 00 '.u..': 1 entradas, 3519840 bytes, entropia 3.87-3.87, ex: stag
+F8 93 00 00 '....': 1 entradas, 4816978 bytes, entropia 3.28-3.28, ex: stag
+4C 84 00 00 'L...': 1 entradas, 4640964 bytes, entropia 3.66-3.66, ex: stag
+CC 75 00 00 '.u..': 1 entradas, 3081610 bytes, entropia 3.82-3.82, ex: stag
+5C 61 00 00 '\a..': 1 entradas, 2050358 bytes, entropia 4.24-4.24, ex: stag
+84 74 00 00 '.t..': 1 entradas, 2799880 bytes, entropia 3.97-3.97, ex: stag
+9C 80 00 00 '....': 1 entradas, 3642084 bytes, entropia 3.78-3.78, ex: stag
+B4 6E 00 00 '.n..': 1 entradas, 2793802 bytes, entropia 4.05-4.05, ex: stag
+0C 1C 00 00 '....': 1 entradas, 335802 bytes, entropia 3.16-3.16, ex: stag
+70 6E 00 00 'pn..': 1 entradas, 3278190 bytes, entropia 3.98-3.98, ex: stag
+DC 7F 00 00 '....': 1 entradas, 3460982 bytes, entropia 3.85-3.85, ex: stag
+80 00 01 9C '....': 1 entradas, 5697536 bytes, entropia 7.27-7.27, ex: soun
+80 00 06 48 '...H': 1 entradas, 8386560 bytes, entropia 6.88-6.88, ex: soun
+80 00 06 50 '...P': 1 entradas, 7510016 bytes, entropia 7.09-7.09, ex: soun
+80 00 04 20 '... ': 1 entradas, 36864 bytes, entropia 6.91-6.91, ex: soun
+80 00 06 0C '....': 1 entradas, 6877184 bytes, entropia 7.20-7.20, ex: soun
+80 00 05 C4 '....': 1 entradas, 5638144 bytes, entropia 7.17-7.17, ex: soun
+80 00 02 F8 '....': 1 entradas, 5584896 bytes, entropia 7.26-7.26, ex: soun
+80 00 02 E8 '....': 1 entradas, 8148992 bytes, entropia 7.02-7.02, ex: soun
+80 00 01 74 '...t': 1 entradas, 6586368 bytes, entropia 6.99-6.99, ex: soun
+80 00 04 A4 '....': 1 entradas, 5933056 bytes, entropia 7.02-7.02, ex: soun
+80 00 08 0C '....': 1 entradas, 8542208 bytes, entropia 7.16-7.16, ex: soun
+80 00 00 C8 '....': 1 entradas, 5619712 bytes, entropia 7.26-7.26, ex: soun
+6C 87 00 00 'l...': 1 entradas, 3781656 bytes, entropia 3.71-3.71, ex: dng1
+74 7F 00 00 't...': 1 entradas, 3447882 bytes, entropia 3.86-3.86, ex: dng1
+98 8E 00 00 '....': 1 entradas, 4201172 bytes, entropia 3.57-3.57, ex: dng1
+34 80 00 00 '4...': 1 entradas, 3280454 bytes, entropia 3.70-3.70, ex: dng2
+14 8A 00 00 '....': 1 entradas, 3721874 bytes, entropia 3.59-3.59, ex: dng2
+BC 73 00 00 '.s..': 1 entradas, 2909666 bytes, entropia 3.96-3.96, ex: dng2
+88 70 00 00 '.p..': 1 entradas, 2746890 bytes, entropia 3.87-3.87, ex: dng1
+80 00 07 00 '....': 1 entradas, 104448 bytes, entropia 7.00-7.00, ex: soun
+80 00 07 B4 '....': 1 entradas, 61440 bytes, entropia 6.95-6.95, ex: soun
+24 7D 00 00 '$}..': 1 entradas, 3258322 bytes, entropia 3.81-3.81, ex: dng1
+4C 79 00 00 'Ly..': 1 entradas, 3199268 bytes, entropia 3.94-3.94, ex: dng1
+F0 82 00 00 '....': 1 entradas, 3790726 bytes, entropia 3.72-3.72, ex: dng1
+80 00 06 7C '...|': 1 entradas, 6029312 bytes, entropia 7.15-7.15, ex: soun
+80 00 07 30 '...0': 1 entradas, 7786496 bytes, entropia 7.28-7.28, ex: soun
+80 00 08 38 '...8': 1 entradas, 6379520 bytes, entropia 7.21-7.21, ex: soun
+80 00 06 10 '....': 1 entradas, 5521408 bytes, entropia 7.24-7.24, ex: soun
+80 00 02 D0 '....': 1 entradas, 4837376 bytes, entropia 7.22-7.22, ex: soun
+80 00 05 08 '....': 1 entradas, 5650432 bytes, entropia 7.21-7.21, ex: soun
+80 00 03 54 '...T': 1 entradas, 8738816 bytes, entropia 7.04-7.04, ex: soun
+80 00 07 38 '...8': 1 entradas, 2207744 bytes, entropia 7.01-7.01, ex: soun
+80 00 03 04 '....': 1 entradas, 2152448 bytes, entropia 7.13-7.13, ex: soun
+80 00 01 38 '...8': 1 entradas, 1445888 bytes, entropia 7.23-7.23, ex: soun
+80 00 02 D8 '....': 1 entradas, 5507072 bytes, entropia 7.28-7.28, ex: soun
+80 00 00 40 '...@': 1 entradas, 1517568 bytes, entropia 7.20-7.20, ex: soun
+80 00 02 CC '....': 1 entradas, 2148352 bytes, entropia 5.93-5.93, ex: soun
+80 00 04 CC '....': 1 entradas, 2975744 bytes, entropia 7.22-7.22, ex: soun
+80 00 01 28 '...(': 1 entradas, 4528128 bytes, entropia 7.27-7.27, ex: soun
+80 00 07 50 '...P': 1 entradas, 3633152 bytes, entropia 6.72-6.72, ex: soun
+80 00 03 6C '...l': 1 entradas, 5154816 bytes, entropia 7.21-7.21, ex: soun
+80 00 02 80 '....': 1 entradas, 3072000 bytes, entropia 7.27-7.27, ex: soun
+80 00 02 1C '....': 1 entradas, 5187584 bytes, entropia 7.23-7.23, ex: soun
+80 00 06 58 '...X': 1 entradas, 7151616 bytes, entropia 7.11-7.11, ex: soun
+80 00 02 0C '....': 1 entradas, 7968768 bytes, entropia 7.15-7.15, ex: soun
+80 00 01 A8 '....': 1 entradas, 1955840 bytes, entropia 7.13-7.13, ex: soun
+80 00 02 98 '....': 1 entradas, 6113280 bytes, entropia 7.07-7.07, ex: soun
+80 00 03 38 '...8': 1 entradas, 7524352 bytes, entropia 6.73-6.73, ex: soun
+80 00 01 50 '...P': 1 entradas, 7979008 bytes, entropia 7.30-7.30, ex: soun
+74 90 00 00 't...': 1 entradas, 3960156 bytes, entropia 3.49-3.49, ex: dng2
+60 81 00 00 '`...': 1 entradas, 3405910 bytes, entropia 3.69-3.69, ex: dngq
+60 7F 00 00 '`...': 1 entradas, 3178338 bytes, entropia 3.73-3.73, ex: dngq
+20 7F 00 00 ' ...': 1 entradas, 3151016 bytes, entropia 3.76-3.76, ex: dngq
+60 97 00 00 '`...': 1 entradas, 4534598 bytes, entropia 3.40-3.40, ex: dngq
+14 96 00 00 '....': 1 entradas, 4402286 bytes, entropia 3.38-3.38, ex: dngq
+D8 92 00 00 '....': 1 entradas, 4305344 bytes, entropia 3.41-3.41, ex: dngq
+14 82 00 00 '....': 1 entradas, 3583566 bytes, entropia 3.70-3.70, ex: dngq
+C0 80 00 00 '....': 1 entradas, 3462724 bytes, entropia 3.76-3.76, ex: dngq
+10 87 00 00 '....': 1 entradas, 3778806 bytes, entropia 3.66-3.66, ex: dngq
+54 87 00 00 'T...': 1 entradas, 3622226 bytes, entropia 3.69-3.69, ex: dngq
+28 03 00 00 '(...': 1 entradas, 25839 bytes, entropia 3.51-3.51, ex: dngq
+78 84 00 00 'x...': 1 entradas, 3364486 bytes, entropia 3.55-3.55, ex: dngq
+38 9D 00 00 '8...': 1 entradas, 4753616 bytes, entropia 3.16-3.16, ex: dngq
+10 8B 00 00 '....': 1 entradas, 3933996 bytes, entropia 3.61-3.61, ex: dngq
+CC 99 00 00 '....': 1 entradas, 4330428 bytes, entropia 3.30-3.30, ex: dngq
+78 9D 00 00 'x...': 1 entradas, 4782334 bytes, entropia 3.26-3.26, ex: dngq
+6C 9D 00 00 'l...': 1 entradas, 4767080 bytes, entropia 3.14-3.14, ex: dngq
+D0 03 00 00 '....': 1 entradas, 36811 bytes, entropia 4.30-4.30, ex: dngq
+10 80 00 00 '....': 1 entradas, 3424252 bytes, entropia 3.74-3.74, ex: dngq
+CC 78 00 00 '.x..': 1 entradas, 3048262 bytes, entropia 3.89-3.89, ex: dngq
+0C 03 00 00 '....': 1 entradas, 68466 bytes, entropia 6.51-6.51, ex: dngq
+54 8B 00 00 'T...': 1 entradas, 3661186 bytes, entropia 3.55-3.55, ex: dngq
+50 90 00 00 'P...': 1 entradas, 4555198 bytes, entropia 3.52-3.52, ex: dngq
+30 82 00 00 '0...': 1 entradas, 3574950 bytes, entropia 3.73-3.73, ex: dngq
+E0 84 00 00 '....': 1 entradas, 3764340 bytes, entropia 3.51-3.51, ex: dngq
+5C 93 00 00 '\...': 1 entradas, 3978724 bytes, entropia 3.42-3.42, ex: dng3
+9C 91 00 00 '....': 1 entradas, 4064360 bytes, entropia 3.51-3.51, ex: dng3
+9C 83 00 00 '....': 1 entradas, 3642868 bytes, entropia 3.75-3.75, ex: dng3
+D4 80 00 00 '....': 1 entradas, 3584518 bytes, entropia 3.67-3.67, ex: dng3
+A0 96 00 00 '....': 1 entradas, 4157316 bytes, entropia 3.39-3.39, ex: dng3
+7C 98 00 00 '|...': 1 entradas, 4218394 bytes, entropia 3.40-3.40, ex: dng3
+BC 86 00 00 '....': 1 entradas, 3754208 bytes, entropia 3.54-3.54, ex: dng2
+6C 9A 00 00 'l...': 1 entradas, 4570400 bytes, entropia 3.37-3.37, ex: dng2
+68 02 00 00 'h...': 1 entradas, 7343 bytes, entropia 3.91-3.91, ex: dng2
+BC 74 00 00 '.t..': 1 entradas, 2848678 bytes, entropia 3.83-3.83, ex: dng3
+B8 83 00 00 '....': 1 entradas, 3528110 bytes, entropia 3.61-3.61, ex: dng3
+8C 73 00 00 '.s..': 1 entradas, 2776174 bytes, entropia 3.89-3.89, ex: dng3
+48 04 00 00 'H...': 1 entradas, 83207 bytes, entropia 3.88-3.88, ex: dng4
+10 95 00 00 '....': 1 entradas, 4317950 bytes, entropia 3.50-3.50, ex: dng4
+64 8C 00 00 'd...': 1 entradas, 4004142 bytes, entropia 3.66-3.66, ex: dng4
+EC 6F 00 00 '.o..': 1 entradas, 2919324 bytes, entropia 3.90-3.90, ex: dngq
+08 07 00 00 '....': 1 entradas, 216343 bytes, entropia 3.61-3.61, ex: dng4
+84 9F 00 00 '....': 1 entradas, 4967340 bytes, entropia 3.21-3.21, ex: dng4
+30 73 00 00 '0s..': 1 entradas, 2842992 bytes, entropia 4.03-4.03, ex: dng4
+0C 87 00 00 '....': 1 entradas, 3498978 bytes, entropia 3.69-3.69, ex: dng3
+F4 84 00 00 '....': 1 entradas, 3826638 bytes, entropia 3.74-3.74, ex: dng3
+5C 88 00 00 '\...': 1 entradas, 3736712 bytes, entropia 3.72-3.72, ex: dng4
+A4 8E 00 00 '....': 1 entradas, 4077770 bytes, entropia 3.60-3.60, ex: dng4
+30 7C 00 00 '0|..': 1 entradas, 3202346 bytes, entropia 3.74-3.74, ex: dng4
+--- por extensao ---
+(sem): 973 entradas, 691363586 bytes
