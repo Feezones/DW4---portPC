@@ -91,6 +91,9 @@ public sealed class GdbClient : IDisposable
         return Receive();
     }
 
+    /// <summary>Resposta bruta de um "m" (para diagnóstico).</summary>
+    public string ReadRaw(uint address, int length) => Query($"m{address:x},{length:x}");
+
     public byte[] Read(uint address, int length)
     {
         var hex = Query($"m{address:x},{length:x}");

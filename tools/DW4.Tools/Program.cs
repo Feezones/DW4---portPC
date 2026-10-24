@@ -45,6 +45,7 @@ try
         "dtm-entradas" when args.Length is 2 or 3 => DtmEntradas(args[1], args.Length == 3 ? args[2] : null),
         "dolphin-ram" when args.Length == 3 => DolphinRam(args[1], args[2]),
         "ram-busca" when args.Length >= 4 => RamBusca(args[1], args[2], args[3], args[4..]),
+        "dolphin-gdb-teste" when args.Length == 2 => DolphinGdbTeste(args[1]),
         "dolphin-gdb" when args.Length >= 4 => DolphinGdb(args[1], args[2], args[3..]),
         "igb-camera" when args.Length == 4 => IgbCamera(args[1], args[2], args[3]),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
@@ -1266,6 +1267,30 @@ int RamBusca(string aPath, string bPath, string framesArg, string[] options)
         Console.WriteLine(string.Create(inv, $"  0x{0x80000000 + i:X8}: ({ax:0.###}, {ay:0.###}, {az:0.###}) -> ({bx:0.###}, {by:0.###}, {bz:0.###})"));
         shown++;
     }
+    return 0;
+}
+
+// Diagnóstico do servidor GDB do Dolphin: mostra as respostas brutas de leitura antes e depois de continuar e interromper.
+int DolphinGdbTeste(string portArg)
+{
+    using var gdb = DW4.Formats.Dolphin.GdbClient.Connect("127.0.0.1", int.Parse(portArg, inv), TimeSpan.FromMinutes(2));
+    string Show(string r) => r.Length > 80 ? r[..80] + "…" : r;
+    Console.WriteLine($"?            -> {Show(gdb.Query("?"))}");
+    Console.WriteLine($"qSupported   -> {Show(gdb.Query("qSupported"))}");
+    foreach (var (addr, len) in new (uint, int)[] { (0x80000000, 8), (0x00000000, 8), (0x814541D8, 4), (0x014541D8, 4) })
+        Console.WriteLine($"m{addr:x},{len:x} (parado)  -> \"{Show(gdb.ReadRaw(addr, len))}\"");
+    Console.WriteLine($"g            -> {Show(gdb.Query("g"))}");
+    gdb.Continue();
+    Thread.Sleep(500);
+    Console.WriteLine($"Ctrl-C       -> {Show(gdb.Interrupt())}");
+    for (int i = 0; i < 5; i++)
+    {
+        Console.WriteLine($"m80000000,8 (depois, tentativa {i}) -> \"{Show(gdb.ReadRaw(0x80000000, 8))}\"");
+        Console.WriteLine($"m814541d8,4 (depois, tentativa {i}) -> \"{Show(gdb.ReadRaw(0x814541D8, 4))}\"");
+        Thread.Sleep(100);
+    }
+    foreach (var st in gdb.Stray) Console.WriteLine($"byte inesperado: {st}");
+    try { gdb.Continue(); } catch (IOException) { }
     return 0;
 }
 
