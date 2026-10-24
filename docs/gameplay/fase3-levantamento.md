@@ -54,11 +54,57 @@ O `hit_p_girumon.lua` do jogador é o mesmo chunk do `hit_p_agumon.lua`, ou seja
 - Inimigo: os scripts da fase incluem `hit_e_nume.lua` e o efeito `e_nume`. **HIPÓTESE forte:** Numemon. O tipo não aparece nos campos do gerador.
 - Início do jogador: `start.lua` chama `funcPlayerSet()` e `be:sd("PLAYER", nil, -1, "SQ_DEMOWAIT")`; `func.lua` usa `PLAYERPOINT` e `RESTART`. **HIPÓTESE:** o ponto é um nó da cena. Ainda não localizado.
 
-## Câmera
+## Câmera por volumes (#180 e #181)
 
-- O executável tem `beCameraCtrl`, `beCameraMode`, `beCameraBoxData`, `beCameraDemoData` e `beCameraCtrlInfoRamShake`, e os comandos `SETBOXCAMERA`, `SETDEMOCAMERA`, `ISDEMOCAMERA` e `CAMERAMODE`. **FATO**
-- `beCameraBoxData` liga um `igSwitch`, um `igGeometryList` e três `igTransformList`. **HIPÓTESE:** volumes de ativação e posições de câmera e alvo por volume (câmera por zona). Falta decodificar.
+Segunda rodada de leitura, mesmas condições. **FATO** salvo onde indicado.
+
+- Grafo: `igSceneInfo` → `igSwitch` "BG01" → 3 `igTransform` → `igCamera` "cameraShape00".
+- `beCameraCtrlInfo` ("Scene Graph", Bool@4 = 1) → `beCameraBoxData`, que liga: R@2 `igSwitch` "BG01"; R@3 `igGeometryList` (18); R@4 `igTransformList` (1, translação (0, 1, 0)); R@5 `igTransformList` "A" (18); R@6 `igTransformList` "B" (18).
+- As 18 `igGeometry` não têm malha: cada uma é só um `igAABox`, o volume de ativação. O volume i usa a transformação i de A e a i de B.
+- A = só translação (0, 0, d). B = rotação em X (inclinação), às vezes com guinada e com translação em Y.
+- **HIPÓTESE forte:** cadeia alvo → (0, 1, 0) → B (pivô e inclinação) → A (recuo d) → câmera. Quando o jogador está dentro de um volume, a câmera usa a distância e a inclinação daquele volume. O volume 0, centrado na origem e alto, é o padrão.
+- `#180` e `#181` têm as mesmas caixas e inclinações. Só as distâncias mudam: no #181 os volumes 2–16 usam 120 (no #180, 100 ou 110). **HIPÓTESE:** `aaaCameraL.igb` = modo de câmera afastada, escolhido por `SYSgetCameraMode`.
+- Transição entre volumes (corte seco ou interpolação) e velocidade de seguimento: **DESCONHECIDO**, só medindo.
+
+| Vol. | Caixa min → max | d (#180) | d (#181) | Inclinação B |
+|---|---|---|---|---|
+| 0 | (−5, 0, −5) → (5, 200, 5) | 135 | 135 | 55°, pivô +10 em Y |
+| 1 | (−320, 40, 420) → (−280, 240, 460) | 90 | 98 | 45°, guinada ≈ 10° |
+| 2 | (−360, 40, 340) → (−240, 240, 420) | 100 | 120 | 65° |
+| 3 | (−320, 40, 220) → (−200, 240, 340) | 110 | 120 | 70° |
+| 4 | (−200, 40, 140) → (−160, 240, 380) | 110 | 120 | 70° |
+| 5 | (−240, 40, −20) → (−120, 240, 140) | 100 | 120 | 65° |
+| 6 | (−200, 40, −140) → (−120, 240, −20) | 110 | 120 | 70° |
+| 7 | (−120, 40, −180) → (40, 240, −60) | 100 | 120 | 65° |
+| 8 | (−40, 40, −60) → (0, 240, 100) | 110 | 120 | 60° |
+| 9 | (−40, 40, 100) → (120, 240, 140) | 110 | 120 | 70° |
+| 10 | (85, 40, −82,78) → (245, 240, 104,42) | 110 | 120 | 70° |
+| 11 | (−40, 40, −380) → (0, 240, −180) | 110 | 120 | 60° |
+| 12 | (−80, 40, −460) → (40, 240, −380) | 110 | 120 | 70° |
+| 13 | (0, 40, −340) → (120, 240, −300) | 110 | 120 | 70° |
+| 14 | (120, 40, −180) → (240, 240, −20) | 100 | 120 | 45°, pivô +5 em Y |
+| 15 | (200, 40, −260) → (240, 240, −180) | 110 | 120 | 60° |
+| 16 | (120, 40, −380) → (280, 240, −260) | 98 | 120 | 65° |
+| 17 | (200, 0, −460) → (360, 200, −380) | 98 | 98 | 70°, guinada ≈ 10° |
+
+Inclinação = acos(m11) da matriz B. Sinal da guinada e ordem exata da cadeia ainda a confirmar por captura.
+
+## Numemon (`e_nume`)
+
+- Não tem entrada própria: vem dentro das entradas de fase (#179, #187, #195, #433, #441, #614, #628…). No #179: `beModelCtrlInfo` "e_nume", `KIND_ENEMY`. **FATO**
+- Caixa de corpo (`igAABox` do HIT): (−4, 0, −4) → (4, 14, 4). **FATO**
+- Sequências: `SQ_ENTR`, `SQ_WAIT`, `SQ_WALK`, `SQ_SLEP`, `SQ_STUN`, `SQ_GUARD`, `SQ_GUARDR`, `SQ_PUSHED`, `SQ_SDMG`/`MDMG`/`LDMG`/`DDMG`, `SQ_ATCK1`, `SQ_ATCK2`, `SQ_FIRE`, `SQ_FALL`, `SQ_CHMOD0`/`1`, `SQ_SILENT`. **FATO**
+- `beModelCtrlMOVE`: Stop 1/4, Move 0,24/6, Back 0,4/8 · 0,6/9,5 · 0,6/10, Jump e Fall 1,7/6,3. Com o Guilmon (Move 0,7/6), o segundo número é igual e o primeiro muda: **HIPÓTESE** de que um é aceleração e o outro velocidade máxima.
+- Hitboxes de ataque (Int@3 = 70004): quadro 10 por 5 em (6,3, 1,5, 2,2) tamanho (2,5, 3, 2,5); 10/5 em (4,1, 1,5, 5,7) tamanho 3; 15/10 em (−0,4, 1,8, 11) tamanho (5, 3,5, 5); 25/10 em (−6,1, 2,8, 9,5) tamanho (4,5, 5,5, 4,5). Caixa de corpo do tipo 70000: (0, 7, 0) tamanho (9,5, 14, 9,5). **FATO** (valores); papel dos campos HIPÓTESE.
+- IA (`beModelCtrlAIMap`): "MAP00" com 1296, 2025, 22500 (36², 45², 150²) e 0,0436 rad (2,5°); "MAP01" com 484, 1600, 22500 (22², 40², 150²) e 0,0524 rad (3°); cada mapa tem 4 `beModelCtrlAIDataList`, e `SQ_CHMOD0`/`1` troca de mapa. **HIPÓTESE forte:** faixas de distância ao quadrado (perto, médio, longe, fora) com uma lista de ações por faixa.
+- `beModelCtrlAIData`: String@2 sequência, Float@3 ângulo em rad (1,7453 = 100°, 0,7854 = 45°), Float@4 duração ou distância, Int@5 peso. Ex.: `SQ_WALK` 1,7453/15/14, `SQ_FIRE` 0/0/6, `SQ_WAIT` 0/21/16. **HIPÓTESE:** escolha ponderada por Int@5.
+- Gerador: no #183 todos os `GENE` têm Int@7 = 17 e o único inimigo do #179 é o Numemon; caixas usam 370; outras fases usam 27, 18, 28, 25, 34, 85. **HIPÓTESE forte:** Int@7 é o ID global do tipo gerado (17 = Numemon).
+
+## Entrada do jogador
+
+- O jogador não está no grafo da fase: `funcPlayerSet` (func.lua do #179) gera um `PLAYER` por jogador ativo com `be:sd("PLAYER", be:SYSgetPlayerName(i), i, "GENERATE")`. Sem jogadores, gera `p_agumon`. **FATO** (desmontagem).
+- `funcStageChange` escolhe o ponto com `be:DMsetSD("PLAYERPOINT", nil, -1, "SETGENERATEPOS", "I<n>", 10)`. Nenhum IGB de #179 a #190 tem nó ou string `PLAYERPOINT`. **HIPÓTESE:** a tabela de pontos está no motor ou nas portas e gates. Para a fatia, o ponto inicial será medido no jogo.
 
 ## Unidades
 
-A fase usa Y = 40 no chão dos geradores, e as paredes da colisão têm cerca de 40 unidades. O Guilmon exportado mede cerca de 4. **HIPÓTESE:** o personagem é posto em cena com escala 10, ou as unidades do modelo são outras. `beModelCtrlNode2` traz matriz identidade e Float@13 = 1, então a escala não está ali.
+**FATO (corrige a estimativa da Fase 2):** o Guilmon tem cerca de 10 unidades de altura. A pele High vai de y = 0 a 9,91, e a caixa de corpo mede 5 × 7 × 5. O Numemon tem caixa de 8 × 14 × 8. As salas têm de 100 a 300 unidades, e as paredes de colisão 100. Não há escala extra entre personagem e fase.
