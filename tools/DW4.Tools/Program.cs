@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using DW4.Formats.Afs;
 using DW4.Formats.Analysis;
+using DW4.Formats.Igb;
 
 // Ferramenta de linha de comando da Fase 1. Só lê os contêineres; a única escrita é afs-extract,
 // que grava amostras numa pasta de trabalho fora de qualquer repositório Git.
@@ -21,6 +22,7 @@ try
         "afs-verify" when args.Length == 3 => AfsVerify(args[1], args[2]),
         "afs-extract" when args.Length >= 4 => AfsExtract(args[1], args[2], args[3..]),
         "afs-classify" when args.Length == 2 => AfsClassify(args[1]),
+        "igb-headers" when args.Length == 2 => IgbHeaders(args[1]),
         _ => Usage(),
     };
 }
@@ -39,6 +41,7 @@ static int Usage()
           dw4 afs-verify  <arquivo.afs> <inventario.csv>
           dw4 afs-extract <arquivo.afs> <pasta-de-trabalho> <indice> [indice...]   (máx. 20)
           dw4 afs-classify <arquivo.afs>
+          dw4 igb-headers  <arquivo.afs | arquivo.igb>
         """);
     return 1;
 }
@@ -179,6 +182,48 @@ int AfsClassify(string path)
         foreach (var (e, _) in unknown.Take(30))
             Console.WriteLine($"  #{e.Index} {e.Name} {e.Size} bytes  {ByteStats.Hex(afs.ReadHead(e, 16))}");
     }
+    return 0;
+}
+
+// Lê o cabeçalho de cada IGB (de um .igb solto ou de todas as entradas IGB de um AFS)
+// e confere se os buffers declarados cabem no tamanho real.
+int IgbHeaders(string path)
+{
+    var items = new List<(string id, uint size, IgbHeader h)>();
+    if (path.EndsWith(".igb", StringComparison.OrdinalIgnoreCase))
+    {
+        var data = File.ReadAllBytes(path);
+        if (!IgbHeader.TryRead(data, out var h)) { Console.WriteLine("não é IGB"); return 3; }
+        items.Add((Path.GetFileName(path), (uint)data.Length, h!));
+    }
+    else
+    {
+        using var afs = AfsArchive.Open(path);
+        foreach (var e in afs.Entries)
+            if (IgbHeader.TryRead(afs.ReadHead(e, IgbHeader.Size), out var h))
+                items.Add(($"#{e.Index} {e.Name}", e.Size, h!));
+    }
+
+    Console.WriteLine($"{items.Count} IGB");
+    if (items.Count == 0) return 3;
+    foreach (var g in items.GroupBy(i => (i.h.Version, i.h.LittleEndian, flags: i.h.VersionFlags & 0xFFFF0000)))
+        Console.WriteLine($"  versão {g.Key.Version}, {(g.Key.LittleEndian ? "LE" : "BE")}, flags 0x{g.Key.flags:X8}: {g.Count()}");
+
+    var exact = items.Count(i => i.h.DeclaredSize == i.size);
+    var fits = items.Count(i => i.h.DeclaredSize <= i.size);
+    Console.WriteLine($"  soma dos buffers == tamanho: {exact}; <= tamanho: {fits}; > tamanho: {items.Count - fits}");
+    foreach (var (id, size, h) in items.Where(i => i.h.DeclaredSize > i.size).Take(20))
+        Console.WriteLine($"    excede: {id} tamanho {size} declarado {h.DeclaredSize}");
+    var slack = items.Where(i => i.h.DeclaredSize < i.size).Select(i => i.size - i.h.DeclaredSize).ToList();
+    if (slack.Count > 0)
+        Console.WriteLine($"  sobra além dos buffers: mín {slack.Min()} máx {slack.Max()} (em {slack.Count} arquivos)");
+
+    Console.WriteLine($"  metacampos: {items.Min(i => i.h.MetaFieldCount)}–{items.Max(i => i.h.MetaFieldCount)}; " +
+        $"metaobjetos: {items.Min(i => i.h.MetaObjectCount)}–{items.Max(i => i.h.MetaObjectCount)}; " +
+        $"objetos: {items.Min(i => i.h.ObjectCount)}–{items.Max(i => i.h.ObjectCount)}");
+    foreach (var (id, size, h) in items.Take(5))
+        Console.WriteLine($"  {id}: {size} B, entradas {h.EntryCount}/{h.EntryBufferSize}, metaobj {h.MetaObjectCount}/{h.MetaObjectBufferSize}, " +
+            $"obj {h.ObjectCount}/{h.ObjectBufferSize}, memref {h.MemoryRefCount}/{h.MemoryRefBufferSize}, metacampo {h.MetaFieldCount}/{h.MetaFieldBufferSize}");
     return 0;
 }
 

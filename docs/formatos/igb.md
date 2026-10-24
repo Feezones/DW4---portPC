@@ -18,9 +18,39 @@
 
 HIPÓTESE: a maioria das entradas de cenário (`dng*`, `dngq`, `stag`) também são IGB. Evidência: começam com o mesmo padrão de pares de u32 pequenos (por exemplo `BC 12 00 00 A9 00 00 00 1E 11 00 00 43 00 00 00`), compatível com um cabeçalho de seções (tamanho, contagem) como o de `ndmw.igb`; o executável cita arquivos `stag*.igb`. Validar procurando a tabela de metacampos dentro de algumas entradas.
 
+## Cabeçalho (0x30 bytes, 12 × u32)
+
+Ordem dos campos segundo implementações públicas para X-Men Legends / Marvel: Ultimate Alliance ([igb-blender](https://github.com/KaikoClanworth1/igb-blender), que cita IGBConverter e raven-formats de nikita488, MIT):
+
+| Offset | Campo | ndmw.igb | area #3 dng1 |
+|---|---|---|---|
+| 0x00 | tamanho do buffer de entradas | 0x100 | 0x12BC |
+| 0x04 | nº de entradas | 11 | 169 |
+| 0x08 | tamanho do buffer de metaobjetos | 0x492 | 0x111E |
+| 0x0C | nº de metaobjetos | 20 | 67 |
+| 0x10 | tamanho do buffer de objetos | 0x15628 | 0x34434 |
+| 0x14 | nº de objetos | 2297 | 4942 |
+| 0x18 | tamanho do buffer de referências de memória | 0x23B4 | 0x33064 |
+| 0x1C | nº de referências de memória | 108 | 1669 |
+| 0x20 | tamanho do buffer de metacampos | 0x656 | 0x656 |
+| 0x24 | nº de metacampos | 48 | 48 |
+| 0x28 | marca 0xFADA (define a ordem de bytes) | LE | LE |
+| 0x2C | versão (16 bits baixos) + flags (bits 28–31) | 6, flags 0xF0 | 6, flags 0xF0 |
+
+**Confiança: HIPÓTESE forte.** A marca 0xFADA e a versão 6 batem com o que essas ferramentas descrevem para MUA no PS2 (IGB versão 6). Os arquivos do DW4 são little-endian mesmo no GameCube. Validação em curso: `dw4 igb-headers` lê o cabeçalho das 2273 entradas e confere se os buffers declarados cabem no tamanho de cada uma.
+
 ## Ferramentas
 
-O formato IGB é conhecido pela comunidade de modding de X-Men Legends e Marvel: Ultimate Alliance (fórum [marvelmods.com](https://marvelmods.com/forum/index.php/topic,10797.30.html)), que usa o mesmo motor. Ainda não avaliei ferramentas específicas: procedência, licença e compatibilidade com a versão 3.2 (os jogos da Marvel usam versões diferentes do Alchemy) precisam ser checadas antes de baixar qualquer coisa.
+Avaliadas em 2026-10-24 só pela leitura do código (nada foi executado):
+
+| Projeto | Linguagem | Licença | O que faz | Avaliação |
+|---|---|---|---|---|
+| [KaikoClanworth1/igb-blender](https://github.com/KaikoClanworth1/igb-blender) | Python (add-on Blender 4.4) | não declarada | Importa IGB de XML1/XML2/MUA (inclusive PS2, IGB v6): malhas, texturas, esqueletos; animação marcada como quebrada | Melhor referência de formato. Sem licença: usar como documentação, não copiar código |
+| [SomeoneIsWorking/alchemy](https://github.com/SomeoneIsWorking/alchemy) | C/C++20 + Python | não declarada | Leitor IGB nativo, malhas, imagens, animação | Referência secundária; sem licença |
+| IGBConverter / raven-formats (nikita488) | — | MIT | Citados como fonte do formato | A localizar e avaliar; licença clara |
+| [ChmtTnky/IGBDataExtractor](https://github.com/ChmtTnky/IGBDataExtractor) | — | — | Depende do SDK proprietário Alchemy 5.0 | Descartado |
+
+Fórum da comunidade: [marvelmods.com](https://marvelmods.com/forum/index.php/topic,10797.30.html).
 
 ## Plano
 
