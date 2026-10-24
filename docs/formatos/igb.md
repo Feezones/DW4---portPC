@@ -41,6 +41,10 @@ Ordem dos campos segundo implementações públicas para X-Men Legends / Marvel:
 
 Sobra de 420 a 123.098 bytes além dos buffers do cabeçalho em todos os arquivos. Explicação esperada: seções com tamanho próprio (alinhamento, diretórios externos, nomes de pools, índice, info). `dw4 igb-layout` percorre essas seções e confere se o arquivo fecha exatamente.
 
+**Resultado de `dw4 igb-layout` (2026-10-24): o layout fecha byte a byte em todos os 2274 IGB, sem erro.** Ordem das seções (v6): cabeçalho (48), metacampos, alinhamento (prefixo u32), metaobjetos, diretórios externos (se flag 0x40000000), nomes de pools (se 0x10000000), entradas, índice (prefixo u32), info (4 bytes, se 0x80000000), objetos, memória. A sobra do `igb-headers` era a soma de diretórios externos, nomes de pools, índice e info. **Confiança: FATO** para a divisão em seções; o conteúdo de cada seção ainda não foi interpretado.
+
+Exemplo (`area` #3 dng1, 447.581 B): metacampos 1622, alinhamento 76, metaobjetos 4382, externos 23, pools 336, entradas 4796, índice 13.230, info 4, objetos 214.068, memória 208.996.
+
 ## Ferramentas
 
 Avaliadas em 2026-10-24 só pela leitura do código (nada foi executado):
