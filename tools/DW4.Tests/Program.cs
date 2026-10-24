@@ -397,7 +397,7 @@ if (args.Length == 1)
             new Vector3(b.Max[0], b.Max[1], b.Max[2]), M(b.A), M(b.B))), M(near.Common));
         foreach (var z in zones.Zones)
         {
-            var target = (z.Min + z.Max) / 2 with { Y = z.Min.Y };
+            var target = ((z.Min + z.Max) / 2) with { Y = z.Min.Y };
             int sel = zones.Select(target);
             True(sel == 0 || zones.Zones.First(x => x.Index == sel).Contains(target), $"volume {sel} escolhido não contém o centro de {z.Index}");
             var (pos, look) = zones.Pose(z.Index, target);
