@@ -61,3 +61,14 @@ Nada disso foi interpretado ainda.
 **FATO:** os `igSwitch` apontados por `beHitLandModelInfo` (ObjectRef@7 e @8) são justamente os grupos dessa malha, além de "g_box" (caixas quebráveis).
 
 **HIPÓTESE:** `beHitLandModelInfo` Int@10 (4, 2, 1, 2, 1026) é um tipo ou uma máscara de superfície. `g_ddamagefloor` (165 geometrias) é piso que causa dano.
+
+## Conversão do Guilmon para glTF (conferida em capturas, 2026-10-24)
+
+| Item | Regra | Evidência |
+|---|---|---|
+| Textura (formato 14, `.dds`) | DXT1 de PC: blocos 4×4 em linhas, RGB565 little-endian, linhas de baixo para cima | `p_girumon01` sai como o atlas correto (pele vermelha, faixas pretas, símbolo na barriga). A leitura em CMPR do GameCube sai embaralhada |
+| Rotação | quatérnio Enbaya conjugado (x, y, z → −x, −y, −z) | só com o conjugado as poses waitS, runD, guardD e deadD ficam naturais |
+| Translação | a do esqueleto (`igSkeleton` MemoryRef@3); a animação só traz translação na raiz (JointRoot) | usar a translação da animação em todos os ossos faz o corpo implodir |
+| Pele | rígida, `JOINTS_0` = osso da matriz `paleta[índice local]`, peso 1 | pose de repouso inteira, com os pés em y = 0 |
+
+**Desconhecido:** se a translação animada da raiz (JointRoot) deve somar ou substituir a do esqueleto. Hoje ela é substituída só quando a trilha não é toda zero. A comparação com o jogo rodando foi adiada por decisão do responsável.
