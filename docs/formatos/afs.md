@@ -1,28 +1,58 @@
 # AFS (`files/area.afs`, `files/ndmw.afs`)
 
+**Confiança: FATO** para a estrutura do contêiner (validada em 2026-10-24, leitura em PowerShell puro na cópia de trabalho). O conteúdo das entradas é tratado em documentos próprios.
+
+## Estrutura validada
+
 | Campo | area.afs | ndmw.afs |
 |---|---|---|
-| Tamanho | 511.553.536 | 692.326.400 |
+| Tamanho do arquivo | 511.553.536 | 692.326.400 |
 | SHA-256 | 2280CFE9…2BD0D371 | C5C2B015…8CC0BCCC |
-| Bytes 0–3 | `41 46 53 00` ("AFS\0") | `41 46 53 00` |
-| Bytes 4–7 (LE) | 0x566 = 1382 | 0x3CD = 973 |
-| Bytes 8–11 (LE) | 0x3000 | 0x2000 |
-| Bytes 12–15 (LE) | 0x025B1000 | 0x00432800 |
-| Entropia 64 KiB | 6,85 | 7,11 |
+| Magic (0x0) | `AFS\0` | `AFS\0` |
+| N entradas (u32 LE em 0x4) | 1382 | 973 |
+| Tabela (offset, tamanho) a partir de 0x8 | termina em 0x2B38 | termina em 0x1E70 |
+| 1ª entrada | 0x3000 | 0x2000 |
+| Fim da última entrada | 0x1E7CA4F0 | 0x294350D2 |
+| Par extra após a tabela → tabela de nomes | 0x1E7CA800, 66.336 B (= 1382 × 0x30) | 0x29435800, 46.704 B (= 973 × 0x30) |
 
-## Hipótese
+Verificações (todas passaram nos dois arquivos):
 
-AFS é um contêiner usado pelo middleware da CRI em vários jogos de PS2, GameCube e Dreamcast, com layout publicamente descrito por ferramentas de modding: assinatura `AFS\0`, contagem de entradas, tabela de pares (offset, tamanho) em little-endian e, opcionalmente, uma tabela de nomes no fim da tabela.
+- Offsets estritamente crescentes.
+- Todos alinhados a 0x800.
+- Nenhuma entrada passa do fim do arquivo, nenhuma sobreposição, nenhuma entrada de tamanho 0.
+- Lacunas entre entradas: 0 a 2042 bytes, só preenchimento até o próximo múltiplo de 0x800.
 
-Evidência parcial: a assinatura bate; o 1º offset (0x3000 e 0x2000) é alinhado e cabe depois de uma tabela de 1382 e 973 entradas de 8 bytes; os valores lidos em little-endian fazem sentido mesmo o GameCube sendo big-endian, como esperado para AFS.
+## Tabela de nomes (registros de 0x30 bytes)
 
-**Confiança: HIPÓTESE forte.** Não validado ainda.
+- 32 bytes de nome ASCII, 6 × u16 (ano, mês, dia, hora, minuto, segundo), 1 × u32.
+- Datas todas válidas, entre jan/2004 e mar/2005.
+- O u32 final repete a palavra de índice i do cabeçalho (registro 0 = N, registro 1 = offset0, …). Variante conhecida de AFS. **FATO** (observado); significado: sem uso aparente.
+- **Os nomes têm só 4 caracteres** (resto zerado) e não são únicos. Funcionam como prefixo de categoria, não como nome de arquivo. **FATO.**
 
-## Validação proposta (somente leitura, na cópia de trabalho)
+## Categorias (prefixo de nome)
 
-1. Ler a tabela inteira; conferir que todos os offsets são crescentes, alinhados e `offset + tamanho <= tamanho do arquivo`.
-2. Conferir se a soma de tamanhos mais preenchimento cobre o arquivo.
-3. Procurar a tabela de nomes (entrada logo após a última da tabela, ou no fim do arquivo).
-4. Para cada entrada: 16 bytes de cabeçalho e entropia, para separar formatos e detectar compressão.
+| AFS | Prefixo | Entradas | Bytes |
+|---|---|---|---|
+| area | Load | 686 | 84.591.365 |
+| area | stag | 294 | 126.937.400 |
+| area | dngq | 168 | 76.149.240 |
+| area | dng3 | 84 | 37.374.308 |
+| area | dng1 / dng2 / dng4 | 49 cada | ~21,8 MB cada |
+| area | AEU_ / AJP_ / AUS_ | 1 cada | ~40 MB cada |
+| ndmw | soun | 79 | 273.086.732 |
+| ndmw | stag | 273 | 143.362.179 |
+| ndmw | dngq | 194 | 107.263.171 |
+| ndmw | _com | 139 | 26.521.407 |
+| ndmw | dng3 | 103 | 49.867.229 |
+| ndmw | dng1 / dng2 / dng4 | 61 / 62 / 61 | 27,8 / 30,1 / 33,0 MB |
+| ndmw | BecT | 1 | 306.654 |
 
-Entradas com entropia alta (acima de ~7,5) podem estar comprimidas; isso é só um indicador.
+HIPÓTESE (pelos nomes): `dng1`–`dng4` = quatro dungeons, `dngq` = dungeons de missão, `stag` = estágios/áreas, `soun` = som, `_com` = recursos comuns, `Load` = telas ou dados de carregamento. Nada disso foi confirmado.
+
+## Inventário por entrada
+
+`docs/inventario/afs_area.csv` e `afs_ndmw.csv`: índice, offset, tamanho, nome, 16 bytes de cabeçalho, ASCII, entropia dos primeiros 64 KiB. Gerados por `afs.ps1` (scratchpad da sessão no PC).
+
+## Próximo passo
+
+Um leitor de AFS em `tools/` (C#) com teste automatizado que reproduza exatamente estas contagens, offsets e somas.
