@@ -305,6 +305,43 @@ Test("IA: faixa pela distância, sorteio acumulado em 16, troca de mapa e espera
     True(Math.Abs(b.Yaw - MathF.PI / 2) < 1e-3f, "termina virado para o alvo");
 });
 
+Test("Técnicas: WAZALIST pelo nível e pela skill, painel com MP e recarga", () =>
+{
+    // Tabelas sintéticas no formato do igb-db: uma família de 5 graus (linhas 0..4) e uma bloqueada até o nível 12.
+    static string Col(string name, params object[] cells) =>
+        $"{{\"name\":\"{name}\",\"cells\":[{string.Join(",", cells.Select(c => c is string t ? $"\"{t}\"" : c.ToString()))}]}}";
+    var pc = new[] { Col("NAME", "f1", "f2", "f3", "f4", "f5", "d1", "d2", "d3", "d4", "d5"), Col("LABEL", "fire1", "fire2", "fire3", "fire4", "fire5", "dark1", "dark2", "dark3", "dark4", "dark5"),
+        Col("SKILL", 6, 6, 6, 6, 6, 6, 6, 6, 6, 6), Col("MP", 16, 64, 1, 1, 1, 20, 1, 1, 1, 1), Col("DELAY", 75, 1, 1, 1, 1, 1, 1, 1, 1, 1),
+        Col("HP", -160, -1, -1, -1, -1, -1, -1, -1, -1, -1), Col("RANK", 1, 2, 3, 4, 5, 1, 2, 3, 4, 5), Col("CHIMEIRITSU", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+        Col("ZOKUSEI", "fire", "fire", "fire", "fire", "fire", "dark", "dark", "dark", "dark", "dark") };
+    var sh = new List<string> { Col("TECH1", 0), Col("TECH1_LEVEL", 1), Col("TECH2", 5), Col("TECH2_LEVEL", 12) };
+    int[] s1 = [1, 301, 751, 1251, 1751], s2 = [331, 631, 1071, 1471, 1971];
+    for (int m = 1; m <= 5; m++) { sh.Add(Col($"TECH1_SKILL{m}", s1[m - 1])); sh.Add(Col($"TECH2_SKILL{m}", s2[m - 1])); }
+    for (int n = 3; n <= 6; n++) sh.Add(Col($"TECH{n}_LEVEL", 999));
+    var db = GameTables.FromJson($"{{\"pcTech\":{{\"rows\":10,\"columns\":[{string.Join(",", pc)}]}},\"shinka\":{{\"rows\":1,\"columns\":[{string.Join(",", sh)}]}}}}");
+    int[] skill = [1, 1, 1, 1, 1, 1, 1, 1, 1];
+    var list = Techniques.List(db, 0, 1, skill);
+    Equal("fire1", string.Join(",", list.Select(t => t.Label)), "nível 1, skill 1");
+    Equal(0, list[0].Stats.Element, "elemento fogo");
+    skill[6] = 301;
+    Equal("fire2", string.Join(",", Techniques.List(db, 0, 11, skill).Select(t => t.Label)), "skill 301, nível 11");
+    Equal("fire2", string.Join(",", Techniques.List(db, 0, 12, skill).Select(t => t.Label)), "dark pede skill 331");
+    skill[6] = 631;
+    Equal("fire2,dark2", string.Join(",", Techniques.List(db, 0, 12, skill).Select(t => t.Label)), "skill 631, nível 12");
+    var panel = new TechniquePanel();
+    var fire = Techniques.List(db, 0, 1, [1, 1, 1, 1, 1, 1, 1, 1, 1])[0];
+    int mp = 20;
+    Equal("fire1", panel.TryUse(fire, ref mp), "usa com 20 MP");
+    Equal(4, mp, "custo 16");
+    Equal(1.25f, panel.Cooldown(fire), "DELAY 75 quadros");
+    mp = 100;
+    Equal(null, panel.TryUse(fire, ref mp), "em recarga");
+    panel.Tick(1.3f);
+    mp = 15;
+    Equal(null, panel.TryUse(fire, ref mp), "MP insuficiente");
+    Equal(15, mp, "MP intacto");
+});
+
 Test("Combate (FIGHTCALC): dano do jogador e do inimigo, acerto, crítico, experiência e MT19937", () =>
 {
     var a = new Fighter { Tsuyosa = 100, Kashikosa = 40, Chimeiritsu = 4, Skill = [500, 1500], WeaponSkillNo = 0, AttackElement = 0, HpDrain = 10 };
@@ -643,6 +680,16 @@ if (args.Length == 1)
         var shinka = tables.First(t => t.Name == "shinka");
         Equal(16, shinka.Rows, "linhas de shinka");
         True(shinka.RowsWhere("MODEL_NAME", "p_girumon").Any(), "Guilmon na shinka");
+        // Técnicas do Guilmon (FATO, RECALC 0x80370994): famílias 0/85/40/15/80/35 e nível mínimo 1/12/22/12/23/23.
+        int g = shinka.RowsWhere("MODEL_NAME", "p_girumon").First();
+        string Cells(params string[] cols) => string.Join(",", cols.Select(c => Convert.ToInt32(shinka.Column(c)!.Cells[g])));
+        Equal("0,85,40,15,80,35", Cells("TECH1", "TECH2", "TECH3", "TECH4", "TECH5", "TECH6"), "TECHn");
+        Equal("1,12,22,12,23,23", Cells("TECH1_LEVEL", "TECH2_LEVEL", "TECH3_LEVEL", "TECH4_LEVEL", "TECH5_LEVEL", "TECH6_LEVEL"), "TECHn_LEVEL");
+        Equal("1,301,751,1251,1751", Cells("TECH1_SKILL1", "TECH1_SKILL2", "TECH1_SKILL3", "TECH1_SKILL4", "TECH1_SKILL5"), "TECH1_SKILLm");
+        Equal("80,120", Cells("MMP_INI", "MMP_GROW"), "MMP do Guilmon");
+        var tech = tables.First(t => t.Name == "pcTech");
+        Equal(100, tech.Rows, "linhas da pcTech");
+        Equal("fire1,16,-160,75,6", string.Join(",", new[] { "LABEL", "MP", "HP", "DELAY", "SKILL" }.Select(c => tech.Column(c)!.Cells[0]?.ToString())), "プチファイア");
     });
 
     Test("Jogo: IA do Numemon (#179, e_nume) tem MAP00 e MAP01 com 4 listas e faixas 36²/45²/150² e 22²/40²/150²", () =>

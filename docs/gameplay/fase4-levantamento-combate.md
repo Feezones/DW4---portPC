@@ -88,6 +88,16 @@ O envio de comandos (0x80305A28) chama o método virtual do destinatário. O han
 - Armaduras: armor1 (MAINSLOT) com BOUGYORITSU, MAHITEIKOU, DOKUTEIKOU, MAMORI, MAXHP, … e LVPOINT (nível mínimo); armor2 (SUBSLOT) com BITRITSU, EXPRITSU, LUCKRITSU, atributos (com penalidades negativas) e SHUSEINOURYOKU (atributo que recebe o bônus de revisão).
 - Contato: as sequências do Numemon mantêm o HITBOX 70000 (eneatk 0: TYPE 0, acerto 100, TSUYOSA 100) no corpo, exceto nas de dano e guarda. HIPÓTESE: encostar gera um golpe 70000 pelo mesmo E2PISHITCHECK/E2PDAMAGE (ainda não ligado na fatia).
 
+### Técnicas (FATO, salvo marcação)
+
+- pcTech (100 linhas): 20 famílias de 5 graus (linha = base + grau − 1; RANK 1..5 = プチ/メガ/ギガ/テラ/∞). SKILL = índice em SKILL[] (6 ataque, 7 cura, 8 suporte), MP = custo, DELAY = recarga em quadros de 60 Hz, HP = potência (negativo = dano, positivo = cura), LABEL = bloco da SQ_WAZA.
+- A ligação com a Digimon é a shinka: TECH1..6 (linha-base), TECHn_LEVEL (nível mínimo) e TECHn_SKILL1..5 (skill mínima por grau). A WAZALIST (RECALC 0x80370994) guarda uma técnica por família, no maior grau liberado. Guilmon: fire (nv 1), powerdown (12), healsingle (22), dark (12), powerup (23), bomb (23). Guilmon novo: só a プチファイア (16 MP, potência 160, recarga 75 quadros).
+- wazaPanel (10 linhas, COLOR/NAME de estados): não liga técnica a Digimon. HIPÓTESE: cores e ícones dos estados.
+- Uso: beNDMWMdlPlayer (0x8034C940) manda "GENERATEWAZA" ao painel (bit 0x800 dos botões); o painel (0x80349474) só aceita sem recarga e com MP ≥ custo, desconta o MP, põe a recarga e devolve o LABEL; o jogador roda SQ_WAZA com esse bloco (fire1: ACTION HFIRE1, sem HITBOX).
+- O dano vem de um projétil (KIND_PBULLET; x_200fire01: MOVE "Push" 1,5 25 e HITBOX 40000 por 1000 quadros, 4 × 4 × 4). HIPÓTESE: o motor completa o código com a linha da técnica (40000 + linha), porque um só modelo serve aos 5 graus. Quem gera o projétil não foi achado.
+- MP: não há regeneração automática no código lido; sobe com GAMERAM "ADDMP" (itens, pontos de cura) e enche no level-up.
+- Código no port: `src/DW4.Gameplay/Techniques.cs` (WAZALIST e painel). Na fatia, sem o painel, as teclas 1..6 usam a técnica direto (DECISÃO DA FATIA); o projétil sai quando a ação termina e é uma esfera (HIPÓTESE e substituto do modelo).
+
 ### Skills (P2ESKILLUP, caso 13, FATO)
 
 Limite pelo nível: 30L (até 36), 20L + 360 (até 107), 10L + 1430 (até 227), senão 8L + 1884; no limite não há sorteio. A taxa vem de uma tabela 4 × 21 × 3 do main.dol (0x804EAF18; extraída com `dw4 dol-skilltab`, fora do repositório), indexada pela faixa de nível, pela faixa da skill (1, 2, … 10, 20, 30, 100, 300, 500, 1000, 2000, 3000, 4000, 6000, 10000) e por uma coluna (2 em evento especial, senão 0; a coluna 1 nunca é usada por um andc com 0, provável bug). Técnica: chance = taxa·100; arma: taxa·GROW do tipo de arma (shinka BLUNT/SLASH/STAB/BASH/SHOT/CRUSH_GROW)·500/1000. Sobe +1 se chance > sorteio % 100000.

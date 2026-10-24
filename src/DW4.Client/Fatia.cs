@@ -42,7 +42,8 @@ public partial class Fatia : Node3D
     SequenceRunner? _runner;
     Dictionary<string, List<SeqCommand>> _actions = [];
     int _lastSerial;
-    bool _attackHeld, _showBoxes;
+    bool _attackHeld, _showBoxes, _techHeld;
+    int _techKey = -1;
     CharacterBody3D? _enemy;
     AnimationPlayer? _enemyAnim;
     string? _enemyWait, _enemyHurt, _enemyRun;
@@ -66,6 +67,15 @@ public partial class Fatia : Node3D
     int _shinkaRow = -1, _weaponRow = -1, _level = 1, _hp, _enemyHp;
     long _exp;
     readonly int[] _skill = new int[9];
+    // Técnicas (Techniques, TechniquePanel). DECISÃO DA FATIA: sem o painel do jogo, as teclas 1..6 usam a técnica n da
+    // WAZALIST direto (K, botão direito ou Y usam a primeira).
+    int _mp;
+    List<Technique> _techs = [];
+    readonly TechniquePanel _panel = new();
+    Technique? _wazaPending;
+    // Projéteis das técnicas (KIND_PBULLET x_200fire01…: MOVE "Push" 1,5 e HITBOX 4 × 4 × 4 por 1000 quadros, FATO).
+    // A fatia desenha uma esfera no lugar do modelo do projétil.
+    readonly List<(MeshInstance3D Mesh, Vector3 Dir, float Life, Technique Tech)> _shots = [];
     // Linha do Numemon na tabela enemy: Int@7 dos geradores da dng1 no modo normal (generatorN #184 = 13; HIPÓTESE forte).
     const int EnemyRow = 13;
     bool _enemyDead;
@@ -204,7 +214,9 @@ public partial class Fatia : Node3D
         {
             if (k.Keycode == Key.F1 && _cameraSets.Length > 1) _cameraSet = (_cameraSet + 1) % _cameraSets.Length;
             if (k.Keycode == Key.F2) _showBoxes = !_showBoxes;
-            if (k.Keycode == Key.F5) { _player.Position = Start; _player.Velocity = Vector3.Zero; _move.Stop(); _hp = _pf?.MaxHp ?? 0; }
+            if (k.Keycode == Key.F5) { _player.Position = Start; _player.Velocity = Vector3.Zero; _move.Stop(); _hp = _pf?.MaxHp ?? 0; _mp = _pf?.MaxMp ?? 0; }
+            if (k.Keycode is >= Key.Key1 and <= Key.Key6) _techKey = (int)(k.Keycode - Key.Key1);
+            if (k.Keycode == Key.K) _techKey = 0;
             if (k.Keycode == Key.Escape) GetTree().Quit();
         }
     }
@@ -236,10 +248,16 @@ public partial class Fatia : Node3D
         if (_pf != null && _hp <= 0) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; } // caído: F5 reinicia
         bool attackPressed = attackDown && !_attackHeld;
         _attackHeld = attackDown;
+        bool techDown = Input.IsMouseButtonPressed(MouseButton.Right) || Input.IsJoyButtonPressed(0, JoyButton.Y);
+        if (techDown && !_techHeld) _techKey = 0;
+        _techHeld = techDown;
+        if (_pf != null && _hp <= 0) _techKey = -1;
         bool attacking = _runner?.Running == true;
-        if (_runner != null && !attacking && attackPressed)
+        bool wasWaza = _wazaPending != null;
+        if (_runner != null && !attacking && (attackPressed || _techKey >= 0))
         {
-            attacking = _runner.Start("SQ_ATCK1", WeaponStyle);
+            attacking = _techKey >= 0 ? StartTechnique(_techKey) && _runner.Running : _runner.Start("SQ_ATCK1", WeaponStyle);
+            _techKey = -1;
             if (attacking && !_demo && !Input.IsJoyButtonPressed(0, JoyButton.X) && MouseGround() is { } aim)
             {
                 // DECISÃO DO PORT PARA PC (não é do original): o golpe sai na direção do cursor do mouse.
@@ -247,7 +265,10 @@ public partial class Fatia : Node3D
                 if (to.X * to.X + to.Z * to.Z > 0.01f) _move.Face(MathF.Atan2(to.X, to.Z));
             }
         }
-        else if (attacking) _runner!.Tick(dt, attackPressed);
+        else if (attacking) _runner!.Tick(dt, attackPressed && !wasWaza);
+        _techKey = -1;
+        _panel.Tick(dt);
+        if (_wazaPending is { } waza && _runner?.Running != true) { _wazaPending = null; ReleaseTechnique(waza); }
         if (attacking) { dir = Vector3.Zero; _move.Stop(); }
         if (_demo && _tick < 30 && _enemy != null)
         {
@@ -292,6 +313,7 @@ public partial class Fatia : Node3D
         }
         UpdateEnemy(dt);
         UpdateFloaters(dt);
+        UpdateShots(dt);
         DrawBoxes();
 
         UpdateCamera();
@@ -318,7 +340,8 @@ public partial class Fatia : Node3D
             $"ataque [J, clique ou X]: {(_runner?.Running == true ? $"{_runner.Action} → {(_runner.Action == null ? "-" : AnimName(_runner.Action) ?? "sem animação")} quadro {_runner.ActionFrame:0}/{_runner.ActionLength:0}" : "-")}  acertos no Numemon: {_hits}  [F2 caixas]\n" +
             $"Numemon: {(_brain == null ? "sem IA" : $"{_brain.Map.Name}, {(_brain.External ?? _brain.Current?.Sequence ?? "-")}")}{(_enemyRunner?.Running == true ? $" ({_enemyRunner.Action})" : "")}  golpes no Guilmon: {_hitsTaken}\n" +
             (_pf == null ? "combate: sem tabelas (dw4 igb-db area.afs 3 <fatia>\\db)\n" :
-                $"Guilmon nv {_level}  HP {_hp}/{_pf.MaxHp}  EXP {_exp}/{PlayerGrowth.NextExp(_level)}  SLASH {_skill[1]}  |  Numemon HP {(_enemyDead ? "derrotado" : $"{_enemyHp}/{_ef!.MaxHp}")}  |  {_lastEvent}{(_hp <= 0 ? "  |  CAIU: F5 reinicia" : "")}\n") +
+                $"Guilmon nv {_level}  HP {_hp}/{_pf.MaxHp}  MP {_mp}/{_pf.MaxMp}  EXP {_exp}/{PlayerGrowth.NextExp(_level)}  SLASH {_skill[1]}  |  Numemon HP {(_enemyDead ? "derrotado" : $"{_enemyHp}/{_ef!.MaxHp}")}  |  {_lastEvent}{(_hp <= 0 ? "  |  CAIU: F5 reinicia" : "")}\n" +
+                $"técnicas [1..6; K, botão direito ou Y = 1]: {(_techs.Count == 0 ? "-" : string.Join("  ", _techs.Select((t, i) => $"{i + 1} {t.Name} {t.Mp} MP{(_panel.Cooldown(t) > 0 ? $" ({_panel.Cooldown(t):0.0} s)" : "")}")))}  skills ataque/cura/suporte {_skill[6]}/{_skill[7]}/{_skill[8]}\n") +
             "movimento, gravidade, ponto inicial e IA PROVISÓRIOS (não medidos no jogo)" +
             (_problems.Count > 0 ? "\n" + string.Join("\n", _problems) : "");
     }
@@ -402,11 +425,91 @@ public partial class Fatia : Node3D
         Array.Fill(_skill, 1);
         Recalc();
         _hp = _pf!.MaxHp;
+        _mp = _pf.MaxMp;
+        if (!_db.Contains("pcTech")) _problems.Add("a pcTech não está no *_db.json: técnicas desligadas");
         _ef = _db.Enemy(EnemyRow);
         _enemyHp = _ef.MaxHp;
     }
 
-    void Recalc() => _pf = _db!.Player(_shinkaRow, _level, _weaponRow, _skill);
+    void Recalc()
+    {
+        _pf = _db!.Player(_shinkaRow, _level, _weaponRow, _skill);
+        if (_db.Contains("pcTech")) _techs = Techniques.List(_db, _shinkaRow, _level, _skill);
+    }
+
+    // Tecla da técnica → painel (MP e recarga) → SQ_WAZA com o LABEL; o projétil ou a cura sai quando a sequência acaba.
+    bool StartTechnique(int n)
+    {
+        if (_runner == null || _db == null || n >= _techs.Count) return false;
+        var t = _techs[n];
+        if (_panel.TryUse(t, ref _mp) is not { } label) { _lastEvent = $"{t.Name}: {(_mp < t.Mp ? "MP insuficiente" : "recarregando")}"; return false; }
+        if (!_runner.Start("SQ_WAZA", label)) { _lastEvent = $"SQ_WAZA sem o bloco {label}"; ReleaseTechnique(t); return true; }
+        _wazaPending = t;
+        return true;
+    }
+
+    // HIPÓTESE: o projétil nasce quando a ação da técnica termina (quem gera o x_200fire01 no GENERATEWAZA não foi achado).
+    void ReleaseTechnique(Technique t)
+    {
+        _lastEvent = t.Name;
+        if (t.Stats.Hp > 0)
+        {
+            // Cura (heal*): HP da técnica somado ao jogador. HIPÓTESE: sem fórmula extra (o caso de cura não foi lido).
+            int before = _hp;
+            _hp = Math.Min(_pf!.MaxHp, _hp + t.Stats.Hp);
+            Float(_player, $"+{_hp - before}", Colors.LightGreen);
+            return;
+        }
+        if (t.Stats.Hp == 0) { _lastEvent += " (efeito de suporte ainda não ligado na fatia)"; return; }
+        var dir = new Vector3(MathF.Sin(_move.Facing), 0, MathF.Cos(_move.Facing));
+        var color = t.Stats.Element switch { 0 => Colors.OrangeRed, 1 => Colors.LightBlue, 2 => Colors.Yellow, 3 => Colors.MediumPurple, _ => Colors.White };
+        var mesh = new MeshInstance3D { Mesh = new SphereMesh { Radius = 2, Height = 4 }, MaterialOverride = new StandardMaterial3D { AlbedoColor = color, EmissionEnabled = true, Emission = color, ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded } };
+        AddChild(mesh);
+        mesh.GlobalPosition = _player.GlobalPosition + new Vector3(0, 4, 0) + dir * 4;
+        _shots.Add((mesh, dir, 1000 / SequenceRunner.FramesPerSecond, t));
+    }
+
+    void UpdateShots(float dt)
+    {
+        // Mesma escala do "Move" 0,7 do Guilmon (HIPÓTESE): "Push" 1,5.
+        float speed = _move.MaxSpeed * 1.5f / GuilmonMove;
+        for (int i = _shots.Count - 1; i >= 0; i--)
+        {
+            var (mesh, dir, life, tech) = _shots[i];
+            life -= dt;
+            mesh.GlobalPosition += dir * speed * dt;
+            var c = mesh.GlobalPosition;
+            bool hit = false;
+            if (_enemy != null && !_enemyDead && !(_enemyStarted && _enemyRunner?.Invincible == true))
+            {
+                var e = _enemy.GlobalPosition;
+                hit = Math.Abs(c.X - e.X) <= 2 + 4 && Math.Abs(c.Z - e.Z) <= 2 + 4 && c.Y + 2 >= e.Y && c.Y - 2 <= e.Y + 14;
+            }
+            if (hit) TechniqueStrikes(tech);
+            if (hit || life <= 0) { mesh.QueueFree(); _shots.RemoveAt(i); continue; }
+            _shots[i] = (mesh, dir, life, tech);
+        }
+    }
+
+    // P2EISHITCHECK (técnica acerta sempre), P2EISCRITICAL e P2EDAMAGE no ramo técnica; código = 40000 + linha (HIPÓTESE).
+    void TechniqueStrikes(Technique t)
+    {
+        if (_pf == null || _ef == null) return;
+        int code = 40000 + t.Row;
+        bool crit = DamageFormula.TechniqueCritical(t.Stats, _ef, _mt);
+        var r = DamageFormula.Technique(_pf, _ef, t.Stats, crit, _mt);
+        RaiseSkill(t.Stats.SkillIndex, technique: true);
+        _enemyHp = Math.Max(0, _enemyHp - r.Damage);
+        _hits++;
+        Float(_enemy!, crit ? $"{r.Damage}!" : r.Damage.ToString(), crit ? Colors.Orange : Colors.Gold);
+        _lastEvent = $"{t.Name}: {r.Damage}{(crit ? " crítico" : "")} (código {code})";
+        if (_enemyHp <= 0) GainExp();
+        if (_brain != null && _enemyRunner != null)
+        {
+            _brain.Force(DamageSequences[DamageFormula.Rank(r.Damage, _enemyHp, _ef.MaxHp)]);
+            _enemyStarted = false;
+        }
+    }
 
     // hit_e_nume.lua com o FIGHTCALC: acerto, crítico, dano, skill, HP, faixa → sequência de reação do Numemon.
     string PlayerStrikes(int code)
@@ -432,12 +535,18 @@ public partial class Fatia : Node3D
 
     void SkillUp()
     {
-        if (_skillGrowth == null || _db == null || _pf == null) return;
+        if (_pf == null) return;
         int idx = _pf.WeaponSkillNo;
-        if (idx < 0 || idx >= WeaponGrow.Length) return;
-        int grow = _db["shinka"].Int(_shinkaRow, WeaponGrow[idx]);
+        if (idx >= 0 && idx < WeaponGrow.Length) RaiseSkill(idx, technique: false);
+    }
+
+    // P2ESKILLUP: arma pelo <X>_GROW da shinka; técnica pelo índice SKILL da pcTech (6 ataque, 7 cura, 8 suporte).
+    void RaiseSkill(int idx, bool technique)
+    {
+        if (_skillGrowth == null || _db == null || idx < 0 || idx >= _skill.Length) return;
+        int grow = technique ? 0 : _db["shinka"].Int(_shinkaRow, WeaponGrow[idx]);
         int before = _skill[idx];
-        _skill[idx] = _skillGrowth.Raise(before, _level, technique: false, grow, special: false, _mt);
+        _skill[idx] = _skillGrowth.Raise(before, _level, technique, grow, special: false, _mt);
         if (_skill[idx] != before) { Recalc(); Float(_player, $"SKILL {_skill[idx]}", Colors.Cyan); }
     }
 
@@ -451,6 +560,7 @@ public partial class Fatia : Node3D
         if (!up) return;
         Recalc();
         _hp = _pf!.MaxHp; // P2EEXPUP: sobe de nível com HP e MP cheios
+        _mp = _pf.MaxMp;
         Float(_player, $"NÍVEL {_level}", Colors.Yellow);
     }
 
@@ -580,6 +690,7 @@ public partial class Fatia : Node3D
                 // Reação do Guilmon pela faixa do dano (bloco do estilo da arma, ou "common"), virado para quem bateu (HIPÓTESE).
                 if (_runner != null && (_runner.Start(reaction, WeaponStyle) || _runner.Start(reaction, "common")))
                 {
+                    _wazaPending = null; // interrompida: o MP já foi gasto no painel
                     var to = _enemy!.GlobalPosition - g;
                     _move.Stop();
                     _move.Face(MathF.Atan2(to.X, to.Z));

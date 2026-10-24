@@ -96,6 +96,8 @@ public sealed class GameTables
             Mahiritsu = w.Int(weaponRow, "MAHIRITSU"),
             Kaihiritsu = 1,
             MaxHp = PlayerGrowth.MaxHpMp(level, s.Int(shinkaRow, "MHP_INI"), s.Int(shinkaRow, "MHP_GROW"), Up(0)),
+            // HIPÓTESE: UPCNT[1] é o do MMP (o [0] é o do MHP e os atributos começam no [2]).
+            MaxMp = PlayerGrowth.MaxHpMp(level, s.Int(shinkaRow, "MMP_INI"), s.Int(shinkaRow, "MMP_GROW"), Up(1)),
             Skill = skill,
             WeaponSkillNo = w.Int(weaponRow, "SKILL"),
             Resist = [s.Int(shinkaRow, "RES_FIRE"), s.Int(shinkaRow, "RES_ICE"), s.Int(shinkaRow, "RES_THUNDER"), s.Int(shinkaRow, "RES_DARK")],

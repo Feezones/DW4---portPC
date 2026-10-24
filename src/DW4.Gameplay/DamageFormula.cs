@@ -25,6 +25,7 @@ public sealed record Fighter
     public int Bougyoritsu { get; init; }
     public int Kaihiritsu { get; init; }
     public int MaxHp { get; init; }
+    public int MaxMp { get; init; }
     public IReadOnlyList<int> Skill { get; init; } = [];
     public int WeaponSkillNo { get; init; }
     /// <summary>ATTACKZOKUSEI do golpe físico: 0 fogo, 1 gelo, 2 trovão, 3 trevas; −1 nenhum (o E2PDAMAGE não tem veneno).</summary>
