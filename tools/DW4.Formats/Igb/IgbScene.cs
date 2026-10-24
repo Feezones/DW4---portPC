@@ -334,6 +334,80 @@ public sealed class IgbScene
     /// No DW4 os índices estão em ordem linear (a leitura em blocos GX 8×4 saiu embaralhada em todas as amostras) e as linhas
     /// vêm de baixo para cima (a leitura direta mostrou os logotipos e textos invertidos na vertical).
     /// </summary>
+    /// <summary>
+    /// Decodifica uma imagem comprimida em blocos de 4×4 (formato 14 nos IGB do DW4; nomes .dds) com dois layouts candidatos:
+    /// gameCube = false: DXT1 de PC (blocos em linhas, cores RGB565 little-endian, índices com o pixel 0 nos bits baixos);
+    /// gameCube = true: CMPR da GX (blocos 4×4 agrupados em tiles 8×8, cores big-endian, pixel 0 nos bits altos).
+    /// As linhas saem invertidas na vertical, como nas imagens indexadas. Qual layout é o certo se decide olhando.
+    /// </summary>
+    public static byte[]? DecodeBlockCompressed(IgbImage img, bool gameCube)
+    {
+        int w = img.Width, h = img.Height;
+        if (w % 4 != 0 || h % 4 != 0 || img.Pixels.Length < w * h / 2) return null;
+        var rgba = new byte[w * h * 4];
+        int blocksX = w / 4, blocksY = h / 4, at = 0;
+        var order = new List<(int bx, int by)>();
+        if (gameCube)
+        {
+            for (int ty = 0; ty < blocksY; ty += 2)
+                for (int tx = 0; tx < blocksX; tx += 2)
+                    for (int sub = 0; sub < 4; sub++) order.Add((tx + (sub & 1), ty + (sub >> 1)));
+        }
+        else
+            for (int by = 0; by < blocksY; by++)
+                for (int bx = 0; bx < blocksX; bx++) order.Add((bx, by));
+
+        Span<byte> pal = stackalloc byte[16];
+        foreach (var (bx, by) in order)
+        {
+            if (at + 8 > img.Pixels.Length) break;
+            var blk = img.Pixels.AsSpan(at, 8);
+            at += 8;
+            if (bx >= blocksX || by >= blocksY) continue;
+            int c0 = gameCube ? (blk[0] << 8) | blk[1] : blk[0] | (blk[1] << 8);
+            int c1 = gameCube ? (blk[2] << 8) | blk[3] : blk[2] | (blk[3] << 8);
+            Rgb565(c0, pal[..4]);
+            Rgb565(c1, pal.Slice(4, 4));
+            for (int k = 0; k < 3; k++)
+            {
+                if (c0 > c1)
+                {
+                    pal[8 + k] = (byte)((2 * pal[k] + pal[4 + k]) / 3);
+                    pal[12 + k] = (byte)((pal[k] + 2 * pal[4 + k]) / 3);
+                }
+                else
+                {
+                    pal[8 + k] = (byte)((pal[k] + pal[4 + k]) / 2);
+                    pal[12 + k] = 0;
+                }
+            }
+            pal[11] = 255;
+            pal[15] = (byte)(c0 > c1 ? 255 : 0);
+            for (int y = 0; y < 4; y++)
+                for (int x = 0; x < 4; x++)
+                {
+                    int code = gameCube
+                        ? (blk[4 + y] >> (6 - 2 * x)) & 3
+                        : (blk[4 + y] >> (2 * x)) & 3;
+                    int px = 4 * bx + x, py = h - 1 - (4 * by + y);
+                    pal.Slice(4 * code, 4).CopyTo(rgba.AsSpan(4 * (py * w + px)));
+                }
+        }
+        return rgba;
+
+        static void Rgb565(int c, Span<byte> o)
+        {
+            o[0] = (byte)(((c >> 11) & 31) * 255 / 31);
+            o[1] = (byte)(((c >> 5) & 63) * 255 / 63);
+            o[2] = (byte)((c & 31) * 255 / 31);
+            o[3] = 255;
+        }
+    }
+
+    /// <summary>Imagem para RGBA conforme o formato: indexada de 8 bits, ou formato 14 (blocos) com o layout escolhido.</summary>
+    public static byte[]? ToRgba(IgbImage img, bool gameCubeBlocks = false) =>
+        img.PixelFormat == 14 ? DecodeBlockCompressed(img, gameCubeBlocks) : IndexedToRgba(img);
+
     public static byte[]? IndexedToRgba(IgbImage img)
     {
         int w = img.Width, h = img.Height;

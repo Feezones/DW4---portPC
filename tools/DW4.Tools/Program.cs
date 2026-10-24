@@ -521,8 +521,21 @@ int IgbExport(string path, string which, string outDir)
         for (int i = 3; i < img.Palette.Length; i += 4) maxAlpha = Math.Max(maxAlpha, img.Palette[i]);
         report.AppendLine($"imagem #{img.Index} \"{img.Name}\" {img.Width}x{img.Height} formato {img.PixelFormat} {img.BitsPerPixel} bpp, " +
             $"{img.Pixels.Length} B; paleta formato {img.PaletteFormat} ×{img.PaletteCount} ({img.Palette.Length} B), alfa máx {maxAlpha}, início {pal}");
+        if (img.PixelFormat == 14)
+        {
+            // dois layouts candidatos para o formato comprimido; o de PC fica como textura do OBJ até a inspeção decidir
+            foreach (var (gc, suffix) in new[] { (false, "pc"), (true, "gc") })
+            {
+                var blocks = IgbScene.DecodeBlockCompressed(img, gc);
+                if (blocks == null) { report.AppendLine("    formato 14 com tamanho inesperado"); break; }
+                var name = $"img{img.Index:D4}_{suffix}.png";
+                using (var fs = File.Create(Path.Combine(dir, name))) Png.WriteRgba(fs, img.Width, img.Height, blocks);
+                if (!gc) texture[img.Index] = name;
+            }
+            continue;
+        }
         var rgba = IgbScene.IndexedToRgba(img);
-        if (rgba == null) { report.AppendLine("    não decodificada (só 8 bpp com paleta de 256×4 B por enquanto)"); continue; }
+        if (rgba == null) { report.AppendLine("    não decodificada (só 8 bpp com paleta e formato 14 por enquanto)"); continue; }
         var file = $"img{img.Index:D4}.png";
         using (var fs = File.Create(Path.Combine(dir, file))) Png.WriteRgba(fs, img.Width, img.Height, rgba);
         texture[img.Index] = file;
@@ -764,7 +777,8 @@ int IgbGltf(string path, string which, string outDir, string[] options)
 {
     var root = Path.GetFullPath(outDir);
     if (InsideGitRepo(root)) { Console.Error.WriteLine($"recusado: {root} está dentro de um repositório Git"); return 1; }
-    bool conj = options.Contains("--quat=conj"), restTrans = options.Contains("--trans=rest");
+    bool conj = options.Contains("--quat=conj"), restTrans = options.Contains("--trans=rest"),
+        gcBlocks = options.Contains("--dxt=gc"), animTrans = options.Contains("--trans=anim"), allSkins = options.Contains("--todas-peles");
     int maxAnims = int.MaxValue;
     foreach (var o in options.Where(o => o.StartsWith("--anim=", StringComparison.Ordinal))) maxAnims = int.Parse(o[7..], inv);
     using var afs = AfsArchive.Open(path);
@@ -836,7 +850,7 @@ int IgbGltf(string path, string which, string outDir, string[] options)
         bool alpha = false;
         if (ch.Scene.Images.TryGetValue(image, out var img))
         {
-            var rgba = IgbScene.IndexedToRgba(img);
+            var rgba = IgbScene.ToRgba(img, gcBlocks);
             report.AppendLine($"imagem #{image} \"{img.Name}\" {img.Width}x{img.Height} formato {img.PixelFormat} {img.BitsPerPixel} bpp: {(rgba == null ? "não decodificada" : "ok")}");
             if (rgba != null)
             {
@@ -851,7 +865,10 @@ int IgbGltf(string path, string which, string outDir, string[] options)
     int fallbackImage = ch.Scene.Images.Values.OrderByDescending(i => i.Width * i.Height).FirstOrDefault()?.Index ?? -1;
 
     // Malhas de pele: um nó por igSkin
-    foreach (var sm in ch.Skins)
+    // Por padrão só a pele de maior detalhe ("High…", ou a com mais vértices); --todas-peles exporta todas.
+    var chosen = allSkins ? ch.Skins : ch.Skins.Where(k => k.Name.StartsWith("High", StringComparison.Ordinal)).Take(1).ToList();
+    if (chosen.Count == 0) chosen = ch.Skins.OrderByDescending(k => k.Parts.Sum(p => p.Positions.Count)).Take(1).ToList();
+    foreach (var sm in chosen)
     {
         var prims = new JsonArray();
         report.AppendLine($"pele \"{sm.Name}\": {sm.Parts.Count} geometrias, paleta de {sm.MatrixPalette.Count}, imagem {sm.ImageIndex}");
@@ -936,7 +953,13 @@ int IgbGltf(string path, string which, string outDir, string[] options)
             }
             samplers.Add(new JsonObject { ["input"] = times, ["output"] = g.AddFloats(rot, 4, "VEC4", false), ["interpolation"] = "LINEAR" });
             channels.Add(new JsonObject { ["sampler"] = samplers.Count - 1, ["target"] = new JsonObject { ["node"] = boneNode[bone], ["path"] = "rotation" } });
-            if (!restTrans)
+            // Translação: no Guilmon só a raiz (JointRoot) traz translação animada; nas outras trilhas ela vale 0 em todas as
+            // amostras e o osso fica na translação do esqueleto (hipótese conferida visualmente). --trans=anim força os
+            // valores da animação; --trans=rest força o esqueleto.
+            var bone0 = ch.Bones[bone];
+            bool zeroTrack = tr.All(v => v == 0);
+            if (restTrans || (!animTrans && zeroTrack))
+                for (int k = 0; k < tr.Count; k += 3) { tr[k] = bone0.Tx; tr[k + 1] = bone0.Ty; tr[k + 2] = bone0.Tz; }
             {
                 samplers.Add(new JsonObject { ["input"] = times, ["output"] = g.AddFloats(tr, 3, "VEC3", false), ["interpolation"] = "LINEAR" });
                 channels.Add(new JsonObject { ["sampler"] = samplers.Count - 1, ["target"] = new JsonObject { ["node"] = boneNode[bone], ["path"] = "translation" } });
