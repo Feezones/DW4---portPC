@@ -205,6 +205,15 @@ public partial class Fatia : Node3D
         }
 
         LoadCombat();
+        // Som da dng1 (FATO: first.lua toca "AM_DUNGE" e "DG_CAVE1"; beSoundInfo da fase → ndmw #6 e #35), com o loop do
+        // cabeçalho ADX. Gerado por: dw4 adx-wav ndmw.afs <fatia>\audio 6 35. Volume do beSoundData (S8): unidade
+        // desconhecida, por isso os dois tocam a 0 dB.
+        foreach (var idx in new[] { 6, 35 })
+        {
+            var wav = System.IO.Path.Combine(_dir, "audio", $"ndmw_{idx:D4}.wav");
+            if (!System.IO.File.Exists(wav)) { _problems.Add($"falta {wav} (dw4 adx-wav ndmw.afs <fatia>\\audio 6 35)"); continue; }
+            if (LoadWav(wav) is { } stream) { var p = new AudioStreamPlayer { Stream = stream }; AddChild(p); p.Play(); }
+        }
 
         _cameraSets = new[] { "ndmw_0180_camera.json", "ndmw_0181_camera.json" }
             .Select(f => System.IO.Path.Combine(_dir, f))
@@ -822,6 +831,29 @@ public partial class Fatia : Node3D
             _boxMeshes[i].Rotation = new Vector3(0, yaw, 0);
             _boxMeshes[i].Scale = new Vector3(h.Size.X, h.Size.Y, h.Size.Z);
         }
+    }
+
+    // WAV PCM 16 bits com o chunk "smpl" do adx-wav (início e fim inclusivo do loop).
+    AudioStreamWav? LoadWav(string file)
+    {
+        var b = System.IO.File.ReadAllBytes(file);
+        if (b.Length < 12 || System.Text.Encoding.ASCII.GetString(b, 0, 4) != "RIFF") { _problems.Add($"{file}: não é WAV"); return null; }
+        int channels = 0, rate = 0, loopStart = -1, loopEnd = -1;
+        byte[]? data = null;
+        for (int at = 12; at + 8 <= b.Length;)
+        {
+            string id = System.Text.Encoding.ASCII.GetString(b, at, 4);
+            int size = BitConverter.ToInt32(b, at + 4);
+            int body = at + 8;
+            if (id == "fmt ") { channels = BitConverter.ToInt16(b, body + 2); rate = BitConverter.ToInt32(b, body + 4); }
+            else if (id == "smpl" && BitConverter.ToInt32(b, body + 28) > 0) { loopStart = BitConverter.ToInt32(b, body + 44); loopEnd = BitConverter.ToInt32(b, body + 48) + 1; }
+            else if (id == "data") data = b.AsSpan(body, Math.Min(size, b.Length - body)).ToArray();
+            at = body + size + (size & 1);
+        }
+        if (data == null || channels == 0) { _problems.Add($"{file}: WAV sem fmt ou data"); return null; }
+        var w = new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, MixRate = rate, Stereo = channels == 2, Data = data };
+        if (loopStart >= 0) { w.LoopMode = AudioStreamWav.LoopModeEnum.Forward; w.LoopBegin = loopStart; w.LoopEnd = loopEnd; }
+        return w;
     }
 
     Node3D? Load(string sub, string fileName)

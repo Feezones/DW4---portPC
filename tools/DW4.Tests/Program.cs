@@ -740,6 +740,23 @@ if (args.Length == 1)
         True(ActionAnimations.Loops(acts, "KATCS1") && !ActionAnimations.Loops(acts, "VATCS1"), "LP e OS");
     });
 
+    Test("Jogo: ADX #35 (DG_CAVE1) decodifica com o loop do cabeçalho; #6 (AM_DUNGE) faz loop inteiro", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        foreach (var (idx, ls) in new[] { (35, 2020224), (6, 0) })
+        {
+            using var ms = new MemoryStream();
+            afs.CopyEntry(afs.Entries[idx], ms);
+            var pcm = DW4.Formats.Audio.Adx.Decode(ms.ToArray(), out var h);
+            Equal((2, 48000), (h.Channels, h.SampleRate), $"#{idx} formato");
+            True(h.Loop, $"#{idx} tem loop");
+            Equal(ls, h.LoopStart, $"#{idx} início do loop");
+            if (idx == 35) Equal(6627896, h.LoopEnd, "#35 fim do loop");
+            Equal(h.Samples * 2, pcm.Length, $"#{idx} amostras");
+            True(pcm.Any(v => v != 0), $"#{idx} não é silêncio");
+        }
+    });
+
     Test("Jogo: 12 tabelas beDataBase na dng1 (area #3); w_sword01 com TSUYOSA 60..199; Guilmon e Numemon nas tabelas", () =>
     {
         using var afs = AfsArchive.Open(areaPath);
