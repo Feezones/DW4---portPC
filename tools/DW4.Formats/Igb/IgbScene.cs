@@ -14,6 +14,11 @@ public sealed class IgbMeshPart
     public List<(float X, float Y, float Z)> Normals { get; } = [];
     public List<(float U, float V)> TexCoords { get; } = [];
     public List<uint> Colors { get; } = [];
+    /// <summary>Raiz de cena (nó logo abaixo do igSceneInfo) de onde a geometria foi alcançada; -1 sem cena.</summary>
+    public int SceneRoot { get; init; } = -1;
+    /// <summary>Pesos de pele (um float por vértice no DW4) e índice local de matriz (um byte por vértice).</summary>
+    public List<float> BlendWeights { get; } = [];
+    public List<int> BlendIndices { get; } = [];
     public List<int> Triangles { get; } = [];
     /// <summary>Uma linha por fluxo de vértices: slot externo, bloco de memória, tamanho, passo por vértice e se foi decodificado.</summary>
     public List<string> Notes { get; } = [];
@@ -53,6 +58,7 @@ public sealed class IgbScene
     public Dictionary<int, IgbImage> Images { get; } = [];
     public List<string> Notes { get; } = [];
     public int TransformCount { get; private set; }
+    int _root = -1;
 
     IgbScene(IgbFile f, byte[] data)
     {
@@ -72,7 +78,12 @@ public sealed class IgbScene
         if (roots.Count > 0)
         {
             s.Notes.Add($"{roots.Count} raiz(es) de cena a partir de igSceneInfo");
-            foreach (var root in roots) s.Visit(root, null, -1, []);
+            foreach (var root in roots)
+            {
+                s._root = root.Index;
+                s.Visit(root, null, -1, []);
+            }
+            s._root = -1;
         }
         else
         {
@@ -128,7 +139,7 @@ public sealed class IgbScene
         }
     }
 
-    List<IgbObject> AttrList(IgbObject attrSet)
+    public List<IgbObject> AttrList(IgbObject attrSet)
     {
         var list = new List<IgbObject>();
         foreach (var r in Refs(attrSet))
@@ -140,7 +151,7 @@ public sealed class IgbScene
     }
 
     // igObjectList: primeiro Int = quantidade; MemoryRef = vetor de i32 com índices de objetos.
-    List<IgbObject> ObjectList(IgbObject list)
+    public List<IgbObject> ObjectList(IgbObject list)
     {
         var result = new List<IgbObject>();
         var countField = list.Fields.FirstOrDefault(v => v.Desc.ShortName == "Int");
@@ -153,7 +164,7 @@ public sealed class IgbScene
     }
 
     // igTextureBindAttr -> igTextureAttr -> igImage (até três níveis de ObjectRef).
-    int FindImage(IgbObject start)
+    public int FindImage(IgbObject start)
     {
         var queue = new Queue<(IgbObject, int)>();
         queue.Enqueue((start, 0));
@@ -167,9 +178,14 @@ public sealed class IgbScene
         return -1;
     }
 
-    void AddGeometry(IgbObject geom, float[]? world, int image)
+    void AddGeometry(IgbObject geom, float[]? world, int image) => Parts.Add(BuildPart(geom, world, image));
+
+    /// <summary>Lê um igGeometryAttr sem transformação nem textura (usado para malhas de pele).</summary>
+    public IgbMeshPart ReadGeometry(IgbObject geom) => BuildPart(geom, null, -1);
+
+    IgbMeshPart BuildPart(IgbObject geom, float[]? world, int image)
     {
-        var part = new IgbMeshPart { GeometryIndex = geom.Index, ImageIndex = image };
+        var part = new IgbMeshPart { GeometryIndex = geom.Index, ImageIndex = image, SceneRoot = _root };
         IgbObject? va = null, ia = null, pla = null;
         foreach (var r in Refs(geom))
         {
@@ -178,20 +194,30 @@ public sealed class IgbScene
             else if (_f.Is(r, "igPrimLengthArray")) pla = (IgbObject)r!;
         }
         part.PrimitiveType = geom.Fields.FirstOrDefault(v => v.Desc.ShortName == "Enum")?.AsInt32(_le) ?? -1;
-        if (va == null) { part.Notes.Add("sem igVertexArray"); Parts.Add(part); return; }
+        if (va == null) { part.Notes.Add("sem igVertexArray"); return part; }
 
         part.VertexCount = va.Fields.FirstOrDefault(v => v.Desc.ShortName == "UnsignedInt")?.AsInt32(_le) ?? 0;
         var fmt = va.Fields.FirstOrDefault(v => v.Desc.ShortName == "Struct");
         if (fmt != null && fmt.Raw.Length >= 4) part.VertexFormat = (uint)I32(fmt.Raw, 0);
         int n = part.VertexCount;
 
+        // Pele (igb-blender: MemoryRef no slot 7 = pesos, slot 8 = índices). No DW4: 4 B (float) e 1 B por vértice.
+        var weights = Memory(va.Fields.FirstOrDefault(v => v.Desc.ShortName == "MemoryRef" && v.Desc.Slot == 7));
+        var blendIdx = Memory(va.Fields.FirstOrDefault(v => v.Desc.ShortName == "MemoryRef" && v.Desc.Slot == 8));
+        if (n > 0 && weights.Length == 4 * n && blendIdx.Length == n)
+        {
+            for (int i = 0; i < n; i++) part.BlendWeights.Add(F32(weights, 4 * i));
+            for (int i = 0; i < n; i++) part.BlendIndices.Add(blendIdx[i]);
+        }
+        else if (weights.Length > 0 || blendIdx.Length > 0)
+            part.Notes.Add($"pele não reconhecida: pesos {weights.Length} B, índices {blendIdx.Length} B para {n} vértices");
+
         var extRef = va.Fields.FirstOrDefault(v => v.Desc.ShortName == "MemoryRef");
         var ext = Memory(extRef);
         if (ext.Length is not (76 or 80))
         {
             part.Notes.Add($"vértices sem igExternalIndexedEntry (bloco de {ext.Length} B, passo {(n > 0 ? ext.Length / (double)n : 0):0.##}): não decodificado");
-            Parts.Add(part);
-            return;
+            return part;
         }
         for (int s = 0; s < ext.Length / 4; s++)
         {
@@ -273,7 +299,7 @@ public sealed class IgbScene
         else part.Notes.Add($"tipo de primitiva {part.PrimitiveType} não tratado");
         if (part.Triangles.Count > 0 && part.Triangles.Max() >= part.Positions.Count && part.Positions.Count > 0)
             part.Notes.Add($"índice máximo {part.Triangles.Max()} >= {part.Positions.Count} posições");
-        Parts.Add(part);
+        return part;
     }
 
     void ReadImage(IgbObject img)
@@ -308,6 +334,80 @@ public sealed class IgbScene
     /// No DW4 os índices estão em ordem linear (a leitura em blocos GX 8×4 saiu embaralhada em todas as amostras) e as linhas
     /// vêm de baixo para cima (a leitura direta mostrou os logotipos e textos invertidos na vertical).
     /// </summary>
+    /// <summary>
+    /// Decodifica uma imagem comprimida em blocos de 4×4 (formato 14 nos IGB do DW4; nomes .dds) com dois layouts candidatos:
+    /// gameCube = false: DXT1 de PC (blocos em linhas, cores RGB565 little-endian, índices com o pixel 0 nos bits baixos);
+    /// gameCube = true: CMPR da GX (blocos 4×4 agrupados em tiles 8×8, cores big-endian, pixel 0 nos bits altos).
+    /// As linhas saem invertidas na vertical, como nas imagens indexadas. Qual layout é o certo se decide olhando.
+    /// </summary>
+    public static byte[]? DecodeBlockCompressed(IgbImage img, bool gameCube)
+    {
+        int w = img.Width, h = img.Height;
+        if (w % 4 != 0 || h % 4 != 0 || img.Pixels.Length < w * h / 2) return null;
+        var rgba = new byte[w * h * 4];
+        int blocksX = w / 4, blocksY = h / 4, at = 0;
+        var order = new List<(int bx, int by)>();
+        if (gameCube)
+        {
+            for (int ty = 0; ty < blocksY; ty += 2)
+                for (int tx = 0; tx < blocksX; tx += 2)
+                    for (int sub = 0; sub < 4; sub++) order.Add((tx + (sub & 1), ty + (sub >> 1)));
+        }
+        else
+            for (int by = 0; by < blocksY; by++)
+                for (int bx = 0; bx < blocksX; bx++) order.Add((bx, by));
+
+        Span<byte> pal = stackalloc byte[16];
+        foreach (var (bx, by) in order)
+        {
+            if (at + 8 > img.Pixels.Length) break;
+            var blk = img.Pixels.AsSpan(at, 8);
+            at += 8;
+            if (bx >= blocksX || by >= blocksY) continue;
+            int c0 = gameCube ? (blk[0] << 8) | blk[1] : blk[0] | (blk[1] << 8);
+            int c1 = gameCube ? (blk[2] << 8) | blk[3] : blk[2] | (blk[3] << 8);
+            Rgb565(c0, pal[..4]);
+            Rgb565(c1, pal.Slice(4, 4));
+            for (int k = 0; k < 3; k++)
+            {
+                if (c0 > c1)
+                {
+                    pal[8 + k] = (byte)((2 * pal[k] + pal[4 + k]) / 3);
+                    pal[12 + k] = (byte)((pal[k] + 2 * pal[4 + k]) / 3);
+                }
+                else
+                {
+                    pal[8 + k] = (byte)((pal[k] + pal[4 + k]) / 2);
+                    pal[12 + k] = 0;
+                }
+            }
+            pal[11] = 255;
+            pal[15] = (byte)(c0 > c1 ? 255 : 0);
+            for (int y = 0; y < 4; y++)
+                for (int x = 0; x < 4; x++)
+                {
+                    int code = gameCube
+                        ? (blk[4 + y] >> (6 - 2 * x)) & 3
+                        : (blk[4 + y] >> (2 * x)) & 3;
+                    int px = 4 * bx + x, py = h - 1 - (4 * by + y);
+                    pal.Slice(4 * code, 4).CopyTo(rgba.AsSpan(4 * (py * w + px)));
+                }
+        }
+        return rgba;
+
+        static void Rgb565(int c, Span<byte> o)
+        {
+            o[0] = (byte)(((c >> 11) & 31) * 255 / 31);
+            o[1] = (byte)(((c >> 5) & 63) * 255 / 63);
+            o[2] = (byte)((c & 31) * 255 / 31);
+            o[3] = 255;
+        }
+    }
+
+    /// <summary>Imagem para RGBA conforme o formato: indexada de 8 bits, ou formato 14 (blocos) com o layout escolhido.</summary>
+    public static byte[]? ToRgba(IgbImage img, bool gameCubeBlocks = false) =>
+        img.PixelFormat == 14 ? DecodeBlockCompressed(img, gameCubeBlocks) : IndexedToRgba(img);
+
     public static byte[]? IndexedToRgba(IgbImage img)
     {
         int w = img.Width, h = img.Height;

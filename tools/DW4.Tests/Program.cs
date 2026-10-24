@@ -293,6 +293,61 @@ if (args.Length == 1)
         Equal("A927F50F4A287659A8282A22039723D1D5E6EB6E1F661ECF50FDA2C37FE3A8FC", Convert.ToHexString(SHA256.HashData(streams[0xC0].Payload.ToArray())), "SHA-256 do áudio");
         Equal("6278B0561D3A7D51EFA4BB11A103557B34A6B76A331FD1644537065C6934D62B", Convert.ToHexString(SHA256.HashData(streams[0xE0].Payload.ToArray())), "SHA-256 do vídeo");
     });
+
+    Test("Jogo: Guilmon (#857) tem 31 ossos, 26 matrizes, pele rígida e 82 animações", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[857], ms);
+        var data = ms.ToArray();
+        var ch = IgbCharacter.Read(IgbFile.Read(data), data);
+        Equal(31, ch.Bones.Count, "ossos");
+        Equal(26, ch.InverseBind.Count, "matrizes de pele");
+        Equal("JointRoot", ch.Bones[2].Name, "osso 2");
+        Equal(19, ch.Bones[28].Parent, "pai de Tail01");
+        Equal(82, ch.Animations.Count, "animações");
+        var high = ch.Skins.Single(k => k.Name == "HighAppearance");
+        Equal(29, high.MatrixPalette.Count, "paleta");
+        Equal(806, high.Parts[0].BlendIndices.Count, "índices de pele");
+        True(high.Parts[0].BlendWeights.All(w => w == 1f), "pesos diferentes de 1");
+        var waitS = ch.Animations.Single(a => a.Name == "waitS");
+        var clip = Enbaya.Decode(ch.EnbayaBlocks[waitS.Tracks.First(t => t.SourceIndex >= 0).SourceIndex]);
+        Equal(30, clip.SampleRate, "taxa");
+        True(Math.Abs(clip.Duration - waitS.Duration) < 0.001, $"duração {clip.Duration} × {waitS.Duration}");
+    });
+
+    Test("Jogo: as 7554 fontes Enbaya decodificam sem erro", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        int sources = 0;
+        foreach (var e in afs.Entries)
+        {
+            if (Classifier.Classify(afs.ReadHead(e, 0x30)) != ContentKind.Igb) continue;
+            using var ms = new MemoryStream();
+            afs.CopyEntry(e, ms);
+            var data = ms.ToArray();
+            var f = IgbFile.Read(data);
+            foreach (var src in f.Slots.OfType<IgbObject>().Where(o => f.Is(o, "igEnbayaAnimationSource")))
+            {
+                var mr = src.Fields.First(v => v.Desc.ShortName == "MemoryRef");
+                var mb = (IgbMemoryBlock)f.Slots[mr.AsInt32(true)];
+                Enbaya.Decode(data.AsSpan((int)mb.FileOffset, mb.Size));
+                sources++;
+            }
+        }
+        Equal(7554, sources, "fontes");
+    });
+
+    Test("Jogo: colisão da fase dng1 (#179, raiz 1862) tem 36 geometrias e 458 triângulos", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[179], ms);
+        var data = ms.ToArray();
+        var parts = IgbScene.Read(IgbFile.Read(data), data).Parts.Where(p => p.SceneRoot == 1862).ToList();
+        Equal(36, parts.Count, "geometrias");
+        Equal(458, parts.Sum(p => p.Triangles.Count) / 3, "triângulos");
+    });
 }
 else Console.WriteLine("(sem pasta do jogo: só testes sintéticos; passe a pasta files\\ da cópia de trabalho para conferir os dados)");
 
