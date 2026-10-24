@@ -567,7 +567,11 @@ public partial class Fatia : Node3D
     // Sorteio do drop (0x802FCC48) na posição do inimigo morto.
     void DropItem()
     {
-        if (_drops == null || _enemy == null || Drops.Roll(_drops, _mt) is not { } d) return;
+        if (_enemy == null) return;
+        // DW4_DROP="tabela:linha" (ex.: insItem:0): força o item, para conferir a coleta sem depender do sorteio.
+        DropEntry? d = OS.GetEnvironment("DW4_DROP").Split(':') is [var tb, var rw] && int.TryParse(rw, out int forced)
+            ? new DropEntry(new ItemRef(tb, forced), 0, 0) : _drops != null ? Drops.Roll(_drops, _mt) : null;
+        if (d == null) return;
         string name = _db!.Contains(d.Item.Table) ? _db[d.Item.Table].Text(d.Item.Row, "NAME") : "";
         if (name.Length == 0) name = $"{d.Item.Table}:{d.Item.Row}";
         var node = new Node3D();
