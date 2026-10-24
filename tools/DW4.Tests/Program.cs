@@ -281,6 +281,12 @@ Test("LZ4: bloco com literais e cópia sobreposta", () =>
     Equal("abcabcabcabcX", Encoding.ASCII.GetString(DW4.Formats.Dolphin.Lz4.DecompressBlock(block, 13)), "saída");
 });
 
+Test("GDB: soma de verificação dos pacotes", () =>
+{
+    Equal("63", DW4.Formats.Dolphin.GdbClient.Checksum("c"), "c");
+    Equal("3f", DW4.Formats.Dolphin.GdbClient.Checksum("?"), "?");
+});
+
 // ---------- dados do jogo (opcional) ----------
 
 if (args.Length == 1)

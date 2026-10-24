@@ -45,6 +45,7 @@ try
         "dtm-entradas" when args.Length is 2 or 3 => DtmEntradas(args[1], args.Length == 3 ? args[2] : null),
         "dolphin-ram" when args.Length == 3 => DolphinRam(args[1], args[2]),
         "ram-busca" when args.Length >= 4 => RamBusca(args[1], args[2], args[3], args[4..]),
+        "dolphin-gdb" when args.Length >= 4 => DolphinGdb(args[1], args[2], args[3..]),
         "igb-camera" when args.Length == 4 => IgbCamera(args[1], args[2], args[3]),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
@@ -85,6 +86,7 @@ static int Usage()
           dw4 dtm-entradas <gravacao.dtm> [saida.csv]   (linha do tempo das entradas de uma gravação do Dolphin)
           dw4 dolphin-ram  <estado.sav> <saida.bin>   (MEM1 de 24 MiB de um save state do Dolphin, fora do repositório)
           dw4 ram-busca    <a.bin> <b.bin> <quadros-entre-eles> [--y=40]   (contadores de quadro e posições candidatas)
+          dw4 dolphin-gdb  <porta> <pasta> <quadro>... [--contador=0x814541D8] [--amostra=ENDERECO,TAM]   (MEM1 nos quadros pedidos, via servidor GDB do Dolphin)
           dw4 igb-camera   <arquivo.afs> <indice> <pasta-de-trabalho>   (volumes de câmera da fase em JSON, fora do repositório)
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
@@ -1264,6 +1266,59 @@ int RamBusca(string aPath, string bPath, string framesArg, string[] options)
         Console.WriteLine(string.Create(inv, $"  0x{0x80000000 + i:X8}: ({ax:0.###}, {ay:0.###}, {az:0.###}) -> ({bx:0.###}, {by:0.###}, {bz:0.###})"));
         shown++;
     }
+    return 0;
+}
+
+// Acompanha a reprodução de um filme no Dolphin pelo servidor GDB: para a cada ~100 ms, lê o contador de 30 Hz do jogo
+// (0x814541D8, achado comparando save states; quadro de vídeo ≈ 2 × contador + 6 nesta gravação) e grava a MEM1 inteira
+// quando o quadro passa de cada alvo. Com --amostra, grava também um trecho pequeno de memória em toda parada (CSV).
+int DolphinGdb(string portArg, string outDir, string[] rest)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    Directory.CreateDirectory(full);
+    uint counterAddr = 0x814541D8;
+    var targets = new List<long>();
+    var samples = new List<(uint Addr, int Len)>();
+    foreach (var r in rest)
+    {
+        if (r.StartsWith("--contador=", StringComparison.Ordinal)) counterAddr = Convert.ToUInt32(r[11..], 16);
+        else if (r.StartsWith("--amostra=", StringComparison.Ordinal)) { var p = r[10..].Split(','); samples.Add((Convert.ToUInt32(p[0], 16), int.Parse(p[1], inv))); }
+        else targets.Add(long.Parse(r, inv));
+    }
+    targets.Sort();
+    using var gdb = DW4.Formats.Dolphin.GdbClient.Connect("127.0.0.1", int.Parse(portArg, inv), TimeSpan.FromMinutes(2));
+    Console.WriteLine($"conectado; parada inicial: {gdb.Query("?")}");
+    using var log = new StreamWriter(Path.Combine(full, "amostras.csv"));
+    log.WriteLine("hora_ms,contador,quadro" + string.Concat(samples.Select(s => $",0x{s.Addr:X8}")));
+    var clock = System.Diagnostics.Stopwatch.StartNew();
+    int ti = 0;
+    uint lastCounter = uint.MaxValue;
+    var lastChange = clock.Elapsed;
+    while (ti < targets.Count || samples.Count > 0)
+    {
+        gdb.Continue();
+        Thread.Sleep(100);
+        gdb.Interrupt();
+        uint counter = BinaryPrimitives.ReadUInt32BigEndian(gdb.Read(counterAddr, 4));
+        long frame = 2L * counter + 6;
+        var line = new StringBuilder(string.Create(inv, $"{clock.ElapsedMilliseconds},{counter},{frame}"));
+        foreach (var (addr, len) in samples) line.Append(',').Append(Convert.ToHexString(gdb.Read(addr, len)));
+        log.WriteLine(line);
+        if (counter != lastCounter) { lastCounter = counter; lastChange = clock.Elapsed; }
+        else if (clock.Elapsed - lastChange > TimeSpan.FromSeconds(30)) { Console.WriteLine("contador parado há 30 s: fim do filme?"); break; }
+        while (ti < targets.Count && frame >= targets[ti])
+        {
+            var mem = new byte[DW4.Formats.Dolphin.SaveState.Mem1Size];
+            for (int at = 0; at < mem.Length; at += 0x1000) gdb.Read(0x80000000u + (uint)at, 0x1000).CopyTo(mem, at);
+            var file = Path.Combine(full, $"q{frame:D5}.bin");
+            File.WriteAllBytes(file, mem);
+            Console.WriteLine($"alvo {targets[ti]}: quadro {frame} (contador {counter}) -> {file}");
+            ti++;
+        }
+    }
+    try { gdb.Continue(); } catch (IOException) { }
+    Console.WriteLine($"fim: {clock.Elapsed.TotalSeconds:0} s");
     return 0;
 }
 
