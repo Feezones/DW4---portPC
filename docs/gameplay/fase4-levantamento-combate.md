@@ -47,6 +47,20 @@ Exemplos (FATO): w_sword01 = ロングソードα..ε, TSUYOSA 60/81/109/148/199
 - FATO: a função em 0x802EE7E4 (lado nativo de `BLTgetDamageValue`, pelo retorno) monta o comando "P2EDAMAGE" com 5 argumentos (3 inteiros do estado de combate em 0x80535900, o byte do parâmetro e uma flag de checagem prévia) e o envia ao handler "FIGHTCALC"; guarda 3 resultados em +0x154/+0x158/+0x15C e devolve o primeiro. A fórmula está no handler de FIGHTCALC (ainda não localizado).
 - FATO: a faixa de dano (`BLTgetDamageRank`, 0x802EE91C) é: alvo com HP ≤ 0 → 3 (SQ_DDMG); senão dano / HP máximo > 0,5 → 2 (SQ_LDMG); > 0,25 → 1 (SQ_MDMG); senão 0 (SQ_SDMG). Há condições adicionais a partir de 0x802EE9BC ainda não lidas.
 
+### Fórmula do P2EDAMAGE (FATO, handler FIGHTCALC, caso 5 em 0x80372EC4)
+
+O envio de comandos (0x80305A28) chama o método virtual do destinatário. O handler converte o nome pelo enum "Message" (switch em 0x803717E0; caso 18 = FIGHTCALC → 0x803729D4) e depois pelo enum FightCom (switch em 0x80372A24, tabela 0x804EB18C). Os parâmetros são lidos pelo **nome da coluna** (TSUYOSA, MAMORI, SKILL…), os mesmos das tabelas. Toda a conta é inteira, com divisão truncada:
+
+- Código do golpe / 10000 = 4 → técnica; senão, físico.
+- **Físico:** dano = (6·TSUYOSA + 4·SKILL[WEAPONSKILLNO]) / (MAMORI do alvo − redução), limitado a 0..99999. Com elemento (ATTACKZOKUSEI ≥ 0): se RES do alvo < sorteio % 1000, soma dano·(1000 − RES)/1000.
+- **Técnica:** potência = −HP da técnica (0 → sem dano). Dano = (20·potência + 10·KASHIKOSA + 5·SKILL[técnica]) / SEISHIN do alvo, limitado; depois dano·(1000 − RES[elemento])/1000 (fire, ice, thunder, dark, poison).
+- **Crítico:** com SKILL = sk, soma dano·b/100, com b = sk/20 + 30 (sk ≤ 1000), (sk − 1000)/50 + 80 (sk ≤ 2000) e (sk − 2000)/100 + 100 (acima).
+- **Variação:** k = sorteio & 3; m = sorteio % (25·dano); dano = (dano·{950, 975, 1000, 1025}[k] + m)/1000, limitado. k = 3 liga a flag de golpe forte.
+- **Drenos (só físico):** HPDRAIN e MPDRAIN devolvem dano·valor/100 ao atacante.
+- Resultado: [dano, elemento, flag], guardado em 0x80535900 + 0x154/0x158/0x15C.
+
+Transcrição em `src/DW4.Gameplay/DamageFormula.cs`. HIPÓTESES ainda abertas: a origem do crítico (BLTisCritical), a origem da redução de defesa (objeto da checagem anterior), o comportamento sem elemento, o PRNG e a divisão por zero.
+
 ## Próximo passo
 
-Ler no main.dol o código de `P2EDAMAGE`, `P2EISHITCHECK`, `P2EISCRITICAL`, `GETDAMAGERANK` e `P2EEXPUP` (desmontador próprio `dw4 dol-desmontar`, e o Ghidra se aprovado), e confirmar a hipótese do Int@7.
+Ler do mesmo jeito os casos `P2EISHITCHECK` (1), `P2EISCRITICAL` (2), `E2PDAMAGE` (3), `P2EEXPUP` e os de estado; descobrir como o jogo monta os parâmetros do jogador (`RECALCPLAYER`: shinka + arma + armaduras + chips); confirmar a hipótese do Int@7.

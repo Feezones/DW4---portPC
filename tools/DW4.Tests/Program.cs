@@ -305,6 +305,25 @@ Test("IA: faixa pela distância, sorteio acumulado em 16, troca de mapa e espera
     True(Math.Abs(b.Yaw - MathF.PI / 2) < 1e-3f, "termina virado para o alvo");
 });
 
+Test("Dano (P2EDAMAGE): físico com elemento, crítico, variação e dreno; técnica com resistência; faixa", () =>
+{
+    var a = new AttackerStats(Tsuyosa: 100, Kashikosa: 40, Skill: [500, 1500], WeaponSkillNo: 0, AttackElement: 0, HpDrain: 10);
+    var d = new DefenderStats(Mamori: 50, Seishin: 20, Resist: [200, 500, 0, 0, 0]);
+    // (6·100 + 4·500)/50 = 52; 200 < 700 → +52·800/1000 = 93; crítico +55% → 144; k = 3 → 1025, m = 100 → 147
+    var r = DamageFormula.Physical(a, d, critical: true, defenseDown: 0, new SeqRandom(700, 3, 100));
+    Equal(147, r.Damage, "dano físico");
+    True(r.Strong && r.Element == 0, "golpe forte e elemento fogo");
+    Equal(14, r.HpDrained, "dreno de 10%");
+    // (20·30 + 10·40 + 5·1500)/20 = 425; resistência 500 → 212; k = 2 → 1000, m = 0 → 212
+    var t = DamageFormula.Technique(a, d, new TechniqueStats(Hp: -30, SkillIndex: 1, Element: 1), critical: false, new SeqRandom(2, 0));
+    Equal(212, t.Damage, "dano da técnica");
+    Equal(0, DamageFormula.Technique(a, d, new TechniqueStats(0, 1, 1), false, new SeqRandom(0)).Damage, "técnica sem potência");
+    Equal(3, DamageFormula.Rank(10, 0, 100), "alvo morto");
+    Equal(2, DamageFormula.Rank(51, 10, 100), "acima de 50%");
+    Equal(1, DamageFormula.Rank(26, 10, 100), "acima de 25%");
+    Equal(0, DamageFormula.Rank(25, 10, 100), "até 25%");
+});
+
 Test("PowerPC: desmontagem de instruções conhecidas e DOL sintético (seções, r13, string e ponteiro)", () =>
 {
     (uint W, uint Pc, string Text)[] cases =
@@ -643,4 +662,10 @@ static uint Crc32(ReadOnlySpan<byte> data)
         for (int k = 0; k < 8; k++) crc = (crc & 1) != 0 ? 0xEDB88320 ^ (crc >> 1) : crc >> 1;
     }
     return crc ^ 0xFFFFFFFF;
+}
+
+sealed class SeqRandom(params int[] values) : IGameRandom
+{
+    int _i;
+    public int Next() => values[_i++ % values.Length];
 }
