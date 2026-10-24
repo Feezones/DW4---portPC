@@ -254,6 +254,26 @@ Test("Sequência: bloco do estilo, sonda de conversa pulada, caixa no quadro cer
     True(!r.Start("SQ_ATCK1", "gun"), "estilo inexistente");
 });
 
+Test("DTM do Dolphin: cabeçalho e leituras do controle", () =>
+{
+    var file = new byte[DW4.Formats.Dolphin.DtmFile.HeaderSize + 16];
+    "DTM\x1A"u8.CopyTo(file);
+    "GDJEB2"u8.CopyTo(file.AsSpan(4));
+    file[11] = 1;
+    file[12] = 1;
+    BinaryPrimitives.WriteUInt64LittleEndian(file.AsSpan(13), 1);
+    BinaryPrimitives.WriteUInt64LittleEndian(file.AsSpan(21), 2);
+    int at = DW4.Formats.Dolphin.DtmFile.HeaderSize;
+    file[at] = 1 << 1; file[at + 4] = 128; file[at + 5] = 255; // A + analógico para cima
+    file[at + 8 + 1] = 1 << 3; file[at + 12] = 128; file[at + 13] = 128; // R = bit 11 = bit 3 do segundo byte
+    var dtm = DW4.Formats.Dolphin.DtmFile.Read(file);
+    Equal("GDJEB2", dtm.GameId, "jogo");
+    True(dtm.FromSaveState, "save state");
+    Equal(2, dtm.Inputs.Count, "leituras");
+    True(dtm.Inputs[0].Has(DW4.Formats.Dolphin.GcPadInput.A) && dtm.Inputs[0].Stick.Y > 0.99f, "A e analógico para cima");
+    True(dtm.Inputs[1].Has(DW4.Formats.Dolphin.GcPadInput.R) && !dtm.Inputs[1].Has(DW4.Formats.Dolphin.GcPadInput.A), "R");
+});
+
 // ---------- dados do jogo (opcional) ----------
 
 if (args.Length == 1)

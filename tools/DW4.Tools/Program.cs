@@ -42,6 +42,7 @@ try
         "igb-colisao" when args.Length == 5 => IgbColisao(args[1], args[2], args[3], args[4]),
         "igb-cena" when args.Length == 5 => IgbCena(args[1], args[2], args[3], args[4]),
         "igb-seq" when args.Length is 4 or 5 => IgbSeq(args[1], args[2], args[3], args.Length == 5 ? args[4] : null),
+        "dtm-entradas" when args.Length is 2 or 3 => DtmEntradas(args[1], args.Length == 3 ? args[2] : null),
         "igb-camera" when args.Length == 4 => IgbCamera(args[1], args[2], args[3]),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
@@ -79,6 +80,7 @@ static int Usage()
           dw4 igb-colisao  <arquivo.afs> <indice> <no-raiz> <pasta-de-trabalho>   (malha de colisão em glTF, nó "-colonly" para a Godot)
           dw4 igb-cena     <arquivo.afs> <indice> <no-raiz|todas> <pasta-de-trabalho>   (cenário ou objeto estático em glTF com texturas)
           dw4 igb-seq      <arquivo.afs> <indice> <pasta-de-trabalho> [--ator=NOME]   (sequências beModelCtrlData em JSON e texto)
+          dw4 dtm-entradas <gravacao.dtm> [saida.csv]   (linha do tempo das entradas de uma gravação do Dolphin)
           dw4 igb-camera   <arquivo.afs> <indice> <pasta-de-trabalho>   (volumes de câmera da fase em JSON, fora do repositório)
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
@@ -1154,6 +1156,60 @@ int IgbSeq(string path, string which, string outDir, string? option)
     File.WriteAllText(Path.Combine(full, stem + ".json"), root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
     File.WriteAllText(Path.Combine(full, stem + ".txt"), text.ToString());
     Console.WriteLine($"{seqs.Count} sequências ({seqs.Values.Sum(c => c.Count)} comandos), {acts.Count} ações ({acts.Values.Sum(c => c.Count)} comandos) -> {Path.Combine(full, stem)}.json/.txt");
+    return 0;
+}
+
+// Linha do tempo das entradas de uma gravação do Dolphin: trechos com o analógico/direcional parado ou na mesma direção
+// e cada botão apertado, com o quadro de vídeo (2 leituras por quadro nesta gravação, conferido no cabeçalho).
+int DtmEntradas(string path, string? csvPath)
+{
+    var dtm = DW4.Formats.Dolphin.DtmFile.Read(File.ReadAllBytes(path));
+    double perFrame = dtm.FrameCount > 0 ? (double)dtm.Inputs.Count / dtm.FrameCount : 1;
+    Console.WriteLine($"{dtm.GameId}: {dtm.FrameCount} quadros, {dtm.Inputs.Count} leituras ({perFrame:0.###} por quadro), save state: {dtm.FromSaveState}, atraso: {dtm.LagCount}");
+    int Frame(int i) => (int)(i / perFrame);
+    string Dir(DW4.Formats.Dolphin.GcPadInput p)
+    {
+        var (x, y) = p.Stick;
+        if (p.Has(DW4.Formats.Dolphin.GcPadInput.Up)) y = 1;
+        if (p.Has(DW4.Formats.Dolphin.GcPadInput.Down)) y = -1;
+        if (p.Has(DW4.Formats.Dolphin.GcPadInput.Left)) x = -1;
+        if (p.Has(DW4.Formats.Dolphin.GcPadInput.Right)) x = 1;
+        double mag = Math.Sqrt(x * x + y * y);
+        if (mag < 0.2) return "parado";
+        string[] names = ["L", "NE", "N", "NO", "O", "SO", "S", "SE"];
+        int sector = (int)Math.Round(Math.Atan2(y, x) / (Math.PI / 4) + 8) % 8;
+        return $"{names[sector]} {Math.Min(mag, 1):0.0}";
+    }
+    TextWriter? csv = null;
+    if (csvPath != null)
+    {
+        var full = Path.GetFullPath(csvPath);
+        if (InsideGitRepo(Path.GetDirectoryName(full)!)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+        csv = new StreamWriter(full);
+        csv.WriteLine("leitura,quadro,botoes,stick_x,stick_y,cstick_x,cstick_y,gatilho_l,gatilho_r");
+    }
+    string lastDir = "";
+    int dirStart = 0;
+    ushort lastButtons = 0;
+    for (int i = 0; i <= dtm.Inputs.Count; i++)
+    {
+        var p = i < dtm.Inputs.Count ? dtm.Inputs[i] : default;
+        string d = i < dtm.Inputs.Count ? Dir(p) : "fim";
+        if (d != lastDir)
+        {
+            if (i > 0) Console.WriteLine($"  quadros {Frame(dirStart),6}–{Frame(i) - 1,6} ({(Frame(i) - Frame(dirStart)) / 60.0,6:0.00} s) movimento {lastDir}");
+            lastDir = d;
+            dirStart = i;
+        }
+        if (i == dtm.Inputs.Count) break;
+        ushort pressed = (ushort)(p.Buttons & ~lastButtons & 0x0FFF);
+        if (pressed != 0) Console.WriteLine($"  quadro {Frame(i),6}: aperta {DW4.Formats.Dolphin.GcPadInput.Names(pressed)}");
+        ushort released = (ushort)(lastButtons & ~p.Buttons & 0x0FFF);
+        if (released != 0) Console.WriteLine($"  quadro {Frame(i),6}: solta {DW4.Formats.Dolphin.GcPadInput.Names(released)}");
+        lastButtons = p.Buttons;
+        csv?.WriteLine(string.Create(inv, $"{i},{Frame(i)},{p.Buttons:X4},{p.StickX},{p.StickY},{p.CStickX},{p.CStickY},{p.TriggerL},{p.TriggerR}"));
+    }
+    csv?.Dispose();
     return 0;
 }
 
