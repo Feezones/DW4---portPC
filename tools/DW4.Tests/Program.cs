@@ -305,23 +305,45 @@ Test("IA: faixa pela distância, sorteio acumulado em 16, troca de mapa e espera
     True(Math.Abs(b.Yaw - MathF.PI / 2) < 1e-3f, "termina virado para o alvo");
 });
 
-Test("Dano (P2EDAMAGE): físico com elemento, crítico, variação e dreno; técnica com resistência; faixa", () =>
+Test("Combate (FIGHTCALC): dano do jogador e do inimigo, acerto, crítico, experiência e MT19937", () =>
 {
-    var a = new AttackerStats(Tsuyosa: 100, Kashikosa: 40, Skill: [500, 1500], WeaponSkillNo: 0, AttackElement: 0, HpDrain: 10);
-    var d = new DefenderStats(Mamori: 50, Seishin: 20, Resist: [200, 500, 0, 0, 0]);
+    var a = new Fighter { Tsuyosa = 100, Kashikosa = 40, Chimeiritsu = 4, Skill = [500, 1500], WeaponSkillNo = 0, AttackElement = 0, HpDrain = 10 };
+    var d = new Fighter { Mamori = 50, Seishin = 20, Resist = [200, 500, 0, 0, 0] };
     // (6·100 + 4·500)/50 = 52; 200 < 700 → +52·800/1000 = 93; crítico +55% → 144; k = 3 → 1025, m = 100 → 147
-    var r = DamageFormula.Physical(a, d, critical: true, defenseDown: 0, new SeqRandom(700, 3, 100));
+    var rng = new SeqRandom(700, 3, 100);
+    var r = DamageFormula.Physical(a, d, critical: true, new StatusMods(), rng);
     Equal(147, r.Damage, "dano físico");
     True(r.Strong && r.Element == 0, "golpe forte e elemento fogo");
     Equal(14, r.HpDrained, "dreno de 10%");
+    Equal(3, rng.Calls, "três sorteios");
+    var none = new SeqRandom(1);
+    Equal(0, DamageFormula.Physical(a, d with { Mamori = 100000 }, true, new StatusMods(), none).Damage, "dano 0");
+    Equal(0, none.Calls, "dano 0 não sorteia");
     // (20·30 + 10·40 + 5·1500)/20 = 425; resistência 500 → 212; k = 2 → 1000, m = 0 → 212
     var t = DamageFormula.Technique(a, d, new TechniqueStats(Hp: -30, SkillIndex: 1, Element: 1), critical: false, new SeqRandom(2, 0));
     Equal(212, t.Damage, "dano da técnica");
     Equal(0, DamageFormula.Technique(a, d, new TechniqueStats(0, 1, 1), false, new SeqRandom(0)).Damage, "técnica sem potência");
+    True(DamageFormula.PlayerCritical(a, new SeqRandom(203)), "crítico: 4 > 203 % 200");
     Equal(3, DamageFormula.Rank(10, 0, 100), "alvo morto");
     Equal(2, DamageFormula.Rank(51, 10, 100), "acima de 50%");
     Equal(1, DamageFormula.Rank(26, 10, 100), "acima de 25%");
     Equal(0, DamageFormula.Rank(25, 10, 100), "até 25%");
+
+    var nume = new Fighter { Tsuyosa = 16, Kashikosa = 200, Chimeiritsu = 3, Subayasa = 102 };
+    var guil = new Fighter { Mamori = 120, Seishin = 100, Subayasa = 60, Bougyoritsu = 10 };
+    // físico: 16·100/120 = 13; (97·96 = 9312) > 5000 → sem crítico; k = 2, m = 7 → 13
+    Equal(13, DamageFormula.EnemyDamage(nume, new EnemyAttack(0, 100, 70, 4, -1), guil, new StatusMods(), new SeqRandom(5000, 2, 7)).Damage, "inimigo físico");
+    // mágico: 200·50/100 = 100; v = 2000 ≤ 9999 → crítico soma (5 + 100 + 90)/100 = 1 (bug do jogo) → 101; k = 0 → 950 → 95
+    Equal(95, DamageFormula.EnemyDamage(nume, new EnemyAttack(1, 50, 70, 10, -1), guil, new StatusMods(), new SeqRandom(9999, 0, 0)).Damage, "inimigo mágico");
+    True(!DamageFormula.EnemyHits(nume, new EnemyAttack(0, 100, 70, 4, -1), guil, new SeqRandom(5)), "bloqueio: 10 > 5");
+    Equal(12, DamageFormula.ExpShare(12, 0, 1, true), "1 jogador: 100%");
+    Equal(80, DamageFormula.ExpShare(100, 0, 4, true), "4 jogadores: 80% para quem matou");
+    Equal(40, DamageFormula.ExpShare(100, 0, 4, false), "4 jogadores: 40% para os outros");
+
+    var mt = new MersenneTwister();
+    mt.SeedReference(5489);
+    Equal(3499211612u, mt.Next(), "MT19937: primeiro valor de referência");
+    True(new MersenneTwister().Next() == new MersenneTwister(MersenneTwister.GameSeed).Next(), "semente do jogo 5150");
 });
 
 Test("PowerPC: desmontagem de instruções conhecidas e DOL sintético (seções, r13, string e ponteiro)", () =>
@@ -664,8 +686,8 @@ static uint Crc32(ReadOnlySpan<byte> data)
     return crc ^ 0xFFFFFFFF;
 }
 
-sealed class SeqRandom(params int[] values) : IGameRandom
+sealed class SeqRandom(params uint[] values) : IGameRandom
 {
-    int _i;
-    public int Next() => values[_i++ % values.Length];
+    public int Calls { get; private set; }
+    public uint Next() => values[Calls++ % values.Length];
 }

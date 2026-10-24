@@ -51,13 +51,23 @@ Exemplos (FATO): w_sword01 = ロングソードα..ε, TSUYOSA 60/81/109/148/199
 
 O envio de comandos (0x80305A28) chama o método virtual do destinatário. O handler converte o nome pelo enum "Message" (switch em 0x803717E0; caso 18 = FIGHTCALC → 0x803729D4) e depois pelo enum FightCom (switch em 0x80372A24, tabela 0x804EB18C). Os parâmetros são lidos pelo **nome da coluna** (TSUYOSA, MAMORI, SKILL…), os mesmos das tabelas. Toda a conta é inteira, com divisão truncada:
 
-- Código do golpe / 10000 = 4 → técnica; senão, físico.
+- Código do golpe / 10000 = 4 → técnica (linha da pcTech = código % 1000); senão, físico.
 - **Físico:** dano = (6·TSUYOSA + 4·SKILL[WEAPONSKILLNO]) / (MAMORI do alvo − redução), limitado a 0..99999. Com elemento (ATTACKZOKUSEI ≥ 0): se RES do alvo < sorteio % 1000, soma dano·(1000 − RES)/1000.
 - **Técnica:** potência = −HP da técnica (0 → sem dano). Dano = (20·potência + 10·KASHIKOSA + 5·SKILL[técnica]) / SEISHIN do alvo, limitado; depois dano·(1000 − RES[elemento])/1000 (fire, ice, thunder, dark, poison).
 - **Crítico:** com SKILL = sk, soma dano·b/100, com b = sk/20 + 30 (sk ≤ 1000), (sk − 1000)/50 + 80 (sk ≤ 2000) e (sk − 2000)/100 + 100 (acima).
 - **Variação:** k = sorteio & 3; m = sorteio % (25·dano); dano = (dano·{950, 975, 1000, 1025}[k] + m)/1000, limitado. k = 3 liga a flag de golpe forte.
 - **Drenos (só físico):** HPDRAIN e MPDRAIN devolvem dano·valor/100 ao atacante.
+- Dano 0 depois do primeiro limite: pula elemento, crítico e variação, sem nenhum sorteio (0x80373010, 0x803732C4). Há um limite 0..99999 também em 0x80373298, antes do crítico. Sorteios são uint32 com módulo sem sinal.
 - Resultado: [dano, elemento, flag], guardado em 0x80535900 + 0x154/0x158/0x15C.
+
+### Demais casos do FightCom (FATO)
+
+- **E2PISHITCHECK (0):** TYPE ≠ 0 acerta sempre. Senão: bloqueio se BOUGYORITSU do jogador > sorteio % 100; acerta se MEICHURITSU do golpe · SUBAYASA do inimigo / (SUBAYASA do jogador · (KAIHIRITSU + 100)/100) > sorteio % 100.
+- **P2EISHITCHECK (1):** técnica acerta sempre. Senão acerta se MEICHURITSU · (20·SKILL + 6000 + 30·SUBAYASA) / (SUBAYASA do alvo · (100 − redução)/100) > sorteio % 10000.
+- **P2EISCRITICAL (2):** físico: CHIMEIRITSU > sorteio % 200. Técnica sem elemento: CHIMEIRITSU da técnica > sorteio % 100; com elemento: (c + 100)·(10000/(res·12/10 + 50))/100 > sorteio % 1000.
+- **E2PDAMAGE (3):** TYPE 0: (TSUYOSA do inimigo − redução)·TSUYOSA do golpe / MAMORI, bônus de elemento por faixas da resistência do jogador (HONOOTEIKO, KOORITEIKO, KAMINARITEIKO, YAMITEIKO) e crítico (100 − c1)·(100 − c2) contra sorteio % 10000 com +(c2/2 + 90)%. TYPE 1 (mágico): KASHIKOSA · TSUYOSA do golpe / SEISHIN; o elemento substitui o dano; o crítico **soma** (c/2 + dano + 90)/100 em vez de multiplicar (provável bug do jogo, reproduzido). TYPE 2: % do HP máximo do jogador. TYPE ≥ 3: 0. Fim igual ao do jogador.
+- **P2EEXPUP (6):** EXP do inimigo (× (EXPRITSU + 100)/100), multiplicado por NINZU (1: 100/2, 2: 140/3, 3: 160/4, 4: 200/5); quem matou recebe /50 e os outros /100. Com 4 jogadores: 80% e 40%. Sobe de nível enquanto NEXTEXP ≤ EXP (até 999) e enche HP e MP. Base de fidelidade da party online.
+- **Sorteio:** igMersenneTwisterRandomNumber = MT19937 com a semeadura de 1998 (sgenrand) e semente 5150 no construtor (`MersenneTwister.cs`). HIPÓTESE: o combate usa esse objeto sem ressemear.
 
 Transcrição em `src/DW4.Gameplay/DamageFormula.cs`. HIPÓTESES ainda abertas: a origem do crítico (BLTisCritical), a origem da redução de defesa (objeto da checagem anterior), o comportamento sem elemento, o PRNG e a divisão por zero.
 
