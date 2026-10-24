@@ -356,6 +356,26 @@ Test("Combate (FIGHTCALC): dano do jogador e do inimigo, acerto, crítico, exper
     Equal(17000L, PlayerGrowth.NextExp(10), "NEXTEXP 10");
     Equal(0L, PlayerGrowth.NextExp(999), "NEXTEXP 999");
 
+    // Skill: limite por nível e +1 com taxa sintética
+    Equal(1080, SkillGrowth.Limit(36), "limite 36");
+    Equal(1100, SkillGrowth.Limit(37), "limite 37");
+    Equal(3708, SkillGrowth.Limit(228), "limite 228");
+    var rates = new short[4, 21, 3];
+    rates[0, 15, 0] = 10; // nível 1–36, skill até 1000, coluna normal
+    var sg = new SkillGrowth(rates);
+    Equal(501, sg.Raise(500, 30, technique: true, 0, false, new SeqRandom(999)), "técnica: 10·100 = 1000 > 999");
+    Equal(500, sg.Raise(500, 30, technique: false, 100, false, new SeqRandom(500)), "arma: 10·100·500/1000 = 500, não sobe");
+    var capped = new SeqRandom(0);
+    Equal(30, sg.Raise(30, 1, true, 0, false, capped), "no limite não sobe");
+    Equal(0, capped.Calls, "no limite não sorteia");
+
+    // Estados
+    Equal(260, StatusFormula.SkillCurve(40, 250, 0, 0), "curva sk/4 + b0");
+    var poisoned = StatusFormula.PlayerPoison(new Fighter { Kashikosa = 70 }, 0, new TechniqueEffect(Time: 100), 0, new SeqRandom(749));
+    Equal(135, poisoned, "veneno: 750 > 749, duração 70/2 + 100");
+    Equal((int?)null, StatusFormula.EnemyPoison(new EnemyEffect(0, "sleep", 1, 60), 0, new SeqRandom(0)), "veneno só com KOUKA doku");
+    Equal(20, StatusFormula.PlayerStatDown(-30, 0, 25), "redução (valor da técnica negativo) limitada a 80% do inimigo");
+
     var mt = new MersenneTwister();
     mt.SeedReference(5489);
     Equal(3499211612u, mt.Next(), "MT19937: primeiro valor de referência");

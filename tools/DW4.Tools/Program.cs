@@ -55,6 +55,7 @@ try
         "dol-info" when args.Length == 2 => DolInfo(args[1]),
         "dol-desmontar" when args.Length == 4 => DolDesmontar(args[1], args[2], args[3]),
         "dol-refs" when args.Length == 3 => DolRefs(args[1], args[2]),
+        "dol-skilltab" when args.Length == 3 => DolSkillTab(args[1], args[2]),
         _ => Usage(),
     };
 }
@@ -100,6 +101,7 @@ static int Usage()
           dw4 dol-info     <main.dol>   (seções, entrada e bases r13/r2; leitura estática, nada é executado)
           dw4 dol-desmontar <main.dol> <endereco-hex> <instrucoes>   (PowerPC no console, com strings e floats anotados)
           dw4 dol-refs     <main.dol> <endereco-hex | "texto">   (ponteiros em dados e código que montam o endereço)
+          dw4 dol-skilltab <main.dol> <pasta-de-trabalho>   (taxas do P2ESKILLUP em JSON, fora do repositório)
         """);
     return 1;
 }
@@ -1345,6 +1347,35 @@ int DolRefs(string path, string what)
         foreach (var p in dol.FindPointers(t)) Console.WriteLine($"  ponteiro em 0x{p:X8} (vizinhos: {string.Join(" ", Enumerable.Range(-2, 5).Select(k => dol.TryWord((uint)(p + k * 4), out uint w) ? $"{w:X8}" : "--------"))})");
         foreach (var c in dol.FindCodeRefs(t, r13, r2)) Console.WriteLine($"  código em 0x{c:X8}");
     }
+    return 0;
+}
+
+// Taxas de crescimento de skill do P2ESKILLUP: int16 big-endian, 4 × 21 × 3, em 0x804EAF18 (lido em 2026-10-24).
+int DolSkillTab(string path, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    var dol = DW4.Formats.Ppc.DolFile.Read(File.ReadAllBytes(path));
+    const uint At = 0x804EAF18;
+    long off = dol.OffsetOf(At);
+    if (off < 0 || off + 4 * 21 * 3 * 2 > dol.Data.Length) { Console.Error.WriteLine("tabela fora das seções"); return 1; }
+    var levels = new JsonArray();
+    for (int i = 0; i < 4; i++)
+    {
+        var bands = new JsonArray();
+        for (int j = 0; j < 21; j++)
+        {
+            var cols = new JsonArray();
+            for (int k = 0; k < 3; k++)
+                cols.Add(System.Buffers.Binary.BinaryPrimitives.ReadInt16BigEndian(dol.Data.AsSpan((int)off + 2 * ((i * 21 + j) * 3 + k))));
+            bands.Add(cols);
+        }
+        levels.Add(bands);
+    }
+    Directory.CreateDirectory(full);
+    var file = Path.Combine(full, "skillup.json");
+    File.WriteAllText(file, new JsonObject { ["source"] = $"main.dol 0x{At:X8}", ["rates"] = levels }.ToJsonString());
+    Console.WriteLine($"4 × 21 × 3 taxas -> {file}; primeira faixa: {levels[0]![0]!.ToJsonString()}, última: {levels[3]![20]!.ToJsonString()}");
     return 0;
 }
 

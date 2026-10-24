@@ -78,7 +78,17 @@ O envio de comandos (0x80305A28) chama o método virtual do destinatário. O han
 - NEXTEXP = L²·(L + 140) + 200·L (EXP acumulado; 0 no nível 999).
 - Ainda não lido: o valor inicial e os limites de MEICHURITSU, CHIMEIRITSU, MAHIRITSU e KAIHIRITSU, e o crescimento do SKILL (P2ESKILLUP).
 
-Transcrição em `src/DW4.Gameplay/DamageFormula.cs` e `PlayerGrowth.cs`. HIPÓTESES ainda abertas: a origem do crítico (BLTisCritical), a origem da redução de defesa (objeto da checagem anterior), o comportamento sem elemento, o PRNG e a divisão por zero.
+- MEICHURITSU = arma (sem arma, 0); CHIMEIRITSU = efeitos + arma + chips da arma (mínimo 1); MAHIRITSU = arma; KAIHIRITSU = efeitos + CHOHATURITSU dos chips da armadura (mínimo 1).
+
+### Skills (P2ESKILLUP, caso 13, FATO)
+
+Limite pelo nível: 30L (até 36), 20L + 360 (até 107), 10L + 1430 (até 227), senão 8L + 1884; no limite não há sorteio. A taxa vem de uma tabela 4 × 21 × 3 do main.dol (0x804EAF18; extraída com `dw4 dol-skilltab`, fora do repositório), indexada pela faixa de nível, pela faixa da skill (1, 2, … 10, 20, 30, 100, 300, 500, 1000, 2000, 3000, 4000, 6000, 10000) e por uma coluna (2 em evento especial, senão 0; a coluna 1 nunca é usada por um andc com 0, provável bug). Técnica: chance = taxa·100; arma: taxa·GROW do tipo de arma (shinka BLUNT/SLASH/STAB/BASH/SHOT/CRUSH_GROW)·500/1000. Sobe +1 se chance > sorteio % 100000.
+
+### Estados (casos 7–12 e 14–19, FATO)
+
+Resumo em `src/DW4.Gameplay/StatusFormula.cs`: atordoamento pela fração de HP tirada e MAHIRITSU contra RES_STUN; veneno, sono, prisão e reduções pela curva da skill da técnica contra RES_POISON/SEISHIN; golpes de inimigo pelo KOUKA/KOUKARANK/KOUKATIME da eneatk e pelo fator 3·KASHIKOSA/SEISHIN + 100 − SEISHIN/40. MAHITEIKOU/DOKUTEIKOU do jogador vêm da armadura 1 com valores negativos (somam e reduzem a chance). Reduções de atributo ficam entre 20% e 80%.
+
+Transcrição em `src/DW4.Gameplay/DamageFormula.cs`, `PlayerGrowth.cs`, `SkillGrowth.cs` e `StatusFormula.cs`. HIPÓTESES ainda abertas: a origem do crítico (BLTisCritical), a origem da redução de defesa (objeto da checagem anterior), o comportamento sem elemento, o PRNG e a divisão por zero.
 
 ## Próximo passo
 

@@ -19,6 +19,8 @@ public sealed record Fighter
     public int Subayasa { get; init; }
     public int Meichuritsu { get; init; }
     public int Chimeiritsu { get; init; }
+    /// <summary>MAHIRITSU (paralisia): do jogador vem da arma; do inimigo, da tabela enemy.</summary>
+    public int Mahiritsu { get; init; }
     /// <summary>Jogador: chance de bloqueio (BOUGYORITSU) e de esquiva (KAIHIRITSU), em %.</summary>
     public int Bougyoritsu { get; init; }
     public int Kaihiritsu { get; init; }
@@ -45,8 +47,8 @@ public sealed record TechniqueStats(int Hp, int SkillIndex, int Element, int Chi
 /// <summary>Golpe de inimigo (linha da eneatk): TYPE (0 físico, 1 mágico, 2 % do HP máximo), TSUYOSA, acerto, crítico, elemento.</summary>
 public sealed record EnemyAttack(int Type, int Tsuyosa, int Meichuritsu, int Chimeiritsu, int Element);
 
-/// <summary>Modificadores do objeto auxiliar do comando anterior (aux[1], [3], [4], [5]); HIPÓTESE: efeitos de estado.</summary>
-public sealed record StatusMods(int CritDown = 0, int EvadeDown = 0, int PowerDown = 0, int DefenseDown = 0);
+/// <summary>Modificadores do objeto auxiliar do comando anterior (aux[1], [3], [4], [5], [2]); HIPÓTESE: efeitos de estado.</summary>
+public sealed record StatusMods(int CritDown = 0, int EvadeDown = 0, int PowerDown = 0, int DefenseDown = 0, int StunDown = 0);
 
 /// <summary>Resultado de um cálculo de dano: dano, elemento usado (−1 = nenhum), golpe forte (variação 1025) e drenos.</summary>
 public sealed record DamageResult(int Damage, int Element, bool Strong, int HpDrained = 0, int MpDrained = 0);
