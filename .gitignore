@@ -1,0 +1,15 @@
+# Nunca versionar o disco original nem recursos extraídos/convertidos (regra 15)
+*.iso
+*.rvz
+*.gcm
+*.wbfs
+*.ciso
+*.bin
+*.elf
+*.dol
+iso/
+work/
+extracted/
+converted/
+captures/
+bios/
