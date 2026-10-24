@@ -589,7 +589,7 @@ int LuaScan(string path, string? outDir)
                 {
                     var hash = Convert.ToHexString(SHA256.HashData(mem));
                     if (!seenHashes.Add(hash)) continue;
-                    var names = namesByTarget.GetValueOrDefault(o.Index) ?? ["sem_nome"];
+                    var names = namesByTarget.GetValueOrDefault(o.Index) ?? new List<string> { "sem_nome" };
                     var safe = string.Concat(names[0].Select(c => char.IsLetterOrDigit(c) || c is '_' or '.' ? c : '_'));
                     var file = Path.Combine(full, $"{safe}.{hash[..8]}.lst");
                     using var w = new StreamWriter(file, false, new UTF8Encoding(false));
