@@ -1303,11 +1303,14 @@ int DolphinGdb(string portArg, string outDir, string[] rest)
     if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
     Directory.CreateDirectory(full);
     uint counterAddr = 0x814541D8;
+    int runMs = 300, stallSeconds = 120;
     var targets = new List<long>();
     var samples = new List<(uint Addr, int Len)>();
     foreach (var r in rest)
     {
         if (r.StartsWith("--contador=", StringComparison.Ordinal)) counterAddr = Convert.ToUInt32(r[11..], 16);
+        else if (r.StartsWith("--continuar=", StringComparison.Ordinal)) runMs = int.Parse(r[12..], inv);
+        else if (r.StartsWith("--parado=", StringComparison.Ordinal)) stallSeconds = int.Parse(r[9..], inv);
         else if (r.StartsWith("--amostra=", StringComparison.Ordinal)) { var p = r[10..].Split(','); samples.Add((Convert.ToUInt32(p[0], 16), int.Parse(p[1], inv))); }
         else targets.Add(long.Parse(r, inv));
     }
@@ -1315,7 +1318,7 @@ int DolphinGdb(string portArg, string outDir, string[] rest)
     using var gdb = DW4.Formats.Dolphin.GdbClient.Connect("127.0.0.1", int.Parse(portArg, inv), TimeSpan.FromMinutes(2));
     Console.WriteLine($"conectado; parada inicial: {gdb.Query("?")}");
     using var log = new StreamWriter(Path.Combine(full, "amostras.csv"));
-    log.WriteLine("hora_ms,contador,quadro" + string.Concat(samples.Select(s => $",0x{s.Addr:X8}")));
+    log.WriteLine("hora_ms,pc,contador,quadro,pilha_hash" + string.Concat(samples.Select(s => $",0x{s.Addr:X8}")));
     var clock = System.Diagnostics.Stopwatch.StartNew();
     int ti = 0;
     uint lastCounter = uint.MaxValue;
@@ -1323,15 +1326,21 @@ int DolphinGdb(string portArg, string outDir, string[] rest)
     while (ti < targets.Count || samples.Count > 0)
     {
         gdb.Continue();
-        Thread.Sleep(100);
-        gdb.Interrupt();
+        Thread.Sleep(runMs);
+        var stop = gdb.Interrupt();
+        // PC na resposta de parada ("T05" + "40:XXXXXXXX;…") e um resumo da pilha, para saber se a emulação anda.
+        int pcAt = stop.IndexOf("40:", StringComparison.Ordinal);
+        string pc = pcAt >= 0 && pcAt + 11 <= stop.Length ? stop.Substring(pcAt + 3, 8) : "?";
         uint counter = BinaryPrimitives.ReadUInt32BigEndian(gdb.Read(counterAddr, 4));
         long frame = 2L * counter + 6;
-        var line = new StringBuilder(string.Create(inv, $"{clock.ElapsedMilliseconds},{counter},{frame}"));
+        var stack = gdb.Read(0x80576000, 0x1000);
+        uint stackHash = 2166136261;
+        foreach (var bt in stack) stackHash = (stackHash ^ bt) * 16777619;
+        var line = new StringBuilder(string.Create(inv, $"{clock.ElapsedMilliseconds},{pc},{counter},{frame},{stackHash:X8}"));
         foreach (var (addr, len) in samples) line.Append(',').Append(Convert.ToHexString(gdb.Read(addr, len)));
         log.WriteLine(line);
         if (counter != lastCounter) { lastCounter = counter; lastChange = clock.Elapsed; }
-        else if (clock.Elapsed - lastChange > TimeSpan.FromSeconds(30)) { Console.WriteLine("contador parado há 30 s: fim do filme?"); break; }
+        else if (clock.Elapsed - lastChange > TimeSpan.FromSeconds(stallSeconds)) { Console.WriteLine($"contador parado há {stallSeconds} s: fim do filme?"); break; }
         while (ti < targets.Count && frame >= targets[ti])
         {
             var mem = new byte[DW4.Formats.Dolphin.SaveState.Mem1Size];
