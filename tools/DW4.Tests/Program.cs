@@ -403,6 +403,26 @@ Test("RECALCPLAYER: armaduras e chips somam nas colunas certas; regras de equipa
     True(!db.CanEquipArmor("armor1", 0, 2) && db.CanEquipArmor("armor1", 0, 3), "LVPOINT");
 });
 
+Test("Evolução: cada forma guarda nível, EXP e skills; só troca para forma liberada", () =>
+{
+    var ev = new Evolution();
+    ev.Start(2);
+    ev[2].Level = 20;
+    ev[2].Exp = 5000;
+    ev[2].Skill[1] = 300;
+    Equal(-1L, ev.ExpOf(14), "forma bloqueada");
+    True(!ev.Switch(14), "não troca para bloqueada");
+    True(ev.Unlock(14) && !ev.Unlock(14), "SETSHINKA só na primeira vez");
+    True(ev.Switch(14), "troca");
+    Equal(14, ev.Current, "forma atual");
+    Equal(1, ev[14].Level, "forma nova no nível 1");
+    Equal(1, ev[14].Skill[1], "skills 1");
+    True(ev.Switch(2), "volta");
+    Equal(20, ev[2].Level, "nível preservado");
+    Equal(300, ev[2].Skill[1], "skill preservada");
+    Equal(5000L, ev.ExpOf(2), "GETEXP");
+});
+
 Test("Combate (FIGHTCALC): dano do jogador e do inimigo, acerto, crítico, experiência e MT19937", () =>
 {
     var a = new Fighter { Tsuyosa = 100, Kashikosa = 40, Chimeiritsu = 4, Skill = [500, 1500], WeaponSkillNo = 0, AttackElement = 0, HpDrain = 10 };
