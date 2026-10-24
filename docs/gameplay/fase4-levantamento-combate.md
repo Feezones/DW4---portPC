@@ -96,6 +96,7 @@ O envio de comandos (0x80305A28) chama o método virtual do destinatário. O han
 - HONOO/KOORI/KAMINARI/YAMITEIKO = shinka.RES_* + UPCNT[7..10] + UPDATA[7..10] + armor1 + chips da armadura + armor2 (1..9999).
 - ATTACKDELAY = DOWNDATA[6] + arma.DELAY (até 70). MEICHURITSU e MAHIRITSU = arma. CHIMEIRITSU = UP[1] − DOWN[1] + arma + chips da arma (≥ 1). KAIHIRITSU = UP[3] − DOWN[3] + chips da armadura.CHOHATURITSU (≥ 1). BOUGYORITSU, MAHITEIKOU, DOKUTEIKOU = armor1. BITRITSU, EXPRITSU, LUCKRITSU = armor2. ATTACKZOKUSEI = ZOKUSEI do chip da arma. HPDRAIN/MPDRAIN = chips da arma.
 - Revisão: com a flag ligada, arma e armor1 somam o valor item+0x14; a armor2 soma só no atributo do SHUSEINOURYOKU. Ainda fora do port (não há item com revisão).
+- DIGIMONNO = linha da shinka (FATO: as 16 armas exclusivas têm um bit só, igual a 1 << linha da forma que começa com ela; Guilmon = linha 2, arma especial 252 com SOUBI 4). As armas comuns têm SOUBI 65535.
 - Equipar: arma pede SOUBI & (1 << DIGIMONNO) e SKILL ≥ SKILLPOINT; armadura pede só nível ≥ LVPOINT (0x803860A8; o SOUBI das armaduras é da loja). Na digievolução (0x8039CA4C) armaduras e chips são desequipados e a arma é re-escolhida pela mais forte usável (WEAPONEQUIPSTRONG).
 - Troca de arma em combate: não achada. O RECALC só usa POWERSOCKET[0]; HIPÓTESE: [1] e [2] são reservas trocadas pelo menu de status. Regra dos pockets (ISPOCKET, quantidade): desconhecida.
 - Código no port: `GameTables.Player(..., Equipment, ...)`, `CanEquipWeapon`, `CanEquipArmor`. UPDATA/DOWNDATA ficam para os estados.

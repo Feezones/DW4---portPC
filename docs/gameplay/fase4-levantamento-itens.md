@@ -42,3 +42,10 @@ Leitura estática do main.dol e das tabelas beDataBase do area #3 em 2026-10-24.
 - BIT (0x803B1408): faixa por nível (≤18: 10..55; ≤38: 55..100; ≤59: 87..195; ≤93: 162..350; ≤107: 232..520; ≤143: 340..700; ≤202: 446..860; senão 566..1160); quantia = (lo + MT % (hi − lo))·(BITRITSU + 100)/100, somada na hora. Xデータ soma em XDATA; plugs somam em UPCNT[k] (tabela 0x804EE0C0).
 - Party: 1 drop compartilhado no mundo; quem chega primeiro leva (dono ou efeito); BIT por jogador.
 - Port: `src/DW4.Gameplay/Drops.cs`; listas exportadas por `dw4 igb-drops`. Na fatia, tudo é pego por proximidade e os plugs ainda não somam.
+
+## Gerador: estados e drop final (FATO, terceira leitura)
+
+- O sorteio (0x802FCC44) é chamado em 0x802FD1AC e 0x802FD394 (flag 0) e em 0x802FD524 (flag 1), na atualização do gerador (0x802FCF68).
+- Estado em dados+0x1C: 0 = início (_startModeStr 'd' direct = já, 't' = BOOT_TIMER); 1 = primeiro lote; 2 = rodando, com reposição pelo _fillModeStr ('w' wipeout: novo lote quando todos morrem; 'a': repõe sempre que vivos ≠ _geneCount; 't': a cada GENE_TIMER); quando o pool restante (+0x10) acaba, estado 3.
+- Estado 3: drop com flag 1, e a lista "last" só vale quando resta exatamente 1 registro (0x802FCD2C). Ou seja, o último inimigo do gerador usa o _itemLastDataList (o drop "perfeito"). Com todos mortos, roda o _callLua (ex.: gene01.lua) e desliga o gerador.
+- O byte do re-sorteio garantido é +0x24 do objeto gerenciador (r29), não dos dados do gerador; onde ele é ligado: DESCONHECIDO. O handler do comando PERFECTDROP não foi lido.

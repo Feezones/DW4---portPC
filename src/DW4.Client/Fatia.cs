@@ -631,7 +631,7 @@ public partial class Fatia : Node3D
         string name = _db[item.Table].Text(item.Row, "NAME");
         bool ok = item.Table switch
         {
-            // HIPÓTESE: DIGIMONNO = linha da shinka.
+            // FATO: DIGIMONNO = linha da shinka (SOUBI das armas exclusivas e INI_WEAPON1 das formas evoluídas).
             "weapon" => _db.CanEquipWeapon(item.Row, _shinkaRow, _skill),
             "armor1" or "armor2" => _db.CanEquipArmor(item.Table, item.Row, _level),
             _ => false,
