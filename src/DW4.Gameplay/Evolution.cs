@@ -58,7 +58,9 @@ public sealed class Evolution
     }
 
     /// <summary>
-    /// WEAPONEQUIPSTRONG (HIPÓTESE: a mais forte por TSUYOSA entre as equipáveis): linha da arma escolhida, ou −1.
+    /// WEAPONEQUIPSTRONG (0x8036E3B8 modo 1, FATO): entre as armas do DEVICEFOLDER equipáveis pela forma, a de maior TSUYOSA
+    /// da linha (sem revisão); no empate fica a primeira na ordem da pasta (OrderByDescending é estável). Vai para o
+    /// POWERSOCKET[0]; sem candidata, −1 (nada equipado).
     /// </summary>
     public static int StrongestWeapon(GameTables db, IEnumerable<int> weaponRows, int digimonNo, IReadOnlyList<int> skill) =>
         weaponRows.Where(r => db.CanEquipWeapon(r, digimonNo, skill)).OrderByDescending(r => db["weapon"].Int(r, "TSUYOSA")).DefaultIfEmpty(-1).First();

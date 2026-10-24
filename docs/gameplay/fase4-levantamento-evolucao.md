@@ -8,7 +8,8 @@ Leitura estática do main.dol e dos scripts Lua em 2026-10-24. Nada executado. F
 2. **Trocar de forma:** menu da lobby (beNDMWShopCtrlEvolve, "SQ_SINKAONOPEN"/"SQ_SINKAOFFOPEN"), com as formas liberadas e o nível de cada. A escolha (0x8039CA4C) faz CURRENT2BASE (salva LEVEL, EXP, SKILL[9], UPCNT[11] em BASE_*[atual]), BASE2CURRENT (DIGIMONNO pela MODEL_NAME; carrega os BASE_* da nova forma), RECALCPLAYER, WEAPONEQUIPSTRONG, desequipa MAINSLOT, SUBSLOT, POWERPOCKET e MAINPOCKET e faz RECALC de novo.
 
 - Cada forma tem nível, EXP, skills e UPCNT próprios; uma forma recém-liberada começa no nível 1 com skills 1. BIT e as pastas de itens são da conta e não mudam.
-- Permanente até a próxima troca; há volta para as iniciais. Nenhum custo ou duração no fluxo lido (o menu pode ter condição: DESCONHECIDO).
+- Permanente até a próxima troca; há volta para as iniciais. Sem custo nem condição além de a forma estar liberada (único chamador 0x8039C1FC; antes só interface).
+- WEAPONEQUIPSTRONG (0x8036E3B8 modo 1): desmarca o POWERSOCKET, escolhe no DEVICEFOLDER inteiro a arma equipável de maior TSUYOSA (empate: a primeira da pasta) e põe só no POWERSOCKET[0].
 
 ## Quem libera (scripts)
 
@@ -41,4 +42,4 @@ Cada forma tem o próprio IGB (esqueleto, animações e sequências SQ_*), escol
 
 ## Port
 
-`src/DW4.Gameplay/Evolution.cs`: estado por forma, liberar, trocar e a escolha da arma mais forte (HIPÓTESE: por TSUYOSA). A fatia ainda não troca de modelo (falta exportar o IGB da forma).
+`src/DW4.Gameplay/Evolution.cs`: estado por forma, liberar, trocar e a escolha da arma mais forte. A fatia ainda não troca de modelo (falta exportar o IGB da forma).
