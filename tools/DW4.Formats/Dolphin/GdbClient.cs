@@ -16,6 +16,7 @@ public sealed class GdbClient : IDisposable
     {
         _tcp = tcp;
         _s = tcp.GetStream();
+        _s.ReadTimeout = 5000;
     }
 
     public static GdbClient Connect(string host, int port, TimeSpan timeout)
@@ -84,11 +85,22 @@ public sealed class GdbClient : IDisposable
     /// <summary>Retoma a emulação (a resposta só vem na próxima parada).</summary>
     public void Continue() => Send("c");
 
-    /// <summary>Interrompe a emulação (Ctrl-C) e espera a resposta de parada.</summary>
-    public string Interrupt()
+    /// <summary>
+    /// Interrompe a emulação (Ctrl-C), espera a resposta de parada e ressincroniza: no Dolphin 2609a chegam depois um
+    /// pacote vazio e uma segunda resposta de parada (conferido em 2026-10-24), então lê o cabeçalho do disco
+    /// (0x80000000, "GDJEB2") até a resposta certa aparecer, duas vezes com uma pausa no meio.
+    /// </summary>
+    public string Interrupt(string gameIdHex = "47444A454232")
     {
         _s.WriteByte(3);
-        return Receive();
+        var stop = Receive();
+        for (int round = 0; round < 2; round++)
+        {
+            Send("m80000000,6");
+            for (int i = 0; i < 8 && Receive() != gameIdHex; i++) { }
+            Thread.Sleep(30);
+        }
+        return stop;
     }
 
     /// <summary>Resposta bruta de um "m" (para diagnóstico).</summary>
@@ -97,6 +109,8 @@ public sealed class GdbClient : IDisposable
     public byte[] Read(uint address, int length)
     {
         var hex = Query($"m{address:x},{length:x}");
+        // Pacote fora de ordem (vazio ou resposta de parada atrasada): descarta e lê o próximo.
+        for (int i = 0; i < 4 && (hex.Length == 0 || hex[0] is 'T' or 'S'); i++) hex = Receive();
         if (hex.Length != 2 * length || hex.StartsWith('E')) throw new IOException($"GDB: leitura de 0x{address:X8} falhou ({hex[..Math.Min(hex.Length, 8)]})");
         return Convert.FromHexString(hex);
     }
