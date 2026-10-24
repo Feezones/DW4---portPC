@@ -254,6 +254,41 @@ Test("Sequência: bloco do estilo, sonda de conversa pulada, caixa no quadro cer
     True(!r.Start("SQ_ATCK1", "gun"), "estilo inexistente");
 });
 
+Test("IA: faixa pela distância, sorteio acumulado em 16, troca de mapa e espera de sequência externa", () =>
+{
+    AiChoice A(string s, float ang, float v, int t) => new(s, ang, v, t);
+    var near = new AiMap("MAP00", [36 * 36, 45 * 45, 150 * 150], 0.1f,
+        [[A("SQ_CHMOD1", 0, 0, 12), A("SQ_WALK", 1.7453f, 15, 16)], [A("SQ_WAIT", 0, 21, 16)], [A("SQ_WALK", 0, 30, 16)], [A("SQ_SILENT", 0, 60, 16)]]);
+    var close = new AiMap("MAP01", [22 * 22, 40 * 40, 150 * 150], 0.1f,
+        [[A("SQ_ATCK1", 0, 0, 16)], [A("SQ_WALK", 0, 20, 16)], [A("SQ_CHMOD0", 0, 0, 16)], [A("SQ_SILENT", 0, 60, 16)]]);
+    Equal(0, near.Band(35 * 35), "faixa 0");
+    Equal(2, near.Band(100 * 100), "faixa 2");
+    Equal(3, near.Band(200 * 200), "fora");
+    Equal("SQ_CHMOD1", near.Pick(10, 11)?.Sequence, "sorteio 11 < 12");
+    Equal("SQ_WALK", near.Pick(10, 12)?.Sequence, "sorteio 12 passa para a próxima");
+    var seqs = new Dictionary<string, List<SeqCommand>>
+    {
+        ["SQ_CHMOD0"] = [new("AIMAP", ["MAP00"]), new("JUMP", ["SQ_WAIT"])],
+        ["SQ_CHMOD1"] = [new("AIMAP", ["MAP01"]), new("JUMP", ["SQ_WAIT"])],
+    };
+    int roll = 0;
+    var b = new EnemyBrain([near, close], seqs, () => roll);
+    const float frame = 1 / EnemyBrain.FramesPerSecond;
+    var self = Vector3.Zero;
+    b.Tick(frame, self, new Vector3(0, 0, 10), 0);
+    Equal("MAP01", b.Map.Name, "CHMOD1 troca para o MAP01");
+    b.Tick(frame, self, new Vector3(0, 0, 10), 0);
+    Equal("SQ_ATCK1", b.External, "a menos de 22, ataca");
+    b.Tick(frame, self, new Vector3(0, 0, 100), 0);
+    Equal("SQ_ATCK1", b.External, "espera a sequência externa");
+    b.Release();
+    b.Tick(frame, self, new Vector3(30, 0, 0), 0);
+    True(b.Walking, "entre 22 e 40, anda");
+    True(Math.Abs(b.Yaw - 0.1f) < 1e-4f, $"gira no máximo 0,1 rad por quadro ({b.Yaw})");
+    for (int i = 0; i < 25; i++) b.Tick(frame, self, new Vector3(30, 0, 0), b.Yaw);
+    True(Math.Abs(b.Yaw - MathF.PI / 2) < 1e-3f, "termina virado para o alvo");
+});
+
 Test("DTM do Dolphin: cabeçalho e leituras do controle", () =>
 {
     var file = new byte[DW4.Formats.Dolphin.DtmFile.HeaderSize + 16];
@@ -466,6 +501,26 @@ if (args.Length == 1)
         Equal(11f, ActionAnimations.Length(acts, "VATCS1", m => m == "vatcS" ? 11f : null), "VATCS1 espera o fim da animação");
         Equal(60f, ActionAnimations.Length(acts, "KATCS1", _ => 7f), "KATCS1 espera 60 quadros");
         True(ActionAnimations.Loops(acts, "KATCS1") && !ActionAnimations.Loops(acts, "VATCS1"), "LP e OS");
+    });
+
+    Test("Jogo: IA do Numemon (#179, e_nume) tem MAP00 e MAP01 com 4 listas e faixas 36²/45²/150² e 22²/40²/150²", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[179], ms);
+        var data = ms.ToArray();
+        var notes = new List<string>();
+        var maps = IgbSequences.ReadAiMaps(IgbFile.Read(data), data, "e_nume", notes);
+        Equal("MAP00,MAP01", string.Join(",", maps.Select(m => m.Name).Order()), "mapas do Numemon");
+        var m0 = maps.First(m => m.Name == "MAP00");
+        var m1 = maps.First(m => m.Name == "MAP01");
+        Equal("1296,2025,22500", string.Join(",", m0.Values.Take(3)), "faixas do MAP00");
+        Equal("484,1600,22500", string.Join(",", m1.Values.Take(3)), "faixas do MAP01");
+        Equal("3,4,5,1", string.Join(",", m0.Lists.Select(l => l.Count)), "itens por lista no MAP00");
+        Equal("4,5,4,1", string.Join(",", m1.Lists.Select(l => l.Count)), "itens por lista no MAP01");
+        Equal("SQ_ATCK1", m1.Lists[0][0].Values[0], "MAP01 ataca de perto");
+        Equal(16, m1.Lists[0][^1].Values[3], "último limiar é 16");
+        Equal("NEAR", m0.Strings.FirstOrDefault(), "critério do alvo");
     });
 
     Test("Jogo: câmera da dng1 (#180) tem 18 volumes; #181 só muda o recuo; câmera sempre acima do alvo", () =>

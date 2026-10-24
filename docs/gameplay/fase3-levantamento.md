@@ -102,6 +102,29 @@ Inclinação = acos(m11) da matriz B. Sinal da guinada e ordem exata da cadeia a
 - Altura visual na espera: Numemon 12,65, Guilmon 9,91. **FATO.** O "dobro" das caixas de corpo (14 contra 7) não vale para a malha.
 - Gerador: no #183 todos os `GENE` têm Int@7 = 17 e o único inimigo do #179 é o Numemon; caixas usam 370; outras fases usam 27, 18, 28, 25, 34, 85. **HIPÓTESE forte:** Int@7 é o ID global do tipo gerado (17 = Numemon).
 
+### IA do Numemon: árvore completa (quarta rodada, 2026-10-24)
+
+Cadeia (FATO): `beModelCtrlInfo` #6954 "e_nume" → `beBaseInfoDataList` #5819 → `beModelCtrlInfoDataAIM` #1062 ("AIM", Int@3 = 1) → `beModelCtrlAIMapList` #5080 → MAP00 #6961 e MAP01 #6958. O único outro mapa do #179 (#22916) é do botão `g_dbutton1` (faixas 6², 20², 60²).
+
+Campos (FATO, metaobjeto completo): `beModelCtrlAIMap` = String@2 nome, Float@3..@6, ObjectRef@7..@10 (uma `beModelCtrlAIDataList` cada), String@11 "NEAR", String@12 "". `beModelCtrlAIData` = String@2 sequência, Float@3, Float@4, Int@5.
+
+| Mapa | Faixas (@3..@5) | @6 | Lista @7 | Lista @8 | Lista @9 | Lista @10 |
+|---|---|---|---|---|---|---|
+| MAP00 | 36², 45², 150² | 0,0436 | CHMOD1 ·/·/12; WALK 100°/15/14; WALK −100°/16/16 | FIRE ·/·/6; WALK 45°/20/7; WALK 45°/20/8; WAIT ·/21/16 | WALK 0°/30/4; 30°/40/7; −30°/41/10; 60°/42/13; −60°/43/16 | SILENT ·/60/16 |
+| MAP01 | 22², 40², 150² | 0,0524 | ATCK1 ·/·/10; WALK 0°/15/12; 100°/15/14; −100°/16/16 | WALK 0°/20/4; 30°/30/7; −30°/31/10; 60°/32/13; −60°/33/16 | CHMOD0 ·/·/13; WALK 0°/30/14; 45°/40/15; −45°/41/16 | SILENT ·/60/16 |
+
+**HIPÓTESE** usada na fatia (`EnemyBrain`): @3..@5 são distâncias ao alvo ao quadrado que escolhem a lista; sorteia-se 0..15 e vale a primeira escolha com Int@5 maior; SQ_WALK anda Float@4 quadros girando no máximo @6 rad por quadro para a direção do alvo + Float@3; WAIT e SILENT ficam parados Float@4 quadros; CHMOD troca de mapa pelo `AIMAP` da sequência; ATCK1, FIRE e os danos rodam a sequência do jogo. Velocidade: MOVE "Move" 0,24 contra 0,7 do Guilmon, proporcional (HIPÓTESE).
+
+## Arma na mão (quarta rodada)
+
+- A malha de `w_sword01` (#967, 214 vértices) vai de (−1,02, −0,34, −2,25) a (1,02, 0,34, 11,19); não há `igTransform` no arquivo e o nó se chama "right". **FATO.** Logo a malha está no espaço do osso: punho na origem, lâmina por +Z.
+- `RArm04` e `LArm04` são os únicos ossos de membro sem matriz de pele (pontas de engate). **FATO.** A fatia prende a arma em `RArm04` sem rotação extra; a matriz de engate do motor, se existir, está só no executável (**DESCONHECIDO**).
+
+## Câmera e paredes (quarta rodada)
+
+- Não há classe de câmera, oclusão ou transparência nos IGB (#179 e ndmw.igb). Nos Lua, a câmera só é trocada por `DMsetSD("CAMERA", …)` com `SETBOXCAMERA`, `SETDEMOCAMERA`, `SHAKE` e `ISDEMOCAMERA`. **FATO.**
+- As paredes visuais da dng1 têm 30 de altura (y 40 → 70; teto do cenário 70,1), e as de colisão têm 100 (40 → 140). **FATO.** Com a inclinação dos volumes (55° a 70°) e recuo de 90 a 110, a câmera fica acima das paredes visuais: o jogo evita a parede pela geometria baixa, sem raycast. **HIPÓTESE forte.**
+
 ## Entrada do jogador
 
 - O jogador não está no grafo da fase: `funcPlayerSet` (func.lua do #179) gera um `PLAYER` por jogador ativo com `be:sd("PLAYER", be:SYSgetPlayerName(i), i, "GENERATE")`. Sem jogadores, gera `p_agumon`. **FATO** (desmontagem).

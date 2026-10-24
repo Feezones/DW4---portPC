@@ -1158,11 +1158,37 @@ int IgbSeq(string path, string which, string outDir, string? option)
         return obj;
     }
     var root = new JsonObject { ["sequences"] = Section("sequências (beModelCtrlData)", seqs), ["actions"] = Section("ações (beAction2Data)", acts) };
+    notes.Clear();
+    var maps = IgbSequences.ReadAiMaps(IgbFile.Read(data), data, actor, notes);
+    foreach (var n in notes) Console.WriteLine($"nota: {n}");
+    if (maps.Count > 0)
+    {
+        text.AppendLine("=== mapas de IA (beModelCtrlAIMap) ===");
+        var arr = new JsonArray();
+        foreach (var m in maps)
+        {
+            text.AppendLine($"#{m.Index} {m.Name} {string.Join(" ", m.Values.Select(x => Fmt(x)))} {string.Join(" ", m.Strings.Select(x => Fmt(x)))}");
+            var lists = new JsonArray();
+            for (int i = 0; i < m.Lists.Count; i++)
+            {
+                text.AppendLine($"  lista {i}: " + string.Join(" | ", m.Lists[i].Select(c => $"#{c.Index} {string.Join(" ", c.Values.Select(Fmt))}")));
+                lists.Add(new JsonArray(m.Lists[i].Select(c => (JsonNode?)new JsonArray(c.Values.Select(Node).ToArray())).ToArray()));
+            }
+            arr.Add(new JsonObject
+            {
+                ["name"] = m.Name,
+                ["values"] = new JsonArray(m.Values.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray()),
+                ["strings"] = new JsonArray(m.Strings.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray()),
+                ["lists"] = lists,
+            });
+        }
+        root["aimaps"] = arr;
+    }
     Directory.CreateDirectory(full);
     var stem = $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}{(actor == null ? "" : "_" + actor)}_seq";
     File.WriteAllText(Path.Combine(full, stem + ".json"), root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
     File.WriteAllText(Path.Combine(full, stem + ".txt"), text.ToString());
-    Console.WriteLine($"{seqs.Count} sequências ({seqs.Values.Sum(c => c.Count)} comandos), {acts.Count} ações ({acts.Values.Sum(c => c.Count)} comandos) -> {Path.Combine(full, stem)}.json/.txt");
+    Console.WriteLine($"{seqs.Count} sequências ({seqs.Values.Sum(c => c.Count)} comandos), {acts.Count} ações ({acts.Values.Sum(c => c.Count)} comandos), {maps.Count} mapas de IA -> {Path.Combine(full, stem)}.json/.txt");
     return 0;
 }
 

@@ -104,7 +104,7 @@ public sealed record HitBox(int Type, float StartFrame, float Frames, Vector3 Po
 ///  · LABEL marca o bloco de um estilo de arma; executa-se do LABEL do estilo até o próximo LABEL ou o fim.
 ///  · HITBOX "Set" agenda uma caixa para a próxima ACTION; "AllClear" descarta as agendadas.
 ///  · ACTION toca a animação; as caixas agendadas valem nos quadros [início, início + duração) dessa ação.
-///  · WCHECK "Action" espera a animação acabar; "Atck0N" também espera, e só continua se o ataque foi apertado
+///  · WCHECK "Action" (e "Moving", usado nos recuos de dano do Numemon) espera a animação acabar; "Atck0N" também espera, e só continua se o ataque foi apertado
 ///    durante a ação (janela de combo); senão a sequência termina. Outros WCHECK não bloqueiam aqui.
 ///  · Uma ACTION precedida de HITBOX tipo 60000 (sonda de conversa, seguida de "TALKWF") só acontece se a sonda achar
 ///    alguém para conversar; sem NPC por perto, a ação e o WCHECK "Action" seguinte são pulados.
@@ -210,7 +210,7 @@ public sealed class SequenceRunner
                 case "WCHECK" when _skipWait && c.S(0) == "Action":
                     _skipWait = false;
                     break;
-                case "WCHECK" when c.S(0) == "Action" || c.S(0).StartsWith("Atck", StringComparison.Ordinal):
+                case "WCHECK" when c.S(0) is "Action" or "Moving" || c.S(0).StartsWith("Atck", StringComparison.Ordinal):
                     if (Action != null && ActionFrame < ActionLength) return; // espera a animação
                     if (c.S(0).StartsWith("Atck", StringComparison.Ordinal) && !_attackBuffered) { Finish(null); return; }
                     break;
