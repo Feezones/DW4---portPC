@@ -57,10 +57,10 @@ public sealed class GdbClient : IDisposable
                 if (c == '-') break;
                 if (c == '$') { _pushed = c; return; }
                 if (Stray.Count < 64) Stray.Add($"0x{c:X2} depois de \"{data}\"");
-                if (skipped > 4096) throw new IOException("GDB: sem ack");
+                if (skipped > 4096) throw new IOException($"GDB: sem ack; bytes estranhos: {string.Join(", ", Stray)}");
             }
         }
-        throw new IOException($"GDB: pacote \"{data}\" recusado 5 vezes");
+        throw new IOException($"GDB: pacote \"{data}\" recusado 5 vezes; bytes estranhos: {string.Join(", ", Stray)}");
     }
 
     string Receive()
