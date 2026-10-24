@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
+using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 using DW4.Formats.Afs;
@@ -8,6 +9,7 @@ using DW4.Formats.Igb;
 using DW4.Formats.Images;
 using DW4.Formats.Lua;
 using DW4.Formats.Sofdec;
+using DW4.Gameplay;
 
 // Verificador dos leitores de formato, sem pacotes externos.
 // Sem argumentos: só testes sintéticos (dados montados aqui, nada do jogo).
@@ -196,6 +198,25 @@ Test("MPEG-PS: pacote MPEG-1, PES com PTS, fim e preenchimento de setor", () =>
     True(MpegPs.Demux(ps.ToArray()[..20]).Problems.Count > 0, "PES cortado não foi apontado");
 });
 
+Test("Câmera por volumes: escolha do volume e pose com recuo e inclinação", () =>
+{
+    // Volume 1 com inclinação de 55° (linha Z da rotação = (0, sen, cos), como nas matrizes B do jogo) e recuo 135.
+    float t = 55 * MathF.PI / 180;
+    var b = Matrix4x4.CreateRotationX(-t) * Matrix4x4.CreateTranslation(0, 10, 0);
+    var zones = new CameraZones(
+    [
+        new CameraZone(0, new Vector3(-5, 0, -5), new Vector3(5, 200, 5), Matrix4x4.CreateTranslation(0, 0, 50), Matrix4x4.Identity),
+        new CameraZone(1, new Vector3(0, 0, 0), new Vector3(100, 200, 100), Matrix4x4.CreateTranslation(0, 0, 135), b),
+    ], Matrix4x4.CreateTranslation(0, 1, 0));
+    Equal(1, zones.Select(new Vector3(10, 40, 20)), "dentro do volume 1");
+    Equal(0, zones.Select(new Vector3(-50, 40, -50)), "fora de todos, sem volume atual");
+    Equal(1, zones.Select(new Vector3(-50, 40, -50), current: 1), "fora de todos, mantém o atual");
+    var (pos, look) = zones.Pose(1, new Vector3(10, 40, 20));
+    True(Vector3.Distance(look, new Vector3(10, 51, 20)) < 1e-3f, $"pivô {look}");
+    var expected = new Vector3(10, 51 + 135 * MathF.Sin(t), 20 + 135 * MathF.Cos(t));
+    True(Vector3.Distance(pos, expected) < 1e-3f, $"câmera {pos}, esperado {expected}");
+});
+
 // ---------- dados do jogo (opcional) ----------
 
 if (args.Length == 1)
@@ -347,6 +368,41 @@ if (args.Length == 1)
         var parts = IgbScene.Read(IgbFile.Read(data), data).Parts.Where(p => p.SceneRoot == 1862).ToList();
         Equal(36, parts.Count, "geometrias");
         Equal(458, parts.Sum(p => p.Triangles.Count) / 3, "triângulos");
+    });
+
+    Test("Jogo: câmera da dng1 (#180) tem 18 volumes; #181 só muda o recuo; câmera sempre acima do alvo", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        IgbCameraSet Read(int i)
+        {
+            using var ms = new MemoryStream();
+            afs.CopyEntry(afs.Entries[i], ms);
+            var data = ms.ToArray();
+            return IgbCameraSet.Read(IgbFile.Read(data), data);
+        }
+        var near = Read(180);
+        var far = Read(181);
+        Equal(18, near.Boxes.Count, "volumes #180");
+        Equal(18, far.Boxes.Count, "volumes #181");
+        Equal(135f, near.Boxes[0].Distance, "recuo do volume 0");
+        Equal(90f, near.Boxes[1].Distance, "recuo do volume 1 (#180)");
+        Equal(120f, far.Boxes[2].Distance, "recuo do volume 2 (#181)");
+        for (int i = 0; i < 18; i++)
+        {
+            True(near.Boxes[i].Min.SequenceEqual(far.Boxes[i].Min) && near.Boxes[i].Max.SequenceEqual(far.Boxes[i].Max), $"caixa {i} difere");
+            True(near.Boxes[i].B.SequenceEqual(far.Boxes[i].B), $"B {i} difere");
+        }
+        static Matrix4x4 M(float[] m) => new(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15]);
+        var zones = new CameraZones(near.Boxes.Select(b => new CameraZone(b.Index, new Vector3(b.Min[0], b.Min[1], b.Min[2]),
+            new Vector3(b.Max[0], b.Max[1], b.Max[2]), M(b.A), M(b.B))), M(near.Common));
+        foreach (var z in zones.Zones)
+        {
+            var target = (z.Min + z.Max) / 2 with { Y = z.Min.Y };
+            int sel = zones.Select(target);
+            True(sel == 0 || zones.Zones.First(x => x.Index == sel).Contains(target), $"volume {sel} escolhido não contém o centro de {z.Index}");
+            var (pos, look) = zones.Pose(z.Index, target);
+            True(pos.Y > look.Y, $"volume {z.Index}: câmera abaixo do alvo ({pos} olhando {look})");
+        }
     });
 }
 else Console.WriteLine("(sem pasta do jogo: só testes sintéticos; passe a pasta files\\ da cópia de trabalho para conferir os dados)");
