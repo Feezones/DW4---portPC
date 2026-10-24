@@ -4,6 +4,7 @@ using System.Text;
 using DW4.Formats.Afs;
 using DW4.Formats.Analysis;
 using DW4.Formats.Igb;
+using DW4.Formats.Images;
 using DW4.Formats.Lua;
 using System.Buffers.Binary;
 
@@ -30,6 +31,7 @@ try
         "igb-check" when args.Length == 2 => IgbCheck(args[1]),
         "igb-dump" when args.Length is 3 or 4 => IgbDump(args[1], args[2], args.Length == 4 ? args[3] : null),
         "igb-lua" when args.Length == 2 => IgbLua(args[1]),
+        "igb-export" when args.Length == 4 => IgbExport(args[1], args[2], args[3]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
         _ => Usage(),
     };
@@ -55,6 +57,7 @@ static int Usage()
           dw4 igb-check    <arquivo.afs | arquivo.igb>
           dw4 igb-dump     <arquivo.afs> <indice> [classe]   (ou <arquivo.igb> - [classe])
           dw4 igb-lua      <arquivo.afs>
+          dw4 igb-export   <arquivo.afs> <indice> <pasta-de-trabalho>   (OBJ + PNG + relatório, fora do repositório)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
         """);
     return 1;
@@ -467,6 +470,90 @@ int IgbDump(string path, string which, string? cls)
             }
         }
     }
+    return 0;
+}
+
+// Exporta um item IGB de um AFS para OBJ/MTL + PNG numa pasta de trabalho fora de qualquer repositório Git.
+// É uma conversão de amostra para inspeção visual; o relatório lista o que não foi decodificado.
+int IgbExport(string path, string which, string outDir)
+{
+    var root = Path.GetFullPath(outDir);
+    if (InsideGitRepo(root)) { Console.Error.WriteLine($"recusado: {root} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    var entry = afs.Entries[idx];
+    using var ms = new MemoryStream();
+    afs.CopyEntry(entry, ms);
+    var data = ms.ToArray();
+    var f = IgbFile.Read(data);
+    var scene = IgbScene.Read(f, data);
+
+    var safeName = string.Concat((entry.Name ?? "sem_nome").Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+    var dir = Path.Combine(root, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_{safeName}");
+    Directory.CreateDirectory(dir);
+    var report = new StringBuilder();
+    report.AppendLine($"{path} #{idx} ({entry.Name}, {entry.Size} B)");
+    report.AppendLine($"slots: {f.Slots.Count}; problemas do leitor: {f.Problems.Count}; igTransform visitados: {scene.TransformCount}");
+    foreach (var n in scene.Notes) report.AppendLine(n);
+
+    // Imagens: as duas leituras possíveis dos índices (linhas e blocos GX 8×4), para decidir olhando.
+    var texture = new Dictionary<int, string>();
+    foreach (var img in scene.Images.Values)
+    {
+        string pal = img.Palette.Length >= 16 ? ByteStats.Hex(img.Palette.AsSpan(0, 16)) : "-";
+        int maxAlpha = 0;
+        for (int i = 3; i < img.Palette.Length; i += 4) maxAlpha = Math.Max(maxAlpha, img.Palette[i]);
+        report.AppendLine($"imagem #{img.Index} \"{img.Name}\" {img.Width}x{img.Height} formato {img.PixelFormat} {img.BitsPerPixel} bpp, " +
+            $"{img.Pixels.Length} B; paleta formato {img.PaletteFormat} ×{img.PaletteCount} ({img.Palette.Length} B), alfa máx {maxAlpha}, início {pal}");
+        foreach (var (tiled, suffix) in new[] { (false, "linhas"), (true, "gx") })
+        {
+            var rgba = IgbScene.IndexedToRgba(img, tiled);
+            if (rgba == null) { report.AppendLine("    não decodificada (só 8 bpp com paleta de 256×4 B por enquanto)"); break; }
+            var file = $"img{img.Index:D4}_{suffix}.png";
+            using (var fs = File.Create(Path.Combine(dir, file))) Png.WriteRgba(fs, img.Width, img.Height, rgba);
+            if (tiled) texture[img.Index] = file;
+        }
+    }
+
+    // Geometria: um objeto OBJ por igGeometryAttr; V invertido (hipótese: origem da UV no canto superior esquerdo).
+    var obj = new StringBuilder();
+    var mtl = new StringBuilder();
+    obj.AppendLine("# exportado por dw4 igb-export; amostra de inspeção, não é recurso final");
+    obj.AppendLine("mtllib modelo.mtl");
+    foreach (var (index, file) in texture)
+    {
+        mtl.AppendLine($"newmtl img{index:D4}");
+        mtl.AppendLine("Kd 1 1 1");
+        mtl.AppendLine($"map_Kd {file}");
+    }
+    int baseVertex = 1, exported = 0;
+    foreach (var part in scene.Parts)
+    {
+        report.AppendLine($"geometria #{part.GeometryIndex}: primitiva {part.PrimitiveType}, {part.VertexCount} vértices, formato 0x{part.VertexFormat:X8}, " +
+            $"{part.Triangles.Count / 3} triângulos, imagem {(part.ImageIndex >= 0 ? $"#{part.ImageIndex}" : "nenhuma")}");
+        foreach (var n in part.Notes) report.AppendLine($"    {n}");
+        if (part.Positions.Count == 0 || part.Triangles.Count == 0) continue;
+        exported++;
+        obj.AppendLine($"o geom{part.GeometryIndex:D4}");
+        if (texture.ContainsKey(part.ImageIndex)) obj.AppendLine($"usemtl img{part.ImageIndex:D4}");
+        foreach (var (x, y, z) in part.Positions) obj.AppendLine(FormattableString.Invariant($"v {x} {y} {z}"));
+        bool uv = part.TexCoords.Count == part.Positions.Count, nrm = part.Normals.Count == part.Positions.Count;
+        if (uv) foreach (var (u, v) in part.TexCoords) obj.AppendLine(FormattableString.Invariant($"vt {u} {1 - v}"));
+        if (nrm) foreach (var (x, y, z) in part.Normals) obj.AppendLine(FormattableString.Invariant($"vn {x} {y} {z}"));
+        string V(int i)
+        {
+            var s = (i + baseVertex).ToString(inv);
+            return uv && nrm ? $"{s}/{s}/{s}" : uv ? $"{s}/{s}" : nrm ? $"{s}//{s}" : s;
+        }
+        for (int t = 0; t + 2 < part.Triangles.Count; t += 3)
+            obj.AppendLine($"f {V(part.Triangles[t])} {V(part.Triangles[t + 1])} {V(part.Triangles[t + 2])}");
+        baseVertex += part.Positions.Count;
+    }
+    File.WriteAllText(Path.Combine(dir, "modelo.obj"), obj.ToString());
+    File.WriteAllText(Path.Combine(dir, "modelo.mtl"), mtl.ToString());
+    File.WriteAllText(Path.Combine(dir, "relatorio.txt"), report.ToString());
+    Console.Write(report);
+    Console.WriteLine($"{exported} de {scene.Parts.Count} geometrias e {texture.Count} imagens gravadas em {dir}");
     return 0;
 }
 

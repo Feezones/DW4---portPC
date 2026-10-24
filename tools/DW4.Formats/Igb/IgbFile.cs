@@ -59,6 +59,15 @@ public sealed class IgbFile
         return false;
     }
 
+    /// <summary>Verdadeiro se o objeto é da classe indicada ou de uma subclasse dela.</summary>
+    public bool Is(IgbSlot? slot, string className)
+    {
+        if (slot is not IgbObject o) return false;
+        for (int i = 0; i < MetaObjectNames.Count; i++)
+            if (MetaObjectNames[i] == o.TypeName) return IsA(i, className);
+        return false;
+    }
+
     public static IgbFile Read(byte[] data)
     {
         if (!IgbHeader.TryRead(data, out var hdr)) throw new InvalidDataException("não é IGB");
