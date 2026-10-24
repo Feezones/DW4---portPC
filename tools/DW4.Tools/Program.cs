@@ -51,6 +51,9 @@ try
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
+        "dol-info" when args.Length == 2 => DolInfo(args[1]),
+        "dol-desmontar" when args.Length == 4 => DolDesmontar(args[1], args[2], args[3]),
+        "dol-refs" when args.Length == 3 => DolRefs(args[1], args[2]),
         _ => Usage(),
     };
 }
@@ -92,6 +95,9 @@ static int Usage()
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
+          dw4 dol-info     <main.dol>   (seções, entrada e bases r13/r2; leitura estática, nada é executado)
+          dw4 dol-desmontar <main.dol> <endereco-hex> <instrucoes>   (PowerPC no console, com strings e floats anotados)
+          dw4 dol-refs     <main.dol> <endereco-hex | "texto">   (ponteiros em dados e código que montam o endereço)
         """);
     return 1;
 }
@@ -1247,6 +1253,43 @@ int DtmEntradas(string path, string? csvPath)
 }
 
 // Extrai a MEM1 de um save state do Dolphin (para achar onde o jogo guarda posição, quadro etc.).
+// main.dol só como dados: desmontagem estática para achar as fórmulas (FightCom/BLT*), sem executar nada.
+int DolInfo(string path)
+{
+    var dol = DW4.Formats.Ppc.DolFile.Read(File.ReadAllBytes(path));
+    foreach (var s in dol.Sections) Console.WriteLine($"{s.Name,-6} arquivo 0x{s.Offset:X6} -> 0x{s.Address:X8}, 0x{s.Size:X} bytes");
+    Console.WriteLine($"bss 0x{dol.BssAddress:X8}, 0x{dol.BssSize:X}; entrada 0x{dol.Entry:X8}");
+    var (r13, r2) = dol.SmallDataBases();
+    Console.WriteLine($"r13 = {(r13 is { } a ? $"0x{a:X8}" : "?")}, r2 = {(r2 is { } b ? $"0x{b:X8}" : "?")}");
+    return 0;
+}
+
+static bool TryHex(string text, out uint value) =>
+    uint.TryParse(text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
+
+int DolDesmontar(string path, string addr, string count)
+{
+    if (!TryHex(addr, out uint a) || !int.TryParse(count, out int n) || n <= 0) { Console.Error.WriteLine("endereço ou contagem inválidos"); return 1; }
+    var dol = DW4.Formats.Ppc.DolFile.Read(File.ReadAllBytes(path));
+    foreach (var line in DW4.Formats.Ppc.PpcDisassembler.Listing(dol, a & ~3u, Math.Min(n, 20000))) Console.WriteLine(line);
+    return 0;
+}
+
+int DolRefs(string path, string what)
+{
+    var dol = DW4.Formats.Ppc.DolFile.Read(File.ReadAllBytes(path));
+    var (r13, r2) = dol.SmallDataBases();
+    var targets = TryHex(what, out uint a) && what.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? new List<uint> { a } : dol.FindString(what).ToList();
+    if (targets.Count == 0) { Console.Error.WriteLine("não encontrado"); return 1; }
+    foreach (var t in targets)
+    {
+        Console.WriteLine($"0x{t:X8}{(dol.CString(t, 64) is { Length: > 0 } s ? $" \"{s}\"" : "")}");
+        foreach (var p in dol.FindPointers(t)) Console.WriteLine($"  ponteiro em 0x{p:X8} (vizinhos: {string.Join(" ", Enumerable.Range(-2, 5).Select(k => dol.TryWord((uint)(p + k * 4), out uint w) ? $"{w:X8}" : "--------"))})");
+        foreach (var c in dol.FindCodeRefs(t, r13, r2)) Console.WriteLine($"  código em 0x{c:X8}");
+    }
+    return 0;
+}
+
 int DolphinRam(string savPath, string outPath)
 {
     var full = Path.GetFullPath(outPath);

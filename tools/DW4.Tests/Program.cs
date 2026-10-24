@@ -305,6 +305,32 @@ Test("IA: faixa pela distância, sorteio acumulado em 16, troca de mapa e espera
     True(Math.Abs(b.Yaw - MathF.PI / 2) < 1e-3f, "termina virado para o alvo");
 });
 
+Test("PowerPC: desmontagem de instruções conhecidas e DOL sintético (seções, r13, string e ponteiro)", () =>
+{
+    (uint W, uint Pc, string Text)[] cases =
+    [
+        (0x7C0802A6, 0, "mflr r0"), (0x9421FFF0, 0, "stwu sp, -0x10(sp)"), (0x4E800020, 0, "blr"), (0x38600001, 0, "li r3, 0x1"),
+        (0x3C608045, 0, "lis r3, 0x8045"), (0x48000011, 0x80003100, "bl 0x80003110"), (0x4182000C, 0x1000, "beq 0x0000100C"),
+        (0xEC21102A, 0, "fadds f1, f1, f2"), (0x7C631A14, 0, "add r3, r3, r3"), (0x5463103A, 0, "slwi r3, r3, 2"),
+        (0x60000000, 0, "nop"), (0x7C7F1B78, 0, "mr r31, r3"), (0x4E800421, 0, "bctrl"),
+    ];
+    foreach (var (w, pc, text) in cases) Equal(text, DW4.Formats.Ppc.PpcDisassembler.Disassemble(w, pc), $"0x{w:X8}");
+
+    var dol = new byte[0x110];
+    void Put(int at, uint v) => BinaryPrimitives.WriteUInt32BigEndian(dol.AsSpan(at), v);
+    Put(0x00, 0x100); Put(0x48, 0x80003100); Put(0x90, 8);          // text0
+    Put(0x1C, 0x108); Put(0x64, 0x80005600); Put(0xAC, 8);          // data0
+    Put(0xE0, 0x80003100);
+    Put(0x100, 0x3DA08056); Put(0x104, 0x39ADF000);                 // lis r13, 0x8056; addi r13, r13, -0x1000
+    "ABC\0"u8.CopyTo(dol.AsSpan(0x108)); Put(0x10C, 0x80005600);
+    var d = DW4.Formats.Ppc.DolFile.Read(dol);
+    Equal(2, d.Sections.Count, "seções");
+    Equal(0x108L, d.OffsetOf(0x80005600), "offset de dados");
+    Equal(0x8055F000u, d.SmallDataBases().R13, "r13");
+    Equal("0x80005600", string.Join(",", d.FindString("ABC").Select(x => $"0x{x:X8}")), "string");
+    Equal("0x80005604", string.Join(",", d.FindPointers(0x80005600).Select(x => $"0x{x:X8}")), "ponteiro");
+});
+
 Test("DTM do Dolphin: cabeçalho e leituras do controle", () =>
 {
     var file = new byte[DW4.Formats.Dolphin.DtmFile.HeaderSize + 16];
