@@ -24,6 +24,7 @@ try
         "afs-classify" when args.Length == 2 => AfsClassify(args[1]),
         "igb-headers" when args.Length == 2 => IgbHeaders(args[1]),
         "igb-layout" when args.Length == 2 => IgbLayoutCheck(args[1]),
+        "igb-types" when args.Length == 2 => IgbTypesReport(args[1]),
         _ => Usage(),
     };
 }
@@ -44,6 +45,7 @@ static int Usage()
           dw4 afs-classify <arquivo.afs>
           dw4 igb-headers  <arquivo.afs | arquivo.igb>
           dw4 igb-layout   <arquivo.afs | arquivo.igb>
+          dw4 igb-types    <arquivo.afs | arquivo.igb>
         """);
     return 1;
 }
@@ -278,6 +280,65 @@ int IgbLayoutCheck(string path)
         foreach (var s in sample.sections) Console.WriteLine($"  0x{s.Offset:X8} {s.Size,10}  {s.Name}");
     }
     return errors.Count == 0 && trailing.Count == 0 ? 0 : 3;
+}
+
+// Histograma das classes do Alchemy presentes nos objetos dos IGB, com checagem de contagem e de fim de buffer.
+int IgbTypesReport(string path)
+{
+    var files = new List<(string id, string cat, IgbHeader h, IgbTypeInfo t)>();
+    var errors = new List<string>();
+
+    void Load(string id, string cat, byte[] data)
+    {
+        if (!IgbHeader.TryRead(data, out var h)) return;
+        try { files.Add((id, cat, h!, IgbTypes.Read(data, h!))); }
+        catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentOutOfRangeException)
+        { errors.Add($"{id}: {ex.Message}"); }
+    }
+
+    if (path.EndsWith(".igb", StringComparison.OrdinalIgnoreCase))
+        Load(Path.GetFileName(path), "(solto)", File.ReadAllBytes(path));
+    else
+    {
+        using var afs = AfsArchive.Open(path);
+        foreach (var e in afs.Entries)
+        {
+            if (!IgbHeader.TryRead(afs.ReadHead(e, IgbHeader.Size), out _)) continue;
+            using var ms = new MemoryStream((int)e.Size);
+            afs.CopyEntry(e, ms);
+            Load($"#{e.Index} {e.Name}", e.Name ?? "?", ms.ToArray());
+        }
+    }
+
+    int countOk = files.Count(f => f.t.Objects.Count == f.h.ObjectCount);
+    int exact = files.Count(f => f.t.ObjectBufferExact);
+    int typeOk = files.Count(f => f.t.Objects.All(o => o.TypeIndex >= 0 && o.TypeIndex < f.t.MetaObjects.Count));
+    Console.WriteLine($"{files.Count} IGB lidos, {errors.Count} com erro");
+    Console.WriteLine($"  nº de objetos == cabeçalho: {countOk}; buffer de objetos termina exato: {exact}; tipos válidos: {typeOk}");
+    foreach (var err in errors.Take(20)) Console.WriteLine($"  erro {err}");
+    foreach (var f in files.Where(f => f.t.Objects.Count != f.h.ObjectCount || !f.t.ObjectBufferExact).Take(10))
+        Console.WriteLine($"  divergente {f.id}: objetos lidos {f.t.Objects.Count}, cabeçalho {f.h.ObjectCount}, exato {f.t.ObjectBufferExact}");
+
+    string TypeName((string id, string cat, IgbHeader h, IgbTypeInfo t) f, IgbObjectRecord o) =>
+        o.TypeIndex >= 0 && o.TypeIndex < f.t.MetaObjects.Count ? f.t.MetaObjects[o.TypeIndex].Name : $"?{o.TypeIndex}";
+
+    var all = files.SelectMany(f => f.t.Objects.Select(o => (f.id, f.cat, type: TypeName(f, o), (long)o.Size))).ToList();
+    Console.WriteLine($"classes nos objetos ({all.Select(a => a.type).Distinct().Count()} distintas, {all.Count} objetos):");
+    foreach (var g in all.GroupBy(a => a.type).OrderByDescending(g => g.Count()).Take(80))
+        Console.WriteLine($"  {g.Key,-40} {g.Count(),7} obj em {g.Select(a => a.id).Distinct().Count(),5} arquivos {g.Sum(a => a.Item4),11} B");
+
+    Console.WriteLine("classes mais frequentes por categoria:");
+    foreach (var c in files.GroupBy(f => f.cat).OrderBy(c => c.Key, StringComparer.Ordinal))
+    {
+        var top = c.SelectMany(f => f.t.Objects.Select(o => TypeName(f, o)))
+            .GroupBy(t => t).OrderByDescending(g => g.Count()).Take(12).Select(g => $"{g.Key} {g.Count()}");
+        Console.WriteLine($"  {c.Key} ({c.Count()} arquivos): {string.Join(", ", top)}");
+    }
+
+    var mf = files.FirstOrDefault().t?.MetaFields;
+    if (mf != null)
+        Console.WriteLine($"metacampos do primeiro arquivo: {string.Join(", ", mf.Select(m => m.Name))}");
+    return errors.Count == 0 ? 0 : 3;
 }
 
 static bool InsideGitRepo(string dir)
