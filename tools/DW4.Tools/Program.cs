@@ -1318,6 +1318,7 @@ int DolphinGdb(string portArg, string outDir, string[] rest)
         }
     }
     try { gdb.Continue(); } catch (IOException) { }
+    foreach (var st in gdb.Stray) Console.WriteLine($"byte inesperado: {st}");
     Console.WriteLine($"fim: {clock.Elapsed.TotalSeconds:0} s");
     return 0;
 }
