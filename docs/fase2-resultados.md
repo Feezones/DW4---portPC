@@ -18,7 +18,7 @@ Objetivo do roadmap: um Digimon com esqueleto e animações e um mapa com colis�
 
 ## Em aberto
 
-- **Escala:** o Guilmon tem cerca de 4 unidades de altura, e as salas têm mais de 200 unidades, com paredes de colisão de 100. Nas fases, os personagens devem passar por `igTransform` ou `beModelCtrl*` com escala. Isso ainda não foi lido.
+- **Escala (corrigido na Fase 3):** o Guilmon tem cerca de 10 unidades de altura, e não 4 como estimado antes por captura. A caixa da pele High vai de y = 0 a 9,91 e a caixa de corpo (`beModelCtrlInfoDataHit` → `igAABox`) mede 5 × 7 × 5. **FATO.** Com salas de 100 a 300 unidades e paredes de 100, a proporção é coerente sem escala extra. A cápsula do teste de física (raio 1, altura 4) era pequena demais.
 - **Raiz animada:** não se sabe se a translação de JointRoot substitui ou soma a do esqueleto.
 - **Texturas das fases:** as imagens de formato 14 (DXT1) já são decodificadas no `igb-export`, mas a captura da sala usou o OBJ antigo, sem elas.
 - **Comparação com o jogo rodando:** adiada por decisão do responsável.
