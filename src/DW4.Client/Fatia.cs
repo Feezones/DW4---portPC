@@ -13,13 +13,15 @@ namespace DW4.Client;
 /// Regras (câmera, movimento) ficam em DW4.Gameplay; aqui só entrada, física da Godot e apresentação.
 /// Recursos lidos em tempo de execução da pasta DW4_FATIA (fora do repositório), gerada por:
 ///   dw4 igb-cena ndmw.afs 179 2877 &lt;fatia&gt;\cenario · dw4 igb-colisao ndmw.afs 179 1862 &lt;fatia&gt;\colisao
-///   dw4 igb-gltf ndmw.afs 857 &lt;fatia&gt;\guilmon · dw4 igb-camera ndmw.afs 180 e 181 &lt;fatia&gt;
+///   dw4 igb-gltf ndmw.afs 857 &lt;fatia&gt;\guilmon · dw4 igb-gltf ndmw.afs 179 &lt;fatia&gt;\numemon --ator=e_nume · dw4 igb-camera ndmw.afs 180 e 181 &lt;fatia&gt;
 /// </summary>
 public partial class Fatia : Node3D
 {
     // PROVISÓRIO até medir no jogo: ponto inicial (gerador GENE-03 da dng1; o PLAYERPOINT real ainda não foi achado)
     // e gravidade. Caixa de corpo do Guilmon (beModelCtrlInfoDataHit → igAABox): 5 × 7 × 5, FATO.
     static readonly Vector3 Start = new(-180, 45, 60);
+    // Numemon parado no gerador GENE-05 da dng1 (FATO: posição e rotação −90° do beGeneraterData); IA ainda não implementada.
+    static readonly Vector3 EnemyAt = new(40, 45, 120);
     const float Gravity = 300f;
 
     string _dir = "";
@@ -59,6 +61,20 @@ public partial class Fatia : Node3D
                 foreach (var n in new[] { _animWait, _animRun })
                     if (n != null) _anim.GetAnimation(n).LoopMode = Animation.LoopModeEnum.Linear;
                 if (_animWait != null) _anim.Play(_animWait);
+            }
+        }
+
+        if (Load("numemon", "personagem.gltf") is { } numemon)
+        {
+            // Caixa de corpo do Numemon (igAABox do HIT): 8 × 14 × 8, FATO; forma de cápsula é aproximação.
+            var enemy = new CharacterBody3D { Position = EnemyAt, RotationDegrees = new Vector3(0, -90, 0) };
+            enemy.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 4f, Height = 14f }, Position = new Vector3(0, 7, 0) });
+            enemy.AddChild(numemon);
+            AddChild(enemy);
+            if (FindAll<AnimationPlayer>(numemon).FirstOrDefault() is { } ea && Pick(ea.GetAnimationList(), "waitG", "wait") is { } w)
+            {
+                ea.GetAnimation(w).LoopMode = Animation.LoopModeEnum.Linear;
+                ea.Play(w);
             }
         }
 

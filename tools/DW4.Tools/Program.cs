@@ -73,7 +73,7 @@ static int Usage()
           dw4 igb-anim     <arquivo.afs> [indice]   (decodifica as animações Enbaya; sem índice, resume o arquivo todo)
           dw4 igb-mem      <arquivo.afs> <indice> <slot> [hex|u8|i32|u32|f32|hist]   (conteúdo de um bloco de memória, ou de um igDataList)
           dw4 igb-tree     <arquivo.afs> <indice> [profundidade]   (grafo de cena com nomes de nós)
-          dw4 igb-gltf     <arquivo.afs> <indice> <pasta-de-trabalho> [--quat=as] [--trans=rest|anim] [--dxt=gc] [--todas-peles] [--anim=N]
+          dw4 igb-gltf     <arquivo.afs> <indice> <pasta-de-trabalho> [--quat=as] [--trans=rest|anim] [--dxt=gc] [--todas-peles] [--anim=N] [--ator=NOME]
                            (personagem com esqueleto, pele e animações em glTF, fora do repositório)
           dw4 igb-colisao  <arquivo.afs> <indice> <no-raiz> <pasta-de-trabalho>   (malha de colisão em glTF, nó "-colonly" para a Godot)
           dw4 igb-cena     <arquivo.afs> <indice> <no-raiz> <pasta-de-trabalho>   (cenário de uma raiz em glTF com texturas)
@@ -788,6 +788,7 @@ int IgbGltf(string path, string which, string outDir, string[] options)
         gcBlocks = options.Contains("--dxt=gc"), animTrans = options.Contains("--trans=anim"), allSkins = options.Contains("--todas-peles");
     int maxAnims = int.MaxValue;
     foreach (var o in options.Where(o => o.StartsWith("--anim=", StringComparison.Ordinal))) maxAnims = int.Parse(o[7..], inv);
+    string? actor = options.Where(o => o.StartsWith("--ator=", StringComparison.Ordinal)).Select(o => o[7..]).LastOrDefault();
     using var afs = AfsArchive.Open(path);
     if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
     var entry = afs.Entries[idx];
@@ -795,13 +796,13 @@ int IgbGltf(string path, string which, string outDir, string[] options)
     afs.CopyEntry(entry, ms);
     var data = ms.ToArray();
     var f = IgbFile.Read(data);
-    var ch = IgbCharacter.Read(f, data);
+    var ch = IgbCharacter.Read(f, data, actor);
     var report = new StringBuilder();
     report.AppendLine($"{path} #{idx} ({entry.Name}); opções: {string.Join(' ', options)}");
     foreach (var n in ch.Notes) report.AppendLine($"nota: {n}");
     if (ch.Bones.Count == 0) { Console.Write(report); Console.Error.WriteLine("sem esqueleto"); return 1; }
 
-    var dir = Path.Combine(root, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_gltf");
+    var dir = Path.Combine(root, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}{(actor == null ? "" : "_" + actor)}_gltf");
     Directory.CreateDirectory(dir);
     var g = new GltfBuilder();
 
