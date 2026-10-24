@@ -4,9 +4,9 @@ Classificação pelos primeiros 16 bytes e pela entropia dos primeiros 64 KiB. N
 
 | Grupo | Onde | Entradas | Evidência | Hipótese | Confiança |
 |---|---|---|---|---|---|
-| Vídeo | area: AEU_, AJP_, AUS_ | 3 (~120 MB) | Começam com `00 00 01 BA` (pack header MPEG-PS) seguido de `00 00 01 BB` (system header); entropia ~7,05 | Vídeos de abertura em três regiões (EU/JP/US), MPEG-PS | HIPÓTESE forte |
-| Áudio | ndmw: soun | 79 (273 MB) | `80 00` + offset de cabeçalho + `03 12 04` + canais (01/02) + taxa `BB80` (48000) ou `5DC0` (24000) | CRI ADX | HIPÓTESE forte |
-| Mapa/área? | area: dng*, dngq, stag | ~600 | 1º u32 entre 0x12xx e 0x1Exx e padrão fixo `xx xx 00 00 Ax 00 00 00 1E 11 00 00 43 00 00 00`; entropia 4,1–4,7 | Um único formato com cabeçalho de tamanho variável; provável dado de cenário | HIPÓTESE fraca |
+| Vídeo | area: AEU_, AJP_, AUS_ | 3 (~120 MB) | Começam com `00 00 01 BA` / `00 00 01 BB` (MPEG-PS); o executável tem Sofdec (MWSFD/GC 3.33b) | Vídeos de abertura Sofdec (.sfd) em três regiões | HIPÓTESE forte |
+| Áudio | ndmw: soun | 79 (273 MB) | `80 00` + offset de cabeçalho + `03 12 04` + canais (01/02) + taxa `BB80` (48000) ou `5DC0` (24000) | CRI ADX (o executável tem ADXT/GC 9.31b) | HIPÓTESE forte |
+| Mapa/área? | area: dng*, dngq, stag | ~600 | 1º u32 entre 0x12xx e 0x1Exx e padrão fixo `xx xx 00 00 Ax 00 00 00 1E 11 00 00 43 00 00 00`; entropia 4,1–4,7 | Arquivos IGB do Alchemy (ver `igb.md`) | HIPÓTESE |
 | Load | area: Load | 686 | Assinaturas `C4 09 00 00` (460) e `A4 09 00 00` (184); entropia 5,40–5,48; tamanhos quase fixos | Desconhecido (talvez imagens de carregamento ou dados por cena) | DESCONHECIDO |
 | Pequenos fixos | ndmw: dng1 etc. | 98 | `90 00 00 00 06 00 00 00 …`, sempre 3270 bytes | Tabela ou descritor por sala | DESCONHECIDO |
 | Grandes de cenário | ndmw: dng*, dngq, stag | ~100 (2–9 MB) | 1º u32 entre 0x6000 e 0x9F00; entropia 3,0–4,2 | Candidatos a modelos/texturas de cenário | HIPÓTESE fraca |
