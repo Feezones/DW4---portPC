@@ -69,7 +69,16 @@ O envio de comandos (0x80305A28) chama o método virtual do destinatário. O han
 - **P2EEXPUP (6):** EXP do inimigo (× (EXPRITSU + 100)/100), multiplicado por NINZU (1: 100/2, 2: 140/3, 3: 160/4, 4: 200/5); quem matou recebe /50 e os outros /100. Com 4 jogadores: 80% e 40%. Sobe de nível enquanto NEXTEXP ≤ EXP (até 999) e enche HP e MP. Base de fidelidade da party online.
 - **Sorteio:** igMersenneTwisterRandomNumber = MT19937 com a semeadura de 1998 (sgenrand) e semente 5150 no construtor (`MersenneTwister.cs`). HIPÓTESE: o combate usa esse objeto sem ressemear.
 
-Transcrição em `src/DW4.Gameplay/DamageFormula.cs`. HIPÓTESES ainda abertas: a origem do crítico (BLTisCritical), a origem da redução de defesa (objeto da checagem anterior), o comportamento sem elemento, o PRNG e a divisão por zero.
+### Atributos do jogador (RECALCPLAYER, FATO)
+
+- Faixas de nível LV = [5, 10, 20, 30, 50, 70, 110, 150, 230, 999] e início L0 = [1, 5, 10, 20, 30, 50, 70, 110, 150, 230].
+- MHP/MMP = INI + UPCNT + GROW·(A[i] + B[i]·(L − L0[i]))/100 (até 99999), com A = [0, 40, 140, 640, 1440, 3840, 7440, 17840, 25040, 34640] e B = [10, 20, 50, 80, 120, 180, 260, 180, 120, 80].
+- STR/AC/INT/MND/DEX (→ TSUYOSA/MAMORI/KASHIKOSA/SEISHIN/SUBAYASA) = INI + UPCNT + GROW·(C[i] + D[i]·(L − L0[i]))/100 (até 9999), com C = [0, 40, 85, 165, 235, 355, 455, 615, 735, 895] e D = [10, 9, …, 1].
+- Equipamento por slot: arma (POWERSOCKET), chips da arma (POWERPOCKET), armadura 1 (MAINSLOT, armor1), chips dela (MAINPOCKET) e armadura 2 (SUBSLOT, armor2). Cada atributo soma colunas específicas, mais UPDATA − DOWNDATA (efeitos temporários). O total fica entre 1 e 9999. As resistências do jogador (HONOO/KOORI/KAMINARI/YAMITEIKO) vêm das colunas RES_* da shinka e das armaduras. ATTACKDELAY = arma.DELAY (+ efeitos), no máximo 70. ATTACKZOKUSEI vem do chip da arma.
+- NEXTEXP = L²·(L + 140) + 200·L (EXP acumulado; 0 no nível 999).
+- Ainda não lido: o valor inicial e os limites de MEICHURITSU, CHIMEIRITSU, MAHIRITSU e KAIHIRITSU, e o crescimento do SKILL (P2ESKILLUP).
+
+Transcrição em `src/DW4.Gameplay/DamageFormula.cs` e `PlayerGrowth.cs`. HIPÓTESES ainda abertas: a origem do crítico (BLTisCritical), a origem da redução de defesa (objeto da checagem anterior), o comportamento sem elemento, o PRNG e a divisão por zero.
 
 ## Próximo passo
 

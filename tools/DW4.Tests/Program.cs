@@ -340,6 +340,22 @@ Test("Combate (FIGHTCALC): dano do jogador e do inimigo, acerto, crítico, exper
     Equal(80, DamageFormula.ExpShare(100, 0, 4, true), "4 jogadores: 80% para quem matou");
     Equal(40, DamageFormula.ExpShare(100, 0, 4, false), "4 jogadores: 40% para os outros");
 
+    // mágico com CHIMEIRITSU 0: sem sorteio de crítico (só k e m)
+    var noCrit = new SeqRandom(0, 0);
+    DamageFormula.EnemyDamage(nume, new EnemyAttack(1, 50, 70, 0, -1), guil, new StatusMods(), noCrit);
+    Equal(2, noCrit.Calls, "c = 0 pula o crítico");
+    Equal(-1, DamageFormula.EnemyDamage(nume, new EnemyAttack(3, 50, 70, 0, 1), guil, new StatusMods(), noCrit).Element, "TYPE 3 sem elemento");
+
+    // Crescimento (RECALCPLAYER): Guilmon MHP_INI 150, GROW 90
+    Equal(150, PlayerGrowth.MaxHpMp(1, 150, 90), "MHP no nível 1");
+    Equal(276, PlayerGrowth.MaxHpMp(10, 150, 90), "MHP no nível 10");
+    Equal(PlayerGrowth.MaxHpMp(5, 150, 90), 150 + 90 * 40 / 100, "curva contínua na fronteira 5");
+    Equal(55, PlayerGrowth.Stat(1, 55, 0), "atributo no nível 1");
+    Equal(341L, PlayerGrowth.NextExp(1), "NEXTEXP 1");
+    Equal(968L, PlayerGrowth.NextExp(2), "NEXTEXP 2");
+    Equal(17000L, PlayerGrowth.NextExp(10), "NEXTEXP 10");
+    Equal(0L, PlayerGrowth.NextExp(999), "NEXTEXP 999");
+
     var mt = new MersenneTwister();
     mt.SeedReference(5489);
     Equal(3499211612u, mt.Next(), "MT19937: primeiro valor de referência");

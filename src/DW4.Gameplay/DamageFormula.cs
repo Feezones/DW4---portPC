@@ -25,7 +25,7 @@ public sealed record Fighter
     public int MaxHp { get; init; }
     public IReadOnlyList<int> Skill { get; init; } = [];
     public int WeaponSkillNo { get; init; }
-    /// <summary>ATTACKZOKUSEI do golpe físico: 0 fogo, 1 gelo, 2 trovão, 3 trevas; −1 nenhum.</summary>
+    /// <summary>ATTACKZOKUSEI do golpe físico: 0 fogo, 1 gelo, 2 trovão, 3 trevas; −1 nenhum (o E2PDAMAGE não tem veneno).</summary>
     public int AttackElement { get; init; } = -1;
     public int HpDrain { get; init; }
     public int MpDrain { get; init; }
@@ -115,7 +115,7 @@ public static class DamageFormula
         int dmg = Clamp(Div(20 * power + 10 * a.Kashikosa + 5 * skill, d.Seishin));
         dmg = dmg * (1000 - (t.Element >= 0 ? d.Res(t.Element) : 0)) / 1000;
         dmg = Clamp(dmg);
-        if (dmg == 0) return new DamageResult(0, t.Element, false);
+        if (dmg == 0) return new DamageResult(0, -1, false); // 0x803731A0: o ZOKUSEI nem é lido
         var (final, strong) = Finish(dmg, critical ? CritBonus(skill) : 0, rng);
         return new DamageResult(final, t.Element, strong);
     }
@@ -158,7 +158,7 @@ public static class DamageFormula
                 dmg = Clamp(Div(enemy.Kashikosa * atk.Tsuyosa, player.Seishin));
                 if (element >= 0)
                     dmg = res <= 1000 ? dmg * ((1000 - res) / 20 + 50) / 100 : res <= 4200 ? dmg * ((5000 - res) / 80) / 100 : dmg / 10;
-                if (dmg != 0)
+                if (dmg != 0 && atk.Chimeiritsu != 0) // 0x80375840 e 0x8037585C: sem sorteio com dano 0 ou c = 0
                 {
                     int c = atk.Chimeiritsu;
                     int v = res <= 1000 ? 1000 - res + 100 * c : 100 * c - (res - 1000) / 10;
@@ -172,10 +172,10 @@ public static class DamageFormula
                 if (element >= 0 && res != 0) dmg += ElementBonus(dmg, res);
                 break;
             default:
-                return new DamageResult(0, element, false);
+                return new DamageResult(0, -1, false); // 0x8037530C
         }
         dmg = Clamp(dmg);
-        if (dmg == 0) return new DamageResult(0, element, false); // HIPÓTESE: como no P2EDAMAGE, dano 0 não sorteia
+        if (dmg == 0) return new DamageResult(0, element, false); // 0x80375AFC: dano 0 pula a variação, sem sorteio
         var (final, strong) = Finish(dmg, 0, rng);
         return new DamageResult(final, element, strong);
     }
