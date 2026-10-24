@@ -43,6 +43,9 @@ public partial class Fatia : Node3D
     AnimationPlayer? _enemyAnim;
     string? _enemyWait, _enemyHurt;
     int _hits;
+    // DW4_DEMO=1: começa ao lado do Numemon, virado para ele, e aperta ataque sozinho (para capturas sem controle).
+    bool _demo;
+    int _tick;
     readonly HashSet<HitBox> _hitThisAction = [];
     readonly List<MeshInstance3D> _boxMeshes = [];
     Camera3D _camera = null!;
@@ -58,7 +61,8 @@ public partial class Fatia : Node3D
         if (Load("cenario", "cena.gltf") is { } scenery) AddChild(scenery);
         if (Load("colisao", "colisao.gltf") is { } collision) AddChild(MakeStaticBody(collision));
 
-        _player = new CharacterBody3D { Position = Start, FloorSnapLength = 4f };
+        _demo = OS.GetEnvironment("DW4_DEMO") == "1";
+        _player = new CharacterBody3D { Position = _demo ? EnemyAt + new Vector3(-16, 0, 0) : Start, FloorSnapLength = 4f };
         _player.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 2.5f, Height = 7f }, Position = new Vector3(0, 3.5f, 0) });
         AddChild(_player);
         _model = Load("guilmon", "personagem.gltf");
@@ -148,12 +152,23 @@ public partial class Fatia : Node3D
         var dir = right * input.X - forward * input.Y;
 
         bool attackDown = Input.IsKeyPressed(Key.J) || Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsJoyButtonPressed(0, JoyButton.X);
+        _tick++;
+        if (_demo)
+        {
+            attackDown = _tick % 15 < 2 && _tick > 30; // um toque a cada 0,25 s depois de 0,5 s
+            if (_tick < 3) input = new Vector2(0, 0);
+        }
         bool attackPressed = attackDown && !_attackHeld;
         _attackHeld = attackDown;
         bool attacking = _runner?.Running == true;
         if (_runner != null && !attacking && attackPressed) attacking = _runner.Start("SQ_ATCK1", WeaponStyle);
         else if (attacking) _runner!.Tick(dt, attackPressed);
         if (attacking) { dir = Vector3.Zero; _move.Stop(); }
+        if (_demo && _tick < 30 && _enemy != null)
+        {
+            var to = _enemy.GlobalPosition - _player.GlobalPosition;
+            dir = new Vector3(to.X, 0, to.Z).Normalized() * 0.05f; // só vira para o Numemon
+        }
 
         var v = _move.Step(new NVector2(dir.X, dir.Z), dt);
         var vel = _player.Velocity;
