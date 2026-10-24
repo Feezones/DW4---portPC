@@ -23,6 +23,7 @@ try
         "afs-extract" when args.Length >= 4 => AfsExtract(args[1], args[2], args[3..]),
         "afs-classify" when args.Length == 2 => AfsClassify(args[1]),
         "igb-headers" when args.Length == 2 => IgbHeaders(args[1]),
+        "igb-layout" when args.Length == 2 => IgbLayoutCheck(args[1]),
         _ => Usage(),
     };
 }
@@ -42,6 +43,7 @@ static int Usage()
           dw4 afs-extract <arquivo.afs> <pasta-de-trabalho> <indice> [indice...]   (máx. 20)
           dw4 afs-classify <arquivo.afs>
           dw4 igb-headers  <arquivo.afs | arquivo.igb>
+          dw4 igb-layout   <arquivo.afs | arquivo.igb>
         """);
     return 1;
 }
@@ -225,6 +227,57 @@ int IgbHeaders(string path)
         Console.WriteLine($"  {id}: {size} B, entradas {h.EntryCount}/{h.EntryBufferSize}, metaobj {h.MetaObjectCount}/{h.MetaObjectBufferSize}, " +
             $"obj {h.ObjectCount}/{h.ObjectBufferSize}, memref {h.MemoryRefCount}/{h.MemoryRefBufferSize}, metacampo {h.MetaFieldCount}/{h.MetaFieldBufferSize}");
     return 0;
+}
+
+// Percorre as seções de cada IGB e conta em quantos a última seção termina exatamente no fim do arquivo.
+int IgbLayoutCheck(string path)
+{
+    var results = new List<(string id, long trailing, string? error, List<IgbSection>? sections)>();
+
+    void Check(string id, byte[] data)
+    {
+        if (!IgbHeader.TryRead(data, out var h)) return;
+        try
+        {
+            var s = IgbLayout.Walk(data, h!);
+            results.Add((id, IgbLayout.Trailing(data, s), null, s));
+        }
+        catch (Exception ex) when (ex is InvalidDataException or NotSupportedException)
+        {
+            results.Add((id, -1, ex.Message, null));
+        }
+    }
+
+    if (path.EndsWith(".igb", StringComparison.OrdinalIgnoreCase))
+        Check(Path.GetFileName(path), File.ReadAllBytes(path));
+    else
+    {
+        using var afs = AfsArchive.Open(path);
+        foreach (var e in afs.Entries)
+        {
+            var head = afs.ReadHead(e, IgbHeader.Size);
+            if (!IgbHeader.TryRead(head, out _)) continue;
+            using var ms = new MemoryStream((int)e.Size);
+            afs.CopyEntry(e, ms);
+            Check($"#{e.Index} {e.Name}", ms.ToArray());
+        }
+    }
+
+    int exact = results.Count(r => r.error == null && r.trailing == 0);
+    var errors = results.Where(r => r.error != null).ToList();
+    var trailing = results.Where(r => r.error == null && r.trailing != 0).ToList();
+    Console.WriteLine($"{results.Count} IGB: layout fecha exatamente em {exact}; sobra bytes em {trailing.Count}; erro em {errors.Count}");
+    foreach (var g in trailing.GroupBy(r => r.trailing).OrderByDescending(g => g.Count()).Take(10))
+        Console.WriteLine($"  sobra {g.Key} B: {g.Count()} (ex.: {string.Join(", ", g.Take(3).Select(r => r.id))})");
+    foreach (var (id, _, error, _) in errors.Take(20))
+        Console.WriteLine($"  erro {id}: {error}");
+    var sample = results.FirstOrDefault(r => r.sections != null);
+    if (sample.sections != null)
+    {
+        Console.WriteLine($"seções de {sample.id}:");
+        foreach (var s in sample.sections) Console.WriteLine($"  0x{s.Offset:X8} {s.Size,10}  {s.Name}");
+    }
+    return errors.Count == 0 && trailing.Count == 0 ? 0 : 3;
 }
 
 static bool InsideGitRepo(string dir)

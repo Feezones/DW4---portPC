@@ -37,7 +37,9 @@ Ordem dos campos segundo implementações públicas para X-Men Legends / Marvel:
 | 0x28 | marca 0xFADA (define a ordem de bytes) | LE | LE |
 | 0x2C | versão (16 bits baixos) + flags (bits 28–31) | 6, flags 0xF0 | 6, flags 0xF0 |
 
-**Confiança: HIPÓTESE forte.** A marca 0xFADA e a versão 6 batem com o que essas ferramentas descrevem para MUA no PS2 (IGB versão 6). Os arquivos do DW4 são little-endian mesmo no GameCube. Validação em curso: `dw4 igb-headers` lê o cabeçalho das 2273 entradas e confere se os buffers declarados cabem no tamanho de cada uma.
+**Confiança: HIPÓTESE forte.** A marca 0xFADA e a versão 6 batem com o que essas ferramentas descrevem para MUA no PS2 (IGB versão 6). Os arquivos do DW4 são little-endian mesmo no GameCube. Resultado de `dw4 igb-headers` (2026-10-24): **todos os 2274 IGB** (ndmw.igb + 1379 em area + 894 em ndmw) são versão 6, little-endian, e os buffers declarados cabem em todos. Flags: 0xF0000000 em 1979, 0xB0000000 em 293 (sem diretórios externos), 0x30000000 em 2 (sem info nem externos). Metacampos 46–48, metaobjetos 9–226, objetos 0–46.483.
+
+Sobra de 420 a 123.098 bytes além dos buffers do cabeçalho em todos os arquivos. Explicação esperada: seções com tamanho próprio (alinhamento, diretórios externos, nomes de pools, índice, info). `dw4 igb-layout` percorre essas seções e confere se o arquivo fecha exatamente.
 
 ## Ferramentas
 
