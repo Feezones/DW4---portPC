@@ -39,6 +39,7 @@ try
         "igb-mem" when args.Length is 4 or 5 => IgbMem(args[1], args[2], args[3], args.Length == 5 ? args[4] : "hex"),
         "igb-tree" when args.Length is 3 or 4 => IgbTree(args[1], args[2], args.Length == 4 ? int.Parse(args[3], inv) : 6),
         "igb-gltf" when args.Length >= 4 => IgbGltf(args[1], args[2], args[3], args[4..]),
+        "igb-colisao" when args.Length == 5 => IgbColisao(args[1], args[2], args[3], args[4]),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
@@ -70,8 +71,9 @@ static int Usage()
           dw4 igb-anim     <arquivo.afs> [indice]   (decodifica as animações Enbaya; sem índice, resume o arquivo todo)
           dw4 igb-mem      <arquivo.afs> <indice> <slot> [hex|u8|i32|u32|f32|hist]   (conteúdo de um bloco de memória, ou de um igDataList)
           dw4 igb-tree     <arquivo.afs> <indice> [profundidade]   (grafo de cena com nomes de nós)
-          dw4 igb-gltf     <arquivo.afs> <indice> <pasta-de-trabalho> [--quat=conj] [--trans=rest] [--anim=N]
+          dw4 igb-gltf     <arquivo.afs> <indice> <pasta-de-trabalho> [--quat=as] [--trans=rest|anim] [--dxt=gc] [--todas-peles] [--anim=N]
                            (personagem com esqueleto, pele e animações em glTF, fora do repositório)
+          dw4 igb-colisao  <arquivo.afs> <indice> <no-raiz> <pasta-de-trabalho>   (malha de colisão em glTF, nó "-colonly" para a Godot)
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
@@ -771,13 +773,14 @@ int IgbTree(string path, string which, int maxDepth)
 }
 
 // Exporta um personagem (esqueleto, malhas de pele, textura e animações Enbaya) para glTF 2.0.
-// Opções de diagnóstico: --quat=conj usa o conjugado dos quatérnios; --trans=rest ignora as translações animadas e usa
+// Os quatérnios Enbaya são gravados conjugados (conferido em capturas do Guilmon: só assim as poses ficam naturais).
+// Opções de diagnóstico: --quat=as grava os quatérnios como estão no arquivo; --trans=rest ignora as translações animadas e usa
 // as do esqueleto; --anim=N exporta só as N primeiras animações.
 int IgbGltf(string path, string which, string outDir, string[] options)
 {
     var root = Path.GetFullPath(outDir);
     if (InsideGitRepo(root)) { Console.Error.WriteLine($"recusado: {root} está dentro de um repositório Git"); return 1; }
-    bool conj = options.Contains("--quat=conj"), restTrans = options.Contains("--trans=rest"),
+    bool conj = !options.Contains("--quat=as"), restTrans = options.Contains("--trans=rest"),
         gcBlocks = options.Contains("--dxt=gc"), animTrans = options.Contains("--trans=anim"), allSkins = options.Contains("--todas-peles");
     int maxAnims = int.MaxValue;
     foreach (var o in options.Where(o => o.StartsWith("--anim=", StringComparison.Ordinal))) maxAnims = int.Parse(o[7..], inv);
@@ -980,7 +983,43 @@ int IgbGltf(string path, string which, string outDir, string[] options)
     g.Save(dir, "personagem");
     File.WriteAllText(Path.Combine(dir, "relatorio.txt"), report.ToString());
     Console.Write(report);
-    Console.WriteLine($"{ch.Skins.Count} peles, {exported} animações gravadas em {dir}");
+    Console.WriteLine($"{chosen.Count} de {ch.Skins.Count} peles, {exported} animações gravadas em {dir}");
+    return 0;
+}
+
+// Exporta as geometrias de uma raiz de cena (ex.: a camada de colisão "BG01" de uma fase) como glTF só com posições e
+// índices, num nó com sufixo "-colonly": a Godot importa isso como StaticBody3D com forma de colisão côncava.
+int IgbColisao(string path, string which, string rootArg, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    int rootIndex = int.Parse(rootArg, inv);
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    var scene = IgbScene.Read(IgbFile.Read(data), data);
+    var parts = scene.Parts.Where(p => p.SceneRoot == rootIndex && p.Positions.Count > 0 && p.Triangles.Count > 0).ToList();
+    if (parts.Count == 0) { Console.Error.WriteLine($"nenhuma geometria na raiz {rootIndex}; raízes: {string.Join(", ", scene.Parts.Select(p => p.SceneRoot).Distinct())}"); return 1; }
+    var pos = new List<float>();
+    var tris = new List<int>();
+    foreach (var part in parts)
+    {
+        int b = pos.Count / 3;
+        foreach (var (x, y, z) in part.Positions) pos.AddRange([x, y, z]);
+        tris.AddRange(part.Triangles.Select(t => t + b));
+    }
+    var dir = Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_colisao_{rootIndex}");
+    Directory.CreateDirectory(dir);
+    var g = new GltfBuilder();
+    var prim = new JsonObject { ["attributes"] = new JsonObject { ["POSITION"] = g.AddFloats(pos, 3, "VEC3", true, minMax: true) }, ["indices"] = g.AddIndices(tris), ["mode"] = 4 };
+    int mesh = g.AddMesh(new JsonObject { ["name"] = "colisao", ["primitives"] = new JsonArray(prim) });
+    g.AddRootNode(g.AddNode(new JsonObject { ["name"] = "colisao-colonly", ["mesh"] = mesh }));
+    g.Save(dir, "colisao");
+    float minY = float.MaxValue, maxY = float.MinValue;
+    for (int i = 1; i < pos.Count; i += 3) { minY = Math.Min(minY, pos[i]); maxY = Math.Max(maxY, pos[i]); }
+    Console.WriteLine($"{parts.Count} geometrias, {pos.Count / 3} vértices, {tris.Count / 3} triângulos, y de {minY:0.##} a {maxY:0.##} -> {dir}");
     return 0;
 }
 
