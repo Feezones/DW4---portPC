@@ -41,6 +41,12 @@ Exemplos (FATO): w_sword01 = ロングソードα..ε, TSUYOSA 60/81/109/148/199
 4. `BLTgetDamageRank` 0–3 escolhe SQ_SDMG, SQ_MDMG, SQ_LDMG ou SQ_DDMG, no bloco do elemento do golpe (`BLTgetAttributeStr`: common, fire, ice, thunder, dark).
 5. `MDLdspExp`, `BLTcalcEXPUp`, atordoamento e veneno.
 
+## Código nativo (main.dol, desmontagem estática)
+
+- FATO: o enum Alchemy "FightCom" tem 22 nomes em 0x804E3F38 (E2PISHITCHECK = 0, P2EISHITCHECK = 1, P2EISCRITICAL = 2, E2PDAMAGE = 3, E2PDAMAGERANK = 4, P2EDAMAGE = 5…), registrado pela função 0x803441B4.
+- FATO: a função em 0x802EE7E4 (lado nativo de `BLTgetDamageValue`, pelo retorno) monta o comando "P2EDAMAGE" com 5 argumentos (3 inteiros do estado de combate em 0x80535900, o byte do parâmetro e uma flag de checagem prévia) e o envia ao handler "FIGHTCALC"; guarda 3 resultados em +0x154/+0x158/+0x15C e devolve o primeiro. A fórmula está no handler de FIGHTCALC (ainda não localizado).
+- FATO: a faixa de dano (`BLTgetDamageRank`, 0x802EE91C) é: alvo com HP ≤ 0 → 3 (SQ_DDMG); senão dano / HP máximo > 0,5 → 2 (SQ_LDMG); > 0,25 → 1 (SQ_MDMG); senão 0 (SQ_SDMG). Há condições adicionais a partir de 0x802EE9BC ainda não lidas.
+
 ## Próximo passo
 
 Ler no main.dol o código de `P2EDAMAGE`, `P2EISHITCHECK`, `P2EISCRITICAL`, `GETDAMAGERANK` e `P2EEXPUP` (desmontador próprio `dw4 dol-desmontar`, e o Ghidra se aprovado), e confirmar a hipótese do Int@7.

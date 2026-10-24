@@ -1335,7 +1335,9 @@ int DolRefs(string path, string what)
 {
     var dol = DW4.Formats.Ppc.DolFile.Read(File.ReadAllBytes(path));
     var (r13, r2) = dol.SmallDataBases();
-    var targets = TryHex(what, out uint a) && what.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? new List<uint> { a } : dol.FindString(what).ToList();
+    // Endereço: "0x8045…" ou 8 dígitos hexadecimais que caem numa seção; o resto é texto.
+    bool isAddress = TryHex(what, out uint a) && (what.StartsWith("0x", StringComparison.OrdinalIgnoreCase) || (what.Length == 8 && dol.SectionAt(a) != null));
+    var targets = isAddress ? new List<uint> { a } : dol.FindString(what).ToList();
     if (targets.Count == 0) { Console.Error.WriteLine("não encontrado"); return 1; }
     foreach (var t in targets)
     {

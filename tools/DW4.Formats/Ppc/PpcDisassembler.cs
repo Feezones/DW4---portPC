@@ -339,6 +339,7 @@ public static class PpcDisassembler
     public static IEnumerable<string> Listing(DolFile dol, uint address, int count)
     {
         var hi = new Dictionary<int, uint>();
+        var sda = dol.SmallDataBases();
         for (int i = 0; i < count; i++)
         {
             uint pc = address + (uint)(i * 4);
@@ -347,14 +348,26 @@ public static class PpcDisassembler
             int op = (int)(w >> 26), rd = (int)(w >> 21) & 31, ra = (int)(w >> 16) & 31;
             short imm = (short)(w & 0xFFFF);
             string note = "";
+            int src = op == 24 ? rd : ra, dst = op == 24 ? ra : rd;
             if (op == 15 && ra == 0) hi[rd] = (uint)(ushort)imm << 16;
-            else if (hi.TryGetValue(ra, out uint h) && op is 14 or 24 or 32 or 48 or 50)
+            else if (op == 14 && ra == 0) hi.Remove(rd); // li
+            else if (src is 13 or 2 && op != 24 && op is 14 or 32 or 34 or 36 or 38 or 40 or 42 or 44 or 48 or 50 or 52 or 54
+                     && (src == 13 ? sda.R13 : sda.R2) is { } sdBase)
+            {
+                note = Annotate(dol, (uint)(sdBase + imm), op); // small data relativa a r13/r2
+                if (op is 32 or 34 or 40 or 42) hi.Remove(dst);
+            }
+            else if (op is 14 or 24 or 32 or 34 or 36 or 38 or 40 or 42 or 44 or 48 or 50 or 52 or 54 && hi.TryGetValue(src, out uint h))
             {
                 uint value = op == 24 ? h | (ushort)imm : (uint)(h + imm);
                 note = Annotate(dol, value, op);
-                if (op is 14 or 24 && rd != ra) hi.Remove(rd);
+                if (op is 14 or 24) hi[dst] = value; // base guardada em registrador
+                else if (op is 32 or 34 or 40 or 42) hi.Remove(dst);
             }
-            if (op is 18 or 16 && (w & 1) != 0) hi.Clear(); // chamada: registradores voláteis
+            else if (op is 14 or 24 or 32 or 34 or 40 or 42) hi.Remove(dst);
+            if (w == 0x4E800020) hi.Clear();
+            if (op is 18 or 16 && (w & 1) != 0) // chamada: só os voláteis (r0, r3–r12) se perdem
+                foreach (int r in new[] { 0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 }) hi.Remove(r);
             yield return $"{pc:X8}  {w:X8}  {text}{(note.Length > 0 ? "    ; " + note : "")}";
         }
     }

@@ -116,22 +116,22 @@ public sealed class DolFile
         var needle = System.Text.Encoding.ASCII.GetBytes(text + "\0");
         foreach (var s in Sections.Where(s => !s.IsText))
         {
-            var span = Data.AsSpan((int)s.Offset, (int)s.Size);
-            int from = 0;
-            while (from < span.Length)
+            int baseOff = (int)s.Offset, size = (int)s.Size, from = 0;
+            while (from < size)
             {
-                int i = span[from..].IndexOf(needle);
+                // Span criado a cada volta: não pode atravessar o yield.
+                int i = Data.AsSpan(baseOff + from, size - from).IndexOf(needle);
                 if (i < 0) break;
                 int at = from + i;
-                if (at == 0 || span[at - 1] == 0) yield return s.Address + (uint)at;
+                if (at == 0 || Data[baseOff + at - 1] == 0) yield return s.Address + (uint)at;
                 from = at + 1;
             }
         }
     }
 
     /// <summary>
-    /// Instruções que montam <paramref name="target"/> com o par lis rX, hi + addi/ori/lwz…(rX, lo), procurando o lis até
-    /// 32 instruções antes. Também reconhece acesso relativo a r13/r2 (small data) quando os valores-base são dados.
+    /// Instruções que montam <paramref name="target"/> com o par lis rX, hi + addi/ori/lwz…(rX, lo), seguindo bases
+    /// guardadas em registrador (addi rB, rX, lo e depois addi rY, rB, off) até 256 instruções, sem passar de um blr. Também reconhece acesso relativo a r13/r2 (small data) quando os valores-base são dados.
     /// </summary>
     public IEnumerable<uint> FindCodeRefs(uint target, uint? r13 = null, uint? r2 = null)
     {
@@ -144,15 +144,24 @@ public sealed class DolFile
                 uint pc = s.Address + a;
                 int op = (int)(w >> 26), rd = (int)(w >> 21) & 31, ra = (int)(w >> 16) & 31;
                 short imm = (short)(w & 0xFFFF);
+                if (w == 0x4E800020) { hi.Clear(); continue; } // blr: fim da função
                 if (op == 15 && ra == 0) { hi[rd] = ((uint)(ushort)imm << 16, pc); continue; }
                 bool usesBase = op is 14 or 24 or 32 or 34 or 36 or 38 or 40 or 42 or 44 or 48 or 50 or 52 or 54;
                 if (!usesBase) continue;
+                if (op == 14 && ra == 0) { hi.Remove(rd); continue; } // li
+                // addi rD, rA, imm: base rA, destino rD. ori rA, rS, imm: base rS (campo rd), destino rA.
+                // Cargas/armazenamentos: base rA; numa carga o destino rD deixa de ter valor conhecido.
+                int src = op == 24 ? rd : ra, dst = op == 24 ? ra : rd;
+                bool isLoad = op is 32 or 34 or 40 or 42;
                 uint value;
-                if (ra == 13 && r13 is { } b13 && op != 24) value = (uint)(b13 + imm);
-                else if (ra == 2 && r2 is { } b2 && op != 24) value = (uint)(b2 + imm);
-                else if (hi.TryGetValue(ra, out var h) && pc - h.At <= 32 * 4) value = op == 24 ? h.Value | (ushort)imm : (uint)(h.Value + imm);
-                else continue;
+                if (src == 13 && r13 is { } b13 && op != 24) value = (uint)(b13 + imm);
+                else if (src == 2 && r2 is { } b2 && op != 24) value = (uint)(b2 + imm);
+                else if (hi.TryGetValue(src, out var h) && pc - h.At <= 256 * 4) value = op == 24 ? h.Value | (ushort)imm : (uint)(h.Value + imm);
+                else { if (op is 14 or 24 || isLoad) hi.Remove(dst); continue; }
                 if (value == target) yield return pc;
+                // Base guardada em registrador (ex.: addi r30, r5, lo e depois addi r4, r30, 0x410): acompanha a cadeia.
+                if (op is 14 or 24) hi[dst] = (value, pc);
+                else if (isLoad) hi.Remove(dst);
             }
         }
     }
