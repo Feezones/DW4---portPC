@@ -1367,7 +1367,7 @@ int DolSkillTab(string path, string outDir)
         {
             var cols = new JsonArray();
             for (int k = 0; k < 3; k++)
-                cols.Add(System.Buffers.Binary.BinaryPrimitives.ReadInt16BigEndian(dol.Data.AsSpan((int)off + 2 * ((i * 21 + j) * 3 + k))));
+                cols.Add((JsonNode?)JsonValue.Create((int)System.Buffers.Binary.BinaryPrimitives.ReadInt16BigEndian(dol.Data.AsSpan((int)off + 2 * ((i * 21 + j) * 3 + k)))));
             bands.Add(cols);
         }
         levels.Add(bands);
