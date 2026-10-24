@@ -49,6 +49,10 @@ public static class ActionAnimations
     public static string? Motion(IReadOnlyDictionary<string, List<SeqCommand>> actions, string action) =>
         actions.TryGetValue(action, out var cmds) ? cmds.FirstOrDefault(c => c.Kind == "MOTIONSET")?.S(0) : null;
 
+    /// <summary>Todos os MOTIONSET da ação em ordem (ex.: RUNNS1 = "waitS" e depois "runS").</summary>
+    public static IEnumerable<string> Motions(IReadOnlyDictionary<string, List<SeqCommand>> actions, string action) =>
+        actions.TryGetValue(action, out var cmds) ? cmds.Where(c => c.Kind == "MOTIONSET").Select(c => c.S(0)) : [];
+
     /// <summary>
     /// Primeira ACTION do bloco do estilo numa sequência (ex.: SQ_WAIT, bloco "slash" → "WAITS1"), ou da sequência
     /// inteira quando ela não tem LABEL. Serve para escolher as animações de parado e andando conforme a arma.

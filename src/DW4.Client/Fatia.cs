@@ -88,9 +88,10 @@ public partial class Fatia : Node3D
                 // Parado e andando conforme o estilo da arma: SQ_WAIT / SQ_WALK → primeira ACTION do bloco → MOTIONSET.
                 // (Antes era "waitG"/"runG": o G é o estilo gun, por isso os braços erguidos.)
                 if (ActionAnimations.FirstAction(sequences, "SQ_WAIT", WeaponStyle) is { } wa) _animWait = AnimName(wa);
-                // SQ_WALK começa por uma ação de parado (waitS); a de andar é a primeira com outra animação.
-                _animRun = ActionAnimations.BlockActions(sequences, "SQ_WALK", WeaponStyle).Select(AnimName)
-                    .FirstOrDefault(n => n != null && n != _animWait);
+                // SQ_WALK (bloco slash) → RUNNS1, cujos MOTIONSET são "waitS" e depois "runS": o andar é o último.
+                // HIPÓTESE: o primeiro é a transição de parado para andando.
+                _animRun = ActionAnimations.BlockActions(sequences, "SQ_WALK", WeaponStyle)
+                    .SelectMany(a => ActionAnimations.Motions(_actions, a)).LastOrDefault() is { } rm && _anim!.HasAnimation(rm) ? rm : null;
             }
             if (_anim != null)
             {
