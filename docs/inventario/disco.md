@@ -1,21 +1,47 @@
 # Inventário do disco
 
-## Arquivo fornecido
+Auditado em 2026-10-24 via Remote Control, somente leitura. Hash do arquivo igual antes e depois.
 
-- Caminho (PC do responsável): `C:\Jogos\RE-DIGITAL\Digimon World 4\Digimon World 4 (USA).rvz`
-- Formato do contêiner: RVZ, formato comprimido do emulador Dolphin para discos de GameCube e Wii. **FATO** (extensão; assinatura ainda não lida).
-- Plataforma: provavelmente GameCube. **HIPÓTESE**, a confirmar pelo ID de 6 caracteres no cabeçalho do disco.
-- Tamanho, hashes, ID do jogo, região: **DESCONHECIDO** (sem acesso ao arquivo ainda).
+## Arquivo
 
-Referência externa: a versão PS2 norte-americana aparece como SLUS-20836 no PSXDataCenter. Não se aplica se o disco for de GameCube.
+| Campo | Valor | Origem | Confiança |
+|---|---|---|---|
+| Caminho | `C:\Jogos\RE-DIGITAL\Digimon World 4\Digimon World 4 (USA).rvz` | responsável | FATO |
+| Tamanho | 571.417.712 bytes | `Get-Item` | FATO |
+| SHA-256 (.rvz) | `70669476EA96E34C79E1CD9634BE02D534E1B2E1D64AB07004984CE2C35BC10D` | `Get-FileHash` | FATO |
+| MD5 (.rvz) | `0611747E70130BF9DAB3578494B8E079` | `Get-FileHash` | FATO |
+| Assinatura | `52 56 5A 01` ("RVZ\x01") | leitura dos primeiros 64 bytes | FATO |
+| Datas | criação 25/12/1996 (provavelmente herdada do pacote), modificação 18/10/2026 | `Get-Item` | FATO |
+| Atributos | Archive, não somente leitura | `Get-Item` | FATO |
 
-## Procedimento (somente leitura)
+## Disco (DolphinTool header)
 
-1. `Get-Item` e `Get-FileHash` (SHA-256, MD5) do `.rvz`; marcar como somente leitura.
-2. `Format-Hex -Count 64` para confirmar a assinatura RVZ.
-3. `DolphinTool header -i <arquivo>` e `DolphinTool verify -i <arquivo>`: ID, região, revisão e hashes do disco descomprimido para comparar com Redump.
-4. Listagem do sistema de arquivos do disco (FST) com offset, tamanho e hash de cada arquivo, exportada para `arquivos.csv`.
-5. Classificação por conteúdo (assinatura e entropia), sem confiar em extensões.
-6. `Get-FileHash` final para confirmar que o original não mudou.
+| Campo | Valor | Confiança |
+|---|---|---|
+| Plataforma | GameCube (Game ID começa com `G`; Dolphin leu como disco GC) | FATO |
+| Game ID | `GDJEB2` | FATO |
+| Nome interno | Digimon World 4 | FATO |
+| Região / país | NTSC-U / USA | FATO |
+| Revisão | 0 | FATO |
+| Compressão RVZ | Zstandard nível 19, bloco 131072 | FATO |
 
-Nenhum executável do disco será executado.
+## Hashes do disco descomprimido (DolphinTool verify)
+
+| Algoritmo | Valor |
+|---|---|
+| CRC32 | `9e152cbc` |
+| MD5 | `65c7b4887d21efd526a69ff060f631b5` |
+| SHA-1 | `6a2aa8272538521531c803abf7f86dd430f9ad90` |
+
+DolphinTool: "Problems Found: No". Comparação com o Redump: **pendente** (o site bloqueia leitura automática; conferir manualmente na página do disco GDJEB2).
+
+## Comandos usados
+
+`Get-Item`, `Get-FileHash -Algorithm SHA256/MD5`, leitura de 64 bytes com `[System.IO.File]::Open(f,'Open','Read','ReadWrite')`, `DolphinTool header -i`, `DolphinTool verify -i` e `verify -a md5`. DolphinTool usado: o do pacote em `C:\Jogos\RE-DIGITAL\Digimon World 4\Dolphin\`.
+
+## Pendente
+
+1. Marcar o `.rvz` como somente leitura (`attrib +R`).
+2. Listar o sistema de arquivos do disco (FST) com offset, tamanho e hash de cada arquivo → `arquivos.csv`.
+3. Classificar arquivos por assinatura e entropia.
+4. Analisar `boot.bin`, `bi2.bin`, `apploader.img` e o executável `main.dol` só por leitura de cabeçalho.

@@ -23,16 +23,27 @@ A sessão de nuvem é efêmera. O disco do jogo não é enviado para ela.
 
 ## PC Windows do responsável
 
-Ainda não auditado. Pendente de sessão de Remote Control (somente leitura).
+Auditado em 2026-10-24 via Remote Control, somente leitura.
 
-| Item | Comando previsto | Situação |
-|---|---|---|
-| Windows, CPU, RAM, GPU | `systeminfo`; `Get-CimInstance Win32_VideoController` | DESCONHECIDO |
-| Godot e edição .NET | procurar `Godot_v4*` | DESCONHECIDO |
-| .NET SDK | `dotnet --list-sdks` | DESCONHECIDO |
-| Git, Python, 7-Zip, Blender | `--version` / `where` | DESCONHECIDO |
-| Dolphin / DolphinTool | procurar instalação | DESCONHECIDO |
-| Espaço livre | `Get-PSDrive -PSProvider FileSystem` | DESCONHECIDO |
+| Item | Resultado | Comando | Confiança |
+|---|---|---|---|
+| SO | Windows 11 Pro 10.0.26200, x64 | `systeminfo` | FATO |
+| CPU | AMD Ryzen 5 5600GT, 6 núcleos / 12 threads, 3,6 GHz | `Win32_Processor` | FATO |
+| RAM | 23,8 GB (4,4 GB livres no momento da medição) | `Win32_ComputerSystem`, `systeminfo` | FATO |
+| GPU | NVIDIA GeForce RTX 2060, driver 32.0.16.1088, 1920x1080 | `Win32_VideoController` | FATO (VRAM informada ~4 GB pode estar truncada pelo campo de 32 bits) |
+| Disco livre | C: 56,04 GB; D: 48,41 GB | `Get-PSDrive` | FATO |
+| Godot | não encontrado (PATH, pastas comuns, C:\Jogos, D:\, registro) | `Get-Command`, busca de `Godot*.exe` | FATO |
+| .NET SDK | 10.0.401 | `dotnet --list-sdks` | FATO |
+| Git | 2.55.0.windows.2 | `git --version` | FATO |
+| Python | não instalado (só o atalho da Microsoft Store) | `py`, `python --version` | FATO |
+| 7-Zip | não instalado; só cópias embutidas em outros programas (NVIDIA App, Omnissa Horizon, BlueStacks), que não serão usadas | busca | FATO |
+| Blender | portáteis em `D:\dscs_tools\` (2.91.2 e 4.5.14) | busca | FATO |
+| Dolphin / DolphinTool | 3 cópias: `C:\Jogos\RE-DIGITAL\Digimon World 4\Dolphin\`, `D:\Servidor\DW4\pacote\Dolphin\`, `D:\Servidor\DW4\tools\Dolphin-x64\`. Versão não obtida (`--version` retornou código 1) | busca | FATO |
+| PCSX2 | não encontrado | busca | FATO |
+
+Observações:
+- A pasta `C:\Jogos\RE-DIGITAL\Digimon World 4\` contém o `.rvz`, um Dolphin portátil (Qt 6.8.3), uma pasta `.redigital\` (installed.json, manifest.json, manifest.json.sig) e `MMO\LEIA-ME.txt`, que descreve uma futura "ponte .NET" para ler/escrever memória do Dolphin, não implementada. Origem desse pacote: DESCONHECIDO (perguntar ao responsável).
+- O DolphinTool em modo portátil pode ter escrito em `Dolphin\User`. Não verificado. O `.rvz` não mudou (hash igual).
 
 ## Skills, plugins e conectores (2026-10-24)
 
