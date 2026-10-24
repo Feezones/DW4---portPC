@@ -252,6 +252,17 @@ Test("Sequência: bloco do estilo, sonda de conversa pulada, caixa no quadro cer
     for (int i = 0; i < 20; i++) r.Tick(frame, false);
     True(!r.Running && r.Next == "SQ_ATCKTM", "fim do combo pula para SQ_ATCKTM");
     True(!r.Start("SQ_ATCK1", "gun"), "estilo inexistente");
+
+    // Numemon: caixas do golpe depois da ACTION valem para ela.
+    seqs["SQ_NUME"] =
+    [
+        C("HITBOX", "Set", 70000, 0f, -1f, new[] { 0f, 7, 0 }, new[] { 9.5f, 14, 9.5f }), C("MOVE", "Stop", 1f, 4f), C("ACTION", "NATK01"),
+        C("HITBOX", "Set", 70004, 10f, 5f, new[] { 6.3f, 1.5f, 2.2f }, new[] { 2.5f, 3, 2.5f }), C("WCHECK", "Action"), C("JUMP", "SQ_WAIT"),
+    ];
+    True(r.Start("SQ_NUME", null), "início do golpe do Numemon");
+    Equal(2, r.ActionHitBoxes.Count, "corpo e golpe na ação NATK01");
+    for (int i = 0; i < 11; i++) r.Tick(frame, false);
+    True(r.ActiveHitBoxes().Any(h => h.Type == 70004), "golpe ativo no quadro 11");
 });
 
 Test("IA: faixa pela distância, sorteio acumulado em 16, troca de mapa e espera de sequência externa", () =>

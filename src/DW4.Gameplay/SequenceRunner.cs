@@ -102,7 +102,9 @@ public sealed record HitBox(int Type, float StartFrame, float Frames, Vector3 Po
 /// Ordem e valores dos comandos são FATO (dados do jogo). A semântica abaixo é HIPÓTESE, a confirmar medindo o jogo
 /// (docs/gameplay/fase3-levantamento.md):
 ///  · LABEL marca o bloco de um estilo de arma; executa-se do LABEL do estilo até o próximo LABEL ou o fim.
-///  · HITBOX "Set" agenda uma caixa para a próxima ACTION; "AllClear" descarta as agendadas.
+///  · HITBOX "Set" agenda uma caixa para a próxima ACTION; se nenhuma ACTION vem logo depois e já há uma em andamento
+///    (SQ_ATCK1 do Numemon: ACTION "NATK01" e depois as caixas 70004), a caixa vale para a ação atual.
+///    "AllClear" descarta as agendadas.
 ///  · ACTION toca a animação; as caixas agendadas valem nos quadros [início, início + duração) dessa ação.
 ///  · WCHECK "Action" (e "Moving", usado nos recuos de dano do Numemon) espera a animação acabar; "Atck0N" também espera, e só continua se o ataque foi apertado
 ///    durante a ação (janela de combo); senão a sequência termina. Outros WCHECK não bloqueiam aqui.
@@ -192,6 +194,8 @@ public sealed class SequenceRunner
             {
                 case "HITBOX":
                     if (c.S(0) == "AllClear") _pending.Clear();
+                    else if (Action != null && !ActionFollows(_pc))
+                        ActionHitBoxes = [.. ActionHitBoxes, new HitBox(c.I(1), c.F(2), c.F(3), c.V(4), c.V(5))];
                     else _pending.Add(new HitBox(c.I(1), c.F(2), c.F(3), c.V(4), c.V(5)));
                     break;
                 case "ACTION" when _pending.Any(h => h.Type == TalkProbe):
@@ -228,6 +232,14 @@ public sealed class SequenceRunner
             }
             _pc++;
         }
+    }
+
+    // Depois dos HITBOX seguintes, vem uma ACTION? (o Numemon põe as caixas do golpe DEPOIS da ACTION "NATK01".)
+    bool ActionFollows(int at)
+    {
+        int j = at;
+        while (j < _end && _cmds[j].Kind == "HITBOX") j++;
+        return j < _end && _cmds[j].Kind == "ACTION";
     }
 
     void Finish(string? next)
