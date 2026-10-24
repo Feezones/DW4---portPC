@@ -4,7 +4,7 @@ Classificação pelos primeiros 16 bytes e pela entropia dos primeiros 64 KiB. N
 
 | Grupo | Onde | Entradas | Evidência | Hipótese | Confiança |
 |---|---|---|---|---|---|
-| Vídeo | area: AEU_, AJP_, AUS_ | 3 (~120 MB) | Começam com `00 00 01 BA` / `00 00 01 BB` (MPEG-PS); o executável tem Sofdec (MWSFD/GC 3.33b) | Vídeos de abertura Sofdec (.sfd) em três regiões | HIPÓTESE forte |
+| Vídeo | area: AEU_, AJP_, AUS_ | 3 (~120 MB) | Começam com `00 00 01 BA` / `00 00 01 BB` (MPEG-PS); o executável tem Sofdec (MWSFD/GC 3.33b) | Vídeos de abertura Sofdec (.sfd) em três regiões | FATO para AUS_ (#2): MPEG-1 640×480 a 29,97 fps + áudio ADX 48 kHz estéreo de 1:04,0, separados com `dw4 sfd-demux` |
 | Áudio | ndmw: soun | 79 (273 MB) | `80 00` + offset de cabeçalho + `03 12 04` + canais (01/02) + taxa `BB80` (48000) ou `5DC0` (24000) | CRI ADX (o executável tem ADXT/GC 9.31b) | HIPÓTESE forte |
 | Mapa/área? | area: dng*, dngq, stag | ~600 | 1º u32 entre 0x12xx e 0x1Exx e padrão fixo `xx xx 00 00 Ax 00 00 00 1E 11 00 00 43 00 00 00`; entropia 4,1–4,7 | Arquivos IGB do Alchemy (ver `igb.md`) | HIPÓTESE |
 | Load | area: Load | 686 | Assinaturas `C4 09 00 00` (460) e `A4 09 00 00` (184); entropia 5,40–5,48; tamanhos quase fixos | Desconhecido (talvez imagens de carregamento ou dados por cena) | DESCONHECIDO |

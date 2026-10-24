@@ -69,6 +69,8 @@ public static class MpegPs
             s.Packets++;
             s.Payload.Write(d[h..end]);
         }
+        // Depois do código de fim (00 00 01 B9) o arquivo é completado até o fim do setor de 2048 B; isso não é erro.
+        if (pos < d.Length && (pos & 0x7FF) != 0 && d.Length - pos < 0x800 && (d.Length & 0x7FF) == 0) pos = d.Length;
         if (pos < d.Length) problems.Add($"{d.Length - pos} bytes depois do fim do programa");
         return (streams, packs, problems);
     }
