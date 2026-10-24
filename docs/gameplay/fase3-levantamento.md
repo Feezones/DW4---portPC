@@ -110,3 +110,33 @@ Inclinação = acos(m11) da matriz B. Sinal da guinada e ordem exata da cadeia a
 ## Unidades
 
 **FATO (corrige a estimativa da Fase 2):** o Guilmon tem cerca de 10 unidades de altura. A pele High vai de y = 0 a 9,91, e a caixa de corpo mede 5 × 7 × 5. O Numemon tem caixa de 8 × 14 × 8. As salas têm de 100 a 300 unidades, e as paredes de colisão 100. Não há escala extra entre personagem e fase.
+
+## Armas
+
+Terceira rodada de leitura (mesmas condições). Saídas em `D:\dw4-work\fase3\armas\`.
+
+- **Índice de nomes dos AFS:** `ndmw.igb` tem 2.080 `igAdxAfsFile` com nome original, id do AFS e índice (1.382 do area.afs, 698 do ndmw.afs). Ex.: `p_girumon.igb`, `dng101b1.igb`, `aaacamera.igb`, `w_sword01.igb`. **FATO**
+- Modelos de arma: 74 arquivos `w_*.igb` (ndmw #899–#972), cada um com 1 malha, 1 imagem e `beWeaponInfo` (String@2 nome, R@7 modelo, R@9 → `beWeaponSeqDataList` com 21 `beWeaponSeqData`). **FATO**
+- `beWeaponSeqData`: String@2 sequência (`SQ_ATCK1`, `SQ_WAIT`…), String@3 **estilo**. Famílias: slash (common, katana, sword, sp0203), axe, dagger, dual (cutlas, glave), maul, saber, gun, arm. **FATO.** A arma não traz números de combate.
+- Base de dados das armas (nome, ataque, ID → modelo): `_dBWeapon`, `beNDMWItemWeapon`, `WEAPONRECNO`, `INI_WEAPON1–3` e `beWeaponAttachData` existem só no `main.dol`, não nos AFS. **FATO** (ausência nos AFS); conteúdo **DESCONHECIDO**.
+- IDs de arma usados no Lua: 88 distintos (0 a 245) nas categorias de item `weapon`; `boot.lua` carrega o modelo por `be:SYSgetWeaponName(jogador, slot)` → `_common/<nome>.igb`. **FATO**
+- `g_SItemDB`/`g_TItemDB` são variáveis de troca de item com NPC (categoria + id), não tabelas de dados. **FATO**
+
+### Sequência de ataque (Guilmon, `SQ_ATCK1`)
+
+`beModelCtrlData` "SQ_ATCK1" → `igNamedObjectList` com 156 comandos, em blocos marcados por `beModelCtrlLABEL` com o estilo da arma, na ordem dual, slash, arm, gun, axe, dagger, maul e saber. **FATO**
+
+Bloco "slash", que é o da espada `w_sword01` escolhida para a fatia (**FATO**, valores lidos):
+
+```
+LABEL "slash"
+HITBOX Set 60000 f1 d1 pos (0,4,7) tam (3,3,3) · ACTION "TALKWF" · WCHECK "Action" · MOVE "Stop" 1/4
+HITBOX Set 10000 f9  d2 (−9,4,8)  tam (8,8,8)
+HITBOX Set 10000 f10 d2 (−5,4,11) tam (8,8,8)
+HITBOX Set 10000 f11 d2 (0,4,14)  tam (8,8,8)
+HITBOX Set 10000 f12 d2 (5,4,11)  tam (8,8,8)
+HITBOX Set 10000 f13 d2 (9,4,8)   tam (8,8,8)
+ACTION "VATCS1" · WCHECK "Atck01" · ACTION "KATCS1" · WCHECK "Atck02" · ACTION "KATCS2" · WCHECK "Atck03" · JUMP "SQ_ATCKTM"
+```
+
+**HIPÓTESE (a medir):** a sequência pula para o bloco cujo LABEL é o estilo da arma equipada. Os HITBOX agendam caixas de dano (tipo 10000) para a ação seguinte: começam no quadro f, duram d quadros, ficam na posição local (x lateral, y altura, z à frente) e têm o tamanho dado. ACTION toca a animação (`VATCS1` → `vatcS1`). WCHECK "Action" espera a animação acabar, e "Atck0N" é a janela de combo que espera o próximo botão. JUMP desvia para outra sequência. O tipo 60000 seria a sonda de conversa. Taxa dos quadros (30 ou 60 Hz) **DESCONHECIDA**.
