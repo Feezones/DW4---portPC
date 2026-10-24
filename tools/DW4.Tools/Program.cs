@@ -1127,24 +1127,33 @@ int IgbSeq(string path, string which, string outDir, string? option)
         float[] a => new JsonArray(a.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray()),
         _ => null,
     };
-    var root = new JsonObject();
+    notes.Clear();
+    var acts = IgbSequences.ReadActions(IgbFile.Read(data), data, actor, notes);
+    foreach (var n in notes) Console.WriteLine($"nota: {n}");
     var text = new StringBuilder();
-    foreach (var (name, cmds) in seqs.OrderBy(k => k.Key, StringComparer.Ordinal))
+    JsonObject Section(string title, Dictionary<string, List<IgbSeqCommand>> lists)
     {
-        text.AppendLine($"{name} ({cmds.Count} comandos)");
-        var arr = new JsonArray();
-        foreach (var c in cmds)
+        var obj = new JsonObject();
+        text.AppendLine($"=== {title} ===");
+        foreach (var (name, cmds) in lists.OrderBy(k => k.Key, StringComparer.Ordinal))
         {
-            text.AppendLine($"  #{c.Index,-6} {c.Kind,-10} {string.Join(" ", c.Values.Select(Fmt))}");
-            arr.Add(new JsonObject { ["k"] = c.Kind, ["v"] = new JsonArray(c.Values.Select(Node).ToArray()) });
+            text.AppendLine($"{name} ({cmds.Count} comandos)");
+            var arr = new JsonArray();
+            foreach (var c in cmds)
+            {
+                text.AppendLine($"  #{c.Index,-6} {c.Kind,-10} {string.Join(" ", c.Values.Select(Fmt))}");
+                arr.Add(new JsonObject { ["k"] = c.Kind, ["v"] = new JsonArray(c.Values.Select(Node).ToArray()) });
+            }
+            obj[name] = arr;
         }
-        root[name] = arr;
+        return obj;
     }
+    var root = new JsonObject { ["sequences"] = Section("sequências (beModelCtrlData)", seqs), ["actions"] = Section("ações (beAction2Data)", acts) };
     Directory.CreateDirectory(full);
     var stem = $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}{(actor == null ? "" : "_" + actor)}_seq";
     File.WriteAllText(Path.Combine(full, stem + ".json"), root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
     File.WriteAllText(Path.Combine(full, stem + ".txt"), text.ToString());
-    Console.WriteLine($"{seqs.Count} sequências, {seqs.Values.Sum(c => c.Count)} comandos -> {Path.Combine(full, stem)}.json/.txt");
+    Console.WriteLine($"{seqs.Count} sequências ({seqs.Values.Sum(c => c.Count)} comandos), {acts.Count} ações ({acts.Values.Sum(c => c.Count)} comandos) -> {Path.Combine(full, stem)}.json/.txt");
     return 0;
 }
 

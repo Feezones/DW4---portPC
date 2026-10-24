@@ -11,12 +11,18 @@ public sealed record SeqCommand(string Kind, IReadOnlyList<object> Values)
     public int I(int i) => i < Values.Count && Values[i] is int n ? n : 0;
     public Vector3 V(int i) => i < Values.Count && Values[i] is float[] { Length: 3 } a ? new Vector3(a[0], a[1], a[2]) : Vector3.Zero;
 
-    /// <summary>Lê o JSON gravado por <c>dw4 igb-seq</c>.</summary>
-    public static Dictionary<string, List<SeqCommand>> LoadAll(string json)
+    /// <summary>Lê as sequências ("sequences") do JSON gravado por <c>dw4 igb-seq</c>.</summary>
+    public static Dictionary<string, List<SeqCommand>> LoadAll(string json) => Load(json, "sequences");
+
+    /// <summary>Lê as ações ("actions", beAction2Data) do JSON gravado por <c>dw4 igb-seq</c>.</summary>
+    public static Dictionary<string, List<SeqCommand>> LoadActions(string json) => Load(json, "actions");
+
+    static Dictionary<string, List<SeqCommand>> Load(string json, string section)
     {
         using var doc = JsonDocument.Parse(json);
         var result = new Dictionary<string, List<SeqCommand>>();
-        foreach (var seq in doc.RootElement.EnumerateObject())
+        if (!doc.RootElement.TryGetProperty(section, out var root)) return result;
+        foreach (var seq in root.EnumerateObject())
             result[seq.Name] = seq.Value.EnumerateArray().Select(c => new SeqCommand(c.GetProperty("k").GetString() ?? "",
                 c.GetProperty("v").EnumerateArray().Select(Value).ToList())).ToList();
         return result;
@@ -32,6 +38,16 @@ public sealed record SeqCommand(string Kind, IReadOnlyList<object> Values)
         JsonValueKind.Number => e.GetSingle(),
         _ => "",
     };
+}
+
+/// <summary>
+/// Animação de uma ACTION: o primeiro MOTIONSET da beAction2Data de mesmo nome (FATO: "VATCS1" → beAction2Data "VATCS1";
+/// o nome da animação no MOTIONSET é o elo, já que "vatcS1" não existe e "vatcS" sim).
+/// </summary>
+public static class ActionAnimations
+{
+    public static string? Motion(IReadOnlyDictionary<string, List<SeqCommand>> actions, string action) =>
+        actions.TryGetValue(action, out var cmds) ? cmds.FirstOrDefault(c => c.Kind == "MOTIONSET")?.S(0) : null;
 }
 
 /// <summary>Caixa de dano agendada por um HITBOX: tipo, quadro inicial e duração relativos à ação, posição local e tamanho.</summary>

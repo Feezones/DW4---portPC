@@ -407,7 +407,7 @@ if (args.Length == 1)
         Equal(458, parts.Sum(p => p.Triangles.Count) / 3, "triângulos");
     });
 
-    Test("Jogo: SQ_ATCK1 do Guilmon, bloco slash: arco de 5 caixas 10000 nos quadros 9 a 13, depois VATCS1", () =>
+    Test("Jogo: SQ_ATCK1 do Guilmon, bloco slash: arco de 5 caixas 10000 nos quadros 9 a 13, depois VATCS1 (animação vatcS)", () =>
     {
         using var afs = AfsArchive.Open(ndmwPath);
         using var ms = new MemoryStream();
@@ -426,6 +426,10 @@ if (args.Length == 1)
         Equal("9,10,11,12,13", string.Join(",", boxes.Select(b => b.StartFrame)), "quadros iniciais");
         True(boxes.All(b => b.Frames == 2 && b.Size == new Vector3(8, 8, 8)), "duração 2 e tamanho 8");
         Equal(new Vector3(-9, 4, 8), boxes[0].Position, "primeira caixa à esquerda");
+        var acts = IgbSequences.ReadActions(IgbFile.Read(data), data, null, notes)
+            .ToDictionary(k => k.Key, k => k.Value.Select(c => new SeqCommand(c.Kind, c.Values)).ToList());
+        Equal(183, acts.Count, "ações (beAction2Data)");
+        Equal("vatcS", ActionAnimations.Motion(acts, "VATCS1"), "animação de VATCS1");
     });
 
     Test("Jogo: câmera da dng1 (#180) tem 18 volumes; #181 só muda o recuo; câmera sempre acima do alvo", () =>

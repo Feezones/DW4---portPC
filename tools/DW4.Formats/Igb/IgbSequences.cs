@@ -12,7 +12,18 @@ public sealed record IgbSeqCommand(int Index, string Kind, IReadOnlyList<object>
 /// </summary>
 public static class IgbSequences
 {
-    public static Dictionary<string, List<IgbSeqCommand>> Read(IgbFile f, byte[] data, string? actor, List<string> notes)
+    public static Dictionary<string, List<IgbSeqCommand>> Read(IgbFile f, byte[] data, string? actor, List<string> notes) =>
+        ReadLists(f, data, actor, notes, "beModelCtrlInfo", "beModelCtrlData", "beModelCtrl");
+
+    /// <summary>
+    /// Ações de um ator (beAction2Data String@2 = nome da ACTION, ObjectRef → igNamedObjectList de comandos beAction2*,
+    /// ex.: MOTIONSET com o nome da animação). É o elo entre a ACTION "VATCS1" e a animação "vatcS".
+    /// </summary>
+    public static Dictionary<string, List<IgbSeqCommand>> ReadActions(IgbFile f, byte[] data, string? actor, List<string> notes) =>
+        ReadLists(f, data, actor, notes, "beAction2Info", "beAction2Data", "beAction2");
+
+    static Dictionary<string, List<IgbSeqCommand>> ReadLists(IgbFile f, byte[] data, string? actor, List<string> notes,
+        string infoClass, string dataClass, string prefix)
     {
         var scene = IgbScene.Read(f, data);
         bool le = f.Header.LittleEndian;
@@ -20,13 +31,13 @@ public static class IgbSequences
         HashSet<int>? only = null;
         if (actor != null)
         {
-            var info = f.Slots.OfType<IgbObject>().FirstOrDefault(o => f.Is(o, "beModelCtrlInfo")
+            var info = f.Slots.OfType<IgbObject>().FirstOrDefault(o => f.Is(o, infoClass)
                 && o.Fields.FirstOrDefault(v => v.Desc.ShortName == "String" && v.Desc.Slot == 2)?.Text == actor);
-            if (info == null) { notes.Add($"ator \"{actor}\" sem beModelCtrlInfo"); return []; }
+            if (info == null) { notes.Add($"ator \"{actor}\" sem {infoClass}"); return []; }
             only = scene.Reachable(info);
         }
         var result = new Dictionary<string, List<IgbSeqCommand>>();
-        foreach (var d in f.Slots.OfType<IgbObject>().Where(o => f.Is(o, "beModelCtrlData") && (only == null || only.Contains(o.Index))))
+        foreach (var d in f.Slots.OfType<IgbObject>().Where(o => f.Is(o, dataClass) && (only == null || only.Contains(o.Index))))
         {
             var name = d.Fields.FirstOrDefault(v => v.Desc.ShortName == "String")?.Text ?? $"#{d.Index}";
             var list = d.Fields.Where(v => v.Desc.ShortName == "ObjectRef").Select(v => Slot(v.AsInt32(le))).OfType<IgbObject>()
@@ -35,10 +46,10 @@ public static class IgbSequences
             if (list != null)
                 foreach (var c in scene.ObjectList(list))
                 {
-                    var kind = c.TypeName.StartsWith("beModelCtrl", StringComparison.Ordinal) ? c.TypeName["beModelCtrl".Length..] : c.TypeName;
+                    var kind = c.TypeName.StartsWith(prefix, StringComparison.Ordinal) ? c.TypeName[prefix.Length..] : c.TypeName;
                     cmds.Add(new IgbSeqCommand(c.Index, kind, Values(c, le)));
                 }
-            if (result.ContainsKey(name)) notes.Add($"sequência \"{name}\" repetida (#{d.Index}); mantida a primeira");
+            if (result.ContainsKey(name)) notes.Add($"{dataClass} \"{name}\" repetido (#{d.Index}); mantida a primeira");
             else result[name] = cmds;
         }
         return result;

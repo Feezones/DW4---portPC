@@ -37,6 +37,7 @@ public partial class Fatia : Node3D
     // HIPÓTESE: osso da mão direita para prender a arma (beWeaponAttachData só existe no executável).
     const string WeaponBone = "RArm04";
     SequenceRunner? _runner;
+    Dictionary<string, List<SeqCommand>> _actions = [];
     int _lastSerial;
     bool _attackHeld, _showBoxes;
     CharacterBody3D? _enemy;
@@ -62,6 +63,7 @@ public partial class Fatia : Node3D
         if (Load("colisao", "colisao.gltf") is { } collision) AddChild(MakeStaticBody(collision));
 
         _demo = OS.GetEnvironment("DW4_DEMO") == "1";
+        _showBoxes = _demo;
         _player = new CharacterBody3D { Position = _demo ? EnemyAt + new Vector3(-16, 0, 0) : Start, FloorSnapLength = 4f };
         _player.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 2.5f, Height = 7f }, Position = new Vector3(0, 3.5f, 0) });
         AddChild(_player);
@@ -82,7 +84,13 @@ public partial class Fatia : Node3D
             var seqFile = System.IO.Directory.Exists(System.IO.Path.Combine(_dir, "guilmon"))
                 ? System.IO.Directory.EnumerateFiles(System.IO.Path.Combine(_dir, "guilmon"), "*_seq.json", System.IO.SearchOption.AllDirectories).FirstOrDefault() : null;
             if (seqFile == null) _problems.Add("falta o *_seq.json do Guilmon (dw4 igb-seq ndmw.afs 857 <fatia>\\guilmon)");
-            else _runner = new SequenceRunner(SeqCommand.LoadAll(System.IO.File.ReadAllText(seqFile)), AnimFrames);
+            else
+            {
+                var json = System.IO.File.ReadAllText(seqFile);
+                _actions = SeqCommand.LoadActions(json);
+                if (_actions.Count == 0) _problems.Add("o *_seq.json não tem ações: regere com o igb-seq atual");
+                _runner = new SequenceRunner(SeqCommand.LoadAll(json), AnimFrames);
+            }
             var skeleton = FindAll<Skeleton3D>(_model).FirstOrDefault();
             if (Load("arma", "cena.gltf") is { } weapon && skeleton != null)
             {
@@ -219,14 +227,14 @@ public partial class Fatia : Node3D
         _hud.Text = $"pos ({p.X:0.0}, {p.Y:0.0}, {p.Z:0.0})  vel {_move.Velocity.Length():0.0} u/s\n" +
             $"câmera {(_cameraSet == 0 ? "#180" : "#181 (afastada)")} volume {_zone}  [F1 troca, F5 reinicia, Esc sai]\n" +
             $"animações: parado = {_animWait ?? "-"}, correndo = {_animRun ?? "-"}\n" +
-            $"ataque [J, clique ou X]: {(_runner?.Running == true ? $"{_runner.Action} quadro {_runner.ActionFrame:0}/{_runner.ActionLength:0}" : "-")}  acertos no Numemon: {_hits}  [F2 caixas]\n" +
+            $"ataque [J, clique ou X]: {(_runner?.Running == true ? $"{_runner.Action} → {(_runner.Action == null ? "-" : AnimName(_runner.Action) ?? "sem animação")} quadro {_runner.ActionFrame:0}/{_runner.ActionLength:0}" : "-")}  acertos no Numemon: {_hits}  [F2 caixas]\n" +
             "movimento, gravidade e ponto inicial PROVISÓRIOS (não medidos no jogo)" +
             (_problems.Count > 0 ? "\n" + string.Join("\n", _problems) : "");
     }
 
-    // Ação do jogo ("VATCS1") → animação do glTF com o mesmo nome sem diferenciar maiúsculas ("vatcS1").
+    // Ação do jogo ("VATCS1") → MOTIONSET da beAction2Data de mesmo nome → animação do glTF.
     string? AnimName(string action) =>
-        _anim?.GetAnimationList().FirstOrDefault(n => string.Equals(n, action, StringComparison.OrdinalIgnoreCase));
+        ActionAnimations.Motion(_actions, action) is { } motion ? _anim?.GetAnimationList().FirstOrDefault(n => n == motion) : null;
 
     float? AnimFrames(string action) =>
         AnimName(action) is { } n && _anim != null ? (float)_anim.GetAnimation(n).Length * SequenceRunner.FramesPerSecond : null;
