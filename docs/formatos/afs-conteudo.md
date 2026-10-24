@@ -37,3 +37,15 @@ Extraídas com `dw4 afs-extract` para `D:\dw4-work\amostras\` (fora do repositó
 Evidência IGB: os bytes 0x20–0x3F são idênticos aos de `ndmw.igb` (`56 06 00 00 30 00 00 00 DA FA 00 00 06 00 00 F0|B0 15 00 00 00 01 00 00 …`) e o arquivo começa com a tabela de tipos `ig*MetaField`. O 1º u32, que parecia "assinatura" variada, é um campo de tamanho do cabeçalho IGB.
 
 Correção da Fase 0: os grupos "Load", "pequenos fixos" e "grandes de cenário" acima, antes DESCONHECIDOS, são IGB nas amostras testadas. A contagem total por tipo sai do comando `dw4 afs-classify`, que usa o u32 0xFADA em 0x28 como marca de IGB.
+
+## Classificação completa (`dw4 afs-classify`, 2026-10-24)
+
+| AFS | IGB | ADX | Sofdec (MPEG-PS) | Não classificadas |
+|---|---|---|---|---|
+| area (1382) | 1379 (390.475.196 B) | 0 | 3 (119.926.784 B) | 0 |
+| ndmw (973) | 894 (418.276.854 B) | 79 (273.086.732 B) | 0 | 0 |
+| **Total** | **2273 (808.752.050 B)** | **79** | **3** | **0** |
+
+Cada categoria de nome tem um único tipo: `soun` = ADX; `AEU_`/`AJP_`/`AUS_` = Sofdec; todas as outras (`Load`, `stag`, `dng1`–`dng4`, `dngq`, `_com`, `BecT`) = IGB. **FATO** para a marca de cabeçalho; o conteúdo de cada IGB ainda não foi lido.
+
+Consequência: modelos, cenários, telas e dados do jogo estão todos em IGB. Entender o IGB é o passo que destrava quase todo o resto.
