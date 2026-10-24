@@ -342,6 +342,23 @@ Test("Técnicas: WAZALIST pelo nível e pela skill, painel com MP e recarga", ()
     Equal(15, mp, "MP intacto");
 });
 
+Test("Inventário: 36 equipamentos, discos em pilha de 9, itens importantes como bit", () =>
+{
+    var inv = new Inventory();
+    for (int i = 0; i < Inventory.DeviceMax; i++) True(inv.Add(new ItemRef(i % 2 == 0 ? "weapon" : "armor2", i)), $"equipamento {i}");
+    True(!inv.Add(new ItemRef("abChip", 0)), "37º equipamento fica no chão");
+    for (int i = 0; i < Inventory.DiskMax; i++) True(inv.Add(new ItemRef("conItem", 0)), $"disco {i}");
+    True(!inv.Add(new ItemRef("conItem", 0)), "10º disco igual fica no chão");
+    True(inv.Add(new ItemRef("conItem", 3)), "outro disco tem pilha própria");
+    True(inv.Add(new ItemRef("impItem", 2)) && inv.HasFlag(2), "item importante");
+    True(!inv.Add(new ItemRef("insItem", 0)), "insItem não vai para o inventário");
+    var db = GameTables.FromJson("{\"conItem\":{\"rows\":4,\"columns\":[{\"name\":\"HP\",\"cells\":[450,0,0,0]},{\"name\":\"MP\",\"cells\":[0,0,0,400]}]}}");
+    Equal((450, 0), inv.UseDisk(db, 0), "HPディスクα");
+    Equal(8, inv.Disks(0), "gastou um");
+    Equal((0, 400), inv.UseDisk(db, 3), "disco 3");
+    Equal(null, inv.UseDisk(db, 3), "sem disco");
+});
+
 Test("Combate (FIGHTCALC): dano do jogador e do inimigo, acerto, crítico, experiência e MT19937", () =>
 {
     var a = new Fighter { Tsuyosa = 100, Kashikosa = 40, Chimeiritsu = 4, Skill = [500, 1500], WeaponSkillNo = 0, AttackElement = 0, HpDrain = 10 };
