@@ -12,7 +12,7 @@ Critérios do roadmap para F1: especificação com teste automatizado por format
 | Vídeo | Sofdec AUS_ separado com `sfd-demux`: MPEG-1 640×480 a 29,97 fps + ADX 48 kHz estéreo 1:04,0 | feito; reprodução do .m1v não testada |
 | Scripts | 5291 chunks Lua 4.0 lidos sem erro; API `be:*` com 108 métodos | feito |
 | Reprodutibilidade | Duas execuções de `igb-export` (27 arquivos), `sfd-demux` e vgmstream deram SHA-256 idênticos | feito |
-| Teste automatizado por formato | Ainda não há projeto de testes (`DW4.Tests`) | pendente |
+| Teste automatizado por formato | `DW4.Tests` (sem pacotes): testes sintéticos de AFS, classificador, Lua 4.0, PNG, imagem indexada e MPEG-PS, mais conferência dos dados do jogo | feito (ver resultado no diário) |
 | Comparação com captura do jogo | Nenhuma captura do jogo rodando no Dolphin ainda | pendente |
 | Compressão | Nenhum dado comprimido encontrado nos contêineres; zlib existe no executável (uso desconhecido) | desconhecido |
 
