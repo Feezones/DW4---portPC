@@ -88,6 +88,18 @@ O envio de comandos (0x80305A28) chama o método virtual do destinatário. O han
 - Armaduras: armor1 (MAINSLOT) com BOUGYORITSU, MAHITEIKOU, DOKUTEIKOU, MAMORI, MAXHP, … e LVPOINT (nível mínimo); armor2 (SUBSLOT) com BITRITSU, EXPRITSU, LUCKRITSU, atributos (com penalidades negativas) e SHUSEINOURYOKU (atributo que recebe o bônus de revisão).
 - Contato: as sequências do Numemon mantêm o HITBOX 70000 (eneatk 0: TYPE 0, acerto 100, TSUYOSA 100) no corpo, exceto nas de dano e guarda. HIPÓTESE: encostar gera um golpe 70000 pelo mesmo E2PISHITCHECK/E2PDAMAGE (ainda não ligado na fatia).
 
+### Equipamento no RECALCPLAYER (FATO, 0x8036FDE8)
+
+- Ajudantes: arma POWERSOCKET[0] (0x8036F484), chips da arma POWERPOCKET (0x8036F534), armor1 MAINSLOT (0x8036F5DC), chips da armadura MAINPOCKET (0x8036F68C), armor2 SUBSLOT (0x8036F734).
+- MHP = curva + UPDATA[6] + armor1.MAXHP + armor2.MAXHP (até 99999). MMP = curva + armor1.MAXMP + armor2.MAXMP.
+- TSUYOSA = curva + UP − DOWN + arma + chips da arma + armor2. MAMORI = curva + UP − DOWN + armor1 + armor2. KASHIKOSA, SEISHIN, SUBAYASA = curva + UP − DOWN + arma + chips da arma + armor1 + chips da armadura + armor2. Todos 1..9999.
+- HONOO/KOORI/KAMINARI/YAMITEIKO = shinka.RES_* + UPCNT[7..10] + UPDATA[7..10] + armor1 + chips da armadura + armor2 (1..9999).
+- ATTACKDELAY = DOWNDATA[6] + arma.DELAY (até 70). MEICHURITSU e MAHIRITSU = arma. CHIMEIRITSU = UP[1] − DOWN[1] + arma + chips da arma (≥ 1). KAIHIRITSU = UP[3] − DOWN[3] + chips da armadura.CHOHATURITSU (≥ 1). BOUGYORITSU, MAHITEIKOU, DOKUTEIKOU = armor1. BITRITSU, EXPRITSU, LUCKRITSU = armor2. ATTACKZOKUSEI = ZOKUSEI do chip da arma. HPDRAIN/MPDRAIN = chips da arma.
+- Revisão: com a flag ligada, arma e armor1 somam o valor item+0x14; a armor2 soma só no atributo do SHUSEINOURYOKU. Ainda fora do port (não há item com revisão).
+- Equipar: arma pede SOUBI & (1 << DIGIMONNO) e SKILL ≥ SKILLPOINT; armadura pede só nível ≥ LVPOINT (0x803860A8; o SOUBI das armaduras é da loja). Na digievolução (0x8039CA4C) armaduras e chips são desequipados e a arma é re-escolhida pela mais forte usável (WEAPONEQUIPSTRONG).
+- Troca de arma em combate: não achada. O RECALC só usa POWERSOCKET[0]; HIPÓTESE: [1] e [2] são reservas trocadas pelo menu de status. Regra dos pockets (ISPOCKET, quantidade): desconhecida.
+- Código no port: `GameTables.Player(..., Equipment, ...)`, `CanEquipWeapon`, `CanEquipArmor`. UPDATA/DOWNDATA ficam para os estados.
+
 ### Técnicas (FATO, salvo marcação)
 
 - pcTech (100 linhas): 20 famílias de 5 graus (linha = base + grau − 1; RANK 1..5 = プチ/メガ/ギガ/テラ/∞). SKILL = índice em SKILL[] (6 ataque, 7 cura, 8 suporte), MP = custo, DELAY = recarga em quadros de 60 Hz, HP = potência (negativo = dano, positivo = cura), LABEL = bloco da SQ_WAZA.

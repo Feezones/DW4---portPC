@@ -373,6 +373,36 @@ Test("Drops: sorteio em 1/10000 pela ordem da lista e BIT pela faixa de nível",
     Equal(566, Drops.Bit(999, 0, new SeqRandom(0)), "última faixa");
 });
 
+Test("RECALCPLAYER: armaduras e chips somam nas colunas certas; regras de equipar", () =>
+{
+    static string T(int rows, params (string Name, object[] Cells)[] cols) =>
+        $"{{\"rows\":{rows},\"columns\":[{string.Join(",", cols.Select(c => $"{{\"name\":\"{c.Name}\",\"cells\":[{string.Join(",", c.Cells.Select(v => v is string t ? $"\"{t}\"" : v.ToString()))}]}}"))}]}}";
+    var db = GameTables.FromJson("{" + string.Join(",",
+        "\"shinka\":" + T(1, ("STR_INI", [50]), ("AC_INI", [100]), ("INT_INI", [70]), ("MND_INI", [60]), ("DEX_INI", [40]), ("MHP_INI", [150]), ("MMP_INI", [80]), ("RES_FIRE", [10])),
+        "\"weapon\":" + T(2, ("TSUYOSA", [20, 30]), ("DELAY", [22, 90]), ("SKILL", [2, 1]), ("SKILLPOINT", [1, 500]), ("SOUBI", [0b10, 0b10]), ("MEICHURITSU", [88, 70])),
+        "\"armor1\":" + T(1, ("MAMORI", [15]), ("MAXHP", [40]), ("BOUGYORITSU", [5]), ("RES_FIRE", [100]), ("LVPOINT", [3]), ("TSUYOSA", [99])),
+        "\"armor2\":" + T(1, ("TSUYOSA", [7]), ("BITRITSU", [50]), ("MAXMP", [9])),
+        "\"abChip\":" + T(2, ("TSUYOSA", [3, 0]), ("CHOHATURITSU", [0, 12]), ("ZOKUSEI", ["fire", ""]), ("HPDRAIN", [4, 0]))) + "}");
+    int[] sk = [1, 1, 1, 1, 1, 1, 1, 1, 1];
+    var bare = db.Player(0, 1, 0, sk);
+    var full = db.Player(0, 1, new Equipment(0, 0, 0) { WeaponChips = [0], ArmorChips = [1] }, sk);
+    Equal(bare.Tsuyosa + 7 + 3, full.Tsuyosa, "TSUYOSA: armadura 2 + chip da arma (a armadura 1 não soma)");
+    Equal(bare.Mamori + 15, full.Mamori, "MAMORI: armadura 1");
+    Equal(bare.MaxHp + 40, full.MaxHp, "MHP");
+    Equal(bare.MaxMp + 9, full.MaxMp, "MMP");
+    Equal(5, full.Bougyoritsu, "BOUGYORITSU");
+    Equal(50, full.Bitritsu, "BITRITSU");
+    Equal(12, full.Kaihiritsu, "KAIHIRITSU do chip da armadura");
+    Equal(0, full.AttackElement, "elemento do chip da arma");
+    Equal(4, full.HpDrain, "HPDRAIN");
+    Equal(110, full.Res(0), "RES fogo: shinka + armadura 1");
+    Equal(22, full.AttackDelay, "DELAY");
+    Equal(70, db.Player(0, 1, 1, sk).AttackDelay, "DELAY até 70");
+    True(db.CanEquipWeapon(0, 1, sk) && !db.CanEquipWeapon(0, 0, sk), "SOUBI pelo bit da Digimon");
+    True(!db.CanEquipWeapon(1, 1, sk), "SKILLPOINT 500");
+    True(!db.CanEquipArmor("armor1", 0, 2) && db.CanEquipArmor("armor1", 0, 3), "LVPOINT");
+});
+
 Test("Combate (FIGHTCALC): dano do jogador e do inimigo, acerto, crítico, experiência e MT19937", () =>
 {
     var a = new Fighter { Tsuyosa = 100, Kashikosa = 40, Chimeiritsu = 4, Skill = [500, 1500], WeaponSkillNo = 0, AttackElement = 0, HpDrain = 10 };

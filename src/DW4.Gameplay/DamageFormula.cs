@@ -26,6 +26,13 @@ public sealed record Fighter
     public int Kaihiritsu { get; init; }
     public int MaxHp { get; init; }
     public int MaxMp { get; init; }
+    /// <summary>Jogador: resistência a paralisia e veneno (armadura 1), bônus de BIT/EXP/sorte (armadura 2) e ATTACKDELAY.</summary>
+    public int Mahiteikou { get; init; }
+    public int Dokuteikou { get; init; }
+    public int Bitritsu { get; init; }
+    public int Expritsu { get; init; }
+    public int Luckritsu { get; init; }
+    public int AttackDelay { get; init; }
     public IReadOnlyList<int> Skill { get; init; } = [];
     public int WeaponSkillNo { get; init; }
     /// <summary>ATTACKZOKUSEI do golpe físico: 0 fogo, 1 gelo, 2 trovão, 3 trevas; −1 nenhum (o E2PDAMAGE não tem veneno).</summary>

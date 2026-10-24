@@ -83,6 +83,9 @@ public partial class Fatia : Node3D
     readonly Inventory _inventory = new();
     int _xdata;
     bool _killed;
+    // Equipamento (RECALCPLAYER completo). DECISÃO DA FATIA: sem o menu de status, a tecla E equipa o último equipamento
+    // pego, se a regra do jogo deixar; a arma muda só os números (o modelo na mão continua o da w_sword01).
+    Equipment? _equip;
     readonly List<(Node3D Node, ItemRef Item)> _ground = [];
     // Linha do Numemon na tabela enemy: Int@7 dos geradores da dng1 no modo normal (generatorN #184 = 13; HIPÓTESE forte).
     const int EnemyRow = 13;
@@ -225,6 +228,7 @@ public partial class Fatia : Node3D
             if (k.Keycode == Key.F5) { _player.Position = Start; _player.Velocity = Vector3.Zero; _move.Stop(); _hp = _pf?.MaxHp ?? 0; _mp = _pf?.MaxMp ?? 0; }
             if (k.Keycode is >= Key.Key1 and <= Key.Key6) _techKey = (int)(k.Keycode - Key.Key1);
             if (k.Keycode == Key.K) _techKey = 0;
+            if (k.Keycode == Key.E) EquipLast();
             if (k.Keycode == Key.Escape) GetTree().Quit();
         }
     }
@@ -351,6 +355,7 @@ public partial class Fatia : Node3D
             (_pf == null ? "combate: sem tabelas (dw4 igb-db area.afs 3 <fatia>\\db)\n" :
                 $"Guilmon nv {_level}  HP {_hp}/{_pf.MaxHp}  MP {_mp}/{_pf.MaxMp}  EXP {_exp}/{PlayerGrowth.NextExp(_level)}  SLASH {_skill[1]}  |  Numemon HP {(_enemyDead ? "derrotado" : $"{_enemyHp}/{_ef!.MaxHp}")}  |  {_lastEvent}{(_hp <= 0 ? "  |  CAIU: F5 reinicia" : "")}\n" +
                 $"técnicas [1..6; K, botão direito ou Y = 1]: {(_techs.Count == 0 ? "-" : string.Join("  ", _techs.Select((t, i) => $"{i + 1} {t.Name} {t.Mp} MP{(_panel.Cooldown(t) > 0 ? $" ({_panel.Cooldown(t):0.0} s)" : "")}")))}  skills ataque/cura/suporte {_skill[6]}/{_skill[7]}/{_skill[8]}\n" +
+                $"arma {_db!["weapon"].Text(_equip!.WeaponRow, "NAME")}  armaduras {(_equip.Armor1Row >= 0 ? _db["armor1"].Text(_equip.Armor1Row, "NAME") : "-")} / {(_equip.Armor2Row >= 0 ? _db["armor2"].Text(_equip.Armor2Row, "NAME") : "-")}  [E equipa o último pego]  " +
                 $"BIT {_inventory.Bit}  Xデータ {_xdata}  equipamentos {_inventory.Devices.Count}/{Inventory.DeviceMax}{(_inventory.Devices.Count > 0 ? ": " + string.Join(", ", _inventory.Devices.TakeLast(3).Select(d => _db![d.Table].Text(d.Row, "NAME"))) : "")}\n") +
             "movimento, gravidade, ponto inicial e IA PROVISÓRIOS (não medidos no jogo)" +
             (_problems.Count > 0 ? "\n" + string.Join("\n", _problems) : "");
@@ -447,7 +452,8 @@ public partial class Fatia : Node3D
 
     void Recalc()
     {
-        _pf = _db!.Player(_shinkaRow, _level, _weaponRow, _skill);
+        _equip ??= new Equipment(_weaponRow);
+        _pf = _db!.Player(_shinkaRow, _level, _equip, _skill);
         if (_db.Contains("pcTech")) _techs = Techniques.List(_db, _shinkaRow, _level, _skill);
     }
 
@@ -598,7 +604,7 @@ public partial class Fatia : Node3D
             {
                 if (item.Row == 0)
                 {
-                    int bit = Drops.Bit(_level, 0, _mt); // BITRITSU vem da armadura 2: sem armadura, 0
+                    int bit = Drops.Bit(_level, _pf!.Bitritsu, _mt);
                     _inventory.Bit += bit;
                     text = $"+{bit} BIT";
                 }
@@ -616,6 +622,31 @@ public partial class Fatia : Node3D
             node.QueueFree();
             _ground.RemoveAt(i);
         }
+    }
+
+    void EquipLast()
+    {
+        if (_db == null || _equip == null || _inventory.Devices.Count == 0) return;
+        var item = _inventory.Devices[^1];
+        string name = _db[item.Table].Text(item.Row, "NAME");
+        bool ok = item.Table switch
+        {
+            // HIPÓTESE: DIGIMONNO = linha da shinka.
+            "weapon" => _db.CanEquipWeapon(item.Row, _shinkaRow, _skill),
+            "armor1" or "armor2" => _db.CanEquipArmor(item.Table, item.Row, _level),
+            _ => false,
+        };
+        if (!ok) { _lastEvent = $"não dá para equipar {name}"; return; }
+        _equip = item.Table switch
+        {
+            "weapon" => _equip with { WeaponRow = item.Row },
+            "armor1" => _equip with { Armor1Row = item.Row },
+            _ => _equip with { Armor2Row = item.Row },
+        };
+        Recalc();
+        _hp = Math.Min(_hp, _pf!.MaxHp);
+        _mp = Math.Min(_mp, _pf.MaxMp);
+        _lastEvent = $"equipou {name}";
     }
 
     void GainExp()
