@@ -13,3 +13,9 @@ extracted/
 converted/
 captures/
 bios/
+
+# Build .NET
+bin/
+obj/
+*.user
+.vs/
