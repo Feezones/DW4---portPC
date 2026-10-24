@@ -19,6 +19,7 @@ public static class MpegPs
         var streams = new Dictionary<int, MpegPsStream>();
         var problems = new List<string>();
         int pos = 0, packs = 0;
+        bool ended = false;
         while (pos + 4 <= d.Length)
         {
             if (d[pos] != 0 || d[pos + 1] != 0 || d[pos + 2] != 1)
@@ -27,7 +28,7 @@ public static class MpegPs
                 break;
             }
             int code = d[pos + 3];
-            if (code == 0xB9) { pos += 4; break; } // fim do programa
+            if (code == 0xB9) { pos += 4; ended = true; break; } // fim do programa
             if (code == 0xBA)
             {
                 packs++;
@@ -70,7 +71,7 @@ public static class MpegPs
             s.Payload.Write(d[h..end]);
         }
         // Depois do código de fim (00 00 01 B9) o arquivo é completado até o fim do setor de 2048 B; isso não é erro.
-        if (pos < d.Length && (pos & 0x7FF) != 0 && d.Length - pos < 0x800 && (d.Length & 0x7FF) == 0) pos = d.Length;
+        if (ended && pos < d.Length && (pos & 0x7FF) != 0 && d.Length - pos < 0x800 && (d.Length & 0x7FF) == 0) pos = d.Length;
         if (pos < d.Length) problems.Add($"{d.Length - pos} bytes depois do fim do programa");
         return (streams, packs, problems);
     }
