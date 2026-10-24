@@ -33,6 +33,7 @@ try
         "igb-dump" when args.Length is 3 or 4 => IgbDump(args[1], args[2], args.Length == 4 ? args[3] : null),
         "igb-lua" when args.Length == 2 => IgbLua(args[1]),
         "igb-export" when args.Length == 4 => IgbExport(args[1], args[2], args[3]),
+        "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
         _ => Usage(),
@@ -60,6 +61,7 @@ static int Usage()
           dw4 igb-dump     <arquivo.afs> <indice> [classe]   (ou <arquivo.igb> - [classe])
           dw4 igb-lua      <arquivo.afs>
           dw4 igb-export   <arquivo.afs> <indice> <pasta-de-trabalho>   (OBJ + PNG + relatório, fora do repositório)
+          dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
         """);
@@ -555,6 +557,52 @@ int IgbExport(string path, string which, string outDir)
     File.WriteAllText(Path.Combine(dir, "relatorio.txt"), report.ToString());
     Console.Write(report);
     Console.WriteLine($"{exported} de {scene.Parts.Count} geometrias e {texture.Count} imagens gravadas em {dir}");
+    return 0;
+}
+
+// Levantamento por IGB: quantos objetos de classes-chave (geometria, imagem, esqueleto, animação, colisão) e nomes de
+// exemplo, para escolher amostras da Fase 2. Grava CSV fora do repositório (contém nomes do jogo).
+int IgbSurvey(string path, string csvPath)
+{
+    var full = Path.GetFullPath(csvPath);
+    if (InsideGitRepo(Path.GetDirectoryName(full)!)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    var collisionLike = new System.Text.RegularExpressions.Regex("col|hit|ground|wall|floor|bound|bsp|terrain|navi|path|land",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    var classTotals = new Dictionary<string, (int objects, int files)>();
+    using var w = new StreamWriter(full, false, new UTF8Encoding(true));
+    w.WriteLine(CsvLine(["id", "categoria", "bytes", "objetos", "geometrias", "imagens", "esqueletos", "animacoes", "faixas",
+        "blend_matrix", "classes_colisao", "imagens_ex", "animacoes_ex", "esqueletos_ex", "lua_ex", "classes_be"]));
+    int files = 0;
+    foreach (var (id, cat, data) in IgbSources(path))
+    {
+        IgbFile f;
+        try { f = IgbFile.Read(data); }
+        catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentOutOfRangeException) { continue; }
+        files++;
+        var objs = f.Slots.OfType<IgbObject>().ToList();
+        int Count(string cls) => objs.Count(o => f.Is(o, cls));
+        string Names(string cls, int max) => string.Join(" | ", objs.Where(o => f.Is(o, cls))
+            .Select(o => o.Fields.FirstOrDefault(v => v.Text is { Length: > 0 })?.Text).Where(t => t != null).Distinct().Take(max));
+        var perClass = objs.GroupBy(o => o.TypeName).ToDictionary(g => g.Key, g => g.Count());
+        foreach (var (k, n) in perClass)
+        {
+            var t = classTotals.GetValueOrDefault(k);
+            classTotals[k] = (t.objects + n, t.files + 1);
+        }
+        var coll = perClass.Where(kv => collisionLike.IsMatch(kv.Key)).Select(kv => $"{kv.Key}:{kv.Value}");
+        var be = perClass.Where(kv => kv.Key.StartsWith("be", StringComparison.Ordinal)).OrderByDescending(kv => kv.Value).Take(6).Select(kv => $"{kv.Key}:{kv.Value}");
+        w.WriteLine(CsvLine([id, cat, data.Length.ToString(inv), objs.Count.ToString(inv), Count("igGeometryAttr").ToString(inv),
+            Count("igImage").ToString(inv), Count("igSkeleton").ToString(inv), Count("igAnimation").ToString(inv),
+            Count("igAnimationTrack").ToString(inv), Count("igBlendMatrixSelect").ToString(inv), string.Join(" ", coll),
+            Names("igImage", 4), Names("igAnimation", 4), Names("igSkeleton", 2), Names("beLuaData", 3), string.Join(" ", be)]));
+    }
+    Console.WriteLine($"{files} IGB levantados em {full}");
+    Console.WriteLine("classes com nome parecido com colisão/terreno (objetos em arquivos):");
+    foreach (var (k, (n, nf)) in classTotals.Where(kv => collisionLike.IsMatch(kv.Key)).OrderByDescending(kv => kv.Value.objects))
+        Console.WriteLine($"  {k}: {n} objetos em {nf} arquivos");
+    Console.WriteLine("classes de esqueleto, pele e animação:");
+    foreach (var (k, (n, nf)) in classTotals.Where(kv => System.Text.RegularExpressions.Regex.IsMatch(kv.Key, "Skel|Skin|Blend|Anim|Actor|Bone|Enbaya|Joint", System.Text.RegularExpressions.RegexOptions.IgnoreCase)).OrderByDescending(kv => kv.Value.objects))
+        Console.WriteLine($"  {k}: {n} objetos em {nf} arquivos");
     return 0;
 }
 
