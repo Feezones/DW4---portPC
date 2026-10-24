@@ -336,7 +336,7 @@ public partial class Fatia : Node3D
 
     void CheckHits()
     {
-        if (_runner == null || _enemy == null) return;
+        if (_runner == null || _enemy == null || (_enemyStarted && _enemyRunner?.Invincible == true)) return;
         var e = _enemy.GlobalPosition;
         foreach (var h in _runner.ActiveHitBoxes().Where(h => h.Type == 10000))
         {
@@ -420,7 +420,7 @@ public partial class Fatia : Node3D
     // Caixas 70004 do Numemon (ataque, HIPÓTESE pelo SQ_ATCK1) contra a caixa de corpo do Guilmon (5 × 7 × 5, FATO).
     void CheckEnemyHits()
     {
-        if (_enemyRunner == null) return;
+        if (_enemyRunner == null || _runner?.Invincible == true) return;
         var g = _player.GlobalPosition;
         foreach (var h in _enemyRunner.ActiveHitBoxes().Where(h => h.Type == 70004))
         {

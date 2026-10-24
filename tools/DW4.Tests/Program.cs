@@ -263,6 +263,11 @@ Test("Sequência: bloco do estilo, sonda de conversa pulada, caixa no quadro cer
     Equal(2, r.ActionHitBoxes.Count, "corpo e golpe na ação NATK01");
     for (int i = 0; i < 11; i++) r.Tick(frame, false);
     True(r.ActiveHitBoxes().Any(h => h.Type == 70004), "golpe ativo no quadro 11");
+    True(!r.Invincible, "sem MUTEKI");
+    seqs["SQ_SDMG"] = [C("LABEL", "common"), C("MUTEKI", "ON", -1), C("MOVE", "Back", 1.6f, 5f), C("ACTION", "SDMGC1"), C("WCHECK", "Moving"), C("JUMP", "SQ_WAIT")];
+    True(r.Start("SQ_SDMG", "common") && r.Invincible && r.Move?.S(0) == "Back", "dano: invencível e recuando");
+    for (int i = 0; i < 21; i++) r.Tick(frame, false);
+    True(!r.Running && !r.Invincible, "fim do dano tira o MUTEKI");
 });
 
 Test("IA: faixa pela distância, sorteio acumulado em 16, troca de mapa e espera de sequência externa", () =>

@@ -115,6 +115,12 @@ Campos (FATO, metaobjeto completo): `beModelCtrlAIMap` = String@2 nome, Float@3.
 
 **HIPÓTESE** usada na fatia (`EnemyBrain`): @3..@5 são distâncias ao alvo ao quadrado que escolhem a lista; sorteia-se 0..15 e vale a primeira escolha com Int@5 maior; SQ_WALK anda Float@4 quadros girando no máximo @6 rad por quadro para a direção do alvo + Float@3; WAIT e SILENT ficam parados Float@4 quadros; CHMOD troca de mapa pelo `AIMAP` da sequência; ATCK1, FIRE e os danos rodam a sequência do jogo. Velocidade: MOVE "Move" 0,24 contra 0,7 do Guilmon, proporcional (HIPÓTESE).
 
+### Dano
+
+- Guilmon `SQ_SDMG` (FATO): blocos common, fire, ice, thunder e dark (sem bloco de arma). common = `MUTEKI "ON" -1`, `MOVE "Back" 1,6 5`, `ACTION "SDMGC1"` (FLASHSET "Damage", MOTIONSET "sdmgD" 8 OS), `WCHECK "Moving"`, `JUMP "SQ_WAIT"`; os elementais acrescentam `MUTEKI "30.0" 30` no fim.
+- Numemon `SQ_SDMG` common: `MUTEKI "ON" -1`, `MOVE "Back" 0,4 8`, `ACTION "SDMG01"` (Sdmg01), `WCHECK "Moving"`.
+- **HIPÓTESE** usada na fatia: MUTEKI "ON" deixa invencível até a sequência acabar; WCHECK "Moving" espera o fim da animação; o recuo usa a velocidade proporcional ao "Move" do andar; quem apanha vira para quem bateu.
+
 ## Arma na mão (quarta rodada)
 
 - A malha de `w_sword01` (#967, 214 vértices) vai de (−1,02, −0,34, −2,25) a (1,02, 0,34, 11,19); não há `igTransform` no arquivo e o nó se chama "right". **FATO.** Logo a malha está no espaço do osso: punho na origem, lâmina por +Z.

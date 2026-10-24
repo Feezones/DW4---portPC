@@ -143,6 +143,9 @@ public sealed class SequenceRunner
     /// <summary>Contador de ações iniciadas (muda quando é preciso tocar uma nova animação).</summary>
     public int ActionSerial { get; private set; }
     public List<string> Skipped { get; } = [];
+    /// <summary>MUTEKI "ON" na sequência em andamento (HIPÓTESE: invencível até ela acabar; "N" N com tempo ainda não tratado).</summary>
+    public bool Invincible => Running && _muteki;
+    bool _muteki;
 
     /// <summary>Inicia a sequência no bloco do estilo; false se a sequência ou o estilo não existem.</summary>
     public bool Start(string sequence, string? style)
@@ -167,6 +170,7 @@ public sealed class SequenceRunner
         Running = true;
         _attackBuffered = false;
         _skipWait = false;
+        _muteki = false;
         Advance();
         return true;
     }
@@ -222,6 +226,9 @@ public sealed class SequenceRunner
                     break;
                 case "MOVE":
                     Move = c;
+                    break;
+                case "MUTEKI" when c.S(0) == "ON":
+                    _muteki = true;
                     break;
                 case "JUMP":
                     Finish(c.S(0));
