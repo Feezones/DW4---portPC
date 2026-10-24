@@ -80,6 +80,14 @@ O envio de comandos (0x80305A28) chama o método virtual do destinatário. O han
 
 - MEICHURITSU = arma (sem arma, 0); CHIMEIRITSU = efeitos + arma + chips da arma (mínimo 1); MAHIRITSU = arma; KAIHIRITSU = efeitos + CHOHATURITSU dos chips da armadura (mínimo 1).
 
+### Personagem novo (FATO)
+
+- GAMEDATAINIT (0x8036CE1C) zera o estado e põe BASE_LEVEL = 1 e as 9 BASE_SKILL = 1 para as 16 Digimon; EXP, UPCNT, dinheiro (BIT) e inventário começam em 0/vazios. Nenhum IGB guarda esse estado.
+- Ao entrar com a Digimon d (0x8036EB0C): copia LEVEL/EXP/SKILL/UPCNT dos BASE_* dela, cria INI_WEAPON1..3 da shinka no DEVICEFOLDER e preenche o POWERSOCKET [0..2] em ordem; a ativa é o [0]. Nenhuma armadura. INI_WEAPON4 não é usado pelo código.
+- Guilmon: 268 ∈スタッブダガー (STAB, ativa), 275 e 274. Equipar exige SOUBI & (1 << DIGIMONNO) e SKILL[arma.SKILL] ≥ SKILLPOINT.
+- Armaduras: armor1 (MAINSLOT) com BOUGYORITSU, MAHITEIKOU, DOKUTEIKOU, MAMORI, MAXHP, … e LVPOINT (nível mínimo); armor2 (SUBSLOT) com BITRITSU, EXPRITSU, LUCKRITSU, atributos (com penalidades negativas) e SHUSEINOURYOKU (atributo que recebe o bônus de revisão).
+- Contato: as sequências do Numemon mantêm o HITBOX 70000 (eneatk 0: TYPE 0, acerto 100, TSUYOSA 100) no corpo, exceto nas de dano e guarda. HIPÓTESE: encostar gera um golpe 70000 pelo mesmo E2PISHITCHECK/E2PDAMAGE (ainda não ligado na fatia).
+
 ### Skills (P2ESKILLUP, caso 13, FATO)
 
 Limite pelo nível: 30L (até 36), 20L + 360 (até 107), 10L + 1430 (até 227), senão 8L + 1884; no limite não há sorteio. A taxa vem de uma tabela 4 × 21 × 3 do main.dol (0x804EAF18; extraída com `dw4 dol-skilltab`, fora do repositório), indexada pela faixa de nível, pela faixa da skill (1, 2, … 10, 20, 30, 100, 300, 500, 1000, 2000, 3000, 4000, 6000, 10000) e por uma coluna (2 em evento especial, senão 0; a coluna 1 nunca é usada por um andc com 0, provável bug). Técnica: chance = taxa·100; arma: taxa·GROW do tipo de arma (shinka BLUNT/SLASH/STAB/BASH/SHOT/CRUSH_GROW)·500/1000. Sobe +1 se chance > sorteio % 100000.

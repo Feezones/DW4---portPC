@@ -394,11 +394,12 @@ public partial class Fatia : Node3D
         if (System.IO.File.Exists(skillFile)) _skillGrowth = SkillGrowth.FromJson(System.IO.File.ReadAllText(skillFile));
         else _problems.Add("falta skillup.json (dw4 dol-skilltab <main.dol> <fatia>): skill não sobe");
         _shinkaRow = _db["shinka"].RowsWhere("MODEL_NAME", "p_girumon").DefaultIfEmpty(-1).First();
-        // DECISÃO DA FATIA: Guilmon com a w_sword01 α (linha 25). No jogo ele começa com INI_WEAPON1 = 268 (adaga) e a
-        // espada pede SKILLPOINT 1 de SLASH; aqui a espada é usada direto para testar o combo slash.
+        // DECISÃO DA FATIA: Guilmon com a w_sword01 α (linha 25, SKILLPOINT 1: equipável com as skills iniciais). No jogo
+        // ele começa com INI_WEAPON1 = 268 (adaga STAB, TSUYOSA 22) ativa e 275/274 de reserva; a espada fica mais forte.
         _weaponRow = _db["weapon"].RowsWhere("MODEL", "w_sword01").DefaultIfEmpty(-1).First();
         if (_shinkaRow < 0 || _weaponRow < 0) { _problems.Add("p_girumon ou w_sword01 não estão nas tabelas"); _db = null; return; }
-        // HIPÓTESE: jogador novo com nível 1, EXP 0 e skills 0 (os BASE_* não ganham valor no código lido).
+        // FATO (GAMEDATAINIT 0x8036CFEC..D0B8): jogador novo com nível 1, EXP 0, as 9 skills em 1 e sem armaduras.
+        Array.Fill(_skill, 1);
         Recalc();
         _hp = _pf!.MaxHp;
         _ef = _db.Enemy(EnemyRow);
