@@ -1,0 +1,317 @@
+using System.Buffers.Binary;
+using System.IO.Compression;
+using System.Security.Cryptography;
+using System.Text;
+using DW4.Formats.Afs;
+using DW4.Formats.Analysis;
+using DW4.Formats.Igb;
+using DW4.Formats.Images;
+using DW4.Formats.Lua;
+using DW4.Formats.Sofdec;
+
+// Verificador dos leitores de formato, sem pacotes externos.
+// Sem argumentos: só testes sintéticos (dados montados aqui, nada do jogo).
+// Com a pasta files\ da cópia de trabalho: também confere os resultados já medidos nos dados do jogo.
+// O jogo é aberto só para leitura e nada é gravado.
+
+int passed = 0, failed = 0;
+
+void Test(string name, Action body)
+{
+    try
+    {
+        body();
+        passed++;
+        Console.WriteLine($"ok     {name}");
+    }
+    catch (Exception ex)
+    {
+        failed++;
+        Console.WriteLine($"FALHOU {name}: {ex.Message}");
+    }
+}
+
+static void Equal<T>(T expected, T actual, string what)
+{
+    if (!EqualityComparer<T>.Default.Equals(expected, actual))
+        throw new InvalidOperationException($"{what}: esperado {expected}, obtido {actual}");
+}
+
+static void True(bool condition, string what)
+{
+    if (!condition) throw new InvalidOperationException(what);
+}
+
+// ---------- sintéticos ----------
+
+Test("AFS: tabela, nomes, datas e cópia de entrada", () =>
+{
+    var file = new byte[0x2000];
+    "AFS\0"u8.CopyTo(file);
+    BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(4), 2);
+    void Pair(int at, uint offset, uint size)
+    {
+        BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(at), offset);
+        BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(at + 4), size);
+    }
+    Pair(8, 0x800, 3);
+    Pair(16, 0x1000, 5);
+    Pair(24, 0x1800, 2 * AfsArchive.NameRecordSize);
+    "abc"u8.CopyTo(file.AsSpan(0x800));
+    "defgh"u8.CopyTo(file.AsSpan(0x1000));
+    for (int i = 0; i < 2; i++)
+    {
+        var rec = file.AsSpan(0x1800 + i * AfsArchive.NameRecordSize);
+        Encoding.ASCII.GetBytes(i == 0 ? "soun" : "stag").CopyTo(rec);
+        ushort[] date = [2005, 3, 8, 12, 30, 15];
+        for (int k = 0; k < 6; k++) BinaryPrimitives.WriteUInt16LittleEndian(rec[(32 + 2 * k)..], date[k]);
+    }
+    var path = Path.Combine(Path.GetTempPath(), $"dw4-teste-{Guid.NewGuid():N}.afs");
+    File.WriteAllBytes(path, file);
+    try
+    {
+        using var afs = AfsArchive.Open(path);
+        Equal(2, afs.Entries.Count, "entradas");
+        Equal("stag", afs.Entries[1].Name, "nome da entrada 1");
+        Equal(new DateTime(2005, 3, 8, 12, 30, 15), afs.Entries[0].Timestamp, "data da entrada 0");
+        Equal(0, afs.Validate().Count, "problemas de validação");
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[1], ms);
+        Equal("defgh", Encoding.ASCII.GetString(ms.ToArray()), "conteúdo da entrada 1");
+    }
+    finally { File.Delete(path); }
+});
+
+Test("AFS: entrada desalinhada é apontada pela validação", () =>
+{
+    var file = new byte[0x1000];
+    "AFS\0"u8.CopyTo(file);
+    BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(4), 1);
+    BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(8), 0x810);
+    BinaryPrimitives.WriteUInt32LittleEndian(file.AsSpan(12), 4);
+    var path = Path.Combine(Path.GetTempPath(), $"dw4-teste-{Guid.NewGuid():N}.afs");
+    File.WriteAllBytes(path, file);
+    try
+    {
+        using var afs = AfsArchive.Open(path);
+        var problems = afs.Validate();
+        True(problems.Any(p => p.Contains("não alinhado")), "desalinhamento não detectado");
+        True(problems.Any(p => p.Contains("tabela de nomes")), "falta da tabela de nomes não detectada");
+    }
+    finally { File.Delete(path); }
+});
+
+Test("Classificador: MPEG-PS, IGB, ADX e desconhecido", () =>
+{
+    Equal(ContentKind.MpegPs, Classifier.Classify([0, 0, 1, 0xBA, 0x44]), "MPEG-PS");
+    var igb = new byte[0x30];
+    BinaryPrimitives.WriteUInt32LittleEndian(igb.AsSpan(0x28), Classifier.IgbMagic);
+    Equal(ContentKind.Igb, Classifier.Classify(igb), "IGB");
+    var adx = new byte[0x24];
+    adx[0] = 0x80;
+    BinaryPrimitives.WriteUInt16BigEndian(adx.AsSpan(2), 0x1C); // dados em 0x20; "(c)CRI" em 0x1A
+    adx[4] = 3;
+    "(c)CRI"u8.CopyTo(adx.AsSpan(0x1A));
+    Equal(ContentKind.Adx, Classifier.Classify(adx), "ADX");
+    Equal(ContentKind.Unknown, Classifier.Classify(new byte[64]), "zeros");
+});
+
+Test("Lua 4.0: chunk mínimo lido e cabeçalho errado recusado", () =>
+{
+    var chunk = new List<byte> { 0x1B, (byte)'L', (byte)'u', (byte)'a', 0x40, 1, 4, 4, 4, 32, 6, 9, 8 };
+    chunk.AddRange(BitConverter.GetBytes(3.14159265358979323846E8));
+    void Int(int v) => chunk.AddRange(BitConverter.GetBytes(v));
+    Int(5); chunk.AddRange("@t.l\0"u8.ToArray()); // nome do fonte
+    Int(0); Int(0); chunk.Add(0); Int(2);          // linha, parâmetros, vararg, pilha
+    Int(0); Int(0);                                // locais, linhas
+    Int(1); Int(3); chunk.AddRange("be\0"u8.ToArray()); // uma string
+    Int(0); Int(0);                                // números, funções
+    Int(2); Int(12 | (0 << 6)); Int(0);            // GETGLOBAL 0, END
+    var f = Lua40Chunk.Read(chunk.ToArray());
+    Equal("@t.l", f.Source, "fonte");
+    Equal("be", f.Strings[0], "string 0");
+    Equal(2, f.Code.Count, "instruções");
+    Equal("GETGLOBAL", Lua40Chunk.OpNames[Lua40Chunk.Op(f.Code[0])], "opcode");
+    var bad = chunk.ToArray();
+    bad[10] = 7; // SIZE_OP diferente
+    True(Throws(() => Lua40Chunk.Read(bad)), "SIZE_OP errado foi aceito");
+});
+
+Test("PNG: assinatura, CRC dos blocos e pixels de volta", () =>
+{
+    byte[] rgba = [255, 0, 0, 255, 0, 255, 0, 128, 0, 0, 255, 0, 9, 8, 7, 6];
+    using var ms = new MemoryStream();
+    Png.WriteRgba(ms, 2, 2, rgba);
+    var png = ms.ToArray();
+    True(png.AsSpan(0, 8).SequenceEqual(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }), "assinatura");
+    var idat = new MemoryStream();
+    for (int at = 8; at < png.Length;)
+    {
+        int len = BinaryPrimitives.ReadInt32BigEndian(png.AsSpan(at));
+        var type = Encoding.ASCII.GetString(png, at + 4, 4);
+        uint crc = BinaryPrimitives.ReadUInt32BigEndian(png.AsSpan(at + 8 + len));
+        Equal(Crc32(png.AsSpan(at + 4, 4 + len)), crc, $"CRC de {type}");
+        if (type == "IDAT") idat.Write(png, at + 8, len);
+        at += 12 + len;
+    }
+    idat.Position = 0;
+    using var z = new ZLibStream(idat, CompressionMode.Decompress);
+    using var raw = new MemoryStream();
+    z.CopyTo(raw);
+    var rows = raw.ToArray();
+    Equal(2 * (1 + 8), rows.Length, "bytes descomprimidos");
+    True(rows.AsSpan(1, 8).SequenceEqual(rgba.AsSpan(0, 8)) && rows.AsSpan(10, 8).SequenceEqual(rgba.AsSpan(8, 8)), "pixels");
+});
+
+Test("Imagem indexada: paleta RGBA e linhas de baixo para cima", () =>
+{
+    var palette = new byte[1024];
+    palette[4 * 1] = 10; palette[4 * 1 + 3] = 255;
+    palette[4 * 2] = 20; palette[4 * 2 + 3] = 128;
+    var img = new IgbImage { Width = 2, Height = 2, BitsPerPixel = 8, Pixels = [1, 1, 2, 2], Palette = palette, PaletteCount = 256 };
+    var rgba = IgbScene.IndexedToRgba(img)!;
+    Equal((byte)20, rgba[0], "primeira linha da saída vem da última guardada");
+    Equal((byte)128, rgba[3], "alfa preservado");
+    Equal((byte)10, rgba[8], "última linha da saída vem da primeira guardada");
+    True(IgbScene.IndexedToRgba(new IgbImage { Width = 2, Height = 2, BitsPerPixel = 4, Pixels = [0, 0], Palette = palette }) == null, "4 bpp não deveria ser aceito ainda");
+});
+
+Test("MPEG-PS: pacote MPEG-1, PES com PTS, fim e preenchimento de setor", () =>
+{
+    var ps = new List<byte>();
+    ps.AddRange(new byte[] { 0, 0, 1, 0xBA, 0x21, 0, 1, 0, 1, 0x80, 0, 1 });        // pacote MPEG-1 (12 B)
+    ps.AddRange(new byte[] { 0, 0, 1, 0xE0, 0, 9, 0xFF, 0x21, 0, 1, 0, 1, 0xAA, 0xBB, 0xCC }); // vídeo: enchimento + PTS + 3 B
+    ps.AddRange(new byte[] { 0, 0, 1, 0xC0, 0, 3, 0x0F, 0x80, 0x00 });              // áudio: sem PTS + 2 B
+    ps.AddRange(new byte[] { 0, 0, 1, 0xBE, 0, 2, 0xFF, 0xFF });                    // enchimento
+    ps.AddRange(new byte[] { 0, 0, 1, 0xB9 });
+    while (ps.Count < 0x800) ps.Add(0);
+    var (streams, packs, problems) = MpegPs.Demux(ps.ToArray());
+    Equal(1, packs, "pacotes");
+    Equal(0, problems.Count, "problemas");
+    True(streams[0xE0].Payload.ToArray().SequenceEqual(new byte[] { 0xAA, 0xBB, 0xCC }), "conteúdo do vídeo");
+    True(streams[0xC0].Payload.ToArray().SequenceEqual(new byte[] { 0x80, 0x00 }), "conteúdo do áudio");
+    True(!streams.ContainsKey(0xBE), "enchimento não é fluxo");
+    var seq = MpegPs.SequenceHeader([0, 0, 1, 0xB3, 0x28, 0x01, 0xE0, 0xC4]);
+    Equal((640, 480, 4), seq!.Value, "cabeçalho de sequência");
+    True(MpegPs.Demux(ps.ToArray()[..20]).Problems.Count > 0, "PES cortado não foi apontado");
+});
+
+// ---------- dados do jogo (opcional) ----------
+
+if (args.Length == 1)
+{
+    var dir = args[0];
+    var areaPath = Path.Combine(dir, "area.afs");
+    var ndmwPath = Path.Combine(dir, "ndmw.afs");
+
+    Test("Jogo: AFS com 1382 e 973 entradas, estrutura consistente", () =>
+    {
+        using var area = AfsArchive.Open(areaPath);
+        using var ndmw = AfsArchive.Open(ndmwPath);
+        Equal(1382, area.Entries.Count, "area.afs");
+        Equal(973, ndmw.Entries.Count, "ndmw.afs");
+        Equal(0, area.Validate().Count + ndmw.Validate().Count, "problemas");
+    });
+
+    Test("Jogo: 2274 IGB lidos sem problemas e 5291 chunks Lua 4.0 sem erro", () =>
+    {
+        int igbs = 0, chunks = 0;
+        var problems = new List<string>();
+        var sources = new List<(string, byte[])> { ("ndmw.igb", File.ReadAllBytes(Path.Combine(dir, "ndmw.igb"))) };
+        foreach (var p in new[] { areaPath, ndmwPath })
+        {
+            using var afs = AfsArchive.Open(p);
+            foreach (var e in afs.Entries)
+            {
+                if (Classifier.Classify(afs.ReadHead(e, 0x30)) != ContentKind.Igb) continue;
+                using var ms = new MemoryStream();
+                afs.CopyEntry(e, ms);
+                sources.Add(($"{Path.GetFileName(p)} #{e.Index}", ms.ToArray()));
+            }
+        }
+        foreach (var (id, data) in sources)
+        {
+            var f = IgbFile.Read(data);
+            igbs++;
+            problems.AddRange(f.Problems.Select(x => $"{id}: {x}"));
+            bool le = f.Header.LittleEndian;
+            foreach (var o in f.Slots.OfType<IgbObject>().Where(o => o.TypeName == "beLuaDataObject"))
+                foreach (var v in o.Fields.Where(v => v.Desc.ShortName == "MemoryRef"))
+                {
+                    int r = v.AsInt32(le);
+                    if (r < 0 || r >= f.Slots.Count || f.Slots[r] is not IgbMemoryBlock mb || mb.Size == 0) continue;
+                    var mem = data.AsSpan((int)mb.FileOffset, mb.Size).ToArray();
+                    if (!Lua40Chunk.LooksLikeChunk(mem)) continue;
+                    Lua40Chunk.Read(mem);
+                    chunks++;
+                }
+        }
+        Equal(2274, igbs, "IGB");
+        Equal(0, problems.Count, $"problemas ({string.Join("; ", problems.Take(3))})");
+        Equal(5291, chunks, "chunks Lua");
+    });
+
+    IgbScene Scene(int index)
+    {
+        using var afs = AfsArchive.Open(areaPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[index], ms);
+        var data = ms.ToArray();
+        return IgbScene.Read(IgbFile.Read(data), data);
+    }
+
+    Test("Jogo: area #598 é um quad de 4 vértices com o logotipo 128×128", () =>
+    {
+        var s = Scene(598);
+        Equal(1, s.Parts.Count, "geometrias");
+        var p = s.Parts[0];
+        Equal(4, p.Positions.Count, "posições");
+        Equal(4, p.TexCoords.Count, "UVs");
+        Equal(6, p.Triangles.Count, "índices de triângulo");
+        var img = s.Images[p.ImageIndex];
+        Equal("i_bandailogo00.png", img.Name, "nome da imagem");
+        Equal((128, 128), (img.Width, img.Height), "tamanho da imagem");
+    });
+
+    Test("Jogo: area #3 tem 217 geometrias, 217 transformações e 20 imagens", () =>
+    {
+        var s = Scene(3);
+        Equal(217, s.Parts.Count, "geometrias");
+        Equal(217, s.TransformCount, "igTransform");
+        Equal(20, s.Images.Count, "imagens");
+        Equal(0, s.Parts.Count(p => p.Positions.Count == 0), "geometrias sem posição");
+    });
+
+    Test("Jogo: Sofdec AUS_ (#2) separa em fluxos com hashes conhecidos", () =>
+    {
+        using var afs = AfsArchive.Open(areaPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[2], ms);
+        var (streams, packs, problems) = MpegPs.Demux(ms.ToArray());
+        Equal(19683, packs, "pacotes");
+        Equal(0, problems.Count, "problemas");
+        Equal("A927F50F4A287659A8282A22039723D1D5E6EB6E1F661ECF50FDA2C37FE3A8FC", Convert.ToHexString(SHA256.HashData(streams[0xC0].Payload.ToArray())), "SHA-256 do áudio");
+        Equal("6278B0561D3A7D51EFA4BB11A103557B34A6B76A331FD1644537065C6934D62B", Convert.ToHexString(SHA256.HashData(streams[0xE0].Payload.ToArray())), "SHA-256 do vídeo");
+    });
+}
+else Console.WriteLine("(sem pasta do jogo: só testes sintéticos; passe a pasta files\\ da cópia de trabalho para conferir os dados)");
+
+Console.WriteLine($"{passed} ok, {failed} falharam");
+return failed == 0 ? 0 : 1;
+
+static bool Throws(Action a)
+{
+    try { a(); return false; }
+    catch (InvalidDataException) { return true; }
+}
+
+static uint Crc32(ReadOnlySpan<byte> data)
+{
+    uint crc = 0xFFFFFFFF;
+    foreach (var b in data)
+    {
+        crc ^= b;
+        for (int k = 0; k < 8; k++) crc = (crc & 1) != 0 ? 0xEDB88320 ^ (crc >> 1) : crc >> 1;
+    }
+    return crc ^ 0xFFFFFFFF;
+}
