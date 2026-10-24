@@ -32,3 +32,13 @@ Leitura estática do main.dol e das tabelas beDataBase do area #3 em 2026-10-24.
 
 - FATO: inventários por jogador e item com dono; EXP dividida no P2EEXPUP (quem mata e/50, os outros e/100, depois o fator NINZU).
 - HIPÓTESE: drop por jogador (cada um vê e pega o seu). Confirmar no código do gerador.
+
+## Sorteio do drop e coleta (FATO, segunda leitura)
+
+- Sorteio em 0x802FCC48, por inimigo morto: PlayerData = _playerDataList[nº de jogadores − 1]; lista = _itemLastDataList quando a flag do chamador está ligada e resta só o último inimigo (HIPÓTESE: PERFECTDROP), senão _itemDataList; entrada pela COMMON.DIFFICULTY (0..2). rnd = MT % 10000 (o mesmo igMersenneTwister do combate); percorre a lista com rnd −= _rate e fica com a primeira em que rnd ≤ 0. Soma abaixo de 10000 = chance de nada. Com gerador+0x24 ligado, sorteia de novo (significado do campo: HIPÓTESE).
+- Sai 1 item por inimigo, sem dono, com o modelo pela tabela 0x804DE098 (conItem/insItem: MODEL da linha; weapon g_000weapon; armor1/armor2 g_000armor; abChip g_000access; impItem g_000key). _rank não é lido no sorteio (uso desconhecido).
+- Numemon Normal (nZ1nume1, soma 2560): 25,6% de cair algo por Numemon; 2% cada armadura 2, 1% cada arma, 17% BIT, 0,2% Xデータ.
+- Coleta (beNDMWMdlItem, 0x803AB6D4): jogador mais próximo a menos de 64 unidades (0x8045C4D0). Itens de tipo < 3: efeito na hora. Tipo ≥ 3 (armas, armaduras, chips): mostra o nome e o mais próximo vira dono; só ele pega (confirmação por botão: HIPÓTESE).
+- BIT (0x803B1408): faixa por nível (≤18: 10..55; ≤38: 55..100; ≤59: 87..195; ≤93: 162..350; ≤107: 232..520; ≤143: 340..700; ≤202: 446..860; senão 566..1160); quantia = (lo + MT % (hi − lo))·(BITRITSU + 100)/100, somada na hora. Xデータ soma em XDATA; plugs somam em UPCNT[k] (tabela 0x804EE0C0).
+- Party: 1 drop compartilhado no mundo; quem chega primeiro leva (dono ou efeito); BIT por jogador.
+- Port: `src/DW4.Gameplay/Drops.cs`; listas exportadas por `dw4 igb-drops`. Na fatia, tudo é pego por proximidade e os plugs ainda não somam.

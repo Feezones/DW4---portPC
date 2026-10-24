@@ -359,6 +359,20 @@ Test("Inventário: 36 equipamentos, discos em pilha de 9, itens importantes como
     Equal(null, inv.UseDisk(db, 3), "sem disco");
 });
 
+Test("Drops: sorteio em 1/10000 pela ordem da lista e BIT pela faixa de nível", () =>
+{
+    var list = Drops.FromJson("{\"lists\":{\"x\":[{\"table\":\"armor2\",\"row\":24,\"rank\":0,\"rate\":200},{\"table\":\"weapon\",\"row\":26,\"rank\":1,\"rate\":100},{\"table\":\"insItem\",\"row\":0,\"rank\":0,\"rate\":800}]}}")["x"];
+    Equal(24, Drops.Roll(list, new SeqRandom(200))?.Item.Row, "200 cai na primeira (rnd ≤ 0)");
+    Equal(26, Drops.Roll(list, new SeqRandom(201))?.Item.Row, "201 cai na segunda");
+    Equal(0, Drops.Roll(list, new SeqRandom(1100))?.Item.Row, "1100 cai no BIT");
+    Equal(null, Drops.Roll(list, new SeqRandom(1101))?.Item.Table, "1101: nada");
+    Equal(26, Drops.Roll(list, new SeqRandom(10250))?.Item.Row, "MT % 10000");
+    Equal("weapon", Drops.Roll(list, new SeqRandom(5000, 250), reroll: true)?.Item.Table, "re-sorteio");
+    Equal(10 + 7, Drops.Bit(1, 0, new SeqRandom(7)), "nível 1: 10..55");
+    Equal((55 + 44) * 150 / 100, Drops.Bit(19, 50, new SeqRandom(44 + 45)), "nível 19 com BITRITSU 50");
+    Equal(566, Drops.Bit(999, 0, new SeqRandom(0)), "última faixa");
+});
+
 Test("Combate (FIGHTCALC): dano do jogador e do inimigo, acerto, crítico, experiência e MT19937", () =>
 {
     var a = new Fighter { Tsuyosa = 100, Kashikosa = 40, Chimeiritsu = 4, Skill = [500, 1500], WeaponSkillNo = 0, AttackElement = 0, HpDrain = 10 };

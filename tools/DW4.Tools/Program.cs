@@ -49,6 +49,7 @@ try
         "dolphin-gdb" when args.Length >= 4 => DolphinGdb(args[1], args[2], args[3..]),
         "igb-camera" when args.Length == 4 => IgbCamera(args[1], args[2], args[3]),
         "igb-db" when args.Length == 4 => IgbDb(args[1], args[2], args[3]),
+        "igb-drops" when args.Length == 4 => IgbDropsCmd(args[1], args[2], args[3]),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
@@ -95,6 +96,7 @@ static int Usage()
           dw4 dolphin-gdb  <porta> <pasta> <quadro>... [--contador=0x814541D8] [--amostra=ENDERECO,TAM]   (MEM1 nos quadros pedidos, via servidor GDB do Dolphin)
           dw4 igb-camera   <arquivo.afs> <indice> <pasta-de-trabalho>   (volumes de câmera da fase em JSON, fora do repositório)
           dw4 igb-db       <arquivo.afs> <indice> <pasta-de-trabalho>   (as 12 tabelas beDataBase em CSV e JSON, fora do repositório)
+          dw4 igb-drops    <arquivo.afs> <indice> <pasta-de-trabalho>   (listas de drop dos geradores em JSON, fora do repositório)
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
@@ -1308,6 +1310,31 @@ int IgbDb(string path, string which, string outDir)
     }
     File.WriteAllText(Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_db.json"),
         root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = false, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
+    return 0;
+}
+
+int IgbDropsCmd(string path, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    var notes = new List<string>();
+    var lists = IgbDrops.Read(IgbFile.Read(data), data, notes);
+    foreach (var n in notes) Console.WriteLine($"nota: {n}");
+    if (lists.Count == 0) { Console.Error.WriteLine("nenhuma lista de beGeneraterItemDataOne"); return 1; }
+    Directory.CreateDirectory(full);
+    var root = new JsonObject();
+    foreach (var (name, entries) in lists)
+    {
+        root[name] = new JsonArray(entries.Select(e => (JsonNode?)new JsonObject { ["table"] = e.Table, ["row"] = e.Row, ["rank"] = e.Rank, ["rate"] = e.Rate }).ToArray());
+        Console.WriteLine($"{name,-12} {entries.Count} itens, soma {entries.Sum(e => e.Rate)}/10000: {string.Join(" ", entries.Select(e => $"{e.Table}:{e.Row}({e.Rank},{e.Rate})"))}");
+    }
+    File.WriteAllText(Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_drops.json"),
+        new JsonObject { ["lists"] = root }.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
     return 0;
 }
 

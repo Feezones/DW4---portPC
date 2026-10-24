@@ -76,6 +76,14 @@ public partial class Fatia : Node3D
     // Projéteis das técnicas (KIND_PBULLET x_200fire01…: MOVE "Push" 1,5 e HITBOX 4 × 4 × 4 por 1000 quadros, FATO).
     // A fatia desenha uma esfera no lugar do modelo do projétil.
     readonly List<(MeshInstance3D Mesh, Vector3 Dir, float Life, Technique Tech)> _shots = [];
+    // Drops (Drops, Inventory): lista do gerador do Numemon no modo normal (GENE-01..07 do #183 → nZ1nume1, FATO), um
+    // sorteio por Numemon morto. A fatia desenha uma caixa com o nome no lugar do modelo do item.
+    const string DropList = "nZ1nume1";
+    List<DropEntry>? _drops;
+    readonly Inventory _inventory = new();
+    int _xdata;
+    bool _killed;
+    readonly List<(Node3D Node, ItemRef Item)> _ground = [];
     // Linha do Numemon na tabela enemy: Int@7 dos geradores da dng1 no modo normal (generatorN #184 = 13; HIPÓTESE forte).
     const int EnemyRow = 13;
     bool _enemyDead;
@@ -314,6 +322,7 @@ public partial class Fatia : Node3D
         UpdateEnemy(dt);
         UpdateFloaters(dt);
         UpdateShots(dt);
+        UpdateGround();
         DrawBoxes();
 
         UpdateCamera();
@@ -341,7 +350,8 @@ public partial class Fatia : Node3D
             $"Numemon: {(_brain == null ? "sem IA" : $"{_brain.Map.Name}, {(_brain.External ?? _brain.Current?.Sequence ?? "-")}")}{(_enemyRunner?.Running == true ? $" ({_enemyRunner.Action})" : "")}  golpes no Guilmon: {_hitsTaken}\n" +
             (_pf == null ? "combate: sem tabelas (dw4 igb-db area.afs 3 <fatia>\\db)\n" :
                 $"Guilmon nv {_level}  HP {_hp}/{_pf.MaxHp}  MP {_mp}/{_pf.MaxMp}  EXP {_exp}/{PlayerGrowth.NextExp(_level)}  SLASH {_skill[1]}  |  Numemon HP {(_enemyDead ? "derrotado" : $"{_enemyHp}/{_ef!.MaxHp}")}  |  {_lastEvent}{(_hp <= 0 ? "  |  CAIU: F5 reinicia" : "")}\n" +
-                $"técnicas [1..6; K, botão direito ou Y = 1]: {(_techs.Count == 0 ? "-" : string.Join("  ", _techs.Select((t, i) => $"{i + 1} {t.Name} {t.Mp} MP{(_panel.Cooldown(t) > 0 ? $" ({_panel.Cooldown(t):0.0} s)" : "")}")))}  skills ataque/cura/suporte {_skill[6]}/{_skill[7]}/{_skill[8]}\n") +
+                $"técnicas [1..6; K, botão direito ou Y = 1]: {(_techs.Count == 0 ? "-" : string.Join("  ", _techs.Select((t, i) => $"{i + 1} {t.Name} {t.Mp} MP{(_panel.Cooldown(t) > 0 ? $" ({_panel.Cooldown(t):0.0} s)" : "")}")))}  skills ataque/cura/suporte {_skill[6]}/{_skill[7]}/{_skill[8]}\n" +
+                $"BIT {_inventory.Bit}  Xデータ {_xdata}  equipamentos {_inventory.Devices.Count}/{Inventory.DeviceMax}{(_inventory.Devices.Count > 0 ? ": " + string.Join(", ", _inventory.Devices.TakeLast(3).Select(d => _db![d.Table].Text(d.Row, "NAME"))) : "")}\n") +
             "movimento, gravidade, ponto inicial e IA PROVISÓRIOS (não medidos no jogo)" +
             (_problems.Count > 0 ? "\n" + string.Join("\n", _problems) : "");
     }
@@ -427,6 +437,10 @@ public partial class Fatia : Node3D
         _hp = _pf!.MaxHp;
         _mp = _pf.MaxMp;
         if (!_db.Contains("pcTech")) _problems.Add("a pcTech não está no *_db.json: técnicas desligadas");
+        var dropsDir = System.IO.Path.Combine(_dir, "drops");
+        var dropsFile = System.IO.Directory.Exists(dropsDir) ? System.IO.Directory.EnumerateFiles(dropsDir, "*_drops.json").FirstOrDefault() : null;
+        if (dropsFile == null) _problems.Add("falta o *_drops.json (dw4 igb-drops ndmw.afs 183 <fatia>\\drops): sem drops");
+        else if (!Drops.FromJson(System.IO.File.ReadAllText(dropsFile)).TryGetValue(DropList, out _drops)) _problems.Add($"{DropList} não está no *_drops.json");
         _ef = _db.Enemy(EnemyRow);
         _enemyHp = _ef.MaxHp;
     }
@@ -503,7 +517,7 @@ public partial class Fatia : Node3D
         _hits++;
         Float(_enemy!, crit ? $"{r.Damage}!" : r.Damage.ToString(), crit ? Colors.Orange : Colors.Gold);
         _lastEvent = $"{t.Name}: {r.Damage}{(crit ? " crítico" : "")} (código {code})";
-        if (_enemyHp <= 0) GainExp();
+        if (_enemyHp <= 0 && !_killed) { _killed = true; GainExp(); DropItem(); }
         if (_brain != null && _enemyRunner != null)
         {
             _brain.Force(DamageSequences[DamageFormula.Rank(r.Damage, _enemyHp, _ef.MaxHp)]);
@@ -529,7 +543,7 @@ public partial class Fatia : Node3D
         int rank = DamageFormula.Rank(r.Damage, _enemyHp, _ef.MaxHp);
         Float(_enemy!, crit ? $"{r.Damage}!" : r.Damage.ToString(), crit ? Colors.Orange : Colors.White);
         _lastEvent = $"Guilmon: {r.Damage}{(crit ? " crítico" : "")}{(r.Strong ? " forte" : "")} (código {code})";
-        if (_enemyHp <= 0) GainExp();
+        if (_enemyHp <= 0 && !_killed) { _killed = true; GainExp(); DropItem(); }
         return DamageSequences[rank];
     }
 
@@ -548,6 +562,56 @@ public partial class Fatia : Node3D
         int before = _skill[idx];
         _skill[idx] = _skillGrowth.Raise(before, _level, technique, grow, special: false, _mt);
         if (_skill[idx] != before) { Recalc(); Float(_player, $"SKILL {_skill[idx]}", Colors.Cyan); }
+    }
+
+    // Sorteio do drop (0x802FCC48) na posição do inimigo morto.
+    void DropItem()
+    {
+        if (_drops == null || _enemy == null || Drops.Roll(_drops, _mt) is not { } d) return;
+        string name = _db!.Contains(d.Item.Table) ? _db[d.Item.Table].Text(d.Item.Row, "NAME") : "";
+        if (name.Length == 0) name = $"{d.Item.Table}:{d.Item.Row}";
+        var node = new Node3D();
+        node.AddChild(new MeshInstance3D { Mesh = new BoxMesh { Size = new Vector3(3, 3, 3) }, Position = new Vector3(0, 1.5f, 0),
+            MaterialOverride = new StandardMaterial3D { AlbedoColor = Colors.Gold, ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded } });
+        node.AddChild(new Label3D { Text = name, FontSize = 48, OutlineSize = 10, Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, NoDepthTest = true, PixelSize = 0.05f, Position = new Vector3(0, 6, 0) });
+        AddChild(node);
+        node.GlobalPosition = _enemy.GlobalPosition;
+        _ground.Add((node, d.Item));
+        _lastEvent += $"  caiu {name}";
+    }
+
+    // Coleta a menos de 64 unidades (FATO). insItem tem efeito na hora; o resto vai para o inventário. HIPÓTESE da fatia:
+    // tudo é pego por proximidade (no jogo, armas e armaduras só ganham dono; a confirmação não foi lida).
+    void UpdateGround()
+    {
+        for (int i = _ground.Count - 1; i >= 0; i--)
+        {
+            var (node, item) = _ground[i];
+            node.RotateY(0.03f);
+            if (node.GlobalPosition.DistanceTo(_player.GlobalPosition) >= Drops.PickupRadius || _hp <= 0) continue;
+            string text;
+            if (item.Table == "insItem")
+            {
+                if (item.Row == 0)
+                {
+                    int bit = Drops.Bit(_level, 0, _mt); // BITRITSU vem da armadura 2: sem armadura, 0
+                    _inventory.Bit += bit;
+                    text = $"+{bit} BIT";
+                }
+                else
+                {
+                    var (nouryoku, up) = Inventory.Instant(_db!, item.Row);
+                    if (nouryoku is "" or "xdata") { _xdata += up; text = $"+{up} Xデータ"; }
+                    else text = $"{nouryoku} +{up} (ainda não ligado)";
+                }
+            }
+            else if (_inventory.Add(item)) text = _db![item.Table].Text(item.Row, "NAME");
+            else { _lastEvent = "inventário cheio"; continue; }
+            Float(_player, text, Colors.Gold);
+            _lastEvent = $"pegou {text}";
+            node.QueueFree();
+            _ground.RemoveAt(i);
+        }
     }
 
     void GainExp()
@@ -607,6 +671,7 @@ public partial class Fatia : Node3D
             if (_respawn > 0) return;
             _enemyDead = false;
             _enemyHp = _ef?.MaxHp ?? 0;
+            _killed = false;
             _enemy.Position = EnemyAt;
             _enemy.Visible = true;
             _enemy.ProcessMode = ProcessModeEnum.Inherit;
