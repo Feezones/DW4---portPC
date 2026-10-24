@@ -98,6 +98,8 @@ Inclinação = acos(m11) da matriz B. Sinal da guinada e ordem exata da cadeia a
 - Hitboxes de ataque (Int@3 = 70004): quadro 10 por 5 em (6,3, 1,5, 2,2) tamanho (2,5, 3, 2,5); 10/5 em (4,1, 1,5, 5,7) tamanho 3; 15/10 em (−0,4, 1,8, 11) tamanho (5, 3,5, 5); 25/10 em (−6,1, 2,8, 9,5) tamanho (4,5, 5,5, 4,5). Caixa de corpo do tipo 70000: (0, 7, 0) tamanho (9,5, 14, 9,5). **FATO** (valores); papel dos campos HIPÓTESE.
 - IA (`beModelCtrlAIMap`): "MAP00" com 1296, 2025, 22500 (36², 45², 150²) e 0,0436 rad (2,5°); "MAP01" com 484, 1600, 22500 (22², 40², 150²) e 0,0524 rad (3°); cada mapa tem 4 `beModelCtrlAIDataList`, e `SQ_CHMOD0`/`1` troca de mapa. **HIPÓTESE forte:** faixas de distância ao quadrado (perto, médio, longe, fora) com uma lista de ações por faixa.
 - `beModelCtrlAIData`: String@2 sequência, Float@3 ângulo em rad (1,7453 = 100°, 0,7854 = 45°), Float@4 duração ou distância, Int@5 peso. Ex.: `SQ_WALK` 1,7453/15/14, `SQ_FIRE` 0/0/6, `SQ_WAIT` 0/21/16. **HIPÓTESE:** escolha ponderada por Int@5.
+- Modelo (exportado com `igb-gltf … --ator=e_nume`, a partir do `igAnimationDatabase` #5118 do #179): esqueleto "defaultSkeleton" com 40 ossos e 21 matrizes de pele, 1 pele (298 vértices, 330 triângulos, textura 64×64 formato 14) e 18 animações: `wait01`, `run01`, `natk01`, `blst01`, `actn01`, `actn02`, `guard01`, `trnsIN`, `stun`, `sleep`, `Sdmg01`–`02`, `Ldmg01`–`06`. **FATO**
+- Altura visual na espera: Numemon 12,65, Guilmon 9,91. **FATO.** O "dobro" das caixas de corpo (14 contra 7) não vale para a malha.
 - Gerador: no #183 todos os `GENE` têm Int@7 = 17 e o único inimigo do #179 é o Numemon; caixas usam 370; outras fases usam 27, 18, 28, 25, 34, 85. **HIPÓTESE forte:** Int@7 é o ID global do tipo gerado (17 = Numemon).
 
 ## Entrada do jogador
