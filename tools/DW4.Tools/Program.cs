@@ -35,6 +35,7 @@ try
         "igb-export" when args.Length == 4 => IgbExport(args[1], args[2], args[3]),
         "igb-anim" when args.Length is 2 or 3 => IgbAnim(args[1], args.Length == 3 ? args[2] : null),
         "igb-mem" when args.Length is 4 or 5 => IgbMem(args[1], args[2], args[3], args.Length == 5 ? args[4] : "hex"),
+        "igb-tree" when args.Length is 3 or 4 => IgbTree(args[1], args[2], args.Length == 4 ? int.Parse(args[3], inv) : 6),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
@@ -65,6 +66,7 @@ static int Usage()
           dw4 igb-export   <arquivo.afs> <indice> <pasta-de-trabalho>   (OBJ + PNG + relatório, fora do repositório)
           dw4 igb-anim     <arquivo.afs> [indice]   (decodifica as animações Enbaya; sem índice, resume o arquivo todo)
           dw4 igb-mem      <arquivo.afs> <indice> <slot> [hex|u8|i32|u32|f32|hist]   (conteúdo de um bloco de memória, ou de um igDataList)
+          dw4 igb-tree     <arquivo.afs> <indice> [profundidade]   (grafo de cena com nomes de nós)
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
@@ -660,7 +662,6 @@ int IgbMem(string path, string which, string slotArg, string mode)
     var mb = (IgbMemoryBlock)target;
     var mem = MemoryOf(data, mb);
     Console.WriteLine($"#{mb.Index} {mb.TypeName}: {mem.Length} B ({mode})");
-    var sb = new StringBuilder();
     int width = mode switch { "u8" or "hist" or "hex" => 1, "f32" or "i32" or "u32" => 4, _ => 1 };
     var values = new List<string>();
     var hist = new SortedDictionary<int, int>();
@@ -678,6 +679,62 @@ int IgbMem(string path, string which, string slotArg, string mode)
     }
     if (mode == "hist") Console.WriteLine(string.Join(" ", hist.Select(kv => $"{kv.Key}:{kv.Value}")));
     else for (int i = 0; i < values.Count; i += 16) Console.WriteLine($"{i * width,6:X}: {string.Join(" ", values.Skip(i).Take(16))}");
+    return 0;
+}
+
+// Grafo de cena a partir dos igSceneInfo: classe, nome e quantas geometrias cada nó carrega e tem abaixo.
+int IgbTree(string path, string which, int maxDepth)
+{
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    var f = IgbFile.Read(data);
+    bool le = f.Header.LittleEndian;
+    IgbSlot? Slot(int i) => i >= 0 && i < f.Slots.Count ? f.Slots[i] : null;
+    IEnumerable<IgbObject> Refs(IgbObject o) => o.Fields.Where(v => v.Desc.ShortName == "ObjectRef").Select(v => Slot(v.AsInt32(le))).OfType<IgbObject>();
+    IEnumerable<IgbObject> Items(IgbObject list)
+    {
+        var cnt = list.Fields.FirstOrDefault(v => v.Desc.ShortName == "Int");
+        var mr = list.Fields.FirstOrDefault(v => v.Desc.ShortName == "MemoryRef");
+        if (cnt == null || mr == null || Slot(mr.AsInt32(le)) is not IgbMemoryBlock mb) yield break;
+        var mem = MemoryOf(data, mb);
+        int n = Math.Min(cnt.AsInt32(le), mem.Length / 4);
+        for (int i = 0; i < n; i++)
+            if (Slot(le ? BinaryPrimitives.ReadInt32LittleEndian(mem.AsSpan(4 * i)) : BinaryPrimitives.ReadInt32BigEndian(mem.AsSpan(4 * i))) is IgbObject o) yield return o;
+    }
+    IEnumerable<IgbObject> Children(IgbObject n) => Refs(n).SelectMany(r => f.Is(r, "igNodeList") || (f.Is(r, "igObjectList") && !f.Is(r, "igAttrList")) ? Items(r).Where(i => f.Is(i, "igNode")) : f.Is(r, "igNode") ? [r] : []);
+    int OwnGeoms(IgbObject n) => Refs(n).Where(r => f.Is(r, "igAttrList")).SelectMany(Items).Count(a => f.Is(a, "igGeometryAttr"));
+    var memo = new Dictionary<int, int>();
+    int Total(IgbObject n, HashSet<int> path)
+    {
+        if (memo.TryGetValue(n.Index, out int v)) return v;
+        if (!path.Add(n.Index)) return 0;
+        int t = OwnGeoms(n) + Children(n).Sum(c => Total(c, path));
+        path.Remove(n.Index);
+        return memo[n.Index] = t;
+    }
+    int lines = 0;
+    void Print(IgbObject n, int depth, HashSet<int> path)
+    {
+        if (lines > 600 || !path.Add(n.Index)) return;
+        string name = n.Fields.FirstOrDefault(v => v.Desc.ShortName == "String")?.Text ?? "";
+        var kids = Children(n).ToList();
+        Console.WriteLine($"{new string(' ', 2 * depth)}#{n.Index} {n.TypeName} \"{name}\" geom {OwnGeoms(n)}/{Total(n, [])} filhos {kids.Count}");
+        lines++;
+        if (depth < maxDepth) foreach (var c in kids) Print(c, depth + 1, path);
+        path.Remove(n.Index);
+    }
+    foreach (var si in f.Slots.OfType<IgbObject>().Where(o => f.Is(o, "igSceneInfo")))
+    {
+        Console.WriteLine($"#{si.Index} {si.TypeName}");
+        foreach (var root in Refs(si).Where(r => f.Is(r, "igNode"))) Print(root, 1, []);
+    }
+    var names = f.Slots.OfType<IgbObject>().Where(o => f.Is(o, "igNode"))
+        .Select(o => o.Fields.FirstOrDefault(v => v.Desc.ShortName == "String")?.Text).Where(t => !string.IsNullOrEmpty(t))
+        .GroupBy(t => t!).OrderByDescending(g => g.Count()).Take(80);
+    Console.WriteLine("nomes de nós mais comuns: " + string.Join(", ", names.Select(g => $"{g.Key}×{g.Count()}")));
     return 0;
 }
 
