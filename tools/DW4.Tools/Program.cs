@@ -4,6 +4,7 @@ using System.Text;
 using DW4.Formats.Afs;
 using DW4.Formats.Analysis;
 using DW4.Formats.Igb;
+using System.Buffers.Binary;
 
 // Ferramenta de linha de comando da Fase 1. Só lê os contêineres; a única escrita é afs-extract,
 // que grava amostras numa pasta de trabalho fora de qualquer repositório Git.
@@ -25,6 +26,9 @@ try
         "igb-headers" when args.Length == 2 => IgbHeaders(args[1]),
         "igb-layout" when args.Length == 2 => IgbLayoutCheck(args[1]),
         "igb-types" when args.Length == 2 => IgbTypesReport(args[1]),
+        "igb-check" when args.Length == 2 => IgbCheck(args[1]),
+        "igb-dump" when args.Length is 3 or 4 => IgbDump(args[1], args[2], args.Length == 4 ? args[3] : null),
+        "igb-lua" when args.Length == 2 => IgbLua(args[1]),
         _ => Usage(),
     };
 }
@@ -46,6 +50,9 @@ static int Usage()
           dw4 igb-headers  <arquivo.afs | arquivo.igb>
           dw4 igb-layout   <arquivo.afs | arquivo.igb>
           dw4 igb-types    <arquivo.afs | arquivo.igb>
+          dw4 igb-check    <arquivo.afs | arquivo.igb>
+          dw4 igb-dump     <arquivo.afs> <indice> [classe]   (ou <arquivo.igb> - [classe])
+          dw4 igb-lua      <arquivo.afs>
         """);
     return 1;
 }
@@ -339,6 +346,171 @@ int IgbTypesReport(string path)
     if (mf != null)
         Console.WriteLine($"metacampos do primeiro arquivo: {string.Join(", ", mf.Select(m => m.Name))}");
     return errors.Count == 0 ? 0 : 3;
+}
+
+// Itera os IGB de um .igb solto ou de um AFS, devolvendo (id, categoria, bytes).
+IEnumerable<(string id, string cat, byte[] data)> IgbSources(string path)
+{
+    if (path.EndsWith(".igb", StringComparison.OrdinalIgnoreCase))
+    {
+        yield return (Path.GetFileName(path), "(solto)", File.ReadAllBytes(path));
+        yield break;
+    }
+    using var afs = AfsArchive.Open(path);
+    foreach (var e in afs.Entries)
+    {
+        if (!IgbHeader.TryRead(afs.ReadHead(e, IgbHeader.Size), out _)) continue;
+        using var ms = new MemoryStream((int)e.Size);
+        afs.CopyEntry(e, ms);
+        yield return ($"#{e.Index} {e.Name}", e.Name ?? "?", ms.ToArray());
+    }
+}
+
+// Lê o diretório completo (entradas, índice, objetos, memória) de cada IGB e confere se tudo fecha.
+int IgbCheck(string path)
+{
+    int files = 0, ok = 0;
+    long objects = 0, blocks = 0;
+    var failures = new List<string>();
+    foreach (var (id, _, data) in IgbSources(path))
+    {
+        files++;
+        try
+        {
+            var f = IgbFile.Read(data);
+            objects += f.Slots.Count(s => s is IgbObject);
+            blocks += f.Slots.Count(s => s is IgbMemoryBlock);
+            if (f.Problems.Count == 0) ok++;
+            else failures.Add($"{id}: {string.Join("; ", f.Problems.Take(3))}");
+        }
+        catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentOutOfRangeException or IndexOutOfRangeException)
+        {
+            failures.Add($"{id}: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+    Console.WriteLine($"{files} IGB: diretório completo fecha em {ok}; falhas {failures.Count}; {objects} objetos, {blocks} blocos de memória");
+    foreach (var fl in failures.Take(20)) Console.WriteLine($"  {fl}");
+    return failures.Count == 0 ? 0 : 3;
+}
+
+string FormatField(IgbFile f, IgbFieldValue v)
+{
+    bool le = f.Header.LittleEndian;
+    var raw = v.Raw;
+    float F(int at) => le ? BinaryPrimitives.ReadSingleLittleEndian(raw.AsSpan(at)) : BinaryPrimitives.ReadSingleBigEndian(raw.AsSpan(at));
+    string Floats(int n) => string.Join(" ", Enumerable.Range(0, n).Select(i => F(4 * i).ToString("0.####", inv)));
+    switch (v.Desc.ShortName)
+    {
+        case "ObjectRef" or "MemoryRef":
+        {
+            int r = v.AsInt32(le);
+            if (r < 0 || r >= f.Slots.Count) return r == -1 ? "nulo" : $"#{r}?";
+            var t = f.Slots[r];
+            return t is IgbMemoryBlock mb
+                ? $"-> #{r} memória {mb.TypeName} {mb.Size} B"
+                : $"-> #{r} {t.TypeName}";
+        }
+        case "String": return $"\"{v.Text}\"";
+        case "Float" when raw.Length >= 4: return F(0).ToString("0.####", inv);
+        case "Vec2f" when raw.Length >= 8: return $"({Floats(2)})";
+        case "Vec3f" when raw.Length >= 12: return $"({Floats(3)})";
+        case "Vec4f" when raw.Length >= 16: return $"({Floats(4)})";
+        case "Int" or "Enum" or "UnsignedInt" or "Long" when raw.Length == 4: return v.AsInt32(le).ToString(inv);
+        case "Bool" or "Char" or "UnsignedChar" when raw.Length == 1: return raw[0].ToString(inv);
+        case "Short" or "UnsignedShort" when raw.Length == 2:
+            return (le ? BinaryPrimitives.ReadUInt16LittleEndian(raw) : BinaryPrimitives.ReadUInt16BigEndian(raw)).ToString(inv);
+        default: return $"[{raw.Length} B] {ByteStats.Hex(raw.AsSpan(0, Math.Min(32, raw.Length)))}";
+    }
+}
+
+byte[] MemoryOf(byte[] data, IgbMemoryBlock mb) => data.AsSpan((int)mb.FileOffset, mb.Size).ToArray();
+
+// Mostra objetos de um IGB (opcionalmente só de uma classe, incluindo subclasses), com campos e alvos de referência.
+int IgbDump(string path, string which, string? cls)
+{
+    byte[] data;
+    if (which == "-") data = File.ReadAllBytes(path);
+    else
+    {
+        using var afs = AfsArchive.Open(path);
+        if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[idx], ms);
+        data = ms.ToArray();
+    }
+    var f = IgbFile.Read(data);
+    Console.WriteLine($"{f.Slots.Count} slots ({f.Slots.Count(s => s is IgbObject)} objetos); problemas: {f.Problems.Count}");
+    int shown = 0;
+    foreach (var o in f.Slots.OfType<IgbObject>())
+    {
+        if (cls != null)
+        {
+            int mo = f.MetaObjectNames.ToList().IndexOf(o.TypeName);
+            if (mo < 0 || !f.IsA(mo, cls)) continue;
+        }
+        if (++shown > 40) { Console.WriteLine("... (limite de 40 objetos)"); break; }
+        Console.WriteLine($"#{o.Index} {o.TypeName} @0x{o.FileOffset:X}");
+        foreach (var v in o.Fields)
+        {
+            Console.WriteLine($"    {v.Desc.ShortName}@{v.Desc.Slot} = {FormatField(f, v)}");
+            if (v.Desc.ShortName == "MemoryRef")
+            {
+                int r = v.AsInt32(f.Header.LittleEndian);
+                if (r >= 0 && r < f.Slots.Count && f.Slots[r] is IgbMemoryBlock mb && mb.Size > 0)
+                {
+                    var head = MemoryOf(data, mb).AsSpan(0, Math.Min(16, mb.Size));
+                    Console.WriteLine($"        {ByteStats.Hex(head)}  {ByteStats.Ascii(head)}");
+                }
+            }
+        }
+    }
+    return 0;
+}
+
+// Procura os scripts referenciados por objetos beLuaData* e classifica o conteúdo (bytecode Lua, texto ou binário).
+int IgbLua(string path)
+{
+    int files = 0, luaObjs = 0;
+    var kinds = new Dictionary<string, int>();
+    var samples = new List<string>();
+    var names = new SortedSet<string>(StringComparer.Ordinal);
+    var seenBlocks = new HashSet<(string, int)>();
+    foreach (var (id, _, data) in IgbSources(path))
+    {
+        IgbFile f;
+        try { f = IgbFile.Read(data); }
+        catch (Exception ex) when (ex is InvalidDataException or NotSupportedException or ArgumentOutOfRangeException) { continue; }
+        bool any = false;
+        foreach (var o in f.Slots.OfType<IgbObject>().Where(o => o.TypeName.StartsWith("beLua", StringComparison.Ordinal)))
+        {
+            any = true;
+            luaObjs++;
+            foreach (var v in o.Fields)
+            {
+                if (v.Text is { Length: > 0 } t && names.Count < 400) names.Add($"{o.TypeName}: {t}");
+                if (v.Desc.ShortName != "MemoryRef") continue;
+                int r = v.AsInt32(f.Header.LittleEndian);
+                if (r < 0 || r >= f.Slots.Count || f.Slots[r] is not IgbMemoryBlock mb || mb.Size == 0) continue;
+                if (!seenBlocks.Add((id, r))) continue;
+                var mem = MemoryOf(data, mb);
+                string kind = mem.Length >= 5 && mem[0] == 0x1B && mem[1] == (byte)'L' && mem[2] == (byte)'u' && mem[3] == (byte)'a'
+                    ? $"bytecode Lua (versão 0x{mem[4]:X2})"
+                    : mem.Count(b => b is 9 or 10 or 13 || (b >= 32 && b < 127)) >= mem.Length * 0.95 ? "texto"
+                    : "binário";
+                kinds[kind] = kinds.GetValueOrDefault(kind) + 1;
+                if (samples.Count < 12)
+                    samples.Add($"{id} #{o.Index} {o.TypeName} -> #{r} {mb.TypeName} {mb.Size} B [{kind}] {ByteStats.Hex(mem.AsSpan(0, Math.Min(16, mem.Length)))}  {ByteStats.Ascii(mem.AsSpan(0, Math.Min(16, mem.Length)))}");
+            }
+        }
+        if (any) files++;
+    }
+    Console.WriteLine($"{luaObjs} objetos beLua* em {files} arquivos");
+    foreach (var (k, n) in kinds.OrderByDescending(k => k.Value)) Console.WriteLine($"  blocos {k}: {n}");
+    Console.WriteLine("amostras:");
+    foreach (var s in samples) Console.WriteLine($"  {s}");
+    Console.WriteLine($"strings em objetos beLua* ({names.Count}, até 60):");
+    foreach (var n in names.Take(60)) Console.WriteLine($"  {n}");
+    return 0;
 }
 
 static bool InsideGitRepo(string dir)
