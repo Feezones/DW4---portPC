@@ -704,7 +704,7 @@ int IgbTree(string path, string which, int maxDepth)
         for (int i = 0; i < n; i++)
             if (Slot(le ? BinaryPrimitives.ReadInt32LittleEndian(mem.AsSpan(4 * i)) : BinaryPrimitives.ReadInt32BigEndian(mem.AsSpan(4 * i))) is IgbObject o) yield return o;
     }
-    IEnumerable<IgbObject> Children(IgbObject n) => Refs(n).SelectMany(r => f.Is(r, "igNodeList") || (f.Is(r, "igObjectList") && !f.Is(r, "igAttrList")) ? Items(r).Where(i => f.Is(i, "igNode")) : f.Is(r, "igNode") ? [r] : []);
+    IEnumerable<IgbObject> Children(IgbObject n) => Refs(n).SelectMany(r => f.Is(r, "igNodeList") || (f.Is(r, "igObjectList") && !f.Is(r, "igAttrList")) ? Items(r).Where(i => f.Is(i, "igNode")) : f.Is(r, "igNode") ? new[] { r } : Array.Empty<IgbObject>());
     int OwnGeoms(IgbObject n) => Refs(n).Where(r => f.Is(r, "igAttrList")).SelectMany(Items).Count(a => f.Is(a, "igGeometryAttr"));
     var memo = new Dictionary<int, int>();
     int Total(IgbObject n, HashSet<int> path)
