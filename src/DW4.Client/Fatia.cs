@@ -294,6 +294,7 @@ public partial class Fatia : Node3D
     {
         float dt = (float)delta;
         TickChat(dt);
+        TickDeath(dt);
         if (_leaving || !IsInsideTree()) return;
         if (_snapToFloor) SnapToFloor();
         if (TickMenu(dt)) { _jumpHeld = true; return; } // o botão que fechou o menu não vira pulo
@@ -328,7 +329,7 @@ public partial class Fatia : Node3D
         }
         // Decisão do port PC: sem foco na janela, nada do controle/teclado move o jogador (controle pareado dava entrada fantasma).
         if (!_demo && (!_hasFocus || ChatOpen)) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; }
-        if (_pf != null && _hp <= 0) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; } // caído: F5 reinicia
+        if (_pf != null && _hp <= 0) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; } // caído: Fatia.Death.cs volta ao lobby
         // Só vale um toque que começou depois de abrir a mensagem (o ataque que abriu a conversa ainda pode estar apertado).
         if (!attackDown) _confirmArmed = true;
         _confirmDown = attackDown && _confirmArmed;
@@ -458,7 +459,7 @@ public partial class Fatia : Node3D
             $"ataque [J, clique ou X]: {(_runner?.Running == true ? $"{_runner.Action} → {(_runner.Action == null ? "-" : AnimName(_runner.Action) ?? "sem animação")} quadro {_runner.ActionFrame:0}/{_runner.ActionLength:0}" : "-")}  acertos no Numemon: {_hits}  [F2 caixas]\n" +
             $"Numemon: {(_lastEnemy?.Brain is not { } br ? "-" : $"{br.Map.Name}, {(br.External ?? br.Current?.Sequence ?? "-")}")}{(_lastEnemy?.Runner?.Running == true ? $" ({_lastEnemy.Runner.Action})" : "")}  golpes no Guilmon: {_hitsTaken}\n" +
             (_pf == null ? "combate: sem tabelas (dw4 igb-db area.afs 3 <fatia>\\db)\n" :
-                $"{FormName} nv {_level}  HP {_hp}/{_pf.MaxHp}  MP {_mp}/{_pf.MaxMp}  EXP {_exp}/{PlayerGrowth.NextExp(_level)}  SLASH {_skill[1]}  |  {_lastEnemy?.Kind.Name ?? "inimigo"} HP {(_lastEnemy is { } le ? (le.Dead || le.Killed ? "derrotado" : $"{le.Hp}/{le.Kind.Stats?.MaxHp}") : "-")} (vivos {_enemies.Count(x => !x.Dead)})  |  {_lastEvent}{(_hp <= 0 ? "  |  CAIU: F5 reinicia" : "")}\n" +
+                $"{FormName} nv {_level}  HP {_hp}/{_pf.MaxHp}  MP {_mp}/{_pf.MaxMp}  EXP {_exp}/{PlayerGrowth.NextExp(_level)}  SLASH {_skill[1]}  |  {_lastEnemy?.Kind.Name ?? "inimigo"} HP {(_lastEnemy is { } le ? (le.Dead || le.Killed ? "derrotado" : $"{le.Hp}/{le.Kind.Stats?.MaxHp}") : "-")} (vivos {_enemies.Count(x => !x.Dead)})  |  {_lastEvent}{(_hp <= 0 ? "  |  CAIU" : "")}\n" +
                 $"técnicas [1..6; K, botão direito ou Y = 1]: {(_techs.Count == 0 ? "-" : string.Join("  ", _techs.Select((t, i) => $"{i + 1} {t.Name} {t.Mp} MP{(_panel.Cooldown(t) > 0 ? $" ({_panel.Cooldown(t):0.0} s)" : "")}")))}  skills ataque/cura/suporte {_skill[6]}/{_skill[7]}/{_skill[8]}\n" +
                 $"arma {_db!["weapon"].Text(_equip!.WeaponRow, "NAME")}  armaduras {(_equip.Armor1Row >= 0 ? _db["armor1"].Text(_equip.Armor1Row, "NAME") : "-")} / {(_equip.Armor2Row >= 0 ? _db["armor2"].Text(_equip.Armor2Row, "NAME") : "-")}  [E equipa o último pego]  " +
                 $"BIT {_inventory.Bit}  Xデータ {_inventory.XData}  equipamentos {_inventory.Devices.Count}/{Inventory.DeviceMax}{(_inventory.Devices.Count > 0 ? ": " + string.Join(", ", _inventory.Devices.TakeLast(3).Select(d => _db![d.Table].Text(d.Row, "NAME"))) : "")}\n") +
