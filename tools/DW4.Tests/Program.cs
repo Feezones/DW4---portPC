@@ -1769,6 +1769,25 @@ if (args.Length == 1)
         fresh.SetFlag(77, true); Equal(2, fresh.DifficultyMax, "FLG 77: até Very Hard");
     });
 
+    Test("Jogo: NPC da stagML02 (n_digilfm): SQ_SHOK espera o movimento (WAITCHECK \"Motion\"); o andar continua no DELAY01", () =>
+    {
+        var file = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fases", "stagml02", "objetos", "n_digilfm", "ndmw_0817_n_digilfm_seq.json");
+        True(File.Exists(file), $"exportada: {file}");
+        var json = File.ReadAllText(file);
+        var seq = new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)) { ReturnToWaitAtEnd = true, MotionLength = m => m == "shok01" ? 31f : 81f };
+        True(seq.Start("SQ_SHOK"), "SQ_SHOK");
+        const float dt = 1 / ObjectSequencer.FramesPerSecond;
+        for (int i = 0; i < 20; i++) seq.Tick(dt);
+        Equal("SQ_SHOK", seq.Sequence, "ainda no SQ_SHOK aos 20 quadros (o script espera ver ISSEQNAME SQ_SHOK)");
+        Equal("shok01", seq.CurrentMotion, "movimento shok01");
+        for (int i = 0; i < 20; i++) seq.Tick(dt);
+        Equal("SQ_WAIT", seq.Sequence, "acabou o shok01 (31 quadros): JUMP SQ_WAIT");
+        True(seq.Start("SQ_WALK04"), "SQ_WALK04");
+        Equal("DELAY01", seq.Action, "a ação já é a DELAY01");
+        Equal("walk01", seq.CurrentMotion, "mas o movimento continua walk01");
+        True(seq.Motion[2].Active, "MOVE \"Move\" 0,14 no canal Z");
+    });
+
     Test("Jogo: MDLgetBulletName pela tabela 0x804DD2A0 (código / 10000 − 1)", () =>
     {
         Equal("PCWA", BeHost.BulletName(10000), "10000 físico");

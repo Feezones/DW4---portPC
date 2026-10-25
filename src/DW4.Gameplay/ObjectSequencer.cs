@@ -32,7 +32,7 @@ public sealed class ObjectSequencer
     List<SeqCommand> _act = [];
     int _apc;
     float _actWait;
-    bool _actWaitJoint;
+    bool _actWaitJoint, _actWaitMotion;
 
     public ObjectSequencer(IReadOnlyDictionary<string, List<SeqCommand>> sequences, IReadOnlyDictionary<string, List<SeqCommand>> actions)
     {
@@ -54,6 +54,19 @@ public sealed class ObjectSequencer
     public string? TakeAiMap() { var m = AiMap; AiMap = null; return m; }
     /// <summary>Volta ao SQ_WAIT quando uma sequência acaba sem JUMP (ligado nos NPCs n_*).</summary>
     public bool ReturnToWaitAtEnd { get; set; }
+    /// <summary>
+    /// Movimento do modelo de personagem (MOTIONSET da ação): nome, laço, quadros passados e contador de troca. FATO (seq das NPCs):
+    /// a ação seguinte pode não ter MOTIONSET (WALK01 → DELAY01 com WAITCHECK "Frame"), e o movimento continua; por isso quem desenha
+    /// segue o movimento, não a ação.
+    /// </summary>
+    public string? CurrentMotion { get; private set; }
+    public bool MotionLoop { get; private set; }
+    public float MotionFrame { get; private set; }
+    public float MotionBlend { get; private set; }
+    public int MotionSerial { get; private set; }
+    /// <summary>Duração de um movimento em quadros (a 60 Hz); quem desenha responde pela animação. Null = desconhecida.</summary>
+    public Func<string, float?>? MotionLength { get; set; }
+    float? _motionLen;
     /// <summary>Canais do MOVE/MOVEEX (FATO, executor do jogo); quem desenha o objeto aplica o deslocamento.</summary>
     public MotionChannels Motion { get; } = new();
     readonly Queue<string> _luaCalls = new();
@@ -118,6 +131,7 @@ public sealed class ObjectSequencer
             if (box.Frames >= 0 && age >= box.StartFrame + box.Frames) _boxes.RemoveAt(i); else _boxes[i] = (box, age);
         }
         if (_actWait > 0) _actWait -= frames;
+        if (CurrentMotion != null) MotionFrame += frames;
         RunAction();
         if (!Running) return;
         if (_wait > 0) _wait -= frames;
@@ -200,6 +214,7 @@ public sealed class ObjectSequencer
         _apc = 0;
         _actWait = 0;
         _actWaitJoint = false;
+        _actWaitMotion = false;
         RunAction();
     }
 
@@ -214,6 +229,11 @@ public sealed class ObjectSequencer
             {
                 if (!_loop && Frame < _to) return;
                 _actWaitJoint = false;
+            }
+            if (_actWaitMotion)
+            {
+                if (!MotionEnded) return;
+                _actWaitMotion = false;
             }
             var c = _act[_apc++];
             switch (c.Kind)
@@ -233,11 +253,26 @@ public sealed class ObjectSequencer
                 case "WAITCHECK" when c.S(0) == "Joint":
                     _actWaitJoint = true;
                     break;
+                case "MOTIONSET":
+                    CurrentMotion = c.S(0);
+                    MotionLoop = c.S(3) == "LP";
+                    MotionBlend = c.F(2);
+                    MotionFrame = 0;
+                    _motionLen = MotionLength?.Invoke(CurrentMotion);
+                    MotionSerial++;
+                    break;
+                // FATO (SHOK01 das NPCs: MOTIONSET "shok01" … "OS" + WAITCHECK "Motion" 0): espera o movimento acabar. HIPÓTESE: sem
+                // a duração (animação que não foi exportada), passa no quadro seguinte, para a sequência ainda ser vista (ISSEQNAME).
+                case "WAITCHECK" when c.S(0) == "Motion":
+                    _actWaitMotion = true;
+                    break;
             }
         }
     }
 
-    bool ActionDone => _apc >= _act.Count && _actWait <= 0 && (!_actWaitJoint || _loop || Frame >= _to);
+    bool ActionDone => _apc >= _act.Count && _actWait <= 0 && (!_actWaitJoint || _loop || Frame >= _to) && (!_actWaitMotion || MotionEnded);
+
+    bool MotionEnded => MotionLoop || MotionFrame >= (_motionLen ?? 1f);
 
     // FADESET "IN"/"OUT" n: transparência em n quadros; "HIDE": escondido (porta aberta).
     void Fade(SeqCommand c)

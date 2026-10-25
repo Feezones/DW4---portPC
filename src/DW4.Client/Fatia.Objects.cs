@@ -47,7 +47,7 @@ public partial class Fatia
         public EnemyBrain? Brain { get; set; }
         public string? AiSequence { get; set; }
         public AnimationPlayer? CharacterAnim { get; set; }
-        public string? CharacterAction { get; set; }
+        public int CharacterMotionSerial { get; set; } = -1;
 
         /// <summary>"SQ_WAIT" ou "SQ_WAIT/ON" (SETLABEL: guarda o rótulo e começa a sequência nele).</summary>
         public void SetSequence(string spec)
@@ -204,15 +204,18 @@ public partial class Fatia
         if (!FindAll<MeshInstance3D>(model).Any()) _problems.Add($"{o.Name}: personagem sem malha (pele igSkin sem igBlendMatrixSelect, formato ainda não lido)");
         o.Actor.Root.AddChild(model);
         o.CharacterAnim = FindAll<AnimationPlayer>(model).FirstOrDefault();
+        if (o.CharacterAnim is { } ca && o.Seq != null)
+            o.Seq.MotionLength = m => ca.HasAnimation(m) ? (float)ca.GetAnimation(m).Length * ObjectSequencer.FramesPerSecond : null;
     }
 
+    // Segue o movimento (MOTIONSET) da sequência, que continua nas ações sem MOTIONSET (DELAY01 depois do WALK01).
     void UpdateCharacterAnim(WorldObject o)
     {
-        if (o.CharacterAnim is not { } anim || o.Seq?.Action is not { } action || action == o.CharacterAction) return;
-        o.CharacterAction = action;
-        if (ActionAnimations.Motion(o.Actions, action) is not { } motion || !anim.HasAnimation(motion)) return;
-        anim.GetAnimation(motion).LoopMode = ActionAnimations.Loops(o.Actions, action) ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
-        anim.Play(motion, 0.13f);
+        if (o.CharacterAnim is not { } anim || o.Seq is not { CurrentMotion: { } motion } seq || seq.MotionSerial == o.CharacterMotionSerial) return;
+        o.CharacterMotionSerial = seq.MotionSerial;
+        if (!anim.HasAnimation(motion)) return;
+        anim.GetAnimation(motion).LoopMode = seq.MotionLoop ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
+        anim.Play(motion, seq.MotionBlend / ObjectSequencer.FramesPerSecond);
     }
 
     // Golpe físico do jogador contra as caixas: roda o hit_<nome>.lua no contexto do objeto (FATO: hit_g_box.lua tira 100

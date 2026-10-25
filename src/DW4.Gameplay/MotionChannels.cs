@@ -54,7 +54,8 @@ public sealed class MotionChannels
         var c = _ch[channel];
         c.Mode = mode;
         c.Max = max;
-        c.Accel = max / (n * n * 0.5f);
+        // n = 0 (MOVEEX "RYPACC" 7 0 25 das NPCs): o jogo divide por 0 e a velocidade vai direto ao máximo; 0/0 viraria NaN.
+        c.Accel = n == 0 ? float.PositiveInfinity : max / (n * n * 0.5f);
         c.Timer = timer;
         c.EndOnSequence = false;
         if (mode == 4) c.Velocity = max;
