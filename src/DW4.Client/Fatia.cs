@@ -20,6 +20,8 @@ public partial class Fatia : Node3D
     // PROVISÓRIO até medir no jogo: ponto inicial (gerador GENE-03 da dng1; o PLAYERPOINT real ainda não foi achado)
     // e gravidade. Caixa de corpo do Guilmon (beModelCtrlInfoDataHit → igAABox): 5 × 7 × 5, FATO.
     static readonly Vector3 Start = new(-180, 45, 60);
+    // Onde a fase começou (ponto de entrada ou DW4_INICIO): o F5 volta para cá. Último ponto no chão: rede contra queda.
+    Vector3 _spawn, _lastFloor;
     // Numemon no gerador GENE-05 da dng1 (FATO: posição e rotação −90° do beGeneraterData).
     static readonly Vector3 EnemyAt = new(40, 45, 120);
     // HIPÓTESE: o primeiro número do MOVE "Move" é proporcional à velocidade. O Guilmon anda com 0,7 e PadMovement.MaxSpeed
@@ -163,6 +165,7 @@ public partial class Fatia : Node3D
             && xyz.Select(t => float.TryParse(t, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var f) ? f : float.NaN).ToArray() is var v3
             && v3.All(float.IsFinite))
             start = new Vector3(v3[0], v3[1], v3[2]);
+        _spawn = _lastFloor = start;
         _player = new CharacterBody3D { Position = start, FloorSnapLength = 4f };
         _player.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 2.5f, Height = 7f }, Position = new Vector3(0, 3.5f, 0) });
         AddChild(_player);
@@ -183,6 +186,7 @@ public partial class Fatia : Node3D
                 if (_actions.Count == 0) _problems.Add("o *_seq.json não tem ações: regere com o igb-seq atual");
                 var sequences = SeqCommand.LoadAll(json);
                 _runner = new SequenceRunner(sequences, AnimFrames);
+                SetupJump(_runner);
                 // Parado e andando conforme o estilo da arma: SQ_WAIT / SQ_WALK → primeira ACTION do bloco → MOTIONSET.
                 // (Antes era "waitG"/"runG": o G é o estilo gun, por isso os braços erguidos.)
                 if (ActionAnimations.FirstAction(sequences, "SQ_WAIT", WeaponStyle) is { } wa) _animWait = AnimName(wa);
@@ -255,10 +259,12 @@ public partial class Fatia : Node3D
         {
             if (k.Keycode == Key.F1 && _cameraSets.Length > 1) _cameraSet = (_cameraSet + 1) % _cameraSets.Length;
             if (k.Keycode == Key.F2) _showBoxes = !_showBoxes;
-            if (k.Keycode == Key.F5) { _player.Position = Start; _player.Velocity = Vector3.Zero; _move.Stop(); _hp = _pf?.MaxHp ?? 0; _mp = _pf?.MaxMp ?? 0; }
+            if (k.Keycode == Key.F5) { _player.Position = _spawn; _snapToFloor = !_demo; _player.Velocity = Vector3.Zero; _move.Stop(); _hp = _pf?.MaxHp ?? 0; _mp = _pf?.MaxMp ?? 0; }
             if (k.Keycode is >= Key.Key1 and <= Key.Key6) _techKey = (int)(k.Keycode - Key.Key1);
             if (k.Keycode == Key.K) _techKey = 0;
             if (k.Keycode == Key.E) EquipLast();
+            if (k.Keycode == Key.F9 && OS.IsDebugBuild()) DebugWeakenBoss();
+            if (k.Keycode == Key.F8 && OS.IsDebugBuild()) DebugNextTarget();
             if (k.Keycode == Key.Escape) GetTree().Quit();
         }
     }
@@ -268,7 +274,7 @@ public partial class Fatia : Node3D
         float dt = (float)delta;
         if (_leaving || !IsInsideTree()) return;
         if (_snapToFloor) SnapToFloor();
-        if (TickMenu(dt)) return;
+        if (TickMenu(dt)) { _jumpHeld = true; return; } // o botão que fechou o menu não vira pulo
         _stage?.Tick();
         if (_leaving) return;
         TickStageChange(dt);
@@ -289,6 +295,7 @@ public partial class Fatia : Node3D
         var dir = right * input.X - forward * input.Y;
 
         bool attackDown = Input.IsKeyPressed(Key.J) || Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsJoyButtonPressed(0, JoyButton.X);
+        bool jumpDown = JumpDown();
         _tick++;
         if (_demo)
         {
@@ -296,15 +303,17 @@ public partial class Fatia : Node3D
             if (_tick < 3) input = new Vector2(0, 0);
         }
         // Decisão do port PC: sem foco na janela, nada do controle/teclado move o jogador (controle pareado dava entrada fantasma).
-        if (!_demo && !_hasFocus) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; }
-        if (_pf != null && _hp <= 0) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; } // caído: F5 reinicia
+        if (!_demo && !_hasFocus) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; }
+        if (_pf != null && _hp <= 0) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; } // caído: F5 reinicia
         // Só vale um toque que começou depois de abrir a mensagem (o ataque que abriu a conversa ainda pode estar apertado).
         if (!attackDown) _confirmArmed = true;
         _confirmDown = attackDown && _confirmArmed;
         if (_confirmDown) _selectEnded = true;
         _menuInput = input;
         bool attackRaw = attackDown;
-        if (!_padEnabled || !_playerCtrl) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; _techKey = -1; } // STAGECTL PADINPUT DISABLE do script
+        bool jumpPressed = jumpDown && !_jumpHeld;
+        _jumpHeld = jumpDown; // segurado com o controle travado não vira pulo quando ele volta
+        if (!_padEnabled || !_playerCtrl) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpPressed = false; _techKey = -1; } // STAGECTL PADINPUT DISABLE do script
         bool attackPressed = attackDown && !_attackHeld;
         // Com o controle bloqueado o botão continua "segurado": o toque que fechou a mensagem não vira ataque quando o controle volta.
         _attackHeld = attackDown || attackRaw;
@@ -328,10 +337,12 @@ public partial class Fatia : Node3D
         else if (attacking) _runner!.Tick(dt, attackPressed && !wasWaza, attackDown && !wasWaza);
         // O golpe carregado: o SQ_ATCK1 termina em JUMP "SQ_ATCKTM" quando o ataque é solto depois de carregar.
         if (attacking && _runner is { Running: false, Next: SequenceRunner.ChargedSequence }) _runner.Start(SequenceRunner.ChargedSequence, WeaponStyle);
+        if (!attacking && TryStartAir(jumpPressed)) attacking = true;
         _techKey = -1;
         _panel.Tick(dt);
         if (_wazaPending is { } waza && _runner?.Running != true) { _wazaPending = null; ReleaseTechnique(waza); }
-        if (attacking) { dir = Vector3.Zero; _move.Stop(); }
+        if (InAirSequence) dir *= _airControl;
+        else if (attacking) { dir = Vector3.Zero; _move.Stop(); }
         if (_demo && _tick < 30 && _enemies.FirstOrDefault() is { } first)
         {
             var to = first.Body.GlobalPosition - _player.GlobalPosition;
@@ -348,9 +359,14 @@ public partial class Fatia : Node3D
         var vel = _player.Velocity;
         vel.X = v.X;
         vel.Z = v.Y;
-        vel.Y = _player.IsOnFloor() ? -1f : vel.Y - Gravity * dt;
+        vel.Y = VerticalVelocity(vel.Y, dt);
         _player.Velocity = vel;
         _player.MoveAndSlide();
+        // DECISÃO DO PORT PC: rede de segurança. Se atravessar o chão (empurrão forte numa borda, ponto inicial dentro de
+        // uma parede), volta ao último ponto em que estava no chão em vez de cair para sempre.
+        _airTime = _player.IsOnFloor() ? 0 : _airTime + dt;
+        if (_player.IsOnFloor()) _lastFloor = _player.GlobalPosition;
+        else if (_player.GlobalPosition.Y < _lastFloor.Y - 400) { _player.GlobalPosition = _lastFloor; _player.Velocity = Vector3.Zero; }
         if (_model != null) _model.Rotation = new Vector3(0, _move.Facing, 0);
 
         if (_runner?.Running == true)
@@ -394,6 +410,7 @@ public partial class Fatia : Node3D
 
     void UpdateCamera(float dt)
     {
+        DebugKeepAim();
         var p = _player.GlobalPosition;
         if (_cameraDemo != null) UpdateCameraDemo(dt);
         else if (_cameraSets.Length == 0)
@@ -411,7 +428,7 @@ public partial class Fatia : Node3D
             _camera.LookAtFromPosition(new Vector3(pos.X, pos.Y, pos.Z), new Vector3(look.X, look.Y, look.Z), Vector3.Up);
         }
         _hud.Text = $"pos ({p.X:0.0}, {p.Y:0.0}, {p.Z:0.0})  vel {_move.Velocity.Length():0.0} u/s\n" +
-            $"câmera {(_cameraSet == 0 ? "#180" : "#181 (afastada)")} volume {_zone}  [F1 troca, F5 reinicia, Esc sai]\n" +
+            $"câmera {(_cameraSet < _cameraFiles.Length ? _cameraFiles[_cameraSet].Replace("_camera.json", "") : "-")}{(_cameraSet == 1 ? " (afastada)" : "")} volume {_zone}  [F1 troca, F5 reinicia, Esc sai]\n" +
             $"animações: parado = {_animWait ?? "-"}, correndo = {_animRun ?? "-"}\n" +
             $"ataque [J, clique ou X]: {(_runner?.Running == true ? $"{_runner.Action} → {(_runner.Action == null ? "-" : AnimName(_runner.Action) ?? "sem animação")} quadro {_runner.ActionFrame:0}/{_runner.ActionLength:0}" : "-")}  acertos no Numemon: {_hits}  [F2 caixas]\n" +
             $"Numemon: {(_lastEnemy?.Brain is not { } br ? "-" : $"{br.Map.Name}, {(br.External ?? br.Current?.Sequence ?? "-")}")}{(_lastEnemy?.Runner?.Running == true ? $" ({_lastEnemy.Runner.Action})" : "")}  golpes no Guilmon: {_hitsTaken}\n" +

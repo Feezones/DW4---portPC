@@ -146,6 +146,20 @@ public sealed class SequenceRunner
     public string? Next { get; private set; }
     /// <summary>Contador de ações iniciadas (muda quando é preciso tocar uma nova animação).</summary>
     public int ActionSerial { get; private set; }
+    /// <summary>Comandos que o runner não executa (LABELCTRL, AIMAP, LUACALL, CTRL…), entregues a quem roda a sequência.</summary>
+    public Action<SeqCommand>? Command { get; set; }
+    /// <summary>WCHECK que o runner não sabe medir ("TurnY", "Landing"…): false segura a sequência; sem resposta, segue.</summary>
+    public Func<string, bool>? Condition { get; set; }
+    /// <summary>Chamado na hora em que um MOVE roda (o pulo precisa da velocidade antes do WCHECK "TurnY" seguinte).</summary>
+    public Action<SeqCommand>? MoveStarted { get; set; }
+    /// <summary>
+    /// HIPÓTESE (inimigos): caixas agendadas antes de uma ação valem pelo tempo pedido mesmo quando a ação seguinte começa. FATO que
+    /// pede isso: o SQ_MAGIC do f_apocaly põe 6 caixas 70070 dos quadros 24 a 118 antes do ACTN04 (animação curta) e do BLST03.
+    /// Desligado no jogador: o arco do VATCS1 não deve vazar para a pose de carregar.
+    /// </summary>
+    public bool CarryHitBoxes { get; init; }
+    /// <summary>As caixas que passaram da ação anterior para a atual (CarryHitBoxes).</summary>
+    public IReadOnlyList<HitBox> CarriedHitBoxes { get; private set; } = [];
     /// <summary>A sonda de conversa (60000) da última ACTION pulada, até quem confere conversa consumi-la (TakeTalkProbe).</summary>
     public HitBox? TalkProbeBox { get; private set; }
     public HitBox? TakeTalkProbe() { var h = TalkProbeBox; TalkProbeBox = null; return h; }
@@ -181,6 +195,7 @@ public sealed class SequenceRunner
         _end = end < 0 ? cmds.Count : end;
         _pending.Clear();
         Sequence = sequence;
+        CarriedHitBoxes = [];
         Action = null;
         ActionHitBoxes = [];
         Next = null;
@@ -227,14 +242,21 @@ public sealed class SequenceRunner
                     _skipWait = true;
                     break;
                 case "ACTION":
+                {
+                    // Caixas da ação anterior que ainda não acabaram seguem valendo (CarryHitBoxes), no tempo da nova ação.
+                    var carried = CarryHitBoxes && Action != null
+                        ? ActionHitBoxes.Where(h => h.Frames > 0 && h.StartFrame + h.Frames > ActionFrame).Select(h => h with { StartFrame = h.StartFrame - ActionFrame }).ToList()
+                        : [];
                     Action = c.S(0);
                     ActionFrame = 0;
                     ActionLength = _animFrames(Action) ?? 0;
-                    ActionHitBoxes = _pending.ToList();
+                    CarriedHitBoxes = carried;
+                    ActionHitBoxes = [.. carried, .. _pending];
                     _pending.Clear();
                     _heldSinceAction = _held;
                     ActionSerial++;
                     break;
+                }
                 case "WCHECK" when _skipWait && c.S(0) == "Action":
                     _skipWait = false;
                     break;
@@ -259,10 +281,14 @@ public sealed class SequenceRunner
                 case "WCHECK" when c.S(0) is "Action" or "Moving":
                     if (Action != null && ActionFrame < ActionLength) return; // espera a animação
                     break;
+                // Esperas que dependem do mundo (pulo: "TurnY" = começou a descer, "Landing" = tocou o chão): quem roda decide.
+                case "WCHECK" when Condition?.Invoke(c.S(0)) == false:
+                    return;
                 case "WCHECK":
                     break;
                 case "MOVE":
                     Move = c;
+                    MoveStarted?.Invoke(c);
                     break;
                 case "MUTEKI" when c.S(0) == "ON":
                     _muteki = true;
@@ -271,6 +297,7 @@ public sealed class SequenceRunner
                     Finish(c.S(0));
                     return;
                 default:
+                    Command?.Invoke(c); // LABELCTRL, AIMAP, LUACALL…: quem roda a sequência decide
                     if (!Skipped.Contains(c.Kind)) Skipped.Add(c.Kind);
                     break;
             }

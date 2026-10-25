@@ -18,7 +18,7 @@ namespace DW4.Client;
 /// </summary>
 public partial class Fatia
 {
-    sealed class Enemy
+    sealed class Enemy : IBeModel
     {
         public required CharacterBody3D Body { get; init; }
         public required EnemyKind Kind { get; init; }
@@ -38,6 +38,20 @@ public partial class Fatia
         public float RespawnTimer { get; set; }
         public Vector3 Home { get; init; }
         public Generator? Gen { get; init; }
+        // IBeModel (hit_<modelo>.lua do chefe roda no contexto dele).
+        public int Index => 0;
+        public int BulletKind { get; set; }
+        public int MaxHp => Kind.Stats?.MaxHp ?? 0;
+        public string ModelName => Kind.Model;
+        /// <summary>Rótulo guardado por sequência (SETLABEL "SQ_SDMG/common", LABELCTRL "FLOAT" "SQ_WAIT").</summary>
+        public Dictionary<string, string> Labels { get; } = [];
+        /// <summary>MDLsetSeq / MODELCTRL nome SQ_X: interrompe a IA com a sequência.</summary>
+        public void SetSequence(string name)
+        {
+            if (Brain == null) return;
+            Brain.Force(name);
+            Started = false;
+        }
     }
 
     /// <summary>
@@ -162,7 +176,8 @@ public partial class Fatia
         var e = new Enemy { Body = body, Model = model, Kind = kind, Anim = FindAll<AnimationPlayer>(model).FirstOrDefault(), Yaw = yaw, Hp = kind.Stats?.MaxHp ?? 0, Gen = gen, Home = pos, Respawns = respawns };
         if (kind.Json != null)
         {
-            e.Runner = new SequenceRunner(kind.Sequences, a => EnemyAnimFrames(e, a));
+            e.Runner = new SequenceRunner(kind.Sequences, a => EnemyAnimFrames(e, a)) { CarryHitBoxes = true };
+            e.Runner.Command = c => EnemyCommand(e, c);
             var maps = AiMap.LoadAll(kind.Json);
             if (maps.Count > 0) e.Brain = new EnemyBrain(maps, kind.Sequences, () => _rng.Next(16));
         }
@@ -345,7 +360,7 @@ public partial class Fatia
                 // Sequência do jogo (SQ_ATCK1, SQ_FIRE, SQ_SDMG…); "common" é o bloco sem elemento das de dano.
                 if (!e.Started)
                 {
-                    e.Started = e.Runner.Start(ext, "common");
+                    e.Started = StartEnemySequence(e, ext);
                     e.Serial = -1;
                     if (!e.Started) e.Brain.Release();
                 }
@@ -365,7 +380,8 @@ public partial class Fatia
                 if (e.Runner.ActionSerial != e.Serial)
                 {
                     e.Serial = e.Runner.ActionSerial;
-                    e.HitThisAction.Clear();
+                    // Caixa que já acertou e passou para a ação nova (CarryHitBoxes) não acerta de novo.
+                    e.HitThisAction.RemoveWhere(k => !e.Runner.CarriedHitBoxes.Any(h => HitKey(h) == k));
                     if (e.Runner.Action != null) _sfx?.Action(e.Kind.Model, e.Runner.Action);
                     if (e.Anim != null && e.Runner.Action != null && EnemyAnimName(e, e.Runner.Action) is { } an)
                     {
@@ -407,6 +423,9 @@ public partial class Fatia
 
     Vector3 EnemyBoxCenter(Enemy e, HitBox h) => e.Body.GlobalPosition + new Vector3(h.Position.X, h.Position.Y, h.Position.Z).Rotated(Vector3.Up, e.Yaw);
 
+    // A mesma caixa antes e depois de passar para a ação seguinte (o quadro inicial muda).
+    static HitBox HitKey(HitBox h) => h with { StartFrame = 0 };
+
     // Caixas 7xxxx do inimigo (ataque; 70004 no Numemon, HIPÓTESE pelo SQ_ATCK1) contra a caixa de corpo do Guilmon (5 × 7 × 5, FATO).
     void CheckEnemyHits(Enemy e)
     {
@@ -414,11 +433,11 @@ public partial class Fatia
         var g = _player.GlobalPosition;
         foreach (var h in e.Runner.ActiveHitBoxes().Where(h => h.Type / 10000 == 7))
         {
-            if (e.HitThisAction.Contains(h)) continue;
+            if (e.HitThisAction.Contains(HitKey(h))) continue;
             var c = EnemyBoxCenter(e, h);
             if (Math.Abs(c.X - g.X) <= h.Size.X / 2 + 2.5f && Math.Abs(c.Z - g.Z) <= h.Size.Z / 2 + 2.5f && c.Y + h.Size.Y / 2 >= g.Y && c.Y - h.Size.Y / 2 <= g.Y + 7)
             {
-                e.HitThisAction.UnionWith(e.Runner.ActionHitBoxes);
+                e.HitThisAction.UnionWith(e.Runner.ActionHitBoxes.Select(HitKey));
                 _hitsTaken++;
                 string? reaction = EnemyStrikes(h.Type, e.Kind.Stats, e.Kind.Name);
                 if (reaction == null) break; // errou ou bloqueou: sem reação
@@ -451,6 +470,11 @@ public partial class Fatia
                 _enemiesHitThisAction.Add(e);
                 _hits++;
                 _lastEnemy = e;
+                if (UsesHitScript(e))
+                {
+                    StrikeWithScript(e, h.Type); // a reação vem do MDLsetSeq do próprio script
+                    break;
+                }
                 string reaction = PlayerStrikes(e, h.Type);
                 if (e.Brain != null && e.Runner != null)
                 {

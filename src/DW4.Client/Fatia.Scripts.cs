@@ -55,7 +55,7 @@ public partial class Fatia : IBeEngine
         ScriptLog(m.ToString());
         // A trava do ISEND zera em todo SELECTCTRL GENERATE, antes de quem trata a janela (troca de área, mensagem) consumir a mensagem.
         if (m.Class == "SELECTCTRL" && m.Command == "GENERATE") { _confirmArmed = false; _selectEnded = false; }
-        if (DeliverToStageChange(m) || DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToObjects(m)) return;
+        if (DeliverToStageChange(m) || DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToBossBar(m) || DeliverToEnemies(m) || DeliverToObjects(m)) return;
         switch (m.Class, m.Command)
         {
             // FATO: "HITLANDMODEL doorwallNN OFFHIT" desliga a parede de colisão da porta (filho do igSwitch da colisão #1862).
@@ -92,7 +92,7 @@ public partial class Fatia : IBeEngine
         // ISDEMOCAMERA = 1 enquanto a demo toca (o first.lua espera enquanto "==0", até começar, e enquanto "!=0", até acabar).
         // Sem a demo exportada: sem resposta (a espera passa).
         "ISDEMOCAMERA" => _cameraDemo is { } d ? (_cameraDemoT < d.Duration ? 1 : 0) : (double?)null,
-        "ISLIVE" => _minimap?.Has(m.Name ?? "", m.Index) == true || _objects.Any(o => o.Name == m.Name && o.Index == m.Index && !o.Dead && !o.Erased) ? 1 : 0,
+        "ISLIVE" => (m.Name == "i_bosshp01" && _bossBarOpen) || _minimap?.Has(m.Name ?? "", m.Index) == true || _objects.Any(o => o.Name == m.Name && o.Index == m.Index && !o.Dead && !o.Erased) ? 1 : 0,
         _ => null,
     };
 

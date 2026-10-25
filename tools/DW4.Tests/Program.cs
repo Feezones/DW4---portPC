@@ -219,6 +219,39 @@ Test("Câmera por volumes: escolha do volume e pose com recuo e inclinação", (
     True(Vector3.Distance(pos, expected) < 1e-3f, $"câmera {pos}, esperado {expected}");
 });
 
+Test("Sequência: caixas agendadas antes de uma ação curta passam para a ação seguinte (CarryHitBoxes, SQ_MAGIC do f_apocaly)", () =>
+{
+    SeqCommand C(string k, params object[] v) => new(k, v);
+    var seqs = new Dictionary<string, List<SeqCommand>>
+    {
+        ["SQ_MAGIC"] =
+        [
+            C("HITBOX", "Set", 70070, 24f, 12f, new[] { 0f, 0, 0 }, new[] { 20f, 30, 20 }),
+            C("HITBOX", "Set", 70070, 48f, 36f, new[] { 0f, 0, 0 }, new[] { 27f, 30, 27 }),
+            C("ACTION", "ACTN04"), C("WCHECK", "Action"), C("ACTION", "BLST03"), C("WCHECK", "Action"), C("JUMP", "SQ_WAIT"),
+        ],
+    };
+    const float frame = 1 / SequenceRunner.FramesPerSecond;
+    float Len(string a) => a == "ACTN04" ? 20 : 60;
+    foreach (bool carry in new[] { true, false })
+    {
+        var r = new SequenceRunner(seqs, a => Len(a)) { CarryHitBoxes = carry };
+        r.Start("SQ_MAGIC", null);
+        var activeAt = new List<int>();
+        for (int f = 0; f < 120 && r.Running; f++)
+        {
+            if (r.ActiveHitBoxes().Any()) activeAt.Add(f);
+            r.Tick(frame, false);
+        }
+        if (carry)
+        {
+            True(activeAt.Count > 0 && activeAt.Min() >= 23 && activeAt.Min() <= 25, $"a 1ª caixa liga perto do quadro 24 da sequência ({(activeAt.Count > 0 ? activeAt.Min() : -1)})");
+            True(activeAt.Max() >= 78, $"a 2ª caixa (48..84) vale até o fim da sequência, quadro 80 ({activeAt.Max()})");
+        }
+        else Equal(0, activeAt.Count, "sem carregar, a ação curta perde as caixas (comportamento do jogador)");
+    }
+});
+
 Test("Sequência: bloco do estilo, sonda de conversa pulada, caixa no quadro certo e janela de combo", () =>
 {
     SeqCommand C(string k, params object[] v) => new(k, v);
@@ -1082,6 +1115,38 @@ if (args.Length == 1)
         Equal(11f, ActionAnimations.Length(acts, "VATCS1", m => m == "vatcS" ? 11f : null), "VATCS1 espera o fim da animação");
         Equal(60f, ActionAnimations.Length(acts, "KATCS1", _ => 7f), "KATCS1 espera 60 quadros");
         True(ActionAnimations.Loops(acts, "KATCS1") && !ActionAnimations.Loops(acts, "VATCS1"), "LP e OS");
+    });
+
+    Test("Jogo: SQ_JUMP do Guilmon (slash): JUMPS1 sobe até virar, JUMPS2 cai até pousar, JUMPS3 e volta ao SQ_WAIT", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[857], ms);
+        var data = ms.ToArray();
+        var seqs = IgbSequences.Read(IgbFile.Read(data), data, null, new List<string>());
+        var game = seqs.ToDictionary(k => k.Key, k => k.Value.Select(c => new SeqCommand(c.Kind, c.Values)).ToList());
+        var jump = new JumpMotion();
+        float y = 0, peak = 0;
+        var r = new SequenceRunner(game, _ => 6f) { Condition = w => w switch { "TurnY" => jump.VelocityY <= 0, "Landing" => y <= 0 && jump.VelocityY <= 0, _ => true }, MoveStarted = m => jump.Apply(m, jump.VelocityY) };
+        True(r.Start("SQ_JUMP", "slash"), "bloco slash");
+        Equal("Jump", r.Move?.S(0), "MOVE Jump");
+        Equal((1.44f, 6.3f), (r.Move!.F(1), r.Move.F(2)), "argumentos do Jump");
+        True(Math.Abs(JumpMotion.PeakHeight(r.Move) - 13.78f) < 0.01f, "pico ≈ 13,8 (passa o degrau de 10 do pedestal)");
+        const float frame = 1 / SequenceRunner.FramesPerSecond;
+        var actions = new List<string>();
+        for (int i = 0; i < 300 && r.Running; i++)
+        {
+            if (r.Action is { } a && (actions.Count == 0 || actions[^1] != a)) actions.Add(a);
+            y = Math.Max(0, y + jump.Step(frame) * frame);
+            peak = Math.Max(peak, y);
+            r.Tick(frame, false);
+        }
+        Equal("JUMPS1,JUMPS2,JUMPS3", string.Join(",", actions), "ações");
+        True(!r.Running && r.Next == "SQ_WAIT", "termina no SQ_WAIT");
+        True(!jump.Active, "MOVE Stop no pouso desliga o pulo");
+        True(peak > 10 && peak < 14.5f, $"altura alcançada {peak:0.0}");
+        y = 20; // no ar: o SQ_FALL para no "Landing"
+        True(r.Start("SQ_FALL", "slash") && r.Move?.S(0) == "Fall" && jump.Active, "SQ_FALL começa pelo Fall e espera o pouso");
     });
 
     Test("Jogo: ADX #35 (DG_CAVE1) decodifica com o loop do cabeçalho; #6 (AM_DUNGE) faz loop inteiro", () =>

@@ -1934,7 +1934,8 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
         .Select(o => (Name: o.Fields.FirstOrDefault(v => v.Desc.Slot == 2 && v.Desc.ShortName == "String")?.Text ?? "",
                       Kind: o.Fields.FirstOrDefault(v => v.Desc.Slot == 7 && v.Desc.ShortName == "String")?.Text ?? ""))
         .Distinct().ToList();
-    var objectNames = actors.Where(a => a.Kind == "KIND_OBJECT" && (a.Name.StartsWith("g_") || a.Name.StartsWith("n_"))).Select(a => a.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
+    // KIND_OBJECT g_/n_ e também os g_ de KIND_ENEMY (rígidos com hit_*.lua, FATO: g_b01cpole, as colunas do stagbs01).
+    var objectNames = actors.Where(a => (a.Kind == "KIND_OBJECT" && (a.Name.StartsWith("g_") || a.Name.StartsWith("n_"))) || (a.Kind == "KIND_ENEMY" && a.Name.StartsWith("g_"))).Select(a => a.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
     var mapNames = actors.Where(a => a.Kind is "KIND_MAPBASE" or "KIND_MAPCURSOR").Select(a => a.Name).ToArray();
     var menuNames = actors.Where(a => a.Name.StartsWith("i_st") && !a.Name.StartsWith("i_stpnl") && !a.Name.StartsWith("i_stdownic")).Select(a => a.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
     // Raiz de cada ator: o @7 do beAction2Info com o mesmo nome (FATO: n_recorderdng → igSwitch #23790 na dng1, sem igAttrSet
@@ -2058,6 +2059,8 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
             ["base"] = actors.FirstOrDefault(a => a.Kind == "KIND_MAPBASE").Name, ["cursor"] = actors.FirstOrDefault(a => a.Kind == "KIND_MAPCURSOR").Name,
         },
         ["objetos"] = new JsonArray(objectNames.Select(n => (JsonNode?)n).ToArray()),
+        ["atores"] = new JsonObject(actors.Where(a => a.Name.Length > 0).GroupBy(a => a.Name).OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => new KeyValuePair<string, JsonNode?>(g.Key, g.First().Kind))),
         ["menu"] = new JsonArray(menuNames.Select(n => (JsonNode?)n).ToArray()),
         ["musicas"] = music,
         ["inimigos"] = enemies,

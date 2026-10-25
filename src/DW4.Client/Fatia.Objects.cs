@@ -119,7 +119,8 @@ public partial class Fatia
             if (m.Arg(0) is { Kind: 'V', Numbers.Length: 3 } p)
             {
                 var rot = m.Arg(1) is { Kind: 'V', Numbers.Length: 3 } r ? new Vector3((float)r.Numbers[0], (float)r.Numbers[1], (float)r.Numbers[2]) : Vector3.Zero;
-                Spawn(m.Name, m.Index, new Vector3((float)p.Numbers[0], (float)p.Numbers[1], (float)p.Numbers[2]), rot);
+                var spawned = Spawn(m.Name, m.Index, new Vector3((float)p.Numbers[0], (float)p.Numbers[1], (float)p.Numbers[2]), rot);
+                if (spawned != null) MakeHittable(spawned);
             }
             return false;
         }

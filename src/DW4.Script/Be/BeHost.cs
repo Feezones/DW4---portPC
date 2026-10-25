@@ -8,6 +8,15 @@ public interface IBeEngine
 
     /// <summary>Consulta (ISSEQNAME, GETSELECT, GETGENERATEPOS…). null = o jogo ainda não sabe responder.</summary>
     double? Query(BeMessage message);
+
+    /// <summary>
+    /// Cálculo de luta pedido por um hit_*.lua (be:BLT* e afins, ex. BLTisHitCheck, BLTgetDamageValue(crítico), BLTgetDamageRank(hp que
+    /// sobrou, crítico)) no contexto do golpe que acertou o modelo atual. null = o motor não sabe: o BeHost devolve 0 (neutro) e avisa.
+    /// </summary>
+    double? Fight(string method, double[] args) => null;
+
+    /// <summary>Versão texto (BLTgetAttributeStr, MDLgetBulletName). null = sem resposta.</summary>
+    string? FightText(string method, double[] args) => null;
 }
 
 /// <summary>
@@ -21,6 +30,10 @@ public interface IBeModel
     /// <summary>Código do golpe que acertou (MDLgetBulletKind): 10000 físico, 40000 + linha técnica (HIPÓTESE), …</summary>
     int BulletKind { get; }
     void SetSequence(string name);
+    /// <summary>HP máximo (MDLgetMHp).</summary>
+    int MaxHp => 0;
+    /// <summary>Nome do modelo (MDLsetSD manda a mensagem para ele mesmo: MODELCTRL nome índice comando).</summary>
+    string ModelName => "";
 }
 
 /// <summary>
@@ -107,6 +120,15 @@ public sealed class BeHost
     static object?[] N(double v) => [v];
     static object?[] Bool(bool v) => [v ? 1.0 : 0.0];
     static readonly object?[] Nothing = [];
+
+    static double[] Numbers(object?[] a) => a.Skip(1).Select(x => Lua.TryNumber(x, out double d) ? d : 0).ToArray();
+
+    // Sem resposta do motor: valor neutro e um aviso por método (Unimplemented).
+    T Warn<T>(string name, T neutral)
+    {
+        if (_warned.Add("fight:" + name)) Unimplemented?.Invoke(name + " (sem resposta do motor, neutro)", []);
+        return neutral;
+    }
 
     static BeMessage Msg(object?[] a, int cmdAt = 4, int argsAt = -1) =>
         new(S(a, 1) ?? "", S(a, 2), I(a, 3), S(a, cmdAt) ?? "", BeArg.Parse(argsAt > 0 ? S(a, argsAt) : null), argsAt > 0 ? S(a, argsAt) : null);
@@ -203,6 +225,19 @@ public sealed class BeHost
             // Modelo do contexto (hit_g_box.lua: MDLsetDMGTurn(0); se não for técnica 40040..40099, MDLaddHp(−100) e SQ_DDMG).
             case "MDLgetBulletKind": return N(Model?.BulletKind ?? 0);
             case "MDLgetHp": return N(Model?.Hp ?? 0);
+            case "MDLgetMHp": return N(Model?.MaxHp ?? 0);
+            // MDLsetSD(comando[, argumentos]): be:sd para o próprio modelo do contexto (SETLABEL "SQ_SDMG/common", SETSLEEP "I<n>"…).
+            case "MDLsetSD" when Model != null:
+            {
+                var m = new BeMessage("MODELCTRL", Model.ModelName, Model.Index, S(a, 1) ?? "", BeArg.Parse(S(a, 2)), S(a, 2));
+                if (Capture != null) Capture(m); else Messenger.Send(m, 0);
+                return Nothing;
+            }
+            // Luta (hit_f_apocaly.lua e outros hit_*.lua de chefe): o motor calcula pelo golpe atual; sem resposta, 0 e aviso.
+            case "BLTgetAttributeStr" or "MDLgetBulletName":
+                return [_engine.FightText(name, Numbers(a)) ?? Warn(name, name == "BLTgetAttributeStr" ? "common" : "")];
+            case var f when f.StartsWith("BLT", StringComparison.Ordinal) && f is not ("BLTgetShootRamNo") || f == "MDLdspDamage":
+                return N(_engine.Fight(name, Numbers(a)) ?? Warn(name, 0.0));
             case "MDLaddHp": if (Model != null) Model.Hp += I(a, 1); return Nothing;
             case "MDLsetSeq": if (Model != null && S(a, 1) is { } seq) Model.SetSequence(seq); return Nothing;
             // MDLisLive(nome, índice): o objeto existe? (o jogo consulta; aqui pelo IBeEngine com ISLIVE). Sem argumentos: o do contexto.

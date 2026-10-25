@@ -89,6 +89,9 @@ public sealed class EnemyBrain
     /// <summary>Interrompe a IA com uma sequência do jogo (ex.: SQ_SDMG ao levar golpe), até <see cref="Release"/>.</summary>
     public void Force(string sequence) { External = sequence; Current = null; }
 
+    /// <summary>AIMAP de uma sequência forçada (ex.: SQ_PHASE2 do f_apocaly troca para MAP01).</summary>
+    public void SetMap(string name) { Map = _maps.FirstOrDefault(m => m.Name == name) ?? Map; Current = null; }
+
     /// <summary>Avança a IA. Yaw segue a convenção de <see cref="PadMovement.Facing"/> (atan2(x, z)).</summary>
     public void Tick(float dt, Vector3 self, Vector3 target, float yaw)
     {
