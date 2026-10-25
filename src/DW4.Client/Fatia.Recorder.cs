@@ -25,7 +25,7 @@ public partial class Fatia
     const string PlayerModel = "p_girumon";
 
     bool _playerCtrl = true, _enemiesFrozen, _generatorsFrozen;
-    bool _confirmDown, _confirmArmed;
+    bool _confirmDown, _confirmArmed, _selectEnded;
     List<string>? _texts;
     bool _textsTried;
     Label? _message;
@@ -61,7 +61,7 @@ public partial class Fatia
     /// <summary>Mensagens do gravador e da janela de texto. true se tratou.</summary>
     bool DeliverToRecorder(BeMessage m)
     {
-        if (m.Class == "SELECTCTRL" && m.Command == "GENERATE") _confirmArmed = false; // indicador de tecla: espera um toque novo
+        if (m.Class == "SELECTCTRL" && m.Command == "GENERATE") { _confirmArmed = false; _selectEnded = false; } // espera um toque novo
         switch (m.Class, m.Command)
         {
             case ("MODELCTRL", "SQ_WAIT") when m.Name == PlayerModel:
@@ -92,15 +92,14 @@ public partial class Fatia
     {
         switch (m.Command)
         {
-            // HIPÓTESE: ISEND = tecla de confirmar apertada (o script espera "!=0" e depois "==0": apertar e soltar).
-            // O script pergunta "SELECTCTRL i_messky n ISEND" (func.lua, funcOneMessage).
-            // A trava confere-se na hora da pergunta: o SELECTCTRL GENERATE desarma no mesmo quadro em que o ISEND é lido.
-            case "ISEND" when m.Class is "TEXTCTL" or "SELECTCTRL": return _confirmDown && _confirmArmed ? 1 : 0;
-            // HIPÓTESE: 0 quando o modelo está na sequência pedida (os scripts esperam "==0" depois de mandar a sequência).
+            // HIPÓTESE: ISEND = 1 depois que o jogador confirmou (toque que começou depois do SELECTCTRL GENERATE); volta a 0 no
+            // próximo GENERATE. funcOneMessage: espera enquanto "!=0" (fim anterior) e enquanto "==0" (até confirmar).
+            case "ISEND" when m.Class is "TEXTCTL" or "SELECTCTRL": return _selectEnded ? 1 : 0;
+            // ISSEQNAME = 1 quando o modelo está na sequência pedida (o DM espera enquanto "==0").
             case "ISSEQNAME" when m.Text(0) is { } seq:
-                if (m.Class == "PLAYER" || m.Name == PlayerModel) return (_runner?.Running == true ? _runner.Sequence : "SQ_WAIT") == seq ? 0 : 1;
+                if (m.Class == "PLAYER" || m.Name == PlayerModel) return (_runner?.Running == true ? _runner.Sequence : "SQ_WAIT") == seq ? 1 : 0;
                 var o = _objects.FirstOrDefault(o => o.Name == m.Name && o.Index == m.Index);
-                return o == null ? null : o.Sequence == seq ? 0 : 1;
+                return o == null ? null : o.Sequence == seq ? 1 : 0;
         }
         return null;
     }

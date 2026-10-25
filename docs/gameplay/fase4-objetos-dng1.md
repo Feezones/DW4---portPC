@@ -129,3 +129,8 @@ geradores, doorwall separado na colisão, dano do piso e o gravador.
   cena na entrada pedida, outras fases ficam para a Fase 5. A GAMERAM sobrevive à recarga.
 - **FATO** menus: o menu de status/pausa é código nativo (classes beNDMWStatus* do main.dol, atores i_st*); a Lua só põe os
   textos (txt_status.lua). Seleção de técnica (i_wzslbase00) também é nativa.
+- **HIPÓTESE forte** (2026-10-25, corrigida depois do teste): `DMchkSD` segura a fila ENQUANTO a condição vale, e as
+  consultas são booleanas naturais (ISRUN 1 = rodando, ISSEQNAME 1 = na sequência, ISEND 1 = terminou, ISSELECTNOW 1 =
+  escolhendo, ISDEMOCAMERA 1 = demo tocando). É a única leitura em que as esperas em dupla fecham (funcStageChange:
+  ISRUN "==0", ISSEQNAME "SQ_BHLFIN30" "==0", "!=0", ISRUN "!=0"; first.lua: ISDEMOCAMERA "==0" e "!=0"). A leitura anterior
+  travava o "Sim" da troca de área. O laço do beDemoManager no main.dol ainda não foi lido.

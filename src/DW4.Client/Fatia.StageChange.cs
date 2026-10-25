@@ -38,8 +38,8 @@ public partial class Fatia
                 StartFade(m.Command);
                 return true;
             case ("SELECTCTRL", "i_zzstchgwn", "GENERATE"):
-                _confirmArmed = false;
                 _choice = 0;
+                _choiceMoveHeld = true; // só vale um movimento que começou depois de abrir (o que levou ao tapete ainda pode estar apertado)
                 UpdateChoice();
                 return true;
             case ("MODELCTRL", "i_zzstchgwb", "SQ_CLOSE"):
@@ -73,13 +73,11 @@ public partial class Fatia
     {
         switch (m.Class, m.Name, m.Command)
         {
-            // HIPÓTESE: ISRUN = 1 enquanto o fade anda; ISSEQNAME = 0 quando é a sequência pedida (como nos outros modelos).
-            case ("MODELCTRL", "i_fadewn01", "ISRUN"): return _fade != null && _fadeT < _fadeLen ? 1 : 0;
-            case ("MODELCTRL", "i_fadewn01", "ISSEQNAME"): return _fadeSeq == m.Text(0) ? 0 : 1;
-            case ("MODELCTRL", "i_zzstchgwb", "ISRUN"): return 0;
-            // HIPÓTESE: ISEND = confirmar apertado; ISSELECTNOW = 1 com uma opção escolhida; GETSELECT = a opção.
-            case ("SELECTCTRL", "i_zzstchgwn", "ISEND"): return _confirmDown && _confirmArmed ? 1 : 0;
-            case ("SELECTCTRL", "i_zzstchgwn", "ISSELECTNOW"): return _choice >= 0 ? 1 : 0;
+            // ISRUN = 1 enquanto o fade anda; ISSEQNAME = 1 na sequência pedida. SQ_STCHANGELP fica "rodando" (laço).
+            case ("MODELCTRL", "i_fadewn01", "ISRUN"): return _fade != null && (_fadeT < _fadeLen || _fadeSeq == "SQ_STCHANGELP") ? 1 : 0;
+            case ("MODELCTRL", "i_fadewn01", "ISSEQNAME"): return _fadeSeq == m.Text(0) ? 1 : 0;
+            // ISEND (comum, Fatia.Recorder.cs) = 1 depois do confirmar; ISSELECTNOW = 1 enquanto escolhe; GETSELECT = a opção.
+            case ("SELECTCTRL", "i_zzstchgwn", "ISSELECTNOW"): return _choice >= 0 && !_selectEnded ? 1 : 0;
             case ("SELECTCTRL", "i_zzstchgwn", "GETSELECT"): return _choice;
             case ("SYSCTL", "HP", "GETHP"): return _pf != null ? _hp : 1;
         }
@@ -121,7 +119,9 @@ public partial class Fatia
         {
             _fadeT = Math.Min(_fadeLen, _fadeT + dt * 60);
             _fade.Color = new Color(0, 0, 0, _fadeFrom + (_fadeTo - _fadeFrom) * _fadeT / _fadeLen);
-            if (_fadeT >= _fadeLen && _fadeSeq == "SQ_STCHANGE01") _fadeSeq = "SQ_STCHANGELP";
+            // HIPÓTESE: no fim, SQ_STCHANGE01 segue para o laço SQ_STCHANGELP e os outros fades voltam a SQ_WAIT (o funcStageChange
+            // espera enquanto a sequência ainda é SQ_BHLFIN30).
+            if (_fadeT >= _fadeLen) _fadeSeq = _fadeSeq == "SQ_STCHANGE01" ? "SQ_STCHANGELP" : "SQ_WAIT";
         }
         if (_choice >= 0 && _choicePanel?.Visible == true)
         {

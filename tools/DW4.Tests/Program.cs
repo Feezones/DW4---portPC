@@ -681,13 +681,13 @@ Test("API be:*: sd com atraso em quadros, diretor de demo com espera por condiç
     Equal(2, engine.Log.Count, "DMsetSD só enfileira");
     Equal(3.0, (double)Be("DMgetCount")[0]!, "DMgetCount");
     Be("DMrun");
-    engine.Answer = 0;
-    host.Tick();
-    Equal("MODELCTRL i_stpnl00 0 SQ_OPEN", engine.Log[2], "set do DM entregue");
-    Equal(3, engine.Log.Count, "chk segura a fila enquanto vale 0");
     engine.Answer = 1;
     host.Tick();
-    Equal("SOUND - -1 BGMSTOP", engine.Log[3], "fila segue quando a condição vale");
+    Equal("MODELCTRL i_stpnl00 0 SQ_OPEN", engine.Log[2], "set do DM entregue");
+    Equal(3, engine.Log.Count, "chk \"!=0\" segura a fila enquanto vale 1");
+    engine.Answer = 0;
+    host.Tick();
+    Equal("SOUND - -1 BGMSTOP", engine.Log[3], "fila segue quando a condição deixa de valer");
     Be("FLGset", 107.0, 1.0);
     Equal(1.0, (double)Be("FLGisOn", 107.0)[0]!, "FLGisOn devolve 1");
     Equal(0.0, (double)Be("FLGisOn", 108.0)[0]!, "FLGisOn devolve 0, não nil");

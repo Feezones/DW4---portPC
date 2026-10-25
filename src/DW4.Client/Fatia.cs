@@ -286,6 +286,7 @@ public partial class Fatia : Node3D
         // Só vale um toque que começou depois de abrir a mensagem (o ataque que abriu a conversa ainda pode estar apertado).
         if (!attackDown) _confirmArmed = true;
         _confirmDown = attackDown && _confirmArmed;
+        if (_confirmDown) _selectEnded = true;
         _menuInput = input;
         if (!_padEnabled || !_playerCtrl) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; _techKey = -1; } // STAGECTL PADINPUT DISABLE do script
         bool attackPressed = attackDown && !_attackHeld;

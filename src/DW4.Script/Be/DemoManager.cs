@@ -5,7 +5,9 @@ namespace DW4.Script.Be;
 /// (0x802F7580: tipo, mensagem, atraso); be:DMrun entrega a lista ao executor e zera a montagem; o script Lua continua
 /// (Lua 4.0 não suspende). DMchkSD: "!=0"/"==1" → tipo 2, "==0"/"!=1" → tipo 3 (0x802ED140).
 /// HIPÓTESES (executor não lido): as entradas rodam em ordem, quadro a quadro; um set entrega a mensagem pelo beMessenger
-/// com o seu atraso e segue sem esperar; um chk segura a fila até a condição valer; DMswtSD guarda um valor e cada
+/// com o seu atraso e segue sem esperar; um chk segura a fila ENQUANTO a condição vale (HIPÓTESE forte: é a única leitura
+/// em que as esperas em dupla dos scripts fecham, ex. ISSEQNAME "SQ_BHLFIN30" "==0" seguido de "!=0" no funcStageChange,
+/// ISDEMOCAMERA "==0"/"!=0" no first.lua, com as consultas booleanas naturais: 1 = rodando/na sequência/terminou); DMswtSD guarda um valor e cada
 /// DMcase(n) seguinte libera as entradas até o próximo DMcase só se n for esse valor.
 /// </summary>
 public sealed class DemoManager(BeMessenger messenger, Func<BeMessage, double?> query)
@@ -68,7 +70,7 @@ public sealed class DemoManager(BeMessenger messenger, Func<BeMessage, double?> 
                 case Kind.CheckNonZero or Kind.CheckZero:
                     var v = query(e.Message!);
                     if (v == null) Unanswered?.Invoke(e.Message!);
-                    else if ((v != 0) != (e.Kind == Kind.CheckNonZero)) return;
+                    else if ((v != 0) == (e.Kind == Kind.CheckNonZero)) return;
                     break;
             }
             _running.Dequeue();

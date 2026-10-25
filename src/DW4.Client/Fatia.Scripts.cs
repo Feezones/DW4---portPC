@@ -88,8 +88,9 @@ public partial class Fatia : IBeEngine
     public double? Query(BeMessage m) => QueryStageChange(m) ?? QueryRecorder(m) ?? m.Command switch
     {
         "GETGENERATEPOS" => int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var e) ? e : 0,
-        // HIPÓTESE: 0 enquanto a demo toca, 1 quando acabou (o first.lua espera "==0" e depois "!=0" antes do SETBOXCAMERA).
-        "ISDEMOCAMERA" => _cameraDemo is { } d && _cameraDemoT < d.Duration ? 0 : 1,
+        // ISDEMOCAMERA = 1 enquanto a demo toca (o first.lua espera enquanto "==0", até começar, e enquanto "!=0", até acabar).
+        // Sem a demo exportada: sem resposta (a espera passa).
+        "ISDEMOCAMERA" => _cameraDemo is { } d ? (_cameraDemoT < d.Duration ? 1 : 0) : (double?)null,
         "ISLIVE" => _minimap?.Has(m.Name ?? "", m.Index) == true || _objects.Any(o => o.Name == m.Name && o.Index == m.Index && !o.Dead && !o.Erased) ? 1 : 0,
         _ => null,
     };
