@@ -242,6 +242,7 @@ public partial class Fatia : Node3D
             _overlay = new HudOverlay(hud, this);
             _damageNumbers = new DamageNumbers(hud, this);
         }
+        SetupChat();
         // Som da dng1 (FATO: first.lua toca "AM_DUNGE" e "DG_CAVE1"; beSoundInfo da fase → ndmw #6 e #35), com o loop do
         // cabeçalho ADX. Gerado por: dw4 adx-wav ndmw.afs <fatia>\audio 6 35. Volume do beSoundData (S8): unidade
         // desconhecida, por isso os dois tocam a 0 dB.
@@ -273,6 +274,7 @@ public partial class Fatia : Node3D
 
     public override void _UnhandledInput(InputEvent e)
     {
+        if (ChatInput(e)) { GetViewport().SetInputAsHandled(); return; } // chat aberto: nada chega ao jogo
         if (MenuInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (e is InputEventKey { Pressed: true, Echo: false } k)
         {
@@ -291,6 +293,7 @@ public partial class Fatia : Node3D
     public override void _PhysicsProcess(double delta)
     {
         float dt = (float)delta;
+        TickChat(dt);
         if (_leaving || !IsInsideTree()) return;
         if (_snapToFloor) SnapToFloor();
         if (TickMenu(dt)) { _jumpHeld = true; return; } // o botão que fechou o menu não vira pulo
@@ -324,7 +327,7 @@ public partial class Fatia : Node3D
             if (_tick < 3) input = new Vector2(0, 0);
         }
         // Decisão do port PC: sem foco na janela, nada do controle/teclado move o jogador (controle pareado dava entrada fantasma).
-        if (!_demo && !_hasFocus) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; }
+        if (!_demo && (!_hasFocus || ChatOpen)) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; }
         if (_pf != null && _hp <= 0) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; } // caído: F5 reinicia
         // Só vale um toque que começou depois de abrir a mensagem (o ataque que abriu a conversa ainda pode estar apertado).
         if (!attackDown) _confirmArmed = true;
@@ -338,7 +341,7 @@ public partial class Fatia : Node3D
         bool attackPressed = attackDown && !_attackHeld;
         // Com o controle bloqueado o botão continua "segurado": o toque que fechou a mensagem não vira ataque quando o controle volta.
         _attackHeld = attackDown || attackRaw;
-        bool techDown = Input.IsMouseButtonPressed(MouseButton.Right) || Input.IsJoyButtonPressed(0, JoyButton.Y);
+        bool techDown = !ChatOpen && (Input.IsMouseButtonPressed(MouseButton.Right) || Input.IsJoyButtonPressed(0, JoyButton.Y));
         if (techDown && !_techHeld) _techKey = 0;
         _techHeld = techDown;
         if (_pf != null && _hp <= 0) _techKey = -1;

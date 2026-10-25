@@ -69,6 +69,7 @@ public partial class Fatia
 
     IEnumerable<string> ShopKeys()
     {
+        if (ChatOpen) yield break;
         if (Input.IsKeyPressed(Key.W) || Input.IsKeyPressed(Key.Up) || Input.IsJoyButtonPressed(0, JoyButton.DpadUp)) yield return "up";
         if (Input.IsKeyPressed(Key.S) || Input.IsKeyPressed(Key.Down) || Input.IsJoyButtonPressed(0, JoyButton.DpadDown)) yield return "down";
         if (Input.IsKeyPressed(Key.A) || Input.IsKeyPressed(Key.Left) || Input.IsJoyButtonPressed(0, JoyButton.DpadLeft)) yield return "left";

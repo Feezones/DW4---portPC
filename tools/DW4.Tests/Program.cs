@@ -143,6 +143,32 @@ Test("Port: fortalecer chip com X-data (NEXTX da linha; linha +1; XDATA até 999
     inv.XData = 12345;
     Equal(Inventory.XDataMax, inv.XData, "teto 9999");
 });
+
+Test("Port: chat (\"nome: mensagem - HH:MM\", histórico, some sem uso, canal local)", () =>
+{
+    var t = new DateTime(2026, 10, 25, 9, 5, 0);
+    Equal("Gui: oi - 09:05", new ChatMessage("Gui", "oi", t).Format(), "formato");
+    Equal("a b", ChatLog.Clean("  a\r\nb\t "), "uma linha só");
+    Equal(ChatLog.MaxLength, ChatLog.Clean(new string('x', 500)).Length, "limite de letras");
+    var log = new ChatLog { Capacity = 5, Shown = 3, FadeAfter = 8 };
+    var ch = new LocalChatChannel { Clock = () => t };
+    ch.Received += log.Add;
+    ch.Send("Gui", "   ");
+    Equal(0, log.All.Count, "mensagem vazia não vai");
+    for (int i = 1; i <= 7; i++) ch.Send("Gui", $"m{i}");
+    Equal(5, log.All.Count, "guarda até a capacidade");
+    Equal("Gui: m5 - 09:05|Gui: m6 - 09:05|Gui: m7 - 09:05", string.Join("|", log.Recent), "mostra as últimas 3");
+    True(log.Visible, "aparece com mensagem nova");
+    log.Tick(8.1f);
+    True(!log.Visible, "some depois de 8 s sem uso");
+    log.Open();
+    True(log.Visible && log.Typing, "abrir a caixa mostra de novo");
+    log.Tick(30);
+    True(log.Visible, "digitando não some");
+    log.Close();
+    log.Tick(7);
+    True(log.Visible, "ainda visível logo depois de fechar");
+});
 Test("Port: configurações em texto do ConfigFile (ida e volta, padrão e faixa)", () =>
 {
     var c = new PortConfig { CameraMode = 1, Vibration = false, Width = 1920, Height = 1080, Fullscreen = true, VSync = false, UiScale = 1.25f, MusicVolume = 0.5f, Account = "eu" };

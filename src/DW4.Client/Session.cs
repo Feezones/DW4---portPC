@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using Godot;
+using DW4.Gameplay;
 using DW4.Script.Be;
 using DW4.Script.Save;
 
@@ -41,6 +43,18 @@ public static class Session
         set => s_store = value;
     }
     public static IOnlineGate Gate { get; set; } = new LocalGate();
+
+    // Chat (DECISÃO DO PORT): canal local hoje; PONTO DA FASE 6: um IChatChannel de rede. O histórico fica aqui para
+    // sobreviver à troca de fase (a cena é recarregada).
+    static IChatChannel s_chat = Hook(new LocalChatChannel());
+    static readonly List<ChatMessage> s_history = [];
+    public static IReadOnlyList<ChatMessage> ChatHistory => s_history;
+    public static IChatChannel Chat { get => s_chat; set => s_chat = Hook(value); }
+    static IChatChannel Hook(IChatChannel c)
+    {
+        c.Received += m => { s_history.Add(m); if (s_history.Count > 50) s_history.RemoveAt(0); };
+        return c;
+    }
     public static string Account => PortSettings.Current.Account;
 
     public static int Slot { get; private set; } = -1;
