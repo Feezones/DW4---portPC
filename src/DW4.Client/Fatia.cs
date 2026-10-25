@@ -240,7 +240,8 @@ public partial class Fatia : Node3D
             if (_tick < 3) input = new Vector2(0, 0);
         }
         if (_pf != null && _hp <= 0) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; } // caído: F5 reinicia
-        if (!_padEnabled) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; _techKey = -1; } // STAGECTL PADINPUT DISABLE do script
+        _confirmDown = attackDown;
+        if (!_padEnabled || !_playerCtrl) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; _techKey = -1; } // STAGECTL PADINPUT DISABLE do script
         bool attackPressed = attackDown && !_attackHeld;
         _attackHeld = attackDown;
         bool techDown = Input.IsMouseButtonPressed(MouseButton.Right) || Input.IsJoyButtonPressed(0, JoyButton.Y);
@@ -293,6 +294,7 @@ public partial class Fatia : Node3D
                 _lastSerial = _runner.ActionSerial;
                 _enemiesHitThisAction.Clear();
                 _objectsHitThisAction.Clear();
+                CheckTalkProbe();
                 if (_runner.Action != null) _sfx?.Action("p_girumon", _runner.Action);
                 if (_anim != null && _runner.Action != null && AnimName(_runner.Action) is { } an)
                 {
@@ -310,8 +312,9 @@ public partial class Fatia : Node3D
             if (_anim != null && want != null && _anim.CurrentAnimation != want) _anim.Play(want, 0.13f); // ~8 quadros a 60 Hz (MOTIONSET Float@4 = 8, hipótese)
         }
         TickVolumes();
-        TickGenerators();
-        UpdateEnemies(dt);
+        if (!_generatorsFrozen) TickGenerators();
+        if (!_enemiesFrozen) UpdateEnemies(dt);
+        _minimap?.Update(dt, _player.GlobalPosition, GetViewport().GetVisibleRect().Size);
         UpdateFloaters(dt);
         _damageNumbers?.Update(dt);
         if (_pf != null) _overlay?.Update(dt, _hp, _pf.MaxHp, _mp, _pf.MaxMp, _level);

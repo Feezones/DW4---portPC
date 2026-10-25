@@ -147,6 +147,16 @@ public sealed class SequenceRunner
     public bool Invincible => Running && _muteki;
     bool _muteki;
 
+    /// <summary>Interrompe a sequência (MODELCTRL &lt;jogador&gt; SQ_WAIT dos scripts de conversa).</summary>
+    public void Stop()
+    {
+        Running = false;
+        Action = null;
+        ActionHitBoxes = [];
+        _pending.Clear();
+        Next = null;
+    }
+
     /// <summary>Inicia a sequência no bloco do estilo; false se a sequência ou o estilo não existem.</summary>
     public bool Start(string sequence, string? style)
     {
