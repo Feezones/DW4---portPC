@@ -54,6 +54,12 @@ public partial class Fatia
             _mapCursor = map.TryGetProperty("cursor", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString()! : "";
         }
         else (_mapBase, _mapCursor) = ("", "");
+        // Neblina (igFogAttr da fase): a cor também é o fundo; o modo 0 é tratado como linear de "inicio" a "fim" (HIPÓTESE).
+        if (r.TryGetProperty("neblina", out var fog) && fog.ValueKind == JsonValueKind.Object && fog.TryGetProperty("ligada", out var on) && on.GetBoolean())
+        {
+            var cor = fog.GetProperty("cor").EnumerateArray().Select(x => x.GetSingle()).ToArray();
+            _fog = (new Color(cor[0], cor[1], cor[2]), fog.GetProperty("inicio").GetSingle(), fog.GetProperty("fim").GetSingle());
+        }
         if (r.TryGetProperty("musicas", out var mus) && mus.ValueKind == JsonValueKind.Object)
         {
             _musicIndex = [];

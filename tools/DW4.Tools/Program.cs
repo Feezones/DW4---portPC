@@ -2108,6 +2108,7 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
             .Select(g => new KeyValuePair<string, JsonNode?>(g.Key, g.First().Kind))),
         ["menu"] = new JsonArray(menuNames.Select(n => (JsonNode?)n).ToArray()),
         ["musicas"] = music,
+        ["neblina"] = Fog(mainFile),
         ["inimigos"] = enemies,
         ["passos"] = steps,
         ["problemas"] = problems,
@@ -2574,4 +2575,24 @@ static string[] ParseCsvLine(string line)
     }
     fields.Add(sb.ToString());
     return fields.ToArray();
+}
+
+// Neblina da fase (igFogAttr: Enum@4 modo, Float@5 início, Float@6 fim, Float@7 densidade, Vec4f@8 cor; igFogStateAttr Bool@4).
+// FATO (stag0102 #621): modo 0, 60..300, densidade 0,005, cor (0,8 0,7 0,8); um igFogStateAttr ligado e um desligado.
+static JsonNode? Fog(IgbFile f)
+{
+    bool le = f.Header.LittleEndian;
+    var fog = f.Slots.OfType<IgbObject>().FirstOrDefault(o => f.Is(o, "igFogAttr"));
+    if (fog == null) return null;
+    IgbFieldValue? F(int slot) => fog.Fields.FirstOrDefault(v => v.Desc.Slot == slot);
+    float Fl(int slot) => F(slot) is { Raw.Length: >= 4 } v ? (le ? BitConverter.ToSingle(v.Raw, 0) : System.Buffers.Binary.BinaryPrimitives.ReadSingleBigEndian(v.Raw)) : 0;
+    var c = F(8)?.Raw ?? [];
+    float C(int i) => c.Length >= 4 * (i + 1) ? (le ? BitConverter.ToSingle(c, 4 * i) : System.Buffers.Binary.BinaryPrimitives.ReadSingleBigEndian(c.AsSpan(4 * i))) : 1;
+    bool on = f.Slots.OfType<IgbObject>().Where(o => f.Is(o, "igFogStateAttr"))
+        .Any(o => o.Fields.FirstOrDefault(v => v.Desc.Slot == 4 && v.Desc.ShortName == "Bool") is { Raw.Length: > 0 } b && b.Raw[0] != 0);
+    return new JsonObject
+    {
+        ["modo"] = F(4)?.AsInt32(le) ?? 0, ["inicio"] = Fl(5), ["fim"] = Fl(6), ["densidade"] = Fl(7),
+        ["cor"] = new JsonArray(C(0), C(1), C(2), C(3)), ["ligada"] = on,
+    };
 }

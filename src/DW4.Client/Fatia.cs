@@ -97,6 +97,8 @@ public partial class Fatia : Node3D
     HudOverlay? _overlay;
     DamageNumbers? _damageNumbers;
     readonly List<string> _problems = [];
+    // Neblina da fase (cor, início, fim), do fase.json; null sem neblina.
+    (Color Color, float Begin, float End)? _fog;
     int _problemsLogged;
 
     // FATO (colisão #1862): sobre as vagas do grupo 0 (y 40) há uma peça de colisão de 10 de altura (topo em y 50); nascer
@@ -147,7 +149,19 @@ public partial class Fatia : Node3D
     public override void _Ready()
     {
         ChooseStage();
-        AddChild(new WorldEnvironment { Environment = new Godot.Environment { AmbientLightSource = Godot.Environment.AmbientSource.Color, AmbientLightColor = new Color(0.6f, 0.6f, 0.65f), BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black } });
+        var env = new Godot.Environment { AmbientLightSource = Godot.Environment.AmbientSource.Color, AmbientLightColor = new Color(0.6f, 0.6f, 0.65f), BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black };
+        // FATO (stag0102 #621): igFogAttr 60..300 com cor (0,8 0,7 0,8). Fundo na cor da neblina e neblina por profundidade.
+        if (_fog is { } fg)
+        {
+            env.BackgroundColor = fg.Color;
+            env.FogEnabled = true;
+            env.FogMode = Godot.Environment.FogModeEnum.Depth;
+            env.FogLightColor = fg.Color;
+            env.FogDepthBegin = fg.Begin;
+            env.FogDepthEnd = fg.End;
+            env.FogDepthCurve = 1;
+        }
+        AddChild(new WorldEnvironment { Environment = env });
         AddChild(new DirectionalLight3D { RotationDegrees = new Vector3(-60, 30, 0) });
 
         if (Load("cenario", "cena.gltf") is { } scenery) { ApplyAdditive(scenery); AddChild(scenery); }

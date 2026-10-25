@@ -39,6 +39,20 @@ Cada fase aberta por 22 s, com o log lido. O cliente agora também escreve no lo
 
 ## Pendente
 
-- Céu: fundo lilás liso nos campos (stag0102); o céu/fundo da fase não é desenhado.
 - Os inimigos novos não foram conferidos de perto na janela (pose, escala, ataques). A IA e o corpo usam as mesmas hipóteses
   do Numemon.
+
+## Céu dos campos: neblina (2026-10-25)
+
+- **FATO:**
+  - Os campos não têm domo de céu. O IGB principal tem um igFogAttr (modo 0, início 60, fim 300, densidade 0,005) com cor
+    por fase: stag0101 (0,9 0,8 0,9), stag0102 (0,8 0,7 0,8), stag0104 (0,7 0,6 0,7). Tem também um igFogStateAttr ligado.
+  - O "plano lilás" era a camada de nuvens (P10G02n, quase branca com alfa) sem neblina nem fundo. O fundo do cliente era
+    preto.
+- O exportador grava "neblina" no fase.json; o cliente usa a cor como fundo e liga a neblina por profundidade de "inicio" a
+  "fim".
+- **HIPÓTESES:**
+  - O modo 0 é linear.
+  - A cor de fundo é a da neblina.
+  - A neblina vale para a fase inteira (o igFogStateAttr desligado não foi localizado na árvore).
+- Conferido na janela (stag0102): fundo lilás, o castelo ao longe some na neblina, nuvens mais claras.
