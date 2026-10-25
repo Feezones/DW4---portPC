@@ -103,7 +103,7 @@ public static class ShopStock
 /// </summary>
 public static class ShopTrade
 {
-    public const int BitMax = 9_999_999;
+    public const int BitMax = Inventory.BitMax;
 
     public static bool CanBuy(Inventory inv, int hanbai) => hanbai >= 0 && inv.Bit >= hanbai && inv.Devices.Count < Inventory.DeviceMax;
 

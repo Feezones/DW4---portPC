@@ -107,6 +107,30 @@ Test("Port: vagas da conta (ICharacterStore local): 4 vagas, vazia = null, grava
     finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
 });
 
+
+Test("Port: banco (BANKBIT e BANKDEVICE até 96) e o banco no save", () =>
+{
+    var inv = new Inventory { Bit = 1000 };
+    True(inv.DepositBit(600) && inv.Bit == 400 && inv.BankBit == 600, "deposita BIT");
+    True(!inv.DepositBit(401) && !inv.DepositBit(0), "não deposita mais do que tem nem 0");
+    True(inv.WithdrawBit(100) && inv.Bit == 500 && inv.BankBit == 500, "saca");
+    True(!inv.WithdrawBit(501), "não saca mais do que guardou");
+    inv.Add(new ItemRef("weapon", 3));
+    True(inv.DepositDevice(new ItemRef("weapon", 3)) && inv.Devices.Count == 0 && inv.BankDevices.Count == 1, "item vai para o banco");
+    True(!inv.DepositDevice(new ItemRef("conItem", 1)), "disco não entra no banco de itens");
+    for (int i = 0; i < 95; i++) { inv.Add(new ItemRef("abChip", i % 30)); inv.DepositDevice(new ItemRef("abChip", i % 30)); }
+    Equal(96, inv.BankDevices.Count, "96 itens");
+    inv.Add(new ItemRef("abChip", 1));
+    True(!inv.DepositDevice(new ItemRef("abChip", 1)), "o 97º não cabe");
+    True(inv.WithdrawDevice(new ItemRef("weapon", 3)) && inv.Has(new ItemRef("weapon", 3)), "saca o item");
+    var ram = new GameRam();
+    ram.Players[0].Items = inv;
+    ram.Players[0].Forms.Start(0);
+    var back = DW4.Script.Save.CharacterSave.FromJson(DW4.Script.Save.CharacterSave.Capture(ram, 0, "b", "s", 0).ToJson())!;
+    var ram2 = new GameRam();
+    back.Apply(ram2, 0);
+    Equal((500, 95), (ram2.Players[0].Items.BankBit, ram2.Players[0].Items.BankDevices.Count), "banco gravado");
+});
 Test("Port: configurações em texto do ConfigFile (ida e volta, padrão e faixa)", () =>
 {
     var c = new PortConfig { CameraMode = 1, Vibration = false, Width = 1920, Height = 1080, Fullscreen = true, VSync = false, UiScale = 1.25f, MusicVolume = 0.5f, Account = "eu" };

@@ -31,6 +31,8 @@ public sealed class CharacterSave
     public List<FormSave> Forms { get; set; } = [];
     public int Bit { get; set; }
     public List<ItemSave> Devices { get; set; } = [];
+    public int BankBit { get; set; }
+    public List<ItemSave> BankDevices { get; set; } = [];
     public Dictionary<int, int> Disks { get; set; } = [];
     public List<int> ImportantItems { get; set; } = [];
     /// <summary>FLAG (1024 bytes) e CARDLIST (50 bytes) em base64; COUNTER (16 inteiros).</summary>
@@ -73,6 +75,7 @@ public sealed class CharacterSave
         {
             Name = name, CurrentForm = p.Forms.Current, Difficulty = ram.Difficulty, CameraMode = ram.CameraMode, LightMode = ram.LightMode,
             Stage = stage, Entry = entry, SavedAt = DateTime.UtcNow, Bit = p.Items.Bit,
+            BankBit = p.Items.BankBit, BankDevices = p.Items.BankDevices.Select(d => new ItemSave(d.Table, d.Row)).ToList(),
             Devices = p.Items.Devices.Select(d => new ItemSave(d.Table, d.Row)).ToList(),
             Disks = p.Items.DiskCounts.Where(kv => kv.Value > 0).ToDictionary(kv => kv.Key, kv => kv.Value),
             ImportantItems = p.Items.ImportantFlags.OrderBy(x => x).ToList(),
@@ -106,6 +109,7 @@ public sealed class CharacterSave
         foreach (var d in Devices) inv.Add(new ItemRef(d.Table, d.Row));
         foreach (var (row, n) in Disks) for (int i = 0; i < n; i++) inv.Add(new ItemRef("conItem", row));
         foreach (var row in ImportantItems) inv.Add(new ItemRef("impItem", row));
+        inv.RestoreBank(BankBit, BankDevices.Select(d => new ItemRef(d.Table, d.Row)));
         p.Items = inv;
         CopyBase64(Cards, p.Cards);
         CopyBase64(Flags, ram.Flags);

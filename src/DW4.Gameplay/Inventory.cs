@@ -19,6 +19,56 @@ public sealed class Inventory
 
     public IReadOnlyList<ItemRef> Devices => _devices;
     public int Bit { get; set; }
+
+    // ---------- Banco (D.S.G. Bank, janela BANK / beNDMWShopCtrlEditBit) ----------
+    // FATO: os campos BANKBIT (inteiro) e BANKDEVICE (lista) do jogador na GAMERAM (tabela 0x804EAC08); a gravação copia o
+    // BANKDEVICE para 96 posições, com −1 nas vazias (0x80364F14). FATO pelos textos: o banco guarda itens e BITS ("BITS Bank",
+    // "Item Bank", mswkPRG1300..1356). HIPÓTESES: teto do BANKBIT igual ao do BIT (9 999 999); só itens do DEVICEFOLDER entram.
+    public const int BankDeviceMax = 96, BitMax = 9_999_999;
+    readonly List<ItemRef> _bank = [];
+    public int BankBit { get; set; }
+    public IReadOnlyList<ItemRef> BankDevices => _bank;
+
+    public bool DepositBit(int amount)
+    {
+        if (amount <= 0 || amount > Bit) return false;
+        int room = BitMax - BankBit;
+        if (amount > room) return false;
+        Bit -= amount;
+        BankBit += amount;
+        return true;
+    }
+
+    public bool WithdrawBit(int amount)
+    {
+        if (amount <= 0 || amount > BankBit || Bit + amount > BitMax) return false;
+        BankBit -= amount;
+        Bit += amount;
+        return true;
+    }
+
+    /// <summary>Guarda um item do DEVICEFOLDER no banco (o chamador recusa item equipado).</summary>
+    public bool DepositDevice(ItemRef item)
+    {
+        if (_bank.Count >= BankDeviceMax || item.Table is not ("weapon" or "armor1" or "armor2" or "abChip") || !_devices.Remove(item)) return false;
+        _bank.Add(item);
+        return true;
+    }
+
+    public bool WithdrawDevice(ItemRef item)
+    {
+        if (_devices.Count >= DeviceMax || !_bank.Remove(item)) return false;
+        _devices.Add(item);
+        return true;
+    }
+
+    /// <summary>Volta o banco gravado (save do port).</summary>
+    public void RestoreBank(int bit, IEnumerable<ItemRef> devices)
+    {
+        BankBit = Math.Clamp(bit, 0, BitMax);
+        _bank.Clear();
+        _bank.AddRange(devices.Take(BankDeviceMax));
+    }
     public int Disks(int conItemRow) => _disks.TryGetValue(conItemRow, out var n) ? n : 0;
     public bool HasFlag(int impItemRow) => _flags.Contains(impItemRow);
     /// <summary>Discos por linha da conItem (para gravar).</summary>

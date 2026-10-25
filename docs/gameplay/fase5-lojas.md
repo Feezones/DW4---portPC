@@ -126,3 +126,17 @@
 - Teste: na "Jogo: estoque das lojas da Central Area (#829) …".
 - **DESCONHECIDO:** BANK (EditBit: _editBit, _editMax), XDATA (XdataChip) e CARD. O GETSHOPDATA soma BIT e XDATA (teto
   9999) dos jogadores com ISUSE antes do switch, o que deve servir ao banco e à X-data; falta ler.
+
+## Banco (2026-10-25)
+
+- **FATO:**
+  - Os campos do jogador na GAMERAM (tabela 0x804EAC08) são BANKDEVICE (lista) e BANKBIT (inteiro).
+  - A gravação copia o BANKDEVICE para 96 posições, com −1 nas vazias (0x80364EC4..0x80364F78).
+  - Textos (stagml12): "D.S.G. Bank, where we store your collected Items and BITS"; "If you're destroyed out in the field,
+    you'll lose all the BITS…"; menus BITS Folder / BITS Bank / Item Bank e Deposit / Withdraw.
+- **No port:**
+  - `Inventory`: BankBit, BankDevices (até 96), DepositBit, WithdrawBit, DepositDevice, WithdrawDevice. O banco entra no save.
+  - Cliente: `SUBWND GENERATE "BANK/…"` abre uma janela com as abas BITS (valor, depositar, sacar, depositar tudo) e itens
+    (pasta ↔ banco).
+- **HIPÓTESES:** teto do BANKBIT igual ao do BIT; só armas, armaduras e chips entram no banco de itens; item equipado não entra.
+- **Pendente:** perder os BITS carregados ao cair no campo (regra dita nos textos; o momento exato não foi lido).
