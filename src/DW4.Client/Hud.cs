@@ -146,12 +146,16 @@ public sealed class HudActor
     readonly Dictionary<int, float> _meterTime = [];
     readonly Dictionary<int, (ArrayMesh Mesh, HudData.MeshData Data)> _geometry = [];
     readonly List<StandardMaterial3D> _materials = [];
+    int _drawOrder = -1;
     readonly bool _billboard;
 
-    public HudActor(HudData h, int root, int slot, bool billboard = false)
+    /// <param name="drawOrder">Se ≥ 0, os materiais ganham RenderPriority crescente a partir dele na ordem do grafo (o Alchemy desenha
+    /// na ordem da árvore; a Godot ordena transparentes pela distância e a moldura do i_stdigiface, z 20..230, cobria o rosto em z 80).</param>
+    public HudActor(HudData h, int root, int slot, bool billboard = false, int drawOrder = -1)
     {
         _h = h;
         _billboard = billboard;
+        _drawOrder = drawOrder;
         Build(root, Root, null, false, [], -1, slot);
     }
 
@@ -192,6 +196,7 @@ public sealed class HudActor
                 TextureFilter = BaseMaterial3D.TextureFilterEnum.Linear,
             };
             if (texture == null) mat.AlbedoColor = new Color(1, 1, 1, 0.3f);
+            if (_drawOrder >= 0) mat.RenderPriority = Math.Min(127, _drawOrder++);
             _materials.Add(mat);
             here.AddChild(new MeshInstance3D { Mesh = mesh, MaterialOverride = mat });
             _geometry[n.Id] = (mesh, m);

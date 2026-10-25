@@ -75,7 +75,8 @@ public partial class Fatia
             foreach (var (name, open) in MenuBase)
             {
                 if (!_menuData.Actors.TryGetValue(name, out int root)) continue;
-                var actor = new HudActor(_menuData, root, slot: 0);
+                // Ordem de desenho pela ordem de geração (fundo primeiro) e, dentro do ator, pela ordem do grafo.
+                var actor = new HudActor(_menuData, root, slot: 0, drawOrder: _menuActors.Count * 20);
                 var seqDir = Path.Combine(_dir, "menu", name);
                 var seqFile = Directory.Exists(seqDir) ? Directory.EnumerateFiles(seqDir, "*_seq.json").FirstOrDefault() : null;
                 ObjectSequencer? seq = null;
@@ -152,20 +153,35 @@ public partial class Fatia
             V(f => f.Res(0)), V(f => f.Res(1)), V(f => f.Res(2)), V(f => f.Res(3)),
             "-", "-", (PlayerGrowth.NextExp(_level) - _exp).ToString(),
         };
-        // i_stbase "sen": x −310..−111, y −177..220; "mojiL" (Lv.) em y 87..207. Atributos abaixo, 12 linhas de ~21.
-        MenuLabel(_level.ToString(), -215, 200, 18);
-        MenuLabel($"HP {_hp}/{_pf?.MaxHp ?? 0}\nMP {_mp}/{_pf?.MaxMp ?? 0}", -300, 150, 14);
+        // Posições pelas malhas do i_stbase (geometria 'sen' #33810 e 'mojiL' #33812) e do i_stmenu01 (L3, 'sen' #33644), em
+        // coordenadas da tela 640×480 com origem no centro e y para cima; MenuLabel recebe o canto superior esquerdo do rótulo.
+        // Um rótulo de 12 pt tem ~17 de altura: o topo fica 17 acima do sublinhado para o texto pousar nele.
+        // Nível: "Lv." do mojiL em x −244..−222, y 189..207; linha do número em x −228..−176, y 185..189.
+        MenuLabel(_level.ToString(), -220, 207, 14, HorizontalAlignment.Right, 44);
+        // Nome: moldura em x −306..−152, y 133..151.
+        MenuLabel("Guilmon", -296, 151, 12);
+        // HP/MP: "HP" do mojiL em y 105..118 e "MP" em 87..100 (x −300..−282); linhas em y 105..109 e 87..91, atual em
+        // x −282..−234, "/" em −221..−214, máximo em −213..−165.
+        MenuLabel(_hp.ToString(), -282, 124, 12, HorizontalAlignment.Right, 48);
+        MenuLabel((_pf?.MaxHp ?? 0).ToString(), -213, 124, 12, HorizontalAlignment.Right, 48);
+        MenuLabel(_mp.ToString(), -282, 106, 12, HorizontalAlignment.Right, 48);
+        MenuLabel((_pf?.MaxMp ?? 0).ToString(), -213, 106, 12, HorizontalAlignment.Right, 48);
+        // Atributos: moldura em y −106..77 com 10 sublinhados em x −304..−155, topos em y 62, 44, … −100 (passo 18): 9 atributos
+        // e "¶ Data". Moldura de baixo (y −173..−114): sublinhados com topo em −129 (BITS) e −149 (Next Level).
+        float[] tops = [62, 44, 26, 8, -10, -28, -46, -64, -82, -100, -129, -149];
         for (int i = 0; i < values.Length; i++)
         {
-            float y = 78 - 21 * i;
-            MenuLabel(Text(14 + i)?.Replace("\r\n", " ") ?? "", -300, y);
-            MenuLabel(values[i], -230, y, 13, HorizontalAlignment.Right, 110);
+            float y = tops[i] + 17;
+            MenuLabel(Text(14 + i)?.Replace("\r\n", " ") ?? "", -292, y, 12);
+            MenuLabel(values[i], -262, y, 12, HorizontalAlignment.Right, 95);
         }
-        // i_stmenu01: linhas em x −110..54, y 81..216 (3 linhas de ~45).
+        // i_stmenu01 (L3, SQ_3LINEUPOPEN): moldura em x −110..54, y 140..216; separadores em y 188..192 e 166..170 (x −84..48).
+        // Linhas: topo 212, 189 e 167.
+        float[] rows = [212, 189, 167];
         for (int i = 0; i < 3; i++)
-            MenuLabel((i == _menuCursor ? "▶ " : "   ") + Text(26 + i), -100, 206 - 45 * i, 16);
-        // i_staccount (x 128..312, y 156..216): nome.
-        MenuLabel("Guilmon", 140, 200, 15);
+            MenuLabel((i == _menuCursor ? "▶ " : "    ") + Text(26 + i), -100, rows[i], 13);
+        // i_staccount (win01: x 128..312, y 156..216): nome.
+        MenuLabel("Guilmon", 140, 200, 13);
         MenuLabel(string.Join("    ", Enumerable.Range(11, 3).Select(i => Text(i)?.Replace("\r\n", " "))), -320, -212, 13, HorizontalAlignment.Center, 640);
     }
 
