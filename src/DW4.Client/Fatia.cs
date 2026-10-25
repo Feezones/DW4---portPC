@@ -97,6 +97,14 @@ public partial class Fatia : Node3D
     // dentro dela derruba o Guilmon pelo chão. HIPÓTESE: o jogo assenta o jogador no chão acima do ponto. No primeiro quadro
     // de física, um raio de y + 60 para baixo põe o jogador no primeiro chão.
     bool _snapToFloor;
+    // Foco da janela pelas notificações do SO (começa com foco; só perde quando o SO avisa que saiu).
+    bool _hasFocus = true;
+
+    public override void _Notification(int what)
+    {
+        if (what == NotificationApplicationFocusOut) _hasFocus = false;
+        else if (what == NotificationApplicationFocusIn) _hasFocus = true;
+    }
     // Troca de fase pedida: a cena vai ser recarregada, a física para de rodar (evita !is_inside_tree).
     bool _leaving;
     // Gatilhos de área só depois do assentamento no chão e de um quadro inteiro na fase (posição velha disparava matt01).
@@ -288,7 +296,7 @@ public partial class Fatia : Node3D
             if (_tick < 3) input = new Vector2(0, 0);
         }
         // Decisão do port PC: sem foco na janela, nada do controle/teclado move o jogador (controle pareado dava entrada fantasma).
-        if (!_demo && !DisplayServer.WindowIsFocused()) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; }
+        if (!_demo && !_hasFocus) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; }
         if (_pf != null && _hp <= 0) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; } // caído: F5 reinicia
         // Só vale um toque que começou depois de abrir a mensagem (o ataque que abriu a conversa ainda pode estar apertado).
         if (!attackDown) _confirmArmed = true;
