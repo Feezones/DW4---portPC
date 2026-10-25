@@ -251,7 +251,8 @@ public sealed class IgbHud
     string? StageTexture(int index)
     {
         if (!_scene.Images.TryGetValue(index, out var img)) return null;
-        var file = $"img{index:D5}_{Safe(img.Name)}";
+        // Sempre .png: há imagens sem nome ("") e com nome .dds; sem a extensão certa a Godot não reconhece o arquivo.
+        var file = $"img{index:D5}_{Path.GetFileNameWithoutExtension(Safe(img.Name))}.png";
         if (!_images.ContainsKey(file) && IgbScene.ToRgba(img) is { } rgba) _images[file] = new HudImage(file, img.Name, img.Width, img.Height, rgba);
         return _images.ContainsKey(file) ? file : null;
     }
