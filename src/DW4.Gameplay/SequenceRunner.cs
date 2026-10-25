@@ -106,8 +106,8 @@ public sealed record HitBox(int Type, float StartFrame, float Frames, Vector3 Po
 ///    (SQ_ATCK1 do Numemon: ACTION "NATK01" e depois as caixas 70004), a caixa vale para a ação atual.
 ///    "AllClear" descarta as agendadas.
 ///  · ACTION toca a animação; as caixas agendadas valem nos quadros [início, início + duração) dessa ação.
-///  · WCHECK "Action" (e "Moving", usado nos recuos de dano do Numemon) espera a animação acabar; "Atck0N" também espera, e só continua se o ataque foi apertado
-///    durante a ação (janela de combo); senão a sequência termina. Outros WCHECK não bloqueiam aqui.
+///  · WCHECK "Action" (e "Moving", usado nos recuos de dano do Numemon) espera a animação acabar; "Atck0N" é o golpe carregado (ver o case)
+///    : segue se o ataque continua segurado, e o último espera soltar. Outros WCHECK não bloqueiam aqui.
 ///  · Uma ACTION precedida de HITBOX tipo 60000 (sonda de conversa, seguida de "TALKWF") só acontece se a sonda achar
 ///    alguém para conversar; sem NPC por perto, a ação e o WCHECK "Action" seguinte são pulados.
 ///  · MOVE guarda o último comando de movimento; JUMP termina indicando a próxima sequência.
@@ -126,9 +126,9 @@ public sealed class SequenceRunner
     List<SeqCommand> _cmds = [];
     int _pc, _end;
     readonly List<HitBox> _pending = [];
-    bool _attackBuffered, _skipWait;
+    bool _skipWait;
     // Botão de ataque segurado sem soltar desde o início da ação atual (para o golpe carregado, SQ_ATCKTM).
-    bool _heldSinceAction;
+    bool _heldSinceAction, _held;
 
     public SequenceRunner(IReadOnlyDictionary<string, List<SeqCommand>> sequences, Func<string, float?> animationFrames)
     {
@@ -185,7 +185,7 @@ public sealed class SequenceRunner
         ActionHitBoxes = [];
         Next = null;
         Running = true;
-        _attackBuffered = false;
+        _held = _heldSinceAction = true; // o toque que começou a sequência
         _skipWait = false;
         _muteki = false;
         Advance();
@@ -197,8 +197,8 @@ public sealed class SequenceRunner
     public void Tick(float dt, bool attackPressed, bool? attackHeld = null)
     {
         if (!Running) return;
-        if (!(attackHeld ?? attackPressed)) _heldSinceAction = false;
-        if (attackPressed && Action != null) _attackBuffered = true;
+        _held = attackHeld ?? attackPressed;
+        if (!_held) _heldSinceAction = false;
         ActionFrame += dt * FramesPerSecond;
         Advance();
     }
@@ -232,23 +232,32 @@ public sealed class SequenceRunner
                     ActionLength = _animFrames(Action) ?? 0;
                     ActionHitBoxes = _pending.ToList();
                     _pending.Clear();
-                    _attackBuffered = false;
-                    _heldSinceAction = true;
+                    _heldSinceAction = _held;
                     ActionSerial++;
                     break;
                 case "WCHECK" when _skipWait && c.S(0) == "Action":
                     _skipWait = false;
                     break;
-                case "WCHECK" when c.S(0) is "Action" or "Moving" || c.S(0).StartsWith("Atck", StringComparison.Ordinal):
-                    if (Action != null && ActionFrame < ActionLength) return; // espera a animação
-                    if (c.S(0).StartsWith("Atck", StringComparison.Ordinal))
+                // FATO (Guilmon #857, ações): VATCS1 = "vatcS" uma vez (o golpe); KATCS1 = "katcS02" em laço com WAITCHECK "Frame" 60
+                // (pose de carregar); KATCS2 = "katcS02" em laço sem fim (carregado); o SQ_ATCKTM toca KATCS3 = "katcS03" (solta).
+                // SQ_ATCK1: VATCS1 → "Atck01" → KATCS1 → "Atck02" → KATCS2 → "Atck03" → JUMP "SQ_ATCKTM". HIPÓTESE forte pelas
+                // animações: AtckNN não é janela de combo, é o carregar ("TM" = tame, 溜め): Atck01/Atck02 seguem só se o ataque
+                // continua segurado desde o início da ação; Atck03 espera enquanto segura e, ao soltar, dispara o golpe carregado.
+                // Toques repetidos repetem o golpe (VATCS1 de novo).
+                case "WCHECK" when c.S(0).StartsWith("Atck", StringComparison.Ordinal):
+                {
+                    bool release = _pc + 1 < _end && _cmds[_pc + 1].Kind == "JUMP" && _cmds[_pc + 1].S(0) == ChargedSequence;
+                    if (release)
                     {
-                        // FATO (Guilmon #857): nos 8 estilos, o último WCHECK "Atck03" do SQ_ATCK1 é seguido de JUMP "SQ_ATCKTM"; os dois
-                        // primeiros continuam o combo. HIPÓTESE: "TM" = tame (溜め, carregar): o golpe carregado só sai segurando o botão
-                        // durante o 3º golpe; tocar de novo não basta (antes, o 4º toque rápido soltava o carregado).
-                        bool toCharged = _pc + 1 < _end && _cmds[_pc + 1].Kind == "JUMP" && _cmds[_pc + 1].S(0) == ChargedSequence;
-                        if (toCharged ? !_heldSinceAction : !_attackBuffered) { Finish(null); return; }
+                        if (_held) return; // carregando: espera soltar
+                        break;
                     }
+                    if (Action != null && ActionFrame < ActionLength) return; // espera a animação
+                    if (!_heldSinceAction) { Finish(null); return; }
+                    break;
+                }
+                case "WCHECK" when c.S(0) is "Action" or "Moving":
+                    if (Action != null && ActionFrame < ActionLength) return; // espera a animação
                     break;
                 case "WCHECK":
                     break;

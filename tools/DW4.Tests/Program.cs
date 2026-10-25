@@ -246,28 +246,25 @@ Test("Sequência: bloco do estilo, sonda de conversa pulada, caixa no quadro cer
     for (int i = 0; i < 10; i++) r.Tick(frame, false);
     True(!r.Running && r.Next == null, "sem apertar, o combo termina");
 
+    // Toques (aperta e solta): cada toque é só o golpe; não entra na pose de carregar.
     r.Start("SQ_ATCK1", "slash");
-    r.Tick(frame, true);
-    for (int i = 0; i < 20; i++) r.Tick(frame, false);
-    Equal("KATCS1", r.Action, "com o botão na janela, segue o combo");
-    r.Tick(frame, true);
-    for (int i = 0; i < 20; i++) r.Tick(frame, false);
-    True(!r.Running && r.Next == null, "toques rápidos: o último golpe não solta o carregado (SQ_ATCKTM)");
+    r.Tick(frame, true, attackHeld: false);
+    for (int i = 0; i < 25; i++) r.Tick(frame, i % 5 == 0, attackHeld: false);
+    True(!r.Running && r.Next == null, "toques rápidos: só o golpe, sem carregar");
 
-    // Segurando o botão durante o último golpe: segue para o carregado.
+    // Segurando: golpe → pose de carregar (KATCS1) → continua carregando enquanto segura → ao soltar, golpe carregado.
     r.Start("SQ_ATCK1", "slash");
-    r.Tick(frame, true);
-    for (int i = 0; i < 40 && r.Action != "KATCS1"; i++) r.Tick(frame, false);
-    Equal("KATCS1", r.Action, "segundo golpe");
-    for (int i = 0; i < 21; i++) r.Tick(frame, i == 0, attackHeld: true);
-    True(!r.Running && r.Next == "SQ_ATCKTM", "segurando: pula para SQ_ATCKTM");
+    for (int i = 0; i < 25; i++) r.Tick(frame, false, attackHeld: true);
+    Equal("KATCS1", r.Action, "segurando depois do golpe: carrega");
+    for (int i = 0; i < 60; i++) r.Tick(frame, false, attackHeld: true);
+    True(r.Running && r.Action == "KATCS1", "segurando: continua carregando");
+    r.Tick(frame, false, attackHeld: false);
+    True(!r.Running && r.Next == "SQ_ATCKTM", "soltou: dispara o golpe carregado (SQ_ATCKTM)");
 
-    // Segurou mas soltou no meio: não sai o carregado.
+    // Soltou antes do fim do golpe: não carrega.
     r.Start("SQ_ATCK1", "slash");
-    r.Tick(frame, true);
-    for (int i = 0; i < 40 && r.Action != "KATCS1"; i++) r.Tick(frame, false);
-    for (int i = 0; i < 21; i++) r.Tick(frame, i == 0, attackHeld: i < 10);
-    True(!r.Running && r.Next == null, "soltou antes do fim: sem carregado");
+    for (int i = 0; i < 25; i++) r.Tick(frame, false, attackHeld: i < 10);
+    True(!r.Running && r.Next == null, "soltou durante o golpe: sem carregar");
     True(!r.Start("SQ_ATCK1", "gun"), "estilo inexistente");
 
     // Numemon: caixas do golpe depois da ACTION valem para ela.
