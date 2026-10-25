@@ -2008,6 +2008,31 @@ if (args.Length == 1)
         True(missing.Count == 0, "be: sem resposta: " + string.Join(", ", missing));
     });
 
+    Test("Jogo: cronômetro das missões (chk_i_timenm0.lua da dngq2b1e): \"down\" tira 1 s da COUNTER 0 e mostra mm:ss", () =>
+    {
+        var dirLua = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fases", "dngq2b1e", "lua");
+        var chunks = Directory.GetFiles(dirLua, "*.lua").ToDictionary(f => Path.GetFileName(f), File.ReadAllBytes);
+        var engine = new RecordingEngine { Responder = m => m.Class == "SYSCTL" && m.Command == "GETHP" ? 150 : null }; // como o cliente
+        var ram = new GameRam();
+        var sys = new BeSystem { FolderName = "dngq2b1e" };
+        sys.Players[0] = ("p_girumon", new[] { "w_sword01", "w_sword01", "w_sword01" });
+        var host = new BeHost(engine, ram, sys);
+        var missing = new List<string>();
+        host.Unimplemented = (n, _) => missing.Add(n);
+        var stage = new StageScripts(chunks, host);
+        var errors = new List<string>();
+        stage.Error = (n, e) => errors.Add($"{n}: {e}");
+        ram.SetCounter(0, 1800);
+        host.CallName = "down";
+        // O first.lua da masmorra de missão calcula minutos e segundos da COUNTER 0 (1800 → 30 e 0).
+        stage.Vm.Globals["g_counter_min"] = 30.0;
+        stage.Vm.Globals["g_counter_sec"] = 0.0;
+        True(stage.Run("chk_i_timenm0.lua") && errors.Count == 0, string.Join("; ", errors));
+        host.Tick();
+        Equal(1799, ram.Counter(0), "1800 → 1799");
+        True(engine.Log.Any(l => l.Contains("timenm0") && l.Contains("I<29>")) && engine.Log.Any(l => l.Contains("timenm1") && l.Contains("I<59>")), "29:59 — " + string.Join(" | ", engine.Log) + " | sem resposta: " + string.Join(",", missing));
+    });
+
     Test("Jogo: MDLgetBulletName pela tabela 0x804DD2A0 (código / 10000 − 1)", () =>
     {
         Equal("PCWA", BeHost.BulletName(10000), "10000 físico");

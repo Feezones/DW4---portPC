@@ -28,7 +28,8 @@ janela.
    (como ele escolhe a técnica) não foi lido.
 8. **Missões (quest01..06 e treasure01..08).** Teste com os scripts reais: quest01 → cápsula (end_g_000bcaps) → treasure01, sem
    erro e sem be: faltando. FATO: a recompensa vai pela COUNTER 0 (≥ 900 → +100 BIT para cada jogador, depois 600…). Falta jogar na
-   janela e ver quem soma a COUNTER 0.
+   janela. FATO: a COUNTER 0 é o tempo da missão (1800/2400/3000 s no first.lua das dngq*), contado pelo chk_i_timenm0.lua;
+   o cliente agora roda o cronômetro (1 chamada por segundo, HIPÓTESE).
 9. **Loja de cartas (stagIS11) e as cartas.** As regras não foram lidas. Hoje o NPC mostra "ainda não portada".
 10. **Efeitos de estado no jogador** (atordoar, sono, prender, veneno, ataque/defesa baixos). O jogo faz pelos hit_p_*.lua; o
     port calcula o dano por conta própria e não roda esses scripts.
