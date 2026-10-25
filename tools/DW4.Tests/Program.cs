@@ -48,6 +48,80 @@ static void True(bool condition, string what)
 
 // ---------- sintéticos ----------
 
+Test("Port: save do personagem guarda e devolve formas, inventário, cartas e estado comum", () =>
+{
+    var ram = new GameRam { Difficulty = 2, CameraMode = 1 };
+    var p = ram.Players[0];
+    p.Forms.Start(2);
+    p.Forms[2].Level = 17; p.Forms[2].Exp = 12345; p.Forms[2].Skill[2] = 420; p.Forms[2].UpCount[3] = 5;
+    p.Forms.Unlock(6);
+    p.Items.Bit = 999;
+    p.Items.Add(new ItemRef("weapon", 25)); p.Items.Add(new ItemRef("armor1", 3));
+    p.Items.Add(new ItemRef("conItem", 1)); p.Items.Add(new ItemRef("conItem", 1)); p.Items.Add(new ItemRef("impItem", 7));
+    p.Cards[4] = 1;
+    ram.SetFlag(409, true); ram.SetCounter(1, 6000);
+    var save = DW4.Script.Save.CharacterSave.Capture(ram, 0, "Gui", "stagml11", 3);
+    Equal(17, save.Level, "nível da forma atual");
+    var back = DW4.Script.Save.CharacterSave.FromJson(save.ToJson())!;
+    var ram2 = new GameRam();
+    back.Apply(ram2, 1);
+    var q = ram2.Players[1];
+    Equal(2, q.Forms.Current, "forma atual");
+    Equal((17, 12345L, 420, 5), (q.Forms[2].Level, q.Forms[2].Exp, q.Forms[2].Skill[2], q.Forms[2].UpCount[3]), "estado da forma");
+    True(q.Forms[6].Unlocked && !q.Forms[5].Unlocked, "formas liberadas");
+    Equal(999, q.Items.Bit, "BIT");
+    True(q.Items.Has(new ItemRef("weapon", 25)) && q.Items.Has(new ItemRef("armor1", 3)), "DEVICEFOLDER");
+    Equal(2, q.Items.Disks(1), "DISKFOLDER");
+    True(q.Items.HasFlag(7), "impItem");
+    Equal((byte)1, q.Cards[4], "CARDLIST");
+    Equal((1, 6000, 2, 1), (ram2.FlagOn(409), ram2.Counter(1), ram2.Difficulty, ram2.CameraMode), "FLAG, COUNTER, DIFFICULTY e CAMERAMODE");
+    Equal(("Gui", "stagml11", 3), (back.Name, back.Stage, back.Entry), "nome e lugar");
+    Equal(null, DW4.Script.Save.CharacterSave.FromJson("{\"Version\": 99}"), "versão futura não carrega");
+    Equal(null, DW4.Script.Save.CharacterSave.FromJson("lixo"), "texto qualquer não carrega");
+    var fresh = DW4.Script.Save.CharacterSave.New("Novo", 2, "p_girumon", 0, "stagml11", 3);
+    Equal((2, 1, "p_girumon"), (fresh.CurrentForm, fresh.Level, fresh.Model), "personagem novo: inicial no nível 1");
+    True(fresh.Forms[2].Unlocked && fresh.Forms.Count(f => f.Unlocked) == 1, "só a inicial liberada");
+});
+
+Test("Port: vagas da conta (ICharacterStore local): 4 vagas, vazia = null, grava, lê e apaga por conta", () =>
+{
+    var root = Path.Combine(Path.GetTempPath(), "dw4-teste-vagas-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        DW4.Script.Save.ICharacterStore store = new DW4.Script.Save.LocalCharacterStore(root);
+        True(store.List("local") is { Count: 4 } l && l.All(x => x == null), "conta nova: 4 vagas vazias");
+        store.Save("local", 2, DW4.Script.Save.CharacterSave.New("Gui", 2, "p_girumon", 0, "stagml11", 3));
+        var list = store.List("local");
+        True(list[0] == null && list[1] == null && list[2]?.Name == "Gui" && list[3] == null, "vaga 3 ocupada");
+        True(File.Exists(Path.Combine(root, "accounts", "local", "slot3.json")), "arquivo accounts/local/slot3.json");
+        True(store.List("outra").All(x => x == null), "outra conta não vê as vagas");
+        store.Delete("local", 2);
+        True(store.Load("local", 2) == null, "apagada");
+        var bad = false;
+        try { store.Save("../fora", 0, DW4.Script.Save.CharacterSave.New("x", 0, "p_agumon", 0, "s", 0)); } catch (ArgumentException) { bad = true; }
+        True(bad, "nome de conta com caminho é recusado");
+        bad = false;
+        try { store.Load("local", 4); } catch (ArgumentOutOfRangeException) { bad = true; }
+        True(bad, "vaga 5 não existe");
+    }
+    finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+});
+
+Test("Port: configurações em texto do ConfigFile (ida e volta, padrão e faixa)", () =>
+{
+    var c = new PortConfig { CameraMode = 1, Vibration = false, Width = 1920, Height = 1080, Fullscreen = true, VSync = false, UiScale = 1.25f, MusicVolume = 0.5f, Account = "eu" };
+    var ini = c.ToIni();
+    True(ini.Contains("[grafico]") && ini.Contains("largura=1920") && ini.Contains("nome=\"eu\""), "seções e chaves");
+    var d = PortConfig.FromIni(ini);
+    Equal((1, false, 1920, 1080, true, false, 1.25f, 0.5f, "eu"), (d.CameraMode, d.Vibration, d.Width, d.Height, d.Fullscreen, d.VSync, d.UiScale, d.MusicVolume, d.Account), "ida e volta");
+    var def = PortConfig.FromIni("");
+    Equal((1280, 720, true, 1f, "local"), (def.Width, def.Height, def.VSync, def.MasterVolume, def.Account), "padrão");
+    var odd = PortConfig.FromIni("[som]\ngeral=7\nmusica=abc\n[conta]\nnome=\"../x\"\n[grafico]\nescala=9");
+    Equal((1f, 0.8f, "local", 2f), (odd.MasterVolume, odd.MusicVolume, odd.Account, odd.UiScale), "fora da faixa ou inválido");
+    Equal(-80f, PortConfig.ToDb(0), "volume 0 = silêncio");
+    True(Math.Abs(PortConfig.ToDb(0.5f) + 6.02f) < 0.01f, "0,5 ≈ −6 dB");
+});
+
 Test("AFS: tabela, nomes, datas e cópia de entrada", () =>
 {
     var file = new byte[0x2000];

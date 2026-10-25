@@ -6,7 +6,7 @@ config_version=5
 [application]
 
 config/name="DW4 - fatia vertical"
-run/main_scene="res://Fatia.tscn"
+run/main_scene="res://MainMenu.tscn"
 config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 
 [dotnet]

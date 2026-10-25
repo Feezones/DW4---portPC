@@ -85,7 +85,7 @@ public sealed class SoundEffects
             wait -= dt;
             if (wait > 0) { _pending[i] = (wait, stream); continue; }
             _pending.RemoveAt(i);
-            var p = new AudioStreamPlayer { Stream = stream };
+            var p = new AudioStreamPlayer { Stream = stream, Bus = PortSettings.EffectsBus };
             _owner.AddChild(p);
             p.Finished += p.QueueFree;
             p.Play();

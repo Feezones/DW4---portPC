@@ -21,6 +21,10 @@ public sealed class Inventory
     public int Bit { get; set; }
     public int Disks(int conItemRow) => _disks.TryGetValue(conItemRow, out var n) ? n : 0;
     public bool HasFlag(int impItemRow) => _flags.Contains(impItemRow);
+    /// <summary>Discos por linha da conItem (para gravar).</summary>
+    public IReadOnlyDictionary<int, int> DiskCounts => _disks;
+    /// <summary>Linhas da impItem ligadas na FLAGFOLDER (para gravar).</summary>
+    public IReadOnlyCollection<int> ImportantFlags => _flags;
 
     /// <summary>
     /// Guarda um item pego (0x803AC1A0). Devolve false quando a pasta está cheia (o item fica no chão). insItem não é

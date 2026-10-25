@@ -19,6 +19,8 @@ public partial class Fatia : IBeEngine
     StageScripts? _stage;
     static GameRam? s_ram;
     static GameRam Ram => s_ram ??= new GameRam();
+    /// <summary>GAMERAM da vaga escolhida no menu (Session.Begin).</summary>
+    internal static void UseRam(GameRam ram) => s_ram = ram;
     bool _padEnabled = true;
     readonly List<string> _scriptLog = [];
     readonly Dictionary<string, AudioStreamPlayer> _music = [];
@@ -154,7 +156,7 @@ public partial class Fatia : IBeEngine
             }
             var wav = Path.Combine(_dir, "audio", $"ndmw_{idx:D4}.wav");
             if (LoadWav(wav) is not { } stream) { _problems.Add($"falta {wav} (dw4 adx-wav ndmw.afs <fatia>\\audio 6 35)"); return; }
-            AddChild(player = new AudioStreamPlayer { Stream = stream });
+            AddChild(player = new AudioStreamPlayer { Stream = stream, Bus = PortSettings.MusicBus });
             _music[name] = player;
         }
         player.Play();

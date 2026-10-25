@@ -110,6 +110,7 @@ public partial class Fatia : Node3D
 
     public override void _Notification(int what)
     {
+        if (what == NotificationWMCloseRequest && !_leaving) SaveProgress();
         if (what == NotificationApplicationFocusOut) _hasFocus = false;
         else if (what == NotificationApplicationFocusIn) _hasFocus = true;
     }
@@ -253,7 +254,7 @@ public partial class Fatia : Node3D
             {
                 var wav = System.IO.Path.Combine(_dir, "audio", $"ndmw_{idx:D4}.wav");
                 if (!System.IO.File.Exists(wav)) { _problems.Add($"falta {wav} (dw4 adx-wav ndmw.afs <fatia>\\audio 6 35)"); continue; }
-                if (LoadWav(wav) is { } stream) { var p = new AudioStreamPlayer { Stream = stream }; AddChild(p); p.Play(); }
+                if (LoadWav(wav) is { } stream) { var p = new AudioStreamPlayer { Stream = stream, Bus = PortSettings.EffectsBus }; AddChild(p); p.Play(); }
             }
         }
 
@@ -284,7 +285,7 @@ public partial class Fatia : Node3D
             if (k.Keycode == Key.E) EquipLast();
             if (k.Keycode == Key.F9 && OS.IsDebugBuild()) DebugWeakenBoss();
             if (k.Keycode == Key.F8 && OS.IsDebugBuild()) DebugNextTarget();
-            if (k.Keycode == Key.Escape) GetTree().Quit();
+            if (k.Keycode == Key.Escape) LeaveGame();
         }
     }
 
@@ -508,6 +509,7 @@ public partial class Fatia : Node3D
         if (_shinkaRow < 0 || _weaponRow < 0) { _problems.Add("p_girumon ou w_sword01 não estão nas tabelas"); _db = null; return; }
         // FATO (GAMEDATAINIT 0x8036CFEC..D0B8): jogador novo com nível 1, EXP 0, as 9 skills em 1 e sem armaduras.
         Array.Fill(_skill, 1);
+        LoadProgress();
         Recalc();
         _hp = _pf!.MaxHp;
         _mp = _pf.MaxMp;

@@ -187,6 +187,7 @@ public partial class Fatia
         if (stage == _stageName || System.IO.Directory.Exists(System.IO.Path.Combine(stages, stage)))
         {
             // Recarrega a cena com a fase e a entrada pedidas (o first.lua decide a demo pela entrada). A GAMERAM continua.
+            SaveProgress(stage, _nextEntry);
             OS.SetEnvironment("DW4_FASE", stage);
             OS.SetEnvironment("DW4_ENTRADA", _nextEntry.ToString());
             OS.SetEnvironment("DW4_INICIO", "");
