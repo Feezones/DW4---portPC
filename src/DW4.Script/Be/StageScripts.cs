@@ -39,6 +39,15 @@ public sealed class StageScripts
         finally { Host.Model = previous; }
     }
 
+    /// <summary>Executa o script de um gatilho de área (entrada ou saída).</summary>
+    public bool RunMat(string name, BeMatEvent ev)
+    {
+        var previous = Host.Mat;
+        Host.Mat = ev;
+        try { return Run(name); }
+        finally { Host.Mat = previous; }
+    }
+
     /// <summary>Estado 3: func.lua e boot.lua. Devolve a lista de IGB que a fase pediu.</summary>
     public IReadOnlyList<string> Boot()
     {

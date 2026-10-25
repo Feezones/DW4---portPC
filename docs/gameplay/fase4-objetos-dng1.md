@@ -48,3 +48,17 @@ gbox01..05.lua, que só fazem `FLGset(106 + n, 1)` (107..111). O start.lua não 
 primeira ACTION (JOINTSET) da sequência; GBOX gera a caixa com corpo 14 × 10 × 14 e HP 100; golpe físico roda o
 `hit_g_box.lua` original e, com HP ≤ 0, o `gboxNN.lua`. Ainda faltam: gatilhos de área (`mat*`, `MATisPlayer`), ondas dos
 geradores, doorwall separado na colisão, dano do piso e o gravador.
+
+## Gatilhos de área e geradores (2026-10-25)
+
+- **FATO** Volumes `beMatCtrlInfo` → `beMatCtrlData` (nome, igAABox) no #179: `matt01/02` (#429), `matz01/02` (#6595),
+  `matg01..07` (#6605). O script é `"<volume>.lua"` (`0x80303870`); o motor o roda quando muda quem está dentro (entrada ou
+  saída), não a cada quadro (`0x803037D0..78`). **HIPÓTESE forte**: `MATisPlayer()` = 1 na entrada; `MATsetRun(0)` desliga.
+- matg01..07 disparam GENE-01..07 (`START`, `STOP` na saída das salas com onda, `STOPREVERS` nas salas que ficaram para trás);
+  o número extra em `START "GENE-07" 1` é atraso de 1 quadro. matt01/02 ligam os pisos; matz01/02 abrem a janela de troca de
+  fase (`NEXTSTAGE "stag0101"` / `"dng101b2"`).
+- **FATO** GENE-01..07 (#184): todos Numemon (linha 13), "direct"/"wipeout"; GENE-03 e 04 = 4 no total e 4 ao mesmo tempo
+  (1 jogador), GENE-05 = 2, GENE-06 e 07 = 5; posição por vaga (ponto + deslocamento, sem raio aleatório).
+- **HIPÓTESES** na fatia (`src/DW4.Client/Fatia.Enemies.cs`): START repõe um por quadro até o máximo vivo e o total; STOP guarda
+  o progresso; STOPREVERS some com os vivos e zera o progresso; o `_callLua` roda quando o total foi gerado e todos morreram.
+- Dados para a fatia: `geradores.json` (`dw4 igb-geradores`) e `gatilhos.json` (`dw4 igb-gatilhos`), fora do repositório.

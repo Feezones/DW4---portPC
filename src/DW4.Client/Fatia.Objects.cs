@@ -10,7 +10,7 @@ namespace DW4.Client;
 
 /// <summary>
 /// Objetos de cenário gerados pelos scripts (MODELCTRL nome índice GENERATE "V&lt;pos&gt;/V&lt;rot&gt;") e as caixas dos geradores
-/// GBOX. Modelos rígidos (KIND_OBJECT sem esqueleto, animados por igTransformSequence) desenhados como os atores do HUD,
+/// GBOX (geradas pelo gerador, Fatia.Enemies.cs). Modelos rígidos (KIND_OBJECT sem esqueleto, animados por igTransformSequence) desenhados como os atores do HUD,
 /// de &lt;fatia&gt;\objetos, gerado por:
 ///   dw4 igb-objetos ndmw.afs 179 &lt;fatia&gt;\objetos g_d1door g_ddamagefloor g_box n_recorderdng=23790
 ///   dw4 igb-seq ndmw.afs 179 &lt;fatia&gt;\objetos\&lt;nome&gt; --ator=&lt;nome&gt;   (um por objeto)
@@ -26,8 +26,7 @@ public partial class Fatia
         public Dictionary<string, List<SeqCommand>> Sequences { get; init; } = [];
         public Dictionary<string, List<SeqCommand>> Actions { get; init; } = [];
         public StaticBody3D? Body { get; set; }
-        public string? Generator { get; init; }
-        public string? CallLua { get; init; }
+        public Generator? Gen { get; init; }
         public int Hp { get; set; }
         public int BulletKind { get; set; }
         public bool Dead { get; set; }
@@ -73,13 +72,7 @@ public partial class Fatia
         }
     }
 
-    // FATO (generatorN #184, igual em #183 e #185): GBOX-01..05 com posição global, rotação 0, inimigo da linha 370 da
-    // tabela enemy (MODEL "g_box", HPMAX 100) e _callLua gbox01..05.lua ao serem destruídos ("wipeout").
-    static readonly Dictionary<string, Vector3> GboxAt = new()
-    {
-        ["GBOX-01"] = new(-180, 40, 360), ["GBOX-02"] = new(-55, 40, -435), ["GBOX-03"] = new(-55, 40, -405),
-        ["GBOX-04"] = new(15, 40, -435), ["GBOX-05"] = new(15, 40, -405),
-    };
+    // FATO (generatorN #184): as caixas GBOX-01..05 são o inimigo da linha 370 da tabela enemy (MODEL "g_box", HPMAX 100).
     const int GboxHp = 100;
     // FATO: caixa do HIT do g_box (−7, 0, −7)..(7, 10, 7). HIPÓTESE: também é a caixa de corpo.
     static readonly Vector3 GboxSize = new(14, 10, 14);
@@ -97,7 +90,7 @@ public partial class Fatia
             "falta objetos.json (dw4 igb-objetos ndmw.afs 179 <fatia>\\objetos g_d1door g_ddamagefloor g_box n_recorderdng=23790): objetos só no texto");
     }
 
-    WorldObject? Spawn(string name, int index, Vector3 pos, Vector3 rotDeg, string? generator = null, string? callLua = null)
+    WorldObject? Spawn(string name, int index, Vector3 pos, Vector3 rotDeg, Generator? gen = null)
     {
         if (ObjectData() is not { } data || !data.Actors.TryGetValue(name, out int root)) return null;
         var actor = new HudActor(data, root, slot: 0);
@@ -106,7 +99,7 @@ public partial class Fatia
         var json = seqFile != null ? File.ReadAllText(seqFile) : null;
         var o = new WorldObject
         {
-            Name = name, Index = index, Actor = actor, Generator = generator, CallLua = callLua,
+            Name = name, Index = index, Actor = actor, Gen = gen,
             Sequences = json != null ? SeqCommand.LoadAll(json) : [], Actions = json != null ? SeqCommand.LoadActions(json) : [],
         };
         AddChild(actor.Root);
@@ -118,21 +111,20 @@ public partial class Fatia
         return o;
     }
 
+    WorldObject? SpawnBox(Vector3 at, float rotDeg, Generator gen)
+    {
+        if (Spawn("g_box", 0, at, new Vector3(0, rotDeg, 0), gen) is not { } box) return null;
+        box.Hp = _db != null && _db.Contains("enemy") ? _db["enemy"].Int(gen.EnemyRow, "HPMAX") : GboxHp;
+        box.SetSequence("SQ_ENTR");
+        var body = new StaticBody3D { Position = at + new Vector3(0, GboxSize.Y / 2, 0) };
+        body.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = GboxSize } });
+        AddChild(body);
+        box.Body = body;
+        return box;
+    }
+
     bool DeliverToObjects(BeMessage m)
     {
-        if (m.Class == "GENERATER" && m.Command == "START" && m.Text(0) is { } gene && GboxAt.TryGetValue(gene, out var at))
-        {
-            if (Spawn("g_box", 0, at, Vector3.Zero, gene, $"gbox0{gene[^1]}.lua") is { } box)
-            {
-                box.Hp = GboxHp;
-                box.SetSequence("SQ_ENTR");
-                var body = new StaticBody3D { Position = at + new Vector3(0, GboxSize.Y / 2, 0) };
-                body.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = GboxSize } });
-                AddChild(body);
-                box.Body = body;
-            }
-            return false;
-        }
         if (m.Class != "MODELCTRL" || m.Name == null) return false;
         if (m.Command == "GENERATE")
         {
@@ -166,7 +158,7 @@ public partial class Fatia
     }
 
     // Golpe físico do jogador contra as caixas: roda o hit_<nome>.lua no contexto do objeto (FATO: hit_g_box.lua tira 100
-    // de HP se o golpe não for técnica 40040..40099 e põe SQ_DDMG); com HP ≤ 0, o gerador "zera" e roda o _callLua.
+    // de HP se o golpe não for técnica 40040..40099 e põe SQ_DDMG); com HP ≤ 0, o gerador "zera" e roda o _callLua (gboxNN.lua).
     void CheckObjectHits()
     {
         if (_runner == null || _stage == null) return;
@@ -187,8 +179,8 @@ public partial class Fatia
                     o.Dead = true;
                     o.Body?.QueueFree();
                     o.Body = null;
-                    if (o.CallLua != null && _stage.Has(o.CallLua)) _stage.Run(o.CallLua);
-                    ScriptLog($"{o.Generator}: {o.Name} destruída ({o.CallLua})");
+                    ScriptLog($"{o.Gen?.Name}: {o.Name} destruída");
+                    GeneratedDied(o.Gen, o);
                 }
             }
         }

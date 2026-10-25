@@ -21,6 +21,12 @@ public interface IBeModel
     void SetSequence(string name);
 }
 
+/// <summary>
+/// Evento de gatilho de área (mat*.lua). FATO (0x803037D0..78): o motor roda "&lt;volume&gt;.lua" quando muda quem está dentro
+/// (entrada ou saída). HIPÓTESE forte pelos scripts: MATisPlayer() = 1 na entrada, 0 na saída; MATsetRun(0) desliga o volume.
+/// </summary>
+public sealed record BeMatEvent(bool Entered, bool AllInside, int PlayerNo, Action<bool> SetRun);
+
 /// <summary>Dados do sistema que os SYS* devolvem (escolhas do menu e do grupo).</summary>
 public sealed class BeSystem
 {
@@ -55,6 +61,9 @@ public sealed class BeHost
 
     /// <summary>Modelo no contexto do script atual (hit_*.lua); null fora desse contexto.</summary>
     public IBeModel? Model { get; set; }
+
+    /// <summary>Gatilho de área no contexto do script atual (mat*.lua); null fora desse contexto.</summary>
+    public BeMatEvent? Mat { get; set; }
 
     /// <summary>Lista montada pelo boot.lua (CFLclear/CFLsetName): os IGB que a fase carrega.</summary>
     public IReadOnlyList<string> Files => _files;
@@ -173,6 +182,12 @@ public sealed class BeHost
             case "MDLisLive": return Bool(Model is { Hp: > 0 });
             // HIPÓTESE pelo nome: turno de dano (reação); sem efeito na fatia.
             case "MDLsetDMGTurn": return Nothing;
+
+            // Gatilho de área do contexto
+            case "MATisPlayer": return Bool(Mat?.Entered == true);
+            case "MATisAllPlayer": return Bool(Mat?.AllInside == true);
+            case "MATgetPlayerNo": return N(Mat?.PlayerNo ?? 0);
+            case "MATsetRun": Mat?.SetRun(B(a, 1)); return Nothing;
 
             // FATO (0x802EE1F0): envia PLAYERPOINT GETGENERATEPOS e devolve o inteiro (ponto de entrada na fase).
             case "PLAYERgetPos":

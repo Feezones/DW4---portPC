@@ -51,9 +51,17 @@ public partial class Fatia : IBeEngine
     public void Deliver(BeMessage m)
     {
         ScriptLog(m.ToString());
-        if (DeliverToObjects(m)) return;
+        if (DeliverToGenerators(m) || DeliverToObjects(m)) return;
         switch (m.Class, m.Command)
         {
+            // FATO: "HITLANDMODEL doorwallNN OFFHIT" desliga a parede de colisão da porta (filho do igSwitch da colisão #1862).
+            case ("HITLANDMODEL", "OFFHIT" or "ONHIT") when m.Name != null:
+            {
+                var parts = _collisionShapes.Where(c => c.Path.Contains(m.Name, StringComparison.Ordinal)).ToList();
+                foreach (var c in parts) c.Shape.SetDeferred(CollisionShape3D.PropertyName.Disabled, m.Command == "OFFHIT");
+                if (parts.Count == 0) ScriptLog($"{m.Name}: parte não encontrada na colisão exportada");
+                break;
+            }
             case ("STAGECTL", "PADINPUT"):
                 _padEnabled = m.Text(0) == "ENABLE";
                 break;
