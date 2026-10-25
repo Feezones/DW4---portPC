@@ -86,6 +86,7 @@ public partial class Fatia : Node3D
     // Equipamento (RECALCPLAYER completo). DECISÃO DA FATIA: sem o menu de status, a tecla E equipa o último equipamento
     // pego, se a regra do jogo deixar; a arma muda só os números (o modelo na mão continua o da w_sword01).
     Equipment? _equip;
+    SoundEffects? _sfx;
     readonly List<(Node3D Node, ItemRef Item)> _ground = [];
     // Linha do Numemon na tabela enemy: Int@7 dos geradores da dng1 no modo normal (generatorN #184 = 13; HIPÓTESE forte).
     const int EnemyRow = 13;
@@ -208,6 +209,7 @@ public partial class Fatia : Node3D
         // Som da dng1 (FATO: first.lua toca "AM_DUNGE" e "DG_CAVE1"; beSoundInfo da fase → ndmw #6 e #35), com o loop do
         // cabeçalho ADX. Gerado por: dw4 adx-wav ndmw.afs <fatia>\audio 6 35. Volume do beSoundData (S8): unidade
         // desconhecida, por isso os dois tocam a 0 dB.
+        _sfx = new SoundEffects(System.IO.Path.Combine(_dir, "sons"), this, LoadWav, _problems);
         foreach (var idx in new[] { 6, 35 })
         {
             var wav = System.IO.Path.Combine(_dir, "audio", $"ndmw_{idx:D4}.wav");
@@ -318,6 +320,7 @@ public partial class Fatia : Node3D
             {
                 _lastSerial = _runner.ActionSerial;
                 _hitThisAction.Clear();
+                if (_runner.Action != null) _sfx?.Action("p_girumon", _runner.Action);
                 if (_anim != null && _runner.Action != null && AnimName(_runner.Action) is { } an)
                 {
                     _anim.GetAnimation(an).LoopMode = ActionAnimations.Loops(_actions, _runner.Action) ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
@@ -336,6 +339,7 @@ public partial class Fatia : Node3D
         UpdateFloaters(dt);
         UpdateShots(dt);
         UpdateGround();
+        _sfx?.Tick(dt);
         DrawBoxes();
 
         UpdateCamera();
@@ -757,6 +761,7 @@ public partial class Fatia : Node3D
                 {
                     _enemySerial = _enemyRunner.ActionSerial;
                     _enemyHitThisAction.Clear();
+                    if (_enemyRunner.Action != null) _sfx?.Action("e_nume", _enemyRunner.Action);
                     if (_enemyAnim != null && _enemyRunner.Action != null && EnemyAnimName(_enemyRunner.Action) is { } an)
                     {
                         _enemyAnim.GetAnimation(an).LoopMode = ActionAnimations.Loops(_enemyActions, _enemyRunner.Action) ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
