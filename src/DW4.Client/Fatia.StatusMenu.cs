@@ -29,7 +29,7 @@ public partial class Fatia
     SubViewport? _menuVp;
     TextureRect? _menuRect;
     Control? _menuText;
-    Label? _menuStats, _menuItems, _menuHelp;
+    readonly List<Label> _menuLabels = [];
 
     // Atores da tela base e a sequência de abertura de cada um (FATO pelas strings do StatusCtrl00 e o igb-seq).
     static readonly (string Actor, string Open)[] MenuBase =
@@ -114,31 +114,36 @@ public partial class Fatia
         dim.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         _menuRect = new TextureRect { Texture = _menuVp.GetTexture(), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, MouseFilter = Control.MouseFilterEnum.Ignore };
         _menuRect.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        _menuText = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
-        _menuText.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        Label L(Vector2 pos, int size)
-        {
-            var l = new Label { Position = pos };
-            l.AddThemeFontSizeOverride("font_size", size);
-            l.AddThemeColorOverride("font_outline_color", Colors.Black);
-            l.AddThemeConstantOverride("outline_size", 6);
-            _menuText!.AddChild(l);
-            return l;
-        }
-        _menuStats = L(new Vector2(60, 90), 22);
-        _menuItems = L(new Vector2(0, 90), 26);
-        _menuHelp = L(new Vector2(60, 0), 20);
+        // Textos dentro da própria tela 640 × 480 do menu (escalam com ela). Posições pelas malhas dos atores (FATO, origem no
+        // centro, y para cima); a linha exata de cada texto é HIPÓTESE (os nós de fonte STWINFONT* ainda não foram lidos).
+        _menuText = new Control { MouseFilter = Control.MouseFilterEnum.Ignore, Size = new Vector2(640, 480) };
+        _menuVp.AddChild(_menuText);
         _menuLayer.AddChild(_menuVp);
         _menuLayer.AddChild(dim);
         _menuLayer.AddChild(_menuRect);
-        _menuLayer.AddChild(_menuText);
         AddChild(_menuLayer);
+    }
+
+    // Ponto da tela do menu (x à direita, y para cima, origem no centro) → pixel da SubViewport.
+    static Vector2 MenuPx(float x, float y) => new(320 + x, 240 - y);
+
+    void MenuLabel(string text, float x, float y, int size = 13, HorizontalAlignment align = HorizontalAlignment.Left, float width = 0)
+    {
+        var l = new Label { Text = text, Position = MenuPx(x, y), HorizontalAlignment = align };
+        if (width > 0) l.Size = new Vector2(width, 0);
+        l.AddThemeFontSizeOverride("font_size", size);
+        l.AddThemeColorOverride("font_outline_color", Colors.Black);
+        l.AddThemeConstantOverride("outline_size", 3);
+        _menuText!.AddChild(l);
+        _menuLabels.Add(l);
     }
 
     void UpdateMenuText()
     {
-        if (_menuStats == null || _menuItems == null || _menuHelp == null) return;
-        _menuText!.Visible = true;
+        if (_menuText == null) return;
+        _menuText.Visible = true;
+        foreach (var l in _menuLabels) l.QueueFree();
+        _menuLabels.Clear();
         string V(Func<Fighter, int> f) => _pf != null ? f(_pf).ToString() : "-";
         // FATO: rótulos I<14..25>: Strength, Defense, Wisdom, Spirit, Speed, 4 resistências, Data, BITS, Next Level.
         var values = new[]
@@ -147,13 +152,21 @@ public partial class Fatia
             V(f => f.Res(0)), V(f => f.Res(1)), V(f => f.Res(2)), V(f => f.Res(3)),
             "-", "-", (PlayerGrowth.NextExp(_level) - _exp).ToString(),
         };
-        _menuStats.Text = $"Guilmon  Lv {_level}   HP {_hp}/{_pf?.MaxHp ?? 0}   MP {_mp}/{_pf?.MaxMp ?? 0}\n\n" +
-            string.Join("\n", values.Select((v, i) => $"{Text(14 + i)?.Replace("\r\n", " ")}   {v}"));
-        _menuItems.Text = string.Join("\n\n", Enumerable.Range(0, 3).Select(i => (i == _menuCursor ? "▶ " : "   ") + Text(26 + i)));
-        _menuHelp.Text = string.Join("    ", Enumerable.Range(11, 3).Select(i => Text(i)?.Replace("\r\n", " ")));
-        var size = GetViewport().GetVisibleRect().Size;
-        _menuItems.Position = new Vector2(size.X - 320, 120);
-        _menuHelp.Position = new Vector2(60, size.Y - 60);
+        // i_stbase "sen": x −310..−111, y −177..220; "mojiL" (Lv.) em y 87..207. Atributos abaixo, 12 linhas de ~21.
+        MenuLabel(_level.ToString(), -215, 200, 18);
+        MenuLabel($"HP {_hp}/{_pf?.MaxHp ?? 0}\nMP {_mp}/{_pf?.MaxMp ?? 0}", -300, 150, 14);
+        for (int i = 0; i < values.Length; i++)
+        {
+            float y = 78 - 21 * i;
+            MenuLabel(Text(14 + i)?.Replace("\r\n", " ") ?? "", -300, y);
+            MenuLabel(values[i], -230, y, 13, HorizontalAlignment.Right, 110);
+        }
+        // i_stmenu01: linhas em x −110..54, y 81..216 (3 linhas de ~45).
+        for (int i = 0; i < 3; i++)
+            MenuLabel((i == _menuCursor ? "▶ " : "   ") + Text(26 + i), -100, 206 - 45 * i, 16);
+        // i_staccount (x 128..312, y 156..216): nome.
+        MenuLabel("Guilmon", 140, 200, 15);
+        MenuLabel(string.Join("    ", Enumerable.Range(11, 3).Select(i => Text(i)?.Replace("\r\n", " "))), -320, -212, 13, HorizontalAlignment.Center, 640);
     }
 
     /// <summary>Com o menu aberto a fase fica parada (HIPÓTESE): só o menu anda. true = pular o resto do quadro.</summary>
