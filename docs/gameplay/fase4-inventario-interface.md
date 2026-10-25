@@ -41,3 +41,5 @@ Levantamento por nomes no main.dol e nos IGB, em 2026-10-24. Só lista o que exi
 - Na fatia (`src/DW4.Client/Hud.cs`): painel do jogador 1 (i_stpnl01..04) numa SubViewport ortográfica de 640 × 480 escalada para a altura da janela (DECISÃO DA FATIA); números de dano i_dmgnum/i_pcdmgnum no mundo, com billboard, trajetória do dmgnmtrans e fade de 12/20 quadros. Qual OPEN01..05 usar é sorteado (DECISÃO DA FATIA; o jogo não foi lido). O número nasce na posição do modelo atingido (HIPÓTESE).
 - A UV da imagem: o IGB guarda as linhas de baixo para cima; com escala 0 na matriz de textura a UV crua (0, 0) deve cair no texel da última linha da PNG (preto translúcido no stpnlwn01), não na primeira.
 - Ainda não ligado: i_stpnl05, i_stbase (menu de status), os outros jogadores e os números de EXP e BIT (expnm0, bitnum0 são exportados).
+
+- Anel de HP cheio com a metade esquerda rosada: confirmado pelo responsável como igual ao jogo original (2026-10-25, comparação visual, não medição).
