@@ -20,6 +20,27 @@ public sealed class Inventory
     public IReadOnlyList<ItemRef> Devices => _devices;
     public int Bit { get; set; }
 
+    /// <summary>XDATA do jogador. FATO: o GETSHOPDATA (0x803518F8) limita a soma a 9999 (0x270F). HIPÓTESE: o mesmo teto por jogador.</summary>
+    public const int XDataMax = 9999;
+    int _xdata;
+    public int XData { get => _xdata; set => _xdata = Math.Clamp(value, 0, XDataMax); }
+
+    /// <summary>
+    /// Fortalecer chip com X-data (janela XDATA, beNDMWShopCtrlXdataChip, 0x803A4C94). FATO:
+    ///  · a lista tem só os itens de tipo 3 (abChip) do DEVICEFOLDER (0x803A5070); sem nenhum, a mensagem 0x491 ("No Ability Chip");
+    ///  · o custo é a NEXTX da linha atual do chip (0x803B06F0 lê a coluna na linha do item); −1 = não fortalece (0x492); XDATA
+    ///    menor que o custo, mensagem 0x489;
+    ///  · confirmar faz XDATA −= NEXTX e a linha do chip +1 (a próxima linha é o mesmo chip "+30", "+60"…), e depois RECALCPLAYER.
+    /// </summary>
+    public bool UpgradeChip(int deviceIndex, int nextX)
+    {
+        if (deviceIndex < 0 || deviceIndex >= _devices.Count || _devices[deviceIndex].Table != "abChip") return false;
+        if (nextX < 0 || XData < nextX) return false;
+        XData -= nextX;
+        _devices[deviceIndex] = _devices[deviceIndex] with { Row = _devices[deviceIndex].Row + 1 };
+        return true;
+    }
+
     // ---------- Banco (D.S.G. Bank, janela BANK / beNDMWShopCtrlEditBit) ----------
     // FATO: os campos BANKBIT (inteiro) e BANKDEVICE (lista) do jogador na GAMERAM (tabela 0x804EAC08); a gravação copia o
     // BANKDEVICE para 96 posições, com −1 nas vazias (0x80364F14). FATO pelos textos: o banco guarda itens e BITS ("BITS Bank",

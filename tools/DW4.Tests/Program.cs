@@ -131,6 +131,18 @@ Test("Port: banco (BANKBIT e BANKDEVICE até 96) e o banco no save", () =>
     back.Apply(ram2, 0);
     Equal((500, 95), (ram2.Players[0].Items.BankBit, ram2.Players[0].Items.BankDevices.Count), "banco gravado");
 });
+
+Test("Port: fortalecer chip com X-data (NEXTX da linha; linha +1; XDATA até 9999)", () =>
+{
+    var inv = new Inventory { XData = 100 };
+    inv.Add(new ItemRef("weapon", 1)); inv.Add(new ItemRef("abChip", 0));
+    True(!inv.UpgradeChip(0, 10), "arma não fortalece");
+    True(!inv.UpgradeChip(1, -1), "NEXTX −1 não fortalece");
+    True(!inv.UpgradeChip(1, 120), "X-data insuficiente");
+    True(inv.UpgradeChip(1, 60) && inv.XData == 40 && inv.Devices[1] == new ItemRef("abChip", 1), "XDATA − 60 e linha 0 → 1");
+    inv.XData = 12345;
+    Equal(Inventory.XDataMax, inv.XData, "teto 9999");
+});
 Test("Port: configurações em texto do ConfigFile (ida e volta, padrão e faixa)", () =>
 {
     var c = new PortConfig { CameraMode = 1, Vibration = false, Width = 1920, Height = 1080, Fullscreen = true, VSync = false, UiScale = 1.25f, MusicVolume = 0.5f, Account = "eu" };
@@ -1723,6 +1735,15 @@ if (args.Length == 1)
         for (int i = 0; i < 9; i++) True(ShopTrade.Buy(dinv, new ItemRef("conItem", 2), 10), $"disco {i + 1}");
         True(!ShopTrade.Buy(dinv, new ItemRef("conItem", 2), 10) && dinv.Disks(2) == 9, "o 10º não cabe");
         True(ShopTrade.Sell(dinv, new ItemRef("conItem", 2), 5, false) && dinv.Disks(2) == 8, "vende um disco");
+        // X-data (0x803A4C94): na abChip real, a linha 0 (Wisdom Chip α) custa NEXTX 60 e a seguinte é α+30.
+        var chipCsv = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fases", "stagml12", "db", "db_abChip.csv");
+        if (File.Exists(chipCsv))
+        {
+            var rows = File.ReadAllLines(chipCsv).Select(l => l.Split(';')).ToList();
+            int nx = Array.IndexOf(rows[0], "NEXTX"), nm = Array.IndexOf(rows[0], "NAME");
+            Equal("60", rows[1][nx], "NEXTX da linha 0");
+            True(rows[2][nm].EndsWith("+30", StringComparison.Ordinal), $"linha 1 = {rows[2][nm]}");
+        }
     });
 
     Test("Jogo: gameStart.lua da stagIS10 zera as flags de trabalho e copia as permanentes; hostLoad dá a dificuldade máxima", () =>

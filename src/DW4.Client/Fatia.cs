@@ -75,7 +75,6 @@ public partial class Fatia : Node3D
     readonly Dictionary<string, string?[][]> _dropOfGenerator = [];
     // O inventário é da GAMERAM (registro do jogador 0): sobrevive à troca de fase e os SYSctl*Folder dos scripts o usam.
     static Inventory _inventory => Ram.Players[0].Items;
-    int _xdata;
     // Equipamento (RECALCPLAYER completo). DECISÃO DA FATIA: sem o menu de status, a tecla E equipa o último equipamento
     // pego, se a regra do jogo deixar; a arma muda só os números (o modelo na mão continua o da w_sword01).
     Equipment? _equip;
@@ -459,7 +458,7 @@ public partial class Fatia : Node3D
                 $"{FormName} nv {_level}  HP {_hp}/{_pf.MaxHp}  MP {_mp}/{_pf.MaxMp}  EXP {_exp}/{PlayerGrowth.NextExp(_level)}  SLASH {_skill[1]}  |  {_lastEnemy?.Kind.Name ?? "inimigo"} HP {(_lastEnemy is { } le ? (le.Dead || le.Killed ? "derrotado" : $"{le.Hp}/{le.Kind.Stats?.MaxHp}") : "-")} (vivos {_enemies.Count(x => !x.Dead)})  |  {_lastEvent}{(_hp <= 0 ? "  |  CAIU: F5 reinicia" : "")}\n" +
                 $"técnicas [1..6; K, botão direito ou Y = 1]: {(_techs.Count == 0 ? "-" : string.Join("  ", _techs.Select((t, i) => $"{i + 1} {t.Name} {t.Mp} MP{(_panel.Cooldown(t) > 0 ? $" ({_panel.Cooldown(t):0.0} s)" : "")}")))}  skills ataque/cura/suporte {_skill[6]}/{_skill[7]}/{_skill[8]}\n" +
                 $"arma {_db!["weapon"].Text(_equip!.WeaponRow, "NAME")}  armaduras {(_equip.Armor1Row >= 0 ? _db["armor1"].Text(_equip.Armor1Row, "NAME") : "-")} / {(_equip.Armor2Row >= 0 ? _db["armor2"].Text(_equip.Armor2Row, "NAME") : "-")}  [E equipa o último pego]  " +
-                $"BIT {_inventory.Bit}  Xデータ {_xdata}  equipamentos {_inventory.Devices.Count}/{Inventory.DeviceMax}{(_inventory.Devices.Count > 0 ? ": " + string.Join(", ", _inventory.Devices.TakeLast(3).Select(d => _db![d.Table].Text(d.Row, "NAME"))) : "")}\n") +
+                $"BIT {_inventory.Bit}  Xデータ {_inventory.XData}  equipamentos {_inventory.Devices.Count}/{Inventory.DeviceMax}{(_inventory.Devices.Count > 0 ? ": " + string.Join(", ", _inventory.Devices.TakeLast(3).Select(d => _db![d.Table].Text(d.Row, "NAME"))) : "")}\n") +
             "movimento, gravidade, ponto inicial e IA PROVISÓRIOS (não medidos no jogo)" +
             (_stage != null ? $"\nscripts{(_padEnabled ? "" : " (controle travado pelo script)")}:\n  " + string.Join("\n  ", _scriptLog.TakeLast(6)) : "") +
             (_problems.Count > 0 ? "\n" + string.Join("\n", _problems) : "");
@@ -698,7 +697,7 @@ public partial class Fatia : Node3D
                 else
                 {
                     var (nouryoku, up) = Inventory.Instant(_db!, item.Row);
-                    if (nouryoku is "" or "xdata") { _xdata += up; text = $"+{up} Xデータ"; }
+                    if (nouryoku is "" or "xdata") { _inventory.XData += up; text = $"+{up} Xデータ"; }
                     else text = $"{nouryoku} +{up} (ainda não ligado)";
                 }
             }
