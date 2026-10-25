@@ -86,6 +86,9 @@ public partial class Fatia
                     seq.Start(open);
                 }
                 _menuVp.AddChild(actor.Root);
+                // HIPÓTESE: o fundo (i_stback, esfera com projeção própria) é desenhado antes e por trás das janelas; aqui
+                // ele vai para trás em z (câmera ortográfica: o tamanho não muda) para não cobrir os outros atores.
+                if (name == "i_stback") actor.Root.Position = new Vector3(0, 0, -2000);
                 _menuActors.Add(new MenuActor(actor, seq));
             }
         UpdateMenuText();
@@ -103,7 +106,9 @@ public partial class Fatia
     {
         _menuLayer = new CanvasLayer { Layer = 5 };
         _menuVp = new SubViewport { Size = new Vector2I(640, 480), TransparentBg = true, OwnWorld3D = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Always };
-        _menuVp.AddChild(new Camera3D { Projection = Camera3D.ProjectionType.Orthogonal, Size = 480, KeepAspect = Camera3D.KeepAspectEnum.Height, Near = 1, Far = 20000, Current = true });
+        _menuVp.AddChild(new Camera3D { Projection = Camera3D.ProjectionType.Orthogonal, Size = 480, KeepAspect = Camera3D.KeepAspectEnum.Height, Near = 1, Far = 20000, Current = true,
+            // Os atores do menu têm z de −460 (fundo) a +10 (janelas): com a câmera em z 0 os de z > 0 ficavam atrás dela.
+            Position = new Vector3(0, 0, 1000) });
         // Fundo escuro: o menu esconde o cenário (LAYERCTL BG01..GM03 DISPOFF nas strings do StatusCtrl00).
         var dim = new ColorRect { Color = new Color(0, 0, 0, 0.85f), MouseFilter = Control.MouseFilterEnum.Ignore };
         dim.SetAnchorsPreset(Control.LayoutPreset.FullRect);
