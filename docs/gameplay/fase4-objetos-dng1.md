@@ -78,3 +78,14 @@ geradores, doorwall separado na colisão, dano do piso e o gravador.
 - Teste sintético: "Objetos: ciclo do piso de dano" em `tools/DW4.Tests`.
 - `MDLisLive(nome, índice)`, `MDLgetRamNo` e `BLTgetShootRamNo` (este, HIPÓTESE: sempre o jogador 0) ligados para o
   `hit_n_recorderdng.lua`.
+
+## Câmera da entrada (2026-10-25)
+
+- **FATO** first.lua (entrada 0): `CAMERA SETDEMOCAMERA "entry"`, espera `ISDEMOCAMERA "==0"`, música DG_CAVE1 com 120 quadros
+  de atraso, espera `ISDEMOCAMERA "!=0"` e manda `SETBOXCAMERA`. Dados: beCameraCtrlInfo "entry" do acmr_pack (ndmw #182),
+  181/60 s, fov horizontal 54,43°, exportados por `dw4 igb-camera-demo ndmw.afs 182 <fatia>\camera-demo`.
+- No port: `src/DW4.Gameplay/CameraDemo.cs` lê os quadros e interpola; a fatia toca a demo no SETDEMOCAMERA e volta às câmeras
+  por volume no SETBOXCAMERA. **HIPÓTESES**: ISDEMOCAMERA = 0 enquanto toca e 1 no fim; interpolação linear entre quadros
+  (o recuo do original usa Bézier, diferença de poucas unidades); fov horizontal mantido em tela 16:9 (largura fixa).
+- **DESCONHECIDO**: a posição de entrada do jogador (HIPÓTESE: o fim do pivô, (−300, 40, 410)); o SQ_DEMOWALK do jogador
+  ainda não anda.

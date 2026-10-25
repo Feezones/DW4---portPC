@@ -747,6 +747,21 @@ Test("Objetos: ciclo do piso de dano (rótulos, espera, HITBOX, JUMP)", () =>
     Equal("OFF", q.Label("SQ_WAIT"), "LABELCTRL troca o rótulo de SQ_WAIT");
 });
 
+Test("Câmera de demo: leitura do JSON e amostragem", () =>
+{
+    var json = """
+        {"name":"entry","duration":0.05,"rate":60,"fovHorizontalDeg":54.43,
+         "frames":[{"t":0,"position":[0,0,0],"forward":[0,0,1],"up":[0,1,0]},
+                   {"t":0.05,"position":[10,0,0],"forward":[0,0,1],"up":[0,1,0]}]}
+        """;
+    var d = CameraDemo.FromJson(json);
+    Equal("entry", d.Name, "nome");
+    Equal(2, d.Frames.Count, "quadros");
+    True(MathF.Abs(d.Sample(0.025f).Position.X - 5) < 1e-3f, "meio do caminho");
+    Equal(10f, d.Sample(1f).Position.X, "presa no fim");
+    Equal(0f, d.Sample(-1f).Position.X, "presa no início");
+});
+
 // ---------- dados do jogo (opcional) ----------
 
 if (args.Length == 1)

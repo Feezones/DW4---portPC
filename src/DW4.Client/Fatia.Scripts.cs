@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Godot;
+using DW4.Gameplay;
 using DW4.Script.Be;
 
 namespace DW4.Client;
@@ -68,6 +69,13 @@ public partial class Fatia : IBeEngine
             case ("SOUND", "PLAY") when m.Text(0) is { } name:
                 PlayMusic(name);
                 break;
+            // FATO (first.lua): SETDEMOCAMERA "entry" → espera ISDEMOCAMERA → SETBOXCAMERA volta às câmeras por volume.
+            case ("CAMERA", "SETDEMOCAMERA") when m.Text(0) is { } demo:
+                StartCameraDemo(demo);
+                break;
+            case ("CAMERA", "SETBOXCAMERA"):
+                _cameraDemo = null;
+                break;
             case ("SOUND", "BGMSTOP"):
                 foreach (var p in _music.Values) p.Stop();
                 break;
@@ -78,9 +86,34 @@ public partial class Fatia : IBeEngine
     public double? Query(BeMessage m) => m.Command switch
     {
         "GETGENERATEPOS" => int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var e) ? e : 0,
+        // HIPÓTESE: 0 enquanto a demo toca, 1 quando acabou (o first.lua espera "==0" e depois "!=0" antes do SETBOXCAMERA).
+        "ISDEMOCAMERA" => _cameraDemo is { } d && _cameraDemoT < d.Duration ? 0 : 1,
         "ISLIVE" => _objects.Any(o => o.Name == m.Name && o.Index == m.Index && !o.Dead && !o.Erased) ? 1 : 0,
         _ => null,
     };
+
+    CameraDemo? _cameraDemo;
+    float _cameraDemoT;
+
+    void StartCameraDemo(string name)
+    {
+        var file = Path.Combine(_dir, "camera-demo", $"ndmw_0182_{name}.json");
+        if (!File.Exists(file)) { _problems.Add($"falta {file} (dw4 igb-camera-demo ndmw.afs 182 <fatia>\\camera-demo): sem a demo {name}"); return; }
+        _cameraDemo = CameraDemo.FromJson(File.ReadAllText(file));
+        _cameraDemoT = 0;
+    }
+
+    // Câmera da demo: posição, frente e cima amostradas; fov horizontal do igCamera (KeepAspect Width).
+    void UpdateCameraDemo(float dt)
+    {
+        if (_cameraDemo is not { } d) return;
+        _cameraDemoT += dt;
+        var f = d.Sample(_cameraDemoT);
+        var pos = new Vector3(f.Position.X, f.Position.Y, f.Position.Z);
+        _camera.KeepAspect = Camera3D.KeepAspectEnum.Width;
+        _camera.Fov = d.FovHorizontalDeg;
+        _camera.LookAtFromPosition(pos, pos + new Vector3(f.Forward.X, f.Forward.Y, f.Forward.Z), new Vector3(f.Up.X, f.Up.Y, f.Up.Z));
+    }
 
     void PlayMusic(string name)
     {

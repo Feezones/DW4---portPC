@@ -320,18 +320,21 @@ public partial class Fatia : Node3D
         _sfx?.Tick(dt);
         DrawBoxes();
 
-        UpdateCamera();
+        UpdateCamera(dt);
     }
 
-    void UpdateCamera()
+    void UpdateCamera(float dt)
     {
         var p = _player.GlobalPosition;
-        if (_cameraSets.Length == 0)
+        if (_cameraDemo != null) UpdateCameraDemo(dt);
+        else if (_cameraSets.Length == 0)
         {
             _camera.LookAtFromPosition(p + new Vector3(0, 80, 110), p, Vector3.Up);
         }
         else
         {
+            _camera.KeepAspect = Camera3D.KeepAspectEnum.Height;
+            _camera.Fov = 45;
             var set = _cameraSets[_cameraSet];
             var target = new NVector3(p.X, p.Y, p.Z);
             _zone = set.Select(target, _zone);
