@@ -1935,6 +1935,20 @@ if (args.Length == 1)
         Equal("arm,axe,dagger,dual,gun,maul,saber,slash", string.Join(",", styles), "estilos das 74 armas");
     });
 
+    Test("Jogo: IA do Belphemon (stagbs02, MAP07): longe anda sem parar (escolha de valor 0), perto ataca", () =>
+    {
+        var file = Directory.GetFiles(Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fases", "stagbs02", "inimigos", "f_belvam"), "*_seq.json").First();
+        var json = File.ReadAllText(file);
+        var brain = new EnemyBrain(AiMap.LoadAll(json), SeqCommand.LoadAll(json), () => 0);
+        brain.SetMap("MAP07");
+        int walking = 0;
+        for (int i = 0; i < 60; i++) { brain.Tick(1 / 30f, new Vector3(0, 0, 0), new Vector3(300, 0, 0), brain.Yaw); if (brain.Walking) walking++; }
+        Equal(60, walking, "longe (> 120): anda em todos os quadros");
+        brain.Release();
+        brain.Tick(1 / 30f, new Vector3(0, 0, 0), new Vector3(10, 0, 0), 0);
+        Equal("SQ_ATCK1", brain.External, "perto (< 28): SQ_ATCK1");
+    });
+
     Test("Jogo: MDLgetBulletName pela tabela 0x804DD2A0 (código / 10000 − 1)", () =>
     {
         Equal("PCWA", BeHost.BulletName(10000), "10000 físico");

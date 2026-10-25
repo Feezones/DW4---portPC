@@ -126,6 +126,8 @@
   - stagbs06: aos 30 s o fundo aparece branco num ângulo da câmera (a neblina é preta); causa não achada. Um script manda
     MOVETRANS ao f_devl3 a cada quadro, com deriva pequena na posição.
 - **Pendente:**
-  - Por que os chefes não acertam o Guilmon parado: a IA de longe e os projéteis do SQ_MISSILE (f_luce2?).
+  - IA de longe: a escolha "SQ_WALK" com valor 0 (MAP07 do Belphemon, lista de longe) durava 0 quadros e o chefe nunca andava.
+    Corrigido como HIPÓTESE (valor 0 = segue até a próxima decisão), com teste; falta rever na janela.
+  - Os projéteis do SQ_MISSILE do Lucemon (f_luce2?) não acertaram.
   - O fundo branco da stagbs06.
   - A derrota com F9 jogando de verdade.

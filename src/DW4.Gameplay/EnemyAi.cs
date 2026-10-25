@@ -67,6 +67,7 @@ public sealed class EnemyBrain
     readonly IReadOnlyDictionary<string, List<SeqCommand>> _sequences;
     readonly Func<int> _roll;
     float _framesLeft;
+    bool _repick;
 
     public EnemyBrain(IReadOnlyList<AiMap> maps, IReadOnlyDictionary<string, List<SeqCommand>> sequences, Func<int> roll16)
     {
@@ -97,6 +98,7 @@ public sealed class EnemyBrain
     {
         Yaw = yaw;
         if (External != null) return;
+        if (_repick) { _repick = false; Current = null; }
         var to = target - self;
         float toYaw = MathF.Atan2(to.X, to.Z);
         if (Current == null)
@@ -121,6 +123,9 @@ public sealed class EnemyBrain
         }
         float frames = dt * FramesPerSecond;
         if (Current.Sequence == "SQ_WALK") Yaw = TurnTowards(Yaw, toYaw + Current.Angle, Map.TurnPerFrame * frames);
+        // HIPÓTESE (f_belvam MAP07, lista de longe: "SQ_WALK" 0 0 16): valor 0 = segue nesta escolha só neste quadro e decide de novo
+        // no próximo (anda até mudar a faixa de distância). Sem isso o chefe longe nunca andava.
+        if (Current.Value <= 0) { _repick = true; return; }
         _framesLeft -= frames;
         if (_framesLeft <= 0) Current = null;
     }
