@@ -202,6 +202,8 @@ sealed class Minimap
         if (name == "j_map101b1") _rect.Visible = true;
     }
 
+    public bool Has(string name, int index) => _actors.Any(a => a.Key == $"{name}/{Math.Max(0, index)}");
+
     public void Update(float dt, Vector3 player, Vector2 window)
     {
         if (!_rect.Visible) return;

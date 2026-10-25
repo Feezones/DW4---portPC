@@ -110,3 +110,5 @@ geradores, doorwall separado na colisão, dano do piso e o gravador.
 - **HIPÓTESES** do port: volume de conversa 10 × 20 × 10 no gravador; ISEND = confirmar (ataque) apertado; ISSEQNAME = 0
   quando o modelo está na sequência; vista de cima com −Z para cima; o mapa fica até sair da fase.
 - **DECISÃO DA FATIA**: janela de mensagem com fonte da Godot até exportar i_messwn e a fonte do jogo.
+- **FATO** start.lua só gera j_map101b1 e j_mapcur com FLGisOn(291) == 1 (volta à fase depois de usar o gravador).
+  `MDLisLive` dos dois responde pelo minimapa.
