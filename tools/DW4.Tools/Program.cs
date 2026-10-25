@@ -51,6 +51,7 @@ try
         "igb-camera" when args.Length == 4 => IgbCamera(args[1], args[2], args[3]),
         "igb-camera-demo" when args.Length == 4 => IgbCameraDemoCmd(args[1], args[2], args[3]),
         "igb-textos" when args.Length == 4 => IgbTextos(args[1], args[2], args[3]),
+        "igb-entradas" when args.Length == 4 => IgbEntradas(args[1], args[2], args[3]),
         "igb-db" when args.Length == 4 => IgbDb(args[1], args[2], args[3]),
         "igb-drops" when args.Length == 4 => IgbDropsCmd(args[1], args[2], args[3]),
         "igb-geradores" when args.Length == 4 => IgbGeradores(args[1], args[2], args[3]),
@@ -108,6 +109,7 @@ static int Usage()
           dw4 igb-camera   <arquivo.afs> <indice> <pasta-de-trabalho>   (volumes de câmera da fase em JSON, fora do repositório)
           dw4 igb-camera-demo <arquivo.afs> <indice> <pasta-de-trabalho>   (câmeras de demo do acmr_pack, amostradas a 60 Hz, em JSON, fora do repositório)
           dw4 igb-textos   <arquivo.afs> <indice> <pasta-de-trabalho>   (textos de um *_pack: índice na lista, chave e texto, em textos.json, fora do repositório)
+          dw4 igb-entradas <arquivo.afs> <indice> <pasta-de-trabalho>   (pontos de entrada do jogador, bePoint01Info, em pontos_entrada.json, fora do repositório)
           dw4 igb-db       <arquivo.afs> <indice> <pasta-de-trabalho>   (as 12 tabelas beDataBase em CSV e JSON, fora do repositório)
           dw4 igb-drops    <arquivo.afs> <indice> <pasta-de-trabalho>   (listas de drop dos geradores em JSON, fora do repositório)
           dw4 igb-geradores <arquivo.afs> <indice> <pasta-de-trabalho>   (geradores de onda em geradores.json: posições absolutas por vaga, contagem por nº de jogadores)
@@ -1793,6 +1795,41 @@ int IgbCamera(string path, string which, string outDir)
     var root = new JsonObject { ["source"] = $"{Path.GetFileName(path)} #{idx}", ["common"] = Arr(cam.Common), ["boxes"] = boxes };
     File.WriteAllText(file, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
     Console.WriteLine($"{cam.Boxes.Count} volumes -> {file}");
+    return 0;
+}
+
+// Pontos de entrada do jogador (bePoint01Info → beGroupKeep → igTransform): pontos_entrada.json, uma vaga por jogador.
+int IgbEntradas(string path, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    var points = IgbEntryPoints.Read(IgbFile.Read(data), data);
+    if (points.Count == 0) { Console.Error.WriteLine("nenhum bePoint01Info"); return 1; }
+    JsonArray V((float X, float Y, float Z) v) => [v.X, v.Y, v.Z];
+    var root = new JsonObject
+    {
+        ["source"] = $"{Path.GetFileName(path)} #{idx}",
+        ["points"] = new JsonArray(points.Select(p => (JsonNode?)new JsonObject
+        {
+            ["index"] = p.Index, ["min"] = V(p.Min), ["max"] = V(p.Max),
+            ["slots"] = new JsonArray(p.Slots.Select(s => (JsonNode?)new JsonObject
+            {
+                ["player"] = s.Player, ["position"] = V(s.Position), ["rotYDeg"] = s.RotYDeg,
+                ["matrix"] = new JsonArray(s.Matrix.Select(x => (JsonNode?)x).ToArray()),
+            }).ToArray()),
+        }).ToArray()),
+    };
+    Directory.CreateDirectory(full);
+    var file = Path.Combine(full, "pontos_entrada.json");
+    File.WriteAllText(file, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    foreach (var p in points)
+        Console.WriteLine(string.Create(inv, $"{p.Index}: {string.Join("  ", p.Slots.Select(s => $"({s.Position.X}, {s.Position.Y}, {s.Position.Z}) {s.RotYDeg}°"))}"));
+    Console.WriteLine($"{points.Count} pontos -> {file}");
     return 0;
 }
 

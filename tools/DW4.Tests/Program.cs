@@ -1082,6 +1082,21 @@ if (args.Length == 1)
         Equal(((-235f, 39f, -15f), (-125f, 140f, 135f)), (R(m3.Min), R(m3.Max)), "caixa do matg03");
     });
 
+    Test("Jogo: pontos de entrada da dng1 (#179): 2 grupos de 4 vagas junto do matz01 e do matz02", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[179], ms);
+        var data = ms.ToArray();
+        var p = IgbEntryPoints.Read(IgbFile.Read(data), data);
+        Equal(2, p.Count, "grupos");
+        Equal("4,4", $"{p[0].Slots.Count},{p[1].Slots.Count}", "vagas");
+        Equal((-300f, 40f, 431f), p[0].Slots[0].Position, "grupo 0, vaga 0");
+        Equal(180f, p[0].Slots[0].RotYDeg, "grupo 0 virado 180°");
+        Equal((345f, 16f, -440f), p[1].Slots[3].Position, "grupo 1, vaga 3");
+        Equal(-90f, p[1].Slots[0].RotYDeg, "grupo 1 virado −90°");
+    });
+
     Test("Jogo: textos do usa_pack da dng1 (area #9): I<9> = mswk65000 \"Open Map\"", () =>
     {
         using var afs = AfsArchive.Open(areaPath);
