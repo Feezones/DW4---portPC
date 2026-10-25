@@ -78,6 +78,7 @@ public partial class Fatia : IBeEngine
     public double? Query(BeMessage m) => m.Command switch
     {
         "GETGENERATEPOS" => int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var e) ? e : 0,
+        "ISLIVE" => _objects.Any(o => o.Name == m.Name && o.Index == m.Index && !o.Dead && !o.Erased) ? 1 : 0,
         _ => null,
     };
 

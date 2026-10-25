@@ -15,6 +15,8 @@ public interface IBeEngine
 /// </summary>
 public interface IBeModel
 {
+    /// <summary>Índice da instância (MDLgetRamNo).</summary>
+    int Index { get; }
     int Hp { get; set; }
     /// <summary>Código do golpe que acertou (MDLgetBulletKind): 10000 físico, 40000 + linha técnica (HIPÓTESE), …</summary>
     int BulletKind { get; }
@@ -179,7 +181,13 @@ public sealed class BeHost
             case "MDLgetHp": return N(Model?.Hp ?? 0);
             case "MDLaddHp": if (Model != null) Model.Hp += I(a, 1); return Nothing;
             case "MDLsetSeq": if (Model != null && S(a, 1) is { } seq) Model.SetSequence(seq); return Nothing;
+            // MDLisLive(nome, índice): o objeto existe? (o jogo consulta; aqui pelo IBeEngine com ISLIVE). Sem argumentos: o do contexto.
+            case "MDLisLive" when n >= 2:
+                return Bool(_engine.Query(new BeMessage("MODELCTRL", S(a, 1), I(a, 2), "ISLIVE", [], null)) is > 0);
             case "MDLisLive": return Bool(Model is { Hp: > 0 });
+            case "MDLgetRamNo": return N(Model?.Index ?? 0);
+            // HIPÓTESE: jogador que acertou o golpe; a fatia tem só o jogador 0.
+            case "BLTgetShootRamNo": return N(0);
             // HIPÓTESE pelo nome: turno de dano (reação); sem efeito na fatia.
             case "MDLsetDMGTurn": return Nothing;
 

@@ -699,6 +699,53 @@ Test("API be:*: sd com atraso em quadros, diretor de demo com espera por condiç
     True(args[2].IsText && args[2].Text == "ALL", "texto");
 });
 
+Test("Objetos: ciclo do piso de dano (rótulos, espera, HITBOX, JUMP)", () =>
+{
+    static SeqCommand C(string k, params object[] v) => new(k, v);
+    // Forma do g_ddamagefloor (igb-seq #179), com os mesmos comandos e valores.
+    var seqs = new Dictionary<string, List<SeqCommand>>
+    {
+        ["SQ_WAIT"] =
+        [
+            C("LABEL", "OFF"), C("ACTION", "WAIT01"),
+            C("LABEL", "ON"), C("ACTION", "WIT2ON"), C("WAITCHECK", "Frame", 30),
+            C("HITBOX", "Set", 70112, 0, 120, new[] { 0f, 0f, 0f }, new[] { 17f, 1f, 17f }),
+            C("ACTION", "ONSW01"), C("WAITCHECK", "Frame", 120), C("JUMP", "SQ_INTVL"),
+        ],
+        ["SQ_INTVL"] = [C("ACTION", "WAIT02"), C("WAITCHECK", "Frame", 180), C("JUMP", "SQ_WAIT")],
+        ["SQ_SWOF"] = [C("LABELCTRL", "OFF")],
+    };
+    var actions = new Dictionary<string, List<SeqCommand>>
+    {
+        ["WAIT01"] = [C("JOINTSET", 0, 0, 30, "LP")],
+        ["WIT2ON"] = [C("JOINTSET", 0, 40, 70, "LP")],
+        ["ONSW01"] = [C("JOINTSET", 0, 80, 140, "LP")],
+        ["WAIT02"] = [C("JOINTSET", 0, 150, 180, "LP")],
+    };
+    var q = new ObjectSequencer(seqs, actions);
+    q.Start("SQ_WAIT");
+    Equal("WAIT01", q.Action, "sem rótulo: primeiro bloco");
+    Equal(false, q.Running, "OFF termina no fim do bloco");
+    q.SetLabel("SQ_WAIT", "ON");
+    q.Start("SQ_WAIT");
+    Equal("WIT2ON", q.Action, "ON");
+    Equal(0, q.ActiveHitBoxes.Count(), "caixa só depois da espera");
+    for (int i = 0; i < 30; i++) q.Tick(1 / 60f);
+    Equal("ONSW01", q.Action, "depois de 30 quadros");
+    Equal(1, q.ActiveHitBoxes.Count(), "HITBOX ligada");
+    Equal(70112, q.ActiveHitBoxes.First().Type, "tipo da caixa");
+    int serial = q.BoxSerial;
+    for (int i = 0; i < 120; i++) q.Tick(1 / 60f);
+    Equal("WAIT02", q.Action, "JUMP para SQ_INTVL");
+    Equal(0, q.ActiveHitBoxes.Count(), "caixa dura 120 quadros");
+    for (int i = 0; i < 180; i++) q.Tick(1 / 60f);
+    Equal("WIT2ON", q.Action, "volta a SQ_WAIT no rótulo ON");
+    for (int i = 0; i < 30; i++) q.Tick(1 / 60f);
+    True(q.BoxSerial > serial, "caixa nova a cada ciclo");
+    q.Start("SQ_SWOF");
+    Equal("OFF", q.Label("SQ_WAIT"), "LABELCTRL troca o rótulo de SQ_WAIT");
+});
+
 // ---------- dados do jogo (opcional) ----------
 
 if (args.Length == 1)

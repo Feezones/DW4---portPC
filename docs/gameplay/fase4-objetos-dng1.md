@@ -62,3 +62,19 @@ geradores, doorwall separado na colisão, dano do piso e o gravador.
 - **HIPÓTESES** na fatia (`src/DW4.Client/Fatia.Enemies.cs`): START repõe um por quadro até o máximo vivo e o total; STOP guarda
   o progresso; STOPREVERS some com os vivos e zera o progresso; o `_callLua` roda quando o total foi gerado e todos morreram.
 - Dados para a fatia: `geradores.json` (`dw4 igb-geradores`) e `gatilhos.json` (`dw4 igb-gatilhos`), fora do repositório.
+
+## Sequências dos objetos e piso de dano (2026-10-25)
+
+- `src/DW4.Gameplay/ObjectSequencer.cs` executa as sequências dos objetos inteiras (antes só a primeira ACTION). Comandos e
+  valores são **FATO** (igb-seq #179). **HIPÓTESES** de semântica, pelo fluxo dos dados:
+  - cada sequência guarda um rótulo (LABEL); começar a sequência executa só o bloco desse rótulo (sem rótulo: o primeiro);
+  - `LABELCTRL <rótulo>` troca o rótulo guardado de SQ_WAIT (SQ_SWON do piso → ON; SQ_SWOF → OFF; porta CLEAR → ON2);
+  - `WAITCHECK "Frame" n` e a duração do `HITBOX` usam a mesma unidade (quadros de 60 Hz): no piso, HITBOX 120 ↔ espera 120;
+  - `JUMP` vai para outra sequência no rótulo guardado dela, o que fecha o ciclo SQ_WAIT/ON → SQ_INTVL → SQ_WAIT;
+  - `FADESET IN/OUT n` muda a transparência em n quadros; `HIDE` esconde (porta aberta).
+- **FATO** eneatk linha 112 (do código 70112 do HITBOX do piso): TYPE 2, TSUYOSA 5, sem elemento → E2PDAMAGE caso 2 = 5% do
+  HP máximo do jogador, sem teste de acerto. **HIPÓTESES**: um acerto por caixa ligada (uma vez por ciclo), caixa nos eixos do
+  objeto contra o corpo 5 × 7 × 5 do Guilmon; a reação usa a mesma faixa de dano dos golpes do Numemon.
+- Teste sintético: "Objetos: ciclo do piso de dano" em `tools/DW4.Tests`.
+- `MDLisLive(nome, índice)`, `MDLgetRamNo` e `BLTgetShootRamNo` (este, HIPÓTESE: sempre o jogador 0) ligados para o
+  `hit_n_recorderdng.lua`.

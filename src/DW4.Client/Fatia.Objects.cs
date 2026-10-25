@@ -30,44 +30,30 @@ public partial class Fatia
         public int Hp { get; set; }
         public int BulletKind { get; set; }
         public bool Dead { get; set; }
-        public bool Erased { get; private set; }
-        public string? Sequence { get; private set; }
-        float _from, _to, _frame;
-        bool _loop, _finished = true;
+        public bool Erased => Seq?.Erased == true;
+        public string? Sequence => Seq?.Sequence;
+        /// <summary>Sequências do objeto (ObjectSequencer: rótulos, ações, esperas, HITBOX, JUMP, FADESET).</summary>
+        public ObjectSequencer? Seq { get; set; }
+        /// <summary>BoxSerial da última caixa que já acertou o jogador (um acerto por caixa ligada).</summary>
+        public int HitSerial { get; set; } = -1;
 
-        /// <summary>
-        /// "SQ_WAIT" ou "SQ_WAIT/ON" (SETLABEL): primeira ACTION do bloco e o JOINTSET dela (quadros de 60 Hz; "LP" repete).
-        /// HIPÓTESE (simplificação): só a primeira ACTION; SQ_DDMG termina apagando o objeto (o jogo segue para SQ_ERAS).
-        /// </summary>
+        /// <summary>"SQ_WAIT" ou "SQ_WAIT/ON" (SETLABEL: guarda o rótulo e começa a sequência nele).</summary>
         public void SetSequence(string spec)
         {
+            if (Seq == null) return;
             var parts = spec.Split('/');
-            string seq = parts[0];
-            string? label = parts.Length > 1 ? parts[1] : null;
-            Sequence = seq;
-            if (seq == "SQ_ERAS") { Erased = true; return; }
-            var action = ActionAnimations.FirstAction(Sequences, seq, label);
-            var joint = action != null && Actions.TryGetValue(action, out var cmds) ? cmds.FirstOrDefault(c => c.Kind == "JOINTSET") : null;
-            if (joint == null) return;
-            _from = joint.F(1);
-            _to = joint.F(2);
-            _loop = joint.S(3) == "LP";
-            _frame = _from;
-            _finished = false;
+            if (parts.Length > 1) Seq.SetLabel(parts[0], parts[1]);
+            Seq.Start(parts[0]);
         }
 
         public void Tick(float dt)
         {
-            if (!_finished)
-            {
-                _frame += dt * 60;
-                if (_frame >= _to)
-                {
-                    if (_loop && _to > _from) _frame = _from + (_frame - _to) % (_to - _from);
-                    else { _frame = _to; _finished = true; if (Sequence == "SQ_DDMG") Erased = true; }
-                }
-            }
-            Actor.Time = _frame / 60f;
+            if (Seq == null) return;
+            float alpha = Seq.Alpha;
+            Seq.Tick(dt);
+            if (Seq.Alpha != alpha) Actor.SetAlpha(Seq.Alpha);
+            Actor.Root.Visible = Seq.Alpha > 0;
+            Actor.Time = Seq.Frame / 60f;
             Actor.Update();
         }
     }
@@ -100,7 +86,7 @@ public partial class Fatia
         var o = new WorldObject
         {
             Name = name, Index = index, Actor = actor, Gen = gen,
-            Sequences = json != null ? SeqCommand.LoadAll(json) : [], Actions = json != null ? SeqCommand.LoadActions(json) : [],
+            Seq = json != null ? new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)) : null,
         };
         AddChild(actor.Root);
         // HIPÓTESE: rotação do GENERATE em graus no eixo do mundo (0/±90/180 nos scripts; o −90° do Numemon já bate assim).
@@ -150,6 +136,7 @@ public partial class Fatia
         {
             var o = _objects[i];
             o.Tick(dt);
+            CheckFloorHit(o);
             if (!o.Erased) continue;
             o.Actor.Root.QueueFree();
             o.Body?.QueueFree();
@@ -183,6 +170,32 @@ public partial class Fatia
                     GeneratedDied(o.Gen, o);
                 }
             }
+        }
+    }
+
+    // Caixas que os objetos ligam no próprio SQ (FATO: g_ddamagefloor liga HITBOX 70112 (0,0,0) (17,1,17) no ciclo ON) contra a
+    // caixa de corpo do Guilmon (5 × 7 × 5). FATO: eneatk 112 = TYPE 2, TSUYOSA 5 (5% do HP máximo, sem elemento).
+    // HIPÓTESE: um acerto por caixa ligada; a caixa do objeto está em eixos do objeto (rotação Y aplicada).
+    void CheckFloorHit(WorldObject o)
+    {
+        if (o.Seq == null || o.HitSerial == o.Seq.BoxSerial || _runner?.Invincible == true || _hp <= 0) return;
+        var g = _player.GlobalPosition;
+        var root = o.Actor.Root;
+        foreach (var h in o.Seq.ActiveHitBoxes)
+        {
+            if (h.Type / 10000 != 7) continue; // 7xxxx: golpe contra o jogador (como o 70004 do Numemon)
+            var c = root.GlobalPosition + new Vector3(h.Position.X, h.Position.Y, h.Position.Z).Rotated(Vector3.Up, root.Rotation.Y);
+            if (!(Math.Abs(c.X - g.X) <= h.Size.X / 2 + 2.5f && Math.Abs(c.Z - g.Z) <= h.Size.Z / 2 + 2.5f
+                && c.Y + h.Size.Y / 2 >= g.Y && c.Y - h.Size.Y / 2 <= g.Y + 7)) continue;
+            o.HitSerial = o.Seq.BoxSerial;
+            _hitsTaken++;
+            string? reaction = EnemyStrikes(h.Type, o.Name);
+            if (reaction != null && _runner != null && (_runner.Start(reaction, WeaponStyle) || _runner.Start(reaction, "common")))
+            {
+                _wazaPending = null;
+                _move.Stop();
+            }
+            return;
         }
     }
 }

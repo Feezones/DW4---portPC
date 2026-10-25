@@ -623,7 +623,7 @@ public partial class Fatia : Node3D
     }
 
     // Golpe do Numemon: código do HITBOX (70004) → linha da eneatk (HIPÓTESE forte), E2PISHITCHECK e E2PDAMAGE.
-    string? EnemyStrikes(int code)
+    string? EnemyStrikes(int code, string who = "Numemon")
     {
         if (_db == null || _pf == null || _ef == null) return "SQ_SDMG";
         var atk = _db.EnemyAttackRow(code);
@@ -631,7 +631,7 @@ public partial class Fatia : Node3D
         var r = DamageFormula.EnemyDamage(_ef, atk, _pf, new StatusMods(), _mt);
         _hp = Math.Max(0, _hp - r.Damage);
         Damage(_player, r.Damage, onPlayer: true, r.Damage.ToString(), Colors.Red);
-        _lastEvent = $"Numemon: {r.Damage} (eneatk {code % 10000})";
+        _lastEvent = $"{who}: {r.Damage} (eneatk {code % 10000})";
         return DamageSequences[DamageFormula.Rank(r.Damage, _hp, _pf.MaxHp)];
     }
 
