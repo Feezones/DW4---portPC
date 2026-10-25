@@ -1949,6 +1949,65 @@ if (args.Length == 1)
         Equal("SQ_ATCK1", brain.External, "perto (< 28): SQ_ATCK1");
     });
 
+    Test("Jogo: missão 1 com os scripts reais: quest01 (lobby) → cápsula (end_g_000bcaps, dng101b1) → treasure01 (recompensa)", () =>
+    {
+        var fases = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fases");
+        var ram = new GameRam();
+        ram.Players[0].Forms.Start(2);
+        var missing = new SortedSet<string>();
+        // Roda um script da fase com um motor que confirma as falas e responde às janelas como o cliente.
+        List<string> Run(string stageName, string script, IBeModel? model = null)
+        {
+            var chunks = Directory.GetFiles(Path.Combine(fases, stageName, "lua"), "*.lua").ToDictionary(f => Path.GetFileName(f), File.ReadAllBytes);
+            var engine = new RecordingEngine();
+            bool ended = false; int tick = 0, confirmAt = -1, seen = 0;
+            engine.Responder = m => (m.Class, m.Command) switch
+            {
+                ("SELECTCTRL", "ISEND") => ended ? 1 : 0,
+                ("SELECTCTRL", "ISSELECTNOW") => 0,
+                ("SELECTCTRL", "GETSELECT") => 0,
+                ("MODELCTRL", "ISRUN") => null,
+                ("MODELCTRL", "ISSEQNAME") => null,
+                ("SOUND", "ISREADY" or "ISALLREADY") => 1,
+                _ => null,
+            };
+            var sys = new BeSystem { FolderName = stageName };
+            sys.Players[0] = ("p_girumon", new[] { "w_sword01", "w_sword01", "w_sword01" }); // como o cliente
+            var host = new BeHost(engine, ram, sys) { Unimplemented = (n, _) => missing.Add(n) };
+            var stage = new StageScripts(chunks, host);
+            var errors = new List<string>();
+            stage.Error = (n, e) => errors.Add($"{n}: {e}");
+            stage.Boot(); // func.lua (funcOpenMessage…)
+            // Globais que o hit_n_*.lua da NPC deixa antes da conversa (NPC 0, jogador 0).
+            stage.Vm.Globals["g_npcRamNo"] = 0.0;
+            stage.Vm.Globals["g_messPlayerNo"] = 0.0;
+            stage.Vm.Globals["g_talk"] = "talk"; // a quest01 roda no meio da conversa: fecha a janela que a fala abriu (funcOpenMessage)
+            bool ok = model != null ? stage.RunAs(script, model) : stage.Run(script);
+            True(ok, $"{stageName}/{script} rodou: " + string.Join("; ", errors));
+            for (int i = 0; i < 3000; i++)
+            {
+                tick++;
+                if (confirmAt >= 0 && tick >= confirmAt) { ended = true; confirmAt = -1; }
+                stage.Tick();
+                for (; seen < engine.Log.Count; seen++)
+                    if (engine.Log[seen].StartsWith("SELECTCTRL", StringComparison.Ordinal) && engine.Log[seen].Contains(" GENERATE")) { ended = false; confirmAt = tick + 5; }
+            }
+            True(errors.Count == 0, $"{script} sem erro de Lua: " + string.Join("; ", errors));
+            return engine.Log;
+        }
+        Run("stagml11", "quest01.lua");
+        Equal((1, 1), (ram.FlagOn(409), ram.FlagOn(424)), "quest01 liga a missão ativa (409) e a 424");
+        int counter2 = ram.Counter(2);
+        var capsule = Run("dng101b1", "end_g_000bcaps.lua", new TestModel { Name = "g_000bcaps" });
+        True(capsule.Any(l => l.Contains("NEXTSTAGE \"stagML11\"")), "a cápsula volta ao lobby: " + string.Join(" | ", capsule.TakeLast(6)));
+        // FATO (treasure01.lua): a recompensa vai pela COUNTER 0 (≥ 900 → SYSctlBit ADD 100 para cada jogador; depois 600…).
+        ram.SetCounter(0, 1000);
+        int bit = ram.Players[0].Items.Bit;
+        Run("stagml11", "treasure01.lua");
+        Equal(bit + 100, ram.Players[0].Items.Bit, "treasure01 com COUNTER 0 ≥ 900: +100 BIT");
+        True(missing.Count == 0, "be: sem resposta: " + string.Join(", ", missing));
+    });
+
     Test("Jogo: MDLgetBulletName pela tabela 0x804DD2A0 (código / 10000 − 1)", () =>
     {
         Equal("PCWA", BeHost.BulletName(10000), "10000 físico");

@@ -26,7 +26,9 @@ janela.
    das armas duplas (HIPÓTESE: tudo na mão direita).
 7. **Painel de técnicas.** Barra do port (custo, recarga, selecionada; 1..6, K/botão direito/Y, roda/LB-RB). O painel do jogo
    (como ele escolhe a técnica) não foi lido.
-8. **Missões (quest01..06 e treasure01..08).** Rodam pelos scripts, mas nunca foram jogadas; a recompensa libera as formas.
+8. **Missões (quest01..06 e treasure01..08).** Teste com os scripts reais: quest01 → cápsula (end_g_000bcaps) → treasure01, sem
+   erro e sem be: faltando. FATO: a recompensa vai pela COUNTER 0 (≥ 900 → +100 BIT para cada jogador, depois 600…). Falta jogar na
+   janela e ver quem soma a COUNTER 0.
 9. **Loja de cartas (stagIS11) e as cartas.** As regras não foram lidas. Hoje o NPC mostra "ainda não portada".
 10. **Efeitos de estado no jogador** (atordoar, sono, prender, veneno, ataque/defesa baixos). O jogo faz pelos hit_p_*.lua; o
     port calcula o dano por conta própria e não roda esses scripts.
