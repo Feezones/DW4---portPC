@@ -97,6 +97,23 @@ public partial class Fatia : Node3D
     DamageNumbers? _damageNumbers;
     readonly List<string> _problems = [];
 
+    // FATO (colisão #1862): sobre as vagas do grupo 0 (y 40) há uma peça de colisão de 10 de altura (topo em y 50); nascer
+    // dentro dela derruba o Guilmon pelo chão. HIPÓTESE: o jogo assenta o jogador no chão acima do ponto. No primeiro quadro
+    // de física, um raio de y + 60 para baixo põe o jogador no primeiro chão.
+    bool _snapToFloor;
+
+    void SnapToFloor()
+    {
+        _snapToFloor = false;
+        var p = _player.GlobalPosition;
+        var query = PhysicsRayQueryParameters3D.Create(p + new Vector3(0, 60, 0), p - new Vector3(0, 200, 0));
+        query.Exclude = [_player.GetRid()];
+        query.HitBackFaces = false; // só chão (face para cima), não o lado de cima de um teto
+        var hit = GetWorld3D().DirectSpaceState.IntersectRay(query);
+        if (hit.Count > 0) _player.GlobalPosition = (Vector3)hit["position"];
+        _player.Velocity = Vector3.Zero;
+    }
+
     (Vector3 Position, float RotYDeg)? EntryPoint(int group)
     {
         var file = System.IO.Path.Combine(_dir, "pontos_entrada.json");
@@ -131,6 +148,7 @@ public partial class Fatia : Node3D
         {
             start = ep.Position;
             _move.Face(Mathf.DegToRad(ep.RotYDeg));
+            _snapToFloor = true;
         }
         // DW4_INICIO="x,y,z": ponto inicial para capturas (ex.: conferir a câmera de um volume).
         if (OS.GetEnvironment("DW4_INICIO").Split(',') is { Length: 3 } xyz
@@ -239,6 +257,7 @@ public partial class Fatia : Node3D
     public override void _PhysicsProcess(double delta)
     {
         float dt = (float)delta;
+        if (_snapToFloor) SnapToFloor();
         _stage?.Tick();
         TickObjects(dt);
         var input = Input.GetVector("ui_left", "ui_right", "ui_up", "ui_down");
