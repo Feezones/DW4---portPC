@@ -1873,6 +1873,40 @@ if (args.Length == 1)
         True(host.Demo.Idle, "a fila do diretor de demo terminou: " + host.Demo.Blocking?.Message);
     });
 
+    Test("Jogo: passeio das NPCs (stagml12): aim_n_vmon.lua com \"WPos\" dá um ponto; MAP01 anda longe e para/segue perto", () =>
+    {
+        var root = Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!;
+        var dirLua = Path.Combine(root, "fases", "stagml12", "lua");
+        var chunks = Directory.GetFiles(dirLua, "*.lua").ToDictionary(f => Path.GetFileName(f), File.ReadAllBytes);
+        var host = new BeHost(new RecordingEngine(), new GameRam(), new BeSystem { FolderName = "stagml12" });
+        var stage = new StageScripts(chunks, host);
+        var errors = new List<string>();
+        stage.Error = (n, e) => errors.Add($"{n}: {e}");
+        var targets = new HashSet<string>();
+        for (int k = 0; k < 20; k++)
+        {
+            host.CallName = "WPos";
+            host.WorldPosTarget = null;
+            True(stage.RunAs("aim_n_vmon.lua", new TestModel { Name = "n_vmon", RamNo = 1, Position = (0, 10, 0) }), "aim rodou: " + string.Join("; ", errors));
+            True(host.WorldPosTarget is not null, "devolveu um ponto: " + string.Join("; ", errors));
+            targets.Add(host.WorldPosTarget!.Value.ToString());
+        }
+        True(errors.Count == 0, string.Join("; ", errors));
+        True(targets.Count > 1, $"pontos sorteados variam ({targets.Count}): {string.Join(" ", targets.Take(4))}");
+        var json = File.ReadAllText(Path.Combine(root, "fases", "stagml12", "objetos", "n_vmon", Directory.GetFiles(Path.Combine(root, "fases", "stagml12", "objetos", "n_vmon"), "*_seq.json").Select(Path.GetFileName).First()!));
+        var maps = AiMap.LoadAll(json);
+        var map = maps.First(m => m.Name == "MAP01");
+        Equal((25f, 10000f, 40000f), (map.RangesSquared[0], map.RangesSquared[1], map.RangesSquared[2]), "raios² do MAP01");
+        var brain = new EnemyBrain(maps, SeqCommand.LoadAll(json), () => 0);
+        brain.SetMap("MAP01");
+        brain.Tick(1 / 30f, new Vector3(0, 0, 0), new Vector3(50, 0, 0), 0);
+        True(brain.Walking, "longe do ponto: SQ_WALK");
+        True(brain.Yaw > 0, $"vira para o ponto ({brain.Yaw:0.00})");
+        brain.Release();
+        brain.Tick(1 / 30f, new Vector3(0, 0, 0), new Vector3(2, 0, 0), 0);
+        True(!brain.Walking && (brain.External == "SQ_NEXT" || brain.Current?.Sequence == "SQ_WAIT"), $"perto: SQ_NEXT ou SQ_WAIT ({brain.External ?? brain.Current?.Sequence})");
+    });
+
     Test("Jogo: MDLgetBulletName pela tabela 0x804DD2A0 (código / 10000 − 1)", () =>
     {
         Equal("PCWA", BeHost.BulletName(10000), "10000 físico");

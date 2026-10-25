@@ -46,6 +46,12 @@ public partial class Fatia
         /// <summary>IA de objeto com mapas (f_bit: MAP00 e MAP01, SQ_PHASE2 troca pelo AIMAP) e a sequência que ela pediu.</summary>
         public EnemyBrain? Brain { get; set; }
         public string? AiSequence { get; set; }
+        /// <summary>NPC passeando (o script ligou um mapa de IA, ex.: SQ_WALKON → AIMAP MAP01) e o ponto atual do aim_&lt;nome&gt;.lua.</summary>
+        public bool Wander { get; set; }
+        public Vector3? Target { get; set; }
+        /// <summary>NPC no chão: o deslocamento do MOVE não atravessa parede e segue a altura do chão (DECISÃO DO PORT, sem a colisão do jogo).</summary>
+        public bool Grounded { get; init; }
+        public bool Blocked { get; set; }
         public AnimationPlayer? CharacterAnim { get; set; }
         public int CharacterMotionSerial { get; set; } = -1;
 
@@ -68,12 +74,33 @@ public partial class Fatia
                 // MOVE/MOVEEX: deslocamento no espaço local do objeto e giro Y em graus (HIPÓTESE: quadros a 30 Hz, como os inimigos).
                 var (local, yawDeg) = Seq.Motion.Step(dt * SequenceRunner.FramesPerSecond);
                 Actor.Root.RotateY(yawDeg * MathF.PI / 180);
-                Actor.Root.TranslateObjectLocal(new Vector3(local.X, local.Y, local.Z));
+                if (Grounded) MoveOnGround(new Vector3(local.X, local.Y, local.Z));
+                else Actor.Root.TranslateObjectLocal(new Vector3(local.X, local.Y, local.Z));
             }
             if (Seq.Alpha != alpha) Actor.SetAlpha(Seq.Alpha);
             Actor.Root.Visible = Seq.Alpha > 0;
             Actor.Time = Seq.Frame / 60f;
             Actor.Update();
+        }
+
+        // Anda no plano: um raio na altura do peito barra paredes (e o jogador); outro para baixo acha o chão (degraus até 12).
+        void MoveOnGround(Vector3 local)
+        {
+            var root = Actor.Root;
+            var move = root.GlobalBasis * local;
+            move.Y = 0;
+            if (move.LengthSquared() < 1e-8f) return;
+            var space = root.GetWorld3D().DirectSpaceState;
+            var from = root.GlobalPosition + Vector3.Up * 4;
+            var ahead = PhysicsRayQueryParameters3D.Create(from, from + move + move.Normalized() * 2.5f);
+            if (space.IntersectRay(ahead).Count > 0) { Blocked = true; return; }
+            var next = root.GlobalPosition + move;
+            var down = PhysicsRayQueryParameters3D.Create(next + Vector3.Up * 12, next + Vector3.Down * 30);
+            down.HitBackFaces = false;
+            var floor = space.IntersectRay(down);
+            if (floor.Count == 0) { Blocked = true; return; } // sem chão à frente: não anda para o vazio
+            next.Y = ((Vector3)floor["position"]).Y;
+            root.GlobalPosition = next;
         }
     }
 
@@ -107,10 +134,11 @@ public partial class Fatia
             Name = name, Index = index, Actor = actor, Gen = gen,
             Actions = json != null ? SeqCommand.LoadActions(json) : [],
             Seq = json != null ? new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)) : null,
+            Grounded = name.StartsWith("n_", StringComparison.Ordinal),
         };
-        // Só os f_* (f_bit) por enquanto: os NPCs n_* também têm mapas, mas andam pelos scripts (SQ_WALK… com MOVETRANS).
+        // f_* (f_bit): IA de luta. n_*: IA de passeio, ligada quando o script manda um AIMAP (ver UpdateNpcAi).
         if (o.Seq != null && name.StartsWith("n_", StringComparison.Ordinal)) o.Seq.ReturnToWaitAtEnd = true; // NPC: SQ_TALK sem JUMP volta ao SQ_WAIT (HIPÓTESE)
-        if (name.StartsWith("f_", StringComparison.Ordinal) && json != null && AiMap.LoadAll(json) is { Count: > 0 } maps) o.Brain = new EnemyBrain(maps, SeqCommand.LoadAll(json), () => _rng.Next(16));
+        if ((name.StartsWith("f_", StringComparison.Ordinal) || name.StartsWith("n_", StringComparison.Ordinal)) && json != null && AiMap.LoadAll(json) is { Count: > 0 } maps) o.Brain = new EnemyBrain(maps, SeqCommand.LoadAll(json), () => _rng.Next(16));
         AddChild(actor.Root);
         // HIPÓTESE: rotação do GENERATE em graus no eixo do mundo (0/±90/180 nos scripts; o −90° do Numemon já bate assim).
         actor.Root.Position = pos;
@@ -254,6 +282,7 @@ public partial class Fatia
     // SQ_ATK01..15 e SQ_ATKROT, FATO pelos mapas) e a sequência roda até voltar ao SQ_WAIT (JUMP "SQ_WAIT" no fim de cada ataque).
     void UpdateObjectAi(WorldObject o, float dt)
     {
+        if (o.Name.StartsWith("n_", StringComparison.Ordinal)) { UpdateNpcAi(o, dt); return; }
         if (o.Brain is not { } brain || o.Seq is not { } seq || o.Dead) return;
         if (seq.TakeAiMap() is { } map) { brain.SetMap(map); brain.Release(); o.AiSequence = null; }
         if (o.AiSequence != null)
