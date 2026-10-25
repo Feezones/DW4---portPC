@@ -17,7 +17,7 @@ public interface IBeEngine
     /// </summary>
     double? Fight(string method, double[] args) => null;
 
-    /// <summary>Versão texto (BLTgetAttributeStr, MDLgetBulletName). null = sem resposta.</summary>
+    /// <summary>Versão texto (BLTgetAttributeStr, BLPgetAttackZokusei). null = sem resposta.</summary>
     string? FightText(string method, double[] args) => null;
 
     /// <summary>Posição e direção (radianos, atan2(frente.x, frente.z)) do jogador p (PLAYERgetPosStr). null = sem jogador.</summary>
@@ -140,6 +140,11 @@ public sealed class BeHost
     // HIPÓTESE: parâmetro booleano a partir de número: diferente de zero (os scripts passam 0/1).
     static bool B(object?[] a, int i) => i < a.Length && (a[i] is double d ? d != 0 : a[i] != null);
     static object?[] N(double v) => [v];
+
+    // FATO (MDLgetBulletName, 0x802EDC08): nome = tabela 0x804DD2A0[código / 10000 − 1]. Bate com os códigos lidos antes: 40000 técnica,
+    // 60000 sonda de conversa, 70000 golpe de inimigo. HIPÓTESE: fora da tabela (o jogo leria lixo) devolve "".
+    static readonly string[] BulletNames = ["PCWA", "PCCA", "PCSA", "PCMA", "PCBA", "PCTK", "ENAT", "PCMK", "ENSP"];
+    public static string BulletName(int kind) => kind / 10000 - 1 is var i && i >= 0 && i < BulletNames.Length ? BulletNames[i] : "";
     static object?[] Bool(bool v) => [v ? 1.0 : 0.0];
     static readonly object?[] Nothing = [];
 
@@ -256,8 +261,9 @@ public sealed class BeHost
                 return Nothing;
             }
             // Luta (hit_f_apocaly.lua e outros hit_*.lua de chefe): o motor calcula pelo golpe atual; sem resposta, 0 e aviso.
-            case "BLTgetAttributeStr" or "MDLgetBulletName" or "BLPgetAttackZokusei":
-                return [_engine.FightText(name, Numbers(a)) ?? Warn(name, name is "BLTgetAttributeStr" or "BLPgetAttackZokusei" ? "common" : "")];
+            case "MDLgetBulletName": return [BulletName(Model?.BulletKind ?? 0)];
+            case "BLTgetAttributeStr" or "BLPgetAttackZokusei":
+                return [_engine.FightText(name, Numbers(a)) ?? Warn(name, "common")];
             case var f when (f.StartsWith("BLT", StringComparison.Ordinal) || f.StartsWith("BLP", StringComparison.Ordinal)) && f is not ("BLTgetShootRamNo") || f is "MDLdspDamage" or "MDLdspDamageP":
                 return N(_engine.Fight(name, Numbers(a)) ?? Warn(name, 0.0));
             case "MDLaddHp": if (Model != null) Model.Hp += I(a, 1); return Nothing;

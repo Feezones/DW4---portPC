@@ -158,3 +158,18 @@ Lido no main.dol (leitura estática). Código em `MotionChannels` (DW4.Gameplay)
   - Quem sobe por MOVEEX Y fica sem gravidade até voltar ao chão.
   - Junta sem osso com o nome cai no nó com o nome ou na raiz.
 - O andar da IA (SQ_WALK) e o recuo e projéteis do jogador seguem na escala antiga (Speed do PadMovement), ainda não trocada.
+
+## MDLgetBulletName e BLTisHitCheck (2026-10-25)
+
+- **FATO:**
+  - MDLgetBulletName (0x802EDC08) usa o código do golpe (+0x1C do contexto, o mesmo do MDLgetBulletKind).
+    - O nome vem de 0x804DD2A0[código / 10000 − 1]: PCWA, PCCA, PCSA, PCMA, PCBA, PCTK, ENAT, PCMK, ENSP.
+    - Bate com os códigos já lidos: 40000 técnica (PCMA), 60000 sonda de conversa (PCTK), 70000 golpe de inimigo (ENAT).
+    - Os hit_*.lua dos chefes respondem "PCBA" com SQ_GUARDR no jogador.
+  - BLTisHitCheck (0x802EE5C4) manda GAMERAM P2EISHITCHECK (caso 0x80372A44) com o jogador, a linha do inimigo, o código e a
+    base work do inimigo.
+    - Técnica (código / 10000 = 4) acerta sempre.
+    - Senão sorteia MEICHURITSU·(20·skill + 6000 + 30·SUBAYASA) contra a SUBAYASA do inimigo, como o
+      DamageFormula.PlayerHits (já lido antes).
+    - O cliente já respondia por esse caminho. "Sem resposta" no teste é só do motor de teste.
+  - 0 = não acertou: o hit_*.lua põe SQ_GUARD se o chefe está no chão.

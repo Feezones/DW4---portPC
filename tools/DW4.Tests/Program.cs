@@ -1619,6 +1619,16 @@ if (args.Length == 1)
         Equal(ShopTrade.BitMax, inv.Bit, "teto de 9 999 999");
     });
 
+    Test("Jogo: MDLgetBulletName pela tabela 0x804DD2A0 (código / 10000 − 1)", () =>
+    {
+        Equal("PCWA", BeHost.BulletName(10000), "10000 físico");
+        Equal("PCMA", BeHost.BulletName(40017), "40000 + linha: técnica");
+        Equal("PCBA", BeHost.BulletName(50000), "50000");
+        Equal("PCTK", BeHost.BulletName(60000), "60000 sonda de conversa");
+        Equal("ENAT", BeHost.BulletName(70070), "70000 golpe de inimigo");
+        Equal("", BeHost.BulletName(0), "fora da tabela");
+    });
+
     Test("Jogo: scripts reais dos chefes 02..06 (boot/start/first, hit_<chefe>.lua com golpe, LUACALLs) rodam sem erro de Lua", () =>
     {
         var bosses = new (int Entry, string Folder, string[] Models)[]
