@@ -288,9 +288,11 @@ public partial class Fatia : Node3D
         _confirmDown = attackDown && _confirmArmed;
         if (_confirmDown) _selectEnded = true;
         _menuInput = input;
+        bool attackRaw = attackDown;
         if (!_padEnabled || !_playerCtrl) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; _techKey = -1; } // STAGECTL PADINPUT DISABLE do script
         bool attackPressed = attackDown && !_attackHeld;
-        _attackHeld = attackDown;
+        // Com o controle bloqueado o botão continua "segurado": o toque que fechou a mensagem não vira ataque quando o controle volta.
+        _attackHeld = attackDown || attackRaw;
         bool techDown = Input.IsMouseButtonPressed(MouseButton.Right) || Input.IsJoyButtonPressed(0, JoyButton.Y);
         if (techDown && !_techHeld) _techKey = 0;
         _techHeld = techDown;

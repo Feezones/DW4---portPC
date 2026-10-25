@@ -126,7 +126,7 @@ public partial class Fatia
     {
         if (_messagePanel == null)
         {
-            var layer = new CanvasLayer { Layer = 2 };
+            var layer = new CanvasLayer { Layer = 4 }; // acima do fade (i_fadewn01, camada 3): o aviso da troca de fase aparece com a tela preta
             _messagePanel = new PanelContainer { Visible = false };
             _messagePanel.SetAnchorsPreset(Control.LayoutPreset.CenterBottom);
             _messagePanel.Position = new Vector2(-260, -160);

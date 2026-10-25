@@ -26,6 +26,7 @@ public partial class Fatia
     bool _choiceMoveHeld;
     Vector2 _menuInput;
     int _nextEntry;
+    bool _choiceWindowOpen;
 
     bool DeliverToStageChange(BeMessage m)
     {
@@ -42,8 +43,12 @@ public partial class Fatia
                 _choiceMoveHeld = true; // só vale um movimento que começou depois de abrir (o que levou ao tapete ainda pode estar apertado)
                 UpdateChoice();
                 return true;
+            case ("MODELCTRL", "i_zzstchgwb", "GENERATE"):
+                _choiceWindowOpen = true; // gerada com atraso de 10 quadros: o script espera ISRUN antes de ler a escolha
+                return true;
             case ("MODELCTRL", "i_zzstchgwb", "SQ_CLOSE"):
                 _choiceText = null;
+                _choiceWindowOpen = false;
                 if (_choicePanel != null) _choicePanel.Visible = false;
                 return true;
             case ("MODELCTRL", "i_zzstchgwb", _):
@@ -77,6 +82,7 @@ public partial class Fatia
             case ("MODELCTRL", "i_fadewn01", "ISRUN"): return _fade != null && (_fadeT < _fadeLen || _fadeSeq == "SQ_STCHANGELP") ? 1 : 0;
             case ("MODELCTRL", "i_fadewn01", "ISSEQNAME"): return _fadeSeq == m.Text(0) ? 1 : 0;
             // ISEND (comum, Fatia.Recorder.cs) = 1 depois do confirmar; ISSELECTNOW = 1 enquanto escolhe; GETSELECT = a opção.
+            case ("MODELCTRL", "i_zzstchgwb", "ISRUN"): return _choiceWindowOpen ? 1 : 0;
             case ("SELECTCTRL", "i_zzstchgwn", "ISSELECTNOW"): return _choice >= 0 && !_selectEnded ? 1 : 0;
             case ("SELECTCTRL", "i_zzstchgwn", "GETSELECT"): return _choice;
             case ("SYSCTL", "HP", "GETHP"): return _pf != null ? _hp : 1;

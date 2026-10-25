@@ -54,6 +54,8 @@ public partial class Fatia : IBeEngine
     public void Deliver(BeMessage m)
     {
         ScriptLog(m.ToString());
+        // A trava do ISEND zera em todo SELECTCTRL GENERATE, antes de quem trata a janela (troca de área, mensagem) consumir a mensagem.
+        if (m.Class == "SELECTCTRL" && m.Command == "GENERATE") { _confirmArmed = false; _selectEnded = false; }
         if (DeliverToStageChange(m) || DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToObjects(m)) return;
         switch (m.Class, m.Command)
         {
