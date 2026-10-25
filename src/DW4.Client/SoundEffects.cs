@@ -68,6 +68,8 @@ public sealed class SoundEffects
         {
             var file = System.IO.Path.Combine(_dir, $"A9{(cue >> 16) & 0xFF:X2}_{(cue >> 8) & 0xFF:X2}.wav");
             _streams[cue] = stream = System.IO.File.Exists(file) ? _load(file) : null;
+            // DECISÃO DA FATIA: toca uma vez; o loop (passos, carga) depende de quem para o som, que ainda não foi lido.
+            if (stream != null) stream.LoopMode = AudioStreamWav.LoopModeEnum.Disabled;
         }
         if (stream != null) _pending.Add((wait, stream));
     }
