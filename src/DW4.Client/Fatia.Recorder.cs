@@ -25,7 +25,7 @@ public partial class Fatia
     const string PlayerModel = "p_girumon";
 
     bool _playerCtrl = true, _enemiesFrozen, _generatorsFrozen;
-    bool _confirmDown;
+    bool _confirmDown, _confirmArmed;
     List<string>? _texts;
     bool _textsTried;
     Label? _message;
@@ -38,7 +38,10 @@ public partial class Fatia
     void CheckTalkProbe()
     {
         if (_runner == null || _stage == null) return;
-        foreach (var h in _runner.ActionHitBoxes.Where(h => h.Type == TalkProbe))
+        // O SequenceRunner pula a ação TALKWF e guarda a sonda à parte (TakeTalkProbe).
+        var probes = _runner.ActionHitBoxes.Where(h => h.Type == TalkProbe).ToList();
+        if (_runner.TakeTalkProbe() is { } tp) probes.Add(tp);
+        foreach (var h in probes)
         {
             var c = BoxCenter(h);
             foreach (var o in _objects.Where(o => o.Name.StartsWith("n_", StringComparison.Ordinal) && !o.Dead).ToList())
@@ -58,6 +61,7 @@ public partial class Fatia
     /// <summary>Mensagens do gravador e da janela de texto. true se tratou.</summary>
     bool DeliverToRecorder(BeMessage m)
     {
+        if (m.Class == "SELECTCTRL" && m.Command == "GENERATE") _confirmArmed = false; // indicador de tecla: espera um toque novo
         switch (m.Class, m.Command)
         {
             case ("MODELCTRL", "SQ_WAIT") when m.Name == PlayerModel:
@@ -89,7 +93,8 @@ public partial class Fatia
         switch (m.Command)
         {
             // HIPÓTESE: ISEND = tecla de confirmar apertada (o script espera "!=0" e depois "==0": apertar e soltar).
-            case "ISEND" when m.Class == "TEXTCTL": return _confirmDown ? 1 : 0;
+            // O script pergunta "SELECTCTRL i_messky n ISEND" (func.lua, funcOneMessage).
+            case "ISEND" when m.Class is "TEXTCTL" or "SELECTCTRL": return _confirmDown ? 1 : 0;
             // HIPÓTESE: 0 quando o modelo está na sequência pedida (os scripts esperam "==0" depois de mandar a sequência).
             case "ISSEQNAME" when m.Text(0) is { } seq:
                 if (m.Class == "PLAYER" || m.Name == PlayerModel) return (_runner?.Running == true ? _runner.Sequence : "SQ_WAIT") == seq ? 0 : 1;
