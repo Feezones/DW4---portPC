@@ -52,6 +52,7 @@ try
         "igb-drops" when args.Length == 4 => IgbDropsCmd(args[1], args[2], args[3]),
         "adx-wav" when args.Length >= 4 => AdxWav(args[1], args[2], args[3..]),
         "igb-sons" when args.Length == 4 => IgbSons(args[1], args[2], args[3]),
+        "igb-hud" when args.Length is 4 or 6 => IgbHudCmd(args[1], args[2], args.Length == 6 ? args[3] : null, args.Length == 6 ? args[4] : null, args[^1]),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
@@ -101,6 +102,7 @@ static int Usage()
           dw4 igb-drops    <arquivo.afs> <indice> <pasta-de-trabalho>   (listas de drop dos geradores em JSON, fora do repositório)
           dw4 adx-wav      <arquivo.afs> <pasta-de-trabalho> <indice> [indice...]   (ADX → WAV com o loop num chunk smpl, fora do repositório)
           dw4 igb-sons     <arquivo.afs> <indice> <pasta-de-trabalho>   (bancos .sfp do IGB → WAV por cue A9GG_CC, e tabela de sons em JSON)
+          dw4 igb-hud      <ndmw.afs> <indice-fase> [<area.afs> <indice-usa_pack>] <pasta-de-trabalho>   (atores de interface i_* com nós, sequências, medidores e números em JSON + PNG)
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
@@ -1407,6 +1409,39 @@ int IgbSons(string path, string which, string outDir)
     File.WriteAllText(Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_sons.json"),
         root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
     Console.WriteLine($"{sounds.Count} beSoundData, {banks.Count} beCriSfpData, {se.Count} beSeInfoData");
+    return 0;
+}
+
+// Atores de interface da fase (i_dmgnum, i_pcdmgnum, i_stpnl03, i_stbase) com o grafo de nós, as sequências, os medidores
+// e os números, em JSON, e as texturas em PNG; as texturas por nome vêm do pacote de idioma da fase (usa_pack).
+int IgbHudCmd(string path, string which, string? packPath, string? packWhich, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    byte[] Entry(string afsPath, string w)
+    {
+        using var afs = AfsArchive.Open(afsPath);
+        if (!int.TryParse(w, NumberStyles.None, inv, out int i) || i >= afs.Entries.Count) throw new InvalidDataException($"índice inválido: {w}");
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[i], ms);
+        return ms.ToArray();
+    }
+    var data = Entry(path, which);
+    byte[]? packData = packPath != null && packWhich != null ? Entry(packPath, packWhich) : null;
+    // Painéis de status: i_stpnl01..05 gerados juntos em V<x,-160,0> pelos Lua (ded_g_tcounter00 e outros); i_stbase = menu de status.
+    string[] actors = ["i_dmgnum", "i_pcdmgnum", "i_stpnl01", "i_stpnl02", "i_stpnl03", "i_stpnl04", "i_stpnl05", "i_stbase"];
+    var (json, hud) = IgbHud.Export(IgbFile.Read(data), data, packData != null ? IgbFile.Read(packData) : null, packData, actors);
+    Directory.CreateDirectory(full);
+    foreach (var img in hud.Images)
+    {
+        using var fs = File.Create(Path.Combine(full, img.File));
+        Png.WriteRgba(fs, img.Width, img.Height, img.Rgba);
+    }
+    json["source"] = $"{Path.GetFileName(path)} #{which}" + (packPath != null ? $" + {Path.GetFileName(packPath)} #{packWhich}" : "");
+    var file = Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{int.Parse(which, inv):D4}_hud.json");
+    File.WriteAllText(file, json.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = false }));
+    Console.WriteLine($"{json["actors"]!.AsArray().Count} atores, {json["nodes"]!.AsObject().Count} nós, {json["meters"]!.AsArray().Count} medidores, {json["numbers"]!.AsArray().Count} números, {hud.Images.Count} imagens -> {file}");
+    foreach (var n in hud.Notes) Console.WriteLine($"nota: {n}");
     return 0;
 }
 

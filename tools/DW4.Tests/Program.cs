@@ -787,6 +787,43 @@ if (args.Length == 1)
         Equal("19,20,12,13", string.Join(",", Enumerable.Range(0, 4).Select(g => allse.Cues.Count(c => c.Group == g))), "allse: cues por grupo A900..A903");
     });
 
+    Test("Jogo: HUD da dng1 (#179 + usa_pack area #9): painel, medidores, números e texturas por nome", () =>
+    {
+        byte[] Read(string path, int index)
+        {
+            using var afs = AfsArchive.Open(path);
+            using var ms = new MemoryStream();
+            afs.CopyEntry(afs.Entries[index], ms);
+            return ms.ToArray();
+        }
+        static double D(System.Text.Json.Nodes.JsonNode? n) => Convert.ToDouble(n!.GetValue<object>(), System.Globalization.CultureInfo.InvariantCulture);
+        var stage = Read(ndmwPath, 179);
+        var pack = Read(areaPath, 9);
+        var (json, hud) = IgbHud.Export(IgbFile.Read(stage), stage, IgbFile.Read(pack), pack, ["i_dmgnum", "i_stpnl03", "i_stpnl04"]);
+        Equal(0, hud.Notes.Count, $"notas: {string.Join("; ", hud.Notes)}");
+        var nodes = json["nodes"]!.AsObject();
+        Equal("i_stpnl03", (string?)nodes["31271"]!["name"], "raiz do i_stpnl03");
+        Equal("pack_stpnlwn01.png", (string?)nodes["31271"]!["texture"], "textura do painel vem do usa_pack");
+        True(hud.Images.Any(i => i.File == "pack_stpnlwn01.png" && i.Width == 32 && i.Height == 32), "stpnlwn01.png 32×32");
+        // Projeção ortográfica 640 × 480 do igProjectionMatrixAttr.
+        var proj = nodes["31271"]!["attrs"]!.AsArray().First(a => (string?)a!["type"] == "igProjectionMatrixAttr")!["matrix"]!.AsArray();
+        Equal("0.003125", D(proj[0]).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture), "2/640");
+        // Gomo 1 do MP: escala 0 → 1 entre 1 s e 1,0167 s, máscara T+R+S.
+        var seq = nodes["31181"]!["sequence"]!;
+        Equal(11, (int)seq["mask"]!, "máscara do mpmetr01");
+        Equal("0,1,1.0167,3", string.Join(",", seq["times"]!.AsArray().Select(t => D(t).ToString("0.####", System.Globalization.CultureInfo.InvariantCulture))), "tempos do mpmetr01");
+        var meters = json["meters"]!.AsArray();
+        Equal("hpmt:4,mpmt:4", string.Join(",", meters.Select(m => $"{m!["name"]}:{m["data"]!.AsArray().Count}")), "medidores");
+        var dmg = json["numbers"]!.AsArray().First(n => (string?)n!["name"] == "dmgnm0")!["rams"]!.AsArray();
+        Equal(11, dmg.Count, "11 números de dano em uso ao mesmo tempo");
+        Equal(0.09375, Math.Round(D(dmg[0]!["offsetNext"]), 5), "passo de UV por dígito");
+        // O dígito 0 (unidade) é o quad mais à direita: vértices 0..5.
+        var d0 = dmg[0]!["digits"]![0]!["vertices"]!.AsArray().Select(v => (int)v![0]!).ToArray();
+        Equal("0,1,2,3,4,5", string.Join(",", d0), "vértices do dígito 0");
+        var geom = nodes[((int)dmg[0]!["geometry"]!).ToString()]!["meshes"]![0]!["positions"]!.AsArray().Select(p => D(p)).ToArray();
+        True(geom[0] >= 0 && geom[3 * 6] < 0, "dígito 0 à direita do dígito 1");
+    });
+
     Test("Jogo: 12 tabelas beDataBase na dng1 (area #3); w_sword01 com TSUYOSA 60..199; Guilmon e Numemon nas tabelas", () =>
     {
         using var afs = AfsArchive.Open(areaPath);
