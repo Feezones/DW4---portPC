@@ -10,6 +10,7 @@ using DW4.Formats.Images;
 using DW4.Formats.Lua;
 using DW4.Formats.Sofdec;
 using DW4.Gameplay;
+using DW4.Script;
 
 // Verificador dos leitores de formato, sem pacotes externos.
 // Sem argumentos: só testes sintéticos (dados montados aqui, nada do jogo).
@@ -569,6 +570,96 @@ Test("GDB: soma de verificação dos pacotes", () =>
     Equal("3f", DW4.Formats.Dolphin.GdbClient.Checksum("?"), "?");
 });
 
+// VM Lua 4.0: programas montados à mão com a codificação de lopcodes.h (OP 6 bits, U = i >> 6, S = U − MAXARG_S, B 9 bits, A a partir do bit 15).
+static uint LU(int op, int u) => (uint)(op | (u << 6));
+static uint LS(int op, int s) => LU(op, s + ((1 << 26) - 1 >> 1));
+static uint LAB(int op, int a, int b) => (uint)(op | (b << 6) | (a << 15));
+static LuaClosure LProgram(uint[] code, string?[]? strings = null, LuaProto[]? protos = null, int numParams = 0, bool vararg = false) =>
+    new(new LuaProto { Code = code, Strings = strings ?? [], Protos = protos ?? [], NumParams = numParams, IsVararg = vararg, MaxStackSize = 16 }, []);
+
+Test("VM Lua: aritmética, globais, if com JMPGE e for numérico", () =>
+{
+    var vm = new LuaVM();
+    // x = 2 + 3 * 4; return x
+    var r = vm.Call(LProgram([LS(6, 2), LS(6, 3), LS(6, 4), LU(26, 0), LU(23, 0), LU(19, 0), LU(12, 0), LU(1, 0), 0], ["x"]));
+    Equal(14.0, (double)r[0]!, "2 + 3 * 4");
+    // if 3 < 5 then 1 else 2
+    r = vm.Call(LProgram([LS(6, 3), LS(6, 5), LS(37, 2), LS(6, 1), LS(42, 1), LS(6, 2), LU(1, 0), 0]));
+    Equal(1.0, (double)r[0]!, "if 3 < 5");
+    // s = 0; for i = 1, 10 do s = s + i end; return s
+    r = vm.Call(LProgram([LS(6, 0), LU(19, 0), LS(6, 1), LS(6, 10), LS(6, 1), LS(44, 5), LU(12, 0), LU(11, 0), LU(23, 0), LU(19, 0), LS(45, -5), LU(12, 0), LU(1, 0), 0], ["s"]));
+    Equal(55.0, (double)r[0]!, "soma 1..10");
+});
+
+Test("VM Lua: CONCAT com número (%.16g), closure com upvalue, vararg com arg.n", () =>
+{
+    var vm = new LuaVM();
+    var concat = new LuaClosure(new LuaProto { Code = [LU(7, 0), LU(8, 0), LS(6, 2), LU(29, 3), LU(4, 1), LU(31, 0), LU(1, 0), 0], Strings = ["a"], Numbers = [1.5], MaxStackSize = 8 }, []);
+    var r = vm.Call(concat);
+    Equal("a1.52", (string)r[0]!, "concat");
+    Equal(1.0, (double)r[1]!, "not nil = 1");
+    // local up = 42; return (function() return %up end)()
+    var inner = new LuaProto { Code = [LU(10, 0), LU(1, 0), 0], MaxStackSize = 2 };
+    r = vm.Call(LProgram([LS(6, 42), LAB(48, 0, 1), LAB(2, 0, 255), LU(1, 0), 0], protos: [inner]));
+    Equal(42.0, (double)r[0]!, "upvalue");
+    // function f(...) return arg.n end; return f(7, 8, 9)
+    var va = new LuaProto { Code = [LU(11, 0), LU(14, 0), LU(1, 1), 0], Strings = ["n"], IsVararg = true, MaxStackSize = 4 };
+    r = vm.Call(LProgram([LAB(48, 0, 0), LU(19, 0), LU(12, 0), LS(6, 7), LS(6, 8), LS(6, 9), LAB(2, 0, 255), LU(1, 0), 0], ["f"], [va]));
+    Equal(3.0, (double)r[0]!, "arg.n");
+});
+
+Test("VM Lua: be:Metodo(2, 3) pelo PUSHSELF chega ao hospedeiro com o self; SETLIST e getn", () =>
+{
+    var vm = new LuaVM();
+    var be = new LuaTable();
+    var called = new List<string>();
+    be.Missing = (_, key) => new LuaHostFunction((string)key, a => { called.Add((string)key); return [ReferenceEquals(a[0], be) ? (double)a[1]! + (double)a[2]! : -1.0]; });
+    vm.Globals["be"] = be;
+    var r = vm.Call(LProgram([LU(12, 0), LU(16, 1), LS(6, 2), LS(6, 3), LAB(2, 0, 1), LU(1, 0), 0], ["be", "Add"]));
+    Equal(5.0, (double)r[0]!, "be:Add(2, 3)");
+    Equal("Add", called.Single(), "método chamado");
+    // t = {10, 20, 30}; return t, getn(t)
+    r = vm.Call(LProgram([LU(17, 3), LS(6, 10), LS(6, 20), LS(6, 30), LAB(21, 0, 3), LU(12, 0), LU(11, 0), LAB(2, 1, 1), LU(1, 0), 0], ["getn"]));
+    Equal(3.0, (double)r[1]!, "getn");
+    Equal(20.0, (double)((LuaTable)r[0]!).RawGet(2.0)!, "t[2]");
+    // laço infinito para no limite
+    vm.InstructionLimit = 1000;
+    bool stopped = false;
+    try { vm.Call(LProgram([LS(42, -1), 0])); } catch (LuaException) { stopped = true; }
+    True(stopped, "laço infinito não parou");
+});
+
+Test("Tabela Lua 4.0: ordem de iteração do ltable.c (hash_s, colisão, rehash) e biblioteca", () =>
+{
+    // hash_s("a") = 128, "b" = 131, "c" = 130, "d" = 133 (l = 1: h = 1 ^ (32 + 0 + c)). Tamanho 4: a→0, b→3, c→2;
+    // "d"→1 ocupa o último livre e força rehash para 8 (a→0, c→2, b→3, d→5). "i" (136) colide com "a" e vai para o nó 7.
+    Equal(128u, LuaTable.StringHash("a"), "hash_s(a)");
+    var t = new LuaTable();
+    foreach (var k in new[] { "a", "b", "c" }) t.Set(k, 1.0);
+    Equal("acb", string.Concat(t.Pairs().Select(p => (string)p.Key)), "ordem com 4 nós");
+    t.Set("d", 1.0);
+    Equal(8, t.Size, "rehash para 8");
+    t.Set("i", 1.0);
+    Equal("acbdi", string.Concat(t.Pairs().Select(p => (string)p.Key)), "ordem com 8 nós");
+    t.Set("c", null);
+    Equal("abdi", string.Concat(t.Pairs().Select(p => (string)p.Key)), "nil some da iteração");
+    var vm = new LuaVM();
+    // tinsert grava t.n sempre; tremove devolve o elemento e ajusta n; sort com a ordem padrão.
+    var list = new LuaTable();
+    var ins = vm.Globals.RawGet("tinsert");
+    vm.Call(ins, list, 5.0); vm.Call(ins, list, 3.0); vm.Call(ins, list, 1.0, 9.0);
+    Equal(3.0, (double)list.RawGet("n")!, "n depois de 3 tinsert");
+    Equal(9.0, (double)list.RawGet(1.0)!, "tinsert na posição 1");
+    vm.Call(vm.Globals.RawGet("sort"), list);
+    Equal("3,5,9", string.Join(",", Enumerable.Range(1, 3).Select(i => (double)list.RawGet((double)i)!)), "sort");
+    Equal(9.0, (double)vm.Call(vm.Globals.RawGet("tremove"), list)[0]!, "tremove");
+    Equal(2.0, (double)list.RawGet("n")!, "n depois do tremove");
+    string F(string fmt, params object?[] a) => (string)vm.Call(vm.Globals.RawGet("format"), [fmt, .. a])[0]!;
+    Equal("007|  3.50|0.1|1e+20|ff|x  |abc", F("%03d|%6.2f|%g|%g|%x|%-3s|%s", 7.0, 3.5, 0.1, 1e20, 255.0, "x", "abc"), "format");
+    Equal("lo", (string)vm.Call(vm.Globals.RawGet("strsub"), "hello", -2.0)[0]!, "strsub negativo");
+    Equal("0.1", (string)vm.Call(vm.Globals.RawGet("tostring"), 0.1)[0]!, "tostring %.16g");
+});
+
 // ---------- dados do jogo (opcional) ----------
 
 if (args.Length == 1)
@@ -622,6 +713,48 @@ if (args.Length == 1)
         Equal(2274, igbs, "IGB");
         Equal(0, problems.Count, $"problemas ({string.Join("; ", problems.Take(3))})");
         Equal(5291, chunks, "chunks Lua");
+    });
+
+    Test("Jogo: VM Lua executa o corpo principal dos 2902 chunks distintos com be:* simulado, sem erro interno da VM", () =>
+    {
+        var seen = new HashSet<string>();
+        int run = 0, ok = 0;
+        var errors = new Dictionary<string, int>();
+        var methods = new Dictionary<string, int>();
+        var missing = new Dictionary<string, int>();
+        void Count(Dictionary<string, int> d, string k) => d[k] = d.GetValueOrDefault(k) + 1;
+        using var afs = AfsArchive.Open(ndmwPath);
+        foreach (var e in afs.Entries)
+        {
+            if (Classifier.Classify(afs.ReadHead(e, 0x30)) != ContentKind.Igb) continue;
+            using var ms = new MemoryStream();
+            afs.CopyEntry(e, ms);
+            var data = ms.ToArray();
+            var f = IgbFile.Read(data);
+            bool le = f.Header.LittleEndian;
+            foreach (var o in f.Slots.OfType<IgbObject>().Where(o => o.TypeName == "beLuaDataObject"))
+                foreach (var v in o.Fields.Where(v => v.Desc.ShortName == "MemoryRef"))
+                {
+                    int r = v.AsInt32(le);
+                    if (r < 0 || r >= f.Slots.Count || f.Slots[r] is not IgbMemoryBlock mb || mb.Size == 0) continue;
+                    var mem = data.AsSpan((int)mb.FileOffset, mb.Size).ToArray();
+                    if (!Lua40Chunk.LooksLikeChunk(mem) || !seen.Add(Convert.ToHexString(SHA256.HashData(mem)))) continue;
+                    var vm = new LuaVM { InstructionLimit = 2_000_000 };
+                    var be = new LuaTable();
+                    be.Missing = (_, key) => key is string name
+                        ? new LuaHostFunction(name, _ => { Count(methods, name); return []; })
+                        : null;
+                    vm.Globals["be"] = be;
+                    vm.Globals.Missing = (_, key) => { if (key is string gname) Count(missing, gname); return null; };
+                    run++;
+                    try { vm.DoChunk(mem); ok++; }
+                    catch (LuaException ex) { Count(errors, ex.Message); }
+                }
+        }
+        Console.WriteLine($"       {run} chunks executados, {ok} sem erro; {methods.Count} métodos be:* chamados no corpo principal");
+        foreach (var (msg, n) in errors.OrderByDescending(x => x.Value).Take(8)) Console.WriteLine($"       erro {n}×: {msg}");
+        Console.WriteLine($"       globais lidas sem definição: {string.Join(", ", missing.OrderByDescending(x => x.Value).Take(15).Select(x => $"{x.Key} ({x.Value})"))}");
+        Equal(2902, run, "chunks distintos");
     });
 
     IgbScene Scene(int index)
