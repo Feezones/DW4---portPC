@@ -237,6 +237,10 @@ Test("Objeto: caixa do HITBOX vale do quadro inicial até o fim da duração; AI
     s.Start("SQ_PHASE2");
     Equal("MAP01", s.TakeAiMap(), "AIMAP do SQ_PHASE2");
     Equal(null, s.TakeAiMap(), "consumido");
+    seqs["SQ_BMH"] = [C("LUACALL", "bmh", ""), C("JUMP", "SQ_WAIT")];
+    s.Start("SQ_BMH");
+    Equal("bmh", s.TakeLuaCall(), "LUACALL entregue (f_devl1f2)");
+    Equal(null, s.TakeLuaCall(), "uma vez");
 });
 
 Test("Sequência: caixas agendadas antes de uma ação curta passam para a ação seguinte (CarryHitBoxes, SQ_MAGIC do f_apocaly)", () =>

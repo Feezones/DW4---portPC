@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Godot;
 using DW4.Gameplay;
@@ -88,12 +89,27 @@ public partial class Fatia
             case "LUACALL":
                 // FATO: SQ_ATCK2 do f_apocaly faz LUACALL "bit" e a fase tem bit_f_apocaly.lua (gera o f_bit se ele não está vivo,
                 // senão manda o chefe de volta ao SQ_WAIT): o script é "<nome>_<modelo>.lua", no contexto do modelo.
-                if (_stage?.Has($"{c.S(0)}_{e.Kind.Model}.lua") == true) _stage.RunAs($"{c.S(0)}_{e.Kind.Model}.lua", e);
-                else if (_warnedLua.Add($"{e.Kind.Model}:{c.S(0)}")) ScriptLog($"{e.Kind.Model}: LUACALL \"{c.S(0)}\" sem {c.S(0)}_{e.Kind.Model}.lua");
+                RunLuaCall(c.S(0), e.Kind.Model, e);
                 break;
         }
     }
     readonly HashSet<string> _warnedLua = [];
+
+    // LUACALL "<nome>" de um modelo: FATO "<nome>_<modelo>.lua" (bit_f_apocaly.lua). HIPÓTESE quando esse não existe e há um só
+    // "<nome>_*.lua" na fase (FATO: f_devl1f2 chama "bmh" e a fase tem bmh_f_devl1h.lua): roda esse.
+    void RunLuaCall(string name, string model, IBeModel context)
+    {
+        if (_stage == null || name.Length == 0) return;
+        string? script = $"{name}_{model}.lua";
+        if (!_stage.Has(script))
+        {
+            var dir = Path.Combine(_dir, "lua");
+            var only = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, $"{name}_*.lua").Select(Path.GetFileName).ToList() : [];
+            script = only.Count == 1 ? only[0] : null;
+        }
+        if (script != null) _stage.RunAs(script, context);
+        else if (_warnedLua.Add($"{model}:{name}")) ScriptLog($"{model}: LUACALL \"{name}\" sem {name}_{model}.lua");
+    }
 
     // Começa uma sequência do inimigo no rótulo guardado dela (SETLABEL/LABELCTRL), ou "common", "NORM", ou o primeiro rótulo.
     bool StartEnemySequence(Enemy e, string seq)

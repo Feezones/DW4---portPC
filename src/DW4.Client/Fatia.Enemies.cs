@@ -253,7 +253,7 @@ public partial class Fatia
                 _generators[gen.Name] = gen;
             }
         }
-        else _problems.Add("falta geradores.json (dw4 igb-geradores ndmw.afs 184 <fatia>): sem ondas, Numemon fixo");
+        else if (_dir == _common) _problems.Add("falta geradores.json (dw4 igb-geradores ndmw.afs 184 <fatia>): sem ondas, Numemon fixo");
         var matFile = Path.Combine(_dir, "gatilhos.json");
         if (File.Exists(matFile))
         {

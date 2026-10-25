@@ -54,6 +54,9 @@ public sealed class ObjectSequencer
     public string? TakeAiMap() { var m = AiMap; AiMap = null; return m; }
     /// <summary>Volta ao SQ_WAIT quando uma sequência acaba sem JUMP (ligado nos NPCs n_*).</summary>
     public bool ReturnToWaitAtEnd { get; set; }
+    readonly Queue<string> _luaCalls = new();
+    /// <summary>LUACALL da sequência (ex.: f_devl1f2 "bmh"): quem roda os scripts consome um por vez.</summary>
+    public string? TakeLuaCall() => _luaCalls.Count > 0 ? _luaCalls.Dequeue() : null;
     /// <summary>Contador de caixas ligadas (muda a cada HITBOX "Set"): um acerto por caixa.</summary>
     public int BoxSerial { get; private set; }
 
@@ -172,6 +175,9 @@ public sealed class ObjectSequencer
                     return;
                 case "AIMAP":
                     AiMap = c.S(0);
+                    break;
+                case "LUACALL":
+                    _luaCalls.Enqueue(c.S(0));
                     break;
                 case "FADESET":
                     Fade(c);

@@ -235,7 +235,8 @@ public partial class Fatia : Node3D
         LoadCombat();
         LoadStageData();
         // Sem geradores: o Numemon fixo do GENE-05 que renasce (fatia anterior).
-        if (_generators.Count == 0) SpawnEnemy(EnemyRow, EnemyAt, -MathF.PI / 2, null, respawns: true);
+        // Só na fatia antiga (sem fase exportada): uma fase exportada sem geradores (dngq5b1*, stag0000) simplesmente não tem.
+        if (_generators.Count == 0 && _dir == _common) SpawnEnemy(EnemyRow, EnemyAt, -MathF.PI / 2, null, respawns: true);
         if (HudData.Load(System.IO.Path.Combine(_dir, "hud"), _problems) is { } hud)
         {
             _overlay = new HudOverlay(hud, this);
@@ -513,7 +514,7 @@ public partial class Fatia : Node3D
         if (!_db.Contains("pcTech")) _problems.Add("a pcTech não está no *_db.json: técnicas desligadas");
         var dropsDir = System.IO.Path.Combine(_dir, "drops");
         var dropsFile = System.IO.Directory.Exists(dropsDir) ? System.IO.Directory.EnumerateFiles(dropsDir, "*_drops.json").FirstOrDefault() : null;
-        if (dropsFile == null) _problems.Add("falta o *_drops.json (dw4 igb-drops ndmw.afs 183 <fatia>\\drops): sem drops");
+        if (dropsFile == null) { if (_dir == _common) _problems.Add("falta o *_drops.json (dw4 igb-drops ndmw.afs 183 <fatia>\\drops): sem drops"); }
         else
         {
             var dropsJson = System.IO.File.ReadAllText(dropsFile);

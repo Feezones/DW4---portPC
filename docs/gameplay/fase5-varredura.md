@@ -10,22 +10,30 @@
   - inimigos sem esqueleto (f_luce1/f_luce2 do stagbs03) saem como objeto rígido, e o cliente usa o ator como modelo
     (`LoadRigidEnemyKind`).
 - Personagens: os 37 modelos de inimigo exportados têm malha e animação.
-- **Carga no cliente: 24 de 98 fases varridas** (abrir por 20 s e ler o log): dng101b1 … dng310f1. As 24 abrem limpas:
-  sem erro de script, nenhum be: sem resposta, nenhuma fila de demo parada, nenhuma janela não portada.
+- **Carga no cliente: 62 de 98 fases varridas** (24 com janela; 38 com --headless, interrompido porque o console abria uma janela; o
+  usuário pediu para não abrir nada sem avisar). As 62 abrem e rodam os scripts. 48 limpas; pendências:
+  - **14× fila de demo segura em "SELECTCTRL i_messky ISEND"** (as dngq*): a fase começa com uma mensagem que espera o jogador
+    confirmar. Sem entrada (headless) ela não anda. **Não é erro.**
+  - **4–5× fase sem geradores** (dngq5b1*, stag0000, stag0103): o cliente punha o Numemon fixo da fatia e avisava "falta
+    geradores/drops". Corrigido: o Numemon fixo e esses avisos agora só valem para a fatia antiga.
 - be: implementados antes da varredura (os mais usados pelos scripts das fases restantes, lidos nos nativos):
   - MATisRidePlayer/MATisRideOffPlayer (entrou/saiu do volume);
   - MDLgetInfoName, MDLisSeqName, MDLgetKyoriSquare, MDLisStatus (CHECKSTATUS), MDLdspExp e PLAYERgetPosStr;
   - SYSctlDiskFolder (HIPÓTESE do efeito, como o DEVICE);
   - a família BLP* (neutra, como BLT*).
+- Chefes: LUACALL agora também nas peças f_* (ObjectSequencer) e, sem "<nome>_<modelo>.lua", o único "<nome>_*.lua" da fase
+  (HIPÓTESE; FATO: f_devl1f2 chama "bmh" e a fase tem bmh_f_devl1h.lua). Nos chefes 02..06, 40 LUACALL: 38 com o script do
+  nome exato e 2 resolvidos pelo fallback.
 
 ## Falta
 
-- Carga das outras 74 fases: dng310f2 em diante (dng310f2/f3, dng411*, dng412*, dngq*, stag0000..0404, stagbs02..06,
-  staggf*, stagis*, stagml*). Rodar quando o PC puder abrir janelas:
-  `scratchpad\varredura.ps1 -Fases <lista>` (abre e fecha só as próprias instâncias) e depois `tabela.js`.
+- Carga das outras 36 fases (as que vêm depois de stag0302 na lista): só com autorização do usuário, porque abrir o Godot,
+  mesmo headless, mostra janela/console.
+- MOVEEX (eixo com aceleração, ex. TYPACC 1.8 6 120) e MOVERL (prende a peça a uma junta, ex. ACTOR f_luce "ball") dos chefes:
+  ainda não lidos.
 - Conferir na janela os chefes do enredo (stagbs02..06) e o f_luce rígido.
 
-## Tabela (24 fases varridas)
+## Tabela (62 fases varridas)
 
 | Fase | Abre | Cmds de script | Erros | be: sem resposta | Fila parada | Janelas/LUACALL/sons | Avisos do cliente | Exportação | Inimigos |
 |---|---|---|---|---|---|---|---|---|---|
@@ -53,3 +61,41 @@
 | dng309b3 | sim | 91 |  |  |  |  |  |  | e_otama, e_maridevi, e_mecha3, g_box, e_geko |
 | dng309b4 | sim | 74 |  |  |  |  |  |  | e_otama, e_maridevi, e_mecha3, e_diabolo, g_box, e_geko |
 | dng310f1 | sim | 114 |  |  |  |  |  |  | e_maridevi, e_mecha3, g_box, e_otama, e_geko |
+| dng310f2 | sim | 108 |  |  |  |  |  |  | e_maridevi, e_mecha3, g_box, e_otama, e_geko |
+| dng310f3 | sim | 166 |  |  |  |  |  |  | e_mecha3, g_box, e_otama, e_geko |
+| dng411b1 | sim | 60 |  |  |  |  |  |  | e_megadra, g_box |
+| dng411b2 | sim | 64 |  |  |  |  |  |  | e_infermo, e_megadra, g_box |
+| dng411b3 | sim | 200 |  |  |  |  |  |  | e_infermo, e_megadra, e_rare, e_mecha5, g_box |
+| dng412b1 | sim | 102 |  |  |  |  |  |  | e_infermo, e_megadra, e_rare, g_box |
+| dng412b2 | sim | 140 |  |  |  |  |  |  | e_mecha4, e_infermo, e_megadra, e_rare, g_box |
+| dng412b3 | sim | 264 |  |  |  |  |  |  | e_mecha4, e_infermo, e_megadra, e_rare, g_box |
+| dng412b4 | sim | 157 |  |  |  |  |  |  | e_infermo, e_megadra, e_rare, e_mecha5, e_ldknight, g_box |
+| dngq1b1e | sim | 54 |  |  | CheckZero SELECTCTRL i_messky 0 ISEND |  |  |  | g_box, e_nume, e_scum |
+| dngq1b2e | sim | 61 |  |  |  |  |  |  | e_mammos, g_box, e_nume, e_scum, e_ogre |
+| dngq2b1e | sim | 104 |  |  | CheckZero SELECTCTRL i_messky 0 ISEND |  |  |  | g_box, e_mecha1, e_mummy, e_minotaru, e_pharaoh |
+| dngq2b2e | sim | 69 |  |  |  |  |  |  | e_mecha2, g_box, e_mummy, e_pharaoh |
+| dngq2b2h | sim | 32 |  |  |  |  |  |  | e_mecha2, g_box, e_mummy, e_pharaoh |
+| dngq3b1e | sim | 69 |  |  | CheckZero SELECTCTRL i_messky 0 ISEND |  |  |  | e_otama, e_geko, e_maridevi |
+| dngq3b2e | sim | 51 |  |  |  |  |  |  | e_mecha3, e_otama, e_geko, e_maridevi |
+| dngq4b1e | sim | 78 |  |  | CheckZero SELECTCTRL i_messky 0 ISEND |  |  |  | g_box, e_mecha1, e_mummy, e_pharaoh |
+| dngq4b1h | sim | 92 |  |  | CheckZero SELECTCTRL i_messky 0 ISEND |  |  |  | g_box, e_mecha1, e_mummy, e_pharaoh |
+| dngq4b1v | sim | 105 |  |  | CheckZero SELECTCTRL i_messky 0 ISEND |  |  |  | g_box, e_mecha1, e_mummy, e_pharaoh |
+| dngq4b2e | sim | 98 |  |  |  |  |  |  | e_anomalo, g_box, e_mummy, e_mecha2, e_minotaru, e_pharaoh |
+| dngq4b2h | sim | 112 |  |  |  |  |  |  | e_anomalo, g_box, e_mummy, e_mecha2, e_minotaru, e_pharaoh |
+| dngq4b2v | sim | 156 |  |  |  |  |  |  | e_anomalo, g_box, e_mummy, e_mecha2, e_minotaru, e_pharaoh |
+| dngq5b1e | sim | 55 |  |  | CheckZero SELECTCTRL i_messky 0 ISEND |  | falta o *_drops.json (dw4 igb-drops ndmw.afs 183 <fatia>\drops): sem drops / falta geradores.json (dw4 igb-geradores ndmw.afs 184 <fatia>): sem ondas, Numemon fixo / falta inimigos\e_nume\personagem.gltf (dw4 fase-exportar) |  |  |
+| dngq5b1h | sim | 141 |  |  | CheckZero SELECTCTRL i_messky 0 ISEND |  | falta o *_drops.json (dw4 igb-drops ndmw.afs 183 <fatia>\drops): sem drops / falta geradores.json (dw4 igb-geradores ndmw.afs 184 <fatia>): sem ondas, Numemon fixo / falta inimigos\e_nume\personagem.gltf (dw4 fase-exportar) |  |  |
+| dngq5b1v | sim | 248 |  |  | CheckZero SELECTCTRL i_messky 0 ISEND |  | falta o *_drops.json (dw4 igb-drops ndmw.afs 183 <fatia>\drops): sem drops / falta geradores.json (dw4 igb-geradores ndmw.afs 184 <fatia>): sem ondas, Numemon fixo / falta inimigos\e_nume\personagem.gltf (dw4 fase-exportar) |  |  |
+| dngq6b01 | sim | 66 |  |  | CheckZero SELECTCTRL i_messky 0 ISEND |  |  |  | e_mecha4, g_box, e_infermo, e_megadra, e_rare |
+| dngq7b1e | sim | 106 |  |  | CheckZero SELECTCTRL i_messky 0 ISEND |  |  |  | g_box, e_otama, e_geko, e_maridevi |
+| dngq7b2e | sim | 104 |  |  |  |  |  |  | e_mecha3, e_tonogeko, g_box, e_otama, e_geko, e_maridevi |
+| dngq8b1e | sim | 88 |  |  | CheckZero SELECTCTRL i_messky 0 ISEND |  |  |  | g_box, e_mecha4, e_infermo, e_megadra, e_rare |
+| dngq8b2e | sim | 142 |  |  |  |  |  |  | g_box, e_mecha4, e_infermo, e_megadra, e_rare |
+| dngq8b3e | sim | 161 |  |  |  |  |  |  | e_mecha5, e_ldknight, g_box, e_mecha4, e_infermo, e_megadra, e_rare |
+| dngq8b3h | sim | 162 |  |  |  |  |  |  | e_mecha5, e_ldknight, g_box, e_mecha4, e_infermo, e_megadra, e_rare |
+| dngq8b3v | sim | 163 |  |  |  |  |  |  | e_mecha5, g_box, e_mecha4, e_infermo, e_megadra, e_rare, e_ldknight |
+| stag0000 | sim | 41 |  |  |  |  | falta o *_drops.json (dw4 igb-drops ndmw.afs 183 <fatia>\drops): sem drops / falta geradores.json (dw4 igb-geradores ndmw.afs 184 <fatia>): sem ondas, Numemon fixo / falta inimigos\e_nume\personagem.gltf (dw4 fase-exportar) |  |  |
+| stag0001 | sim | 31 |  |  | CheckZero SELECTCTRL i_messky 0 ISEND |  |  |  | g_boxfield, e_goburi, e_ogre, e_nume, e_cockatri |
+| stag0101 | sim | 141 |  |  |  |  |  |  | e_goburi, e_nume, e_ogre, g_boxfield, g_bbarrelsz01, g_woodencasez01 |
+| stag0102 | sim | 114 |  |  |  |  |  |  | e_goburi, e_ogre, e_blosso, g_boxfield, g_bbarrelsz01, g_woodencasez01 |
+| stag0103 | sim | 75 |  |  | CheckZero SELECTCTRL i_messky 0 ISEND |  | falta o *_drops.json (dw4 igb-drops ndmw.afs 183 <fatia>\drops): sem drops |  | e_nume |
