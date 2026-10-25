@@ -63,6 +63,13 @@ public partial class Fatia
             if (Seq == null) return;
             float alpha = Seq.Alpha;
             Seq.Tick(dt);
+            if (Seq.Motion.AnyActive && dt > 0)
+            {
+                // MOVE/MOVEEX: deslocamento no espaço local do objeto e giro Y em graus (HIPÓTESE: quadros a 30 Hz, como os inimigos).
+                var (local, yawDeg) = Seq.Motion.Step(dt * SequenceRunner.FramesPerSecond);
+                Actor.Root.RotateY(yawDeg * MathF.PI / 180);
+                Actor.Root.TranslateObjectLocal(new Vector3(local.X, local.Y, local.Z));
+            }
             if (Seq.Alpha != alpha) Actor.SetAlpha(Seq.Alpha);
             Actor.Root.Visible = Seq.Alpha > 0;
             Actor.Time = Seq.Frame / 60f;
@@ -172,6 +179,7 @@ public partial class Fatia
         {
             var o = _objects[i];
             o.Tick(dt);
+            if (o.Seq?.Motion.Attached is { } rl && AttachTarget(rl, o.Name) is { } at) o.Actor.Root.GlobalTransform = at;
             UpdateObjectAi(o, dt);
             while (o.Seq?.TakeLuaCall() is { } lua) RunLuaCall(lua, o.Name, o); // LUACALL das peças f_* (ex.: f_devl1f2 "bmh")
             UpdateCharacterAnim(o);

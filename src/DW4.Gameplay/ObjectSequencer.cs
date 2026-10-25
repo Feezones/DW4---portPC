@@ -54,6 +54,8 @@ public sealed class ObjectSequencer
     public string? TakeAiMap() { var m = AiMap; AiMap = null; return m; }
     /// <summary>Volta ao SQ_WAIT quando uma sequência acaba sem JUMP (ligado nos NPCs n_*).</summary>
     public bool ReturnToWaitAtEnd { get; set; }
+    /// <summary>Canais do MOVE/MOVEEX (FATO, executor do jogo); quem desenha o objeto aplica o deslocamento.</summary>
+    public MotionChannels Motion { get; } = new();
     readonly Queue<string> _luaCalls = new();
     /// <summary>LUACALL da sequência (ex.: f_devl1f2 "bmh"): quem roda os scripts consome um por vez.</summary>
     public string? TakeLuaCall() => _luaCalls.Count > 0 ? _luaCalls.Dequeue() : null;
@@ -82,6 +84,7 @@ public sealed class ObjectSequencer
             start = at >= 0 ? at + 1 : cmds.FindIndex(c => c.Kind == "LABEL") + 1;
         }
         int end = cmds.FindIndex(start, c => c.Kind == "LABEL");
+        Motion.SequenceChanged(); // 0x8030EA38
         _cmds = cmds;
         _pc = start;
         _end = end < 0 ? cmds.Count : end;
@@ -178,6 +181,9 @@ public sealed class ObjectSequencer
                     break;
                 case "LUACALL":
                     _luaCalls.Enqueue(c.S(0));
+                    break;
+                case "MOVE" or "MOVEEX" or "MOVERL":
+                    Motion.Apply(c);
                     break;
                 case "FADESET":
                     Fade(c);

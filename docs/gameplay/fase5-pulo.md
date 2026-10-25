@@ -32,3 +32,11 @@
 
 Espaço: o Guilmon sobe até y ≈ 31–33 saindo do chão em y 20, toca JUMPS2 no ar, pousa de volta em y 20 e volta a ficar
 parado.
+
+## Correção: conta do MOVE "Jump"/"Fall" pelo executor (2026-10-25)
+
+- **FATO:** a leitura do executor do MOVE (ver fase5-chefe-bs01.md, MotionChannels) dá outra conta para os números.
+  - "Jump" 1,44 6,3 começa em +1,44 por quadro e freia 1,44 / (0,5·6,3²) ≈ 0,073 por quadro² até 0.
+  - "Fall" acelera para baixo com a mesma conta até −1,44.
+- O pico fica quase igual: 14,3 contra 13,8. A subida passa a levar ~20 quadros, contra ~4 antes.
+- O JumpMotion foi trocado para essa conta. Ainda não foi conferido na janela.

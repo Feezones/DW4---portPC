@@ -29,8 +29,7 @@
 
 - Carga das outras 36 fases (as que vêm depois de stag0302 na lista): só com autorização do usuário, porque abrir o Godot,
   mesmo headless, mostra janela/console.
-- MOVEEX (eixo com aceleração, ex. TYPACC 1.8 6 120) e MOVERL (prende a peça a uma junta, ex. ACTOR f_luce "ball") dos chefes:
-  ainda não lidos.
+- MOVEEX e MOVERL: lidos e implementados (ver fase5-chefe-bs01.md); falta conferir na janela.
 - Conferir na janela os chefes do enredo (stagbs02..06) e o f_luce rígido.
 
 ## Tabela (62 fases varridas)

@@ -129,3 +129,32 @@ Entrada pela dng103f2: o matz02 chama `funcStageChange("stagBS01", 0)`. Exportar
   para gerar o f_devl21.
 - **HIPÓTESE:** o valor é a linha do modelo na tabela enemy. O cliente devolve Kind.Row.
 - **DESCONHECIDO:** MDLgetBulletName e BLTisHitCheck ficam sem resposta (neutros), e MOVEEX/MOVERL não foram lidos.
+
+## MOVE, MOVEEX e MOVERL: o executor do jogo (2026-10-25)
+
+Lido no main.dol (leitura estática). Código em `MotionChannels` (DW4.Gameplay); detalhes e endereços no comentário da classe.
+
+- **FATO:**
+  - MOVE e MOVEEX armam os mesmos 4 canais: deslocamento X, Y e Z local e giro Y em graus.
+  - Cada canal tem modo, máximo, aceleração máx / (0,5·n²) por quadro² e tempo opcional.
+    - Os modos 0 e 1 aceleram para + e para −.
+    - Os modos 2 a 5 freiam até 0 e desligam; o 4 e o 5 começam em +máx e −máx.
+  - MOVE: "Move" acelera em Z, "Stop" freia em Z, "Push" e "Back" começam em ±máx e freiam. "Jump" é Y modo 4 e "Fall" é Y
+    modo 1.
+  - MOVEEX: o texto dá o canal e o modo (ex. "TYPACC" = Y acelerando para cima; "TZMTGD" = Z começando em −máx e freando).
+    - @5 é o tempo. Ao vencer, a aceleração vira freio com @7/@8.
+    - Com @6 = true, a troca de sequência antecipa esse freio. O giro sempre para na troca.
+    - Peculiaridade do código: o tempo só vence abaixo de 0. Se cair em 0 exato, o canal fica sem fim.
+  - MOVERL: o objeto passa a copiar uma matriz a cada quadro.
+    - "JOINT" peça: a matriz da peça (só se ela responder ao GETTRCDATA).
+    - "ACTOR" modelo junta: GETBONEMATRIX da junta × GETMATRIX do modelo.
+    - Preso, os canais não andam. O próximo MOVE, MOVEEX ou MOVERL solta, guardando o yaw.
+- No cliente:
+  - Inimigos e objetos f_ usam os canais. Na troca de sequência roda o SequenceChanged; na volta à IA, o MOVE "Stop" do SQ_WAIT
+    (FATO: o SQ_WAIT começa por ele).
+  - Peças presas copiam a transformação do alvo.
+- **HIPÓTESES:**
+  - Quadros a 30 Hz e unidade do jogo = unidade do mundo.
+  - Quem sobe por MOVEEX Y fica sem gravidade até voltar ao chão.
+  - Junta sem osso com o nome cai no nó com o nome ou na raiz.
+- O andar da IA (SQ_WALK) e o recuo e projéteis do jogador seguem na escala antiga (Speed do PadMovement), ainda não trocada.

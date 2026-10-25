@@ -26,6 +26,10 @@ public partial class Fatia
         public AnimationPlayer? Anim { get; init; }
         public EnemyBrain? Brain { get; set; }
         public SequenceRunner? Runner { get; set; }
+        /// <summary>Canais do MOVE/MOVEEX das sequências (FATO, executor do jogo; ver MotionChannels).</summary>
+        public MotionChannels Motion { get; } = new();
+        /// <summary>Subiu por um MOVEEX no eixo Y: sem gravidade até voltar ao chão (HIPÓTESE).</summary>
+        public bool Airborne { get; set; }
         public float Yaw { get; set; }
         public bool Started { get; set; }
         public int Serial { get; set; }
@@ -205,6 +209,7 @@ public partial class Fatia
         {
             e.Runner = new SequenceRunner(kind.Sequences, a => EnemyAnimFrames(e, a)) { CarryHitBoxes = true };
             e.Runner.Command = c => EnemyCommand(e, c);
+            e.Runner.MoveStarted = m => e.Motion.Apply(m);
             var maps = AiMap.LoadAll(kind.Json);
             if (maps.Count > 0) e.Brain = new EnemyBrain(maps, kind.Sequences, () => _rng.Next(16));
         }
@@ -395,6 +400,10 @@ public partial class Fatia
                 if (e.Started && !e.Runner.Running)
                 {
                     e.Started = false;
+                    e.Motion.SequenceChanged();
+                    // FATO: o SQ_WAIT do jogo começa por MOVE "Stop" 1 4 (e_nume, f_apocaly, f_luce); a IA do cliente não roda essa
+                    // sequência, então o freio vem daqui (HIPÓTESE: a volta é sempre para o SQ_WAIT).
+                    if (e.Kind.Sequences.TryGetValue("SQ_WAIT", out var wait) && wait.FirstOrDefault(c => c.Kind == "MOVE") is { } stop && stop.S(0) == "Stop") e.Motion.Apply(stop);
                     e.Brain.Release();
                     // SQ_DDMG termina em JUMP "SQ_ERAS" (depois do ERDE01 com FADESET "OUT"): o inimigo some.
                     if (e.Kind.Stats != null && e.Hp <= 0) { Kill(e); return; }
@@ -402,8 +411,6 @@ public partial class Fatia
             }
             if (e.Started && e.Runner.Running)
             {
-                if (e.Runner.Move is { } m)
-                    vel = m.S(0) switch { "Move" => forward * Speed(m.F(1)), "Back" => -forward * Speed(m.F(1)), _ => Vector3.Zero };
                 if (e.Runner.ActionSerial != e.Serial)
                 {
                     e.Serial = e.Runner.ActionSerial;
@@ -426,7 +433,30 @@ public partial class Fatia
             }
         }
         else if (e.Anim != null && e.Kind.Wait != null && !e.Anim.IsPlaying()) e.Anim.Play(e.Kind.Wait);
-        vel.Y = e.Body.IsOnFloor() ? -1f : e.Body.Velocity.Y - Gravity * dt;
+        // MOVE/MOVEEX: deslocamento local por quadro (X direita, Y cima, Z frente) e giro Y em graus. HIPÓTESE: unidade do jogo =
+        // unidade do mundo, quadros a 30 Hz (como o pulo); o andar da IA (SQ_WALK) segue na escala do PadMovement.
+        bool flying = false;
+        if (e.Motion.Attached is { } rl && AttachTarget(rl, e.Kind.Model) is { } at)
+        {
+            e.Body.GlobalPosition = at.Origin;
+            e.Yaw = MathF.Atan2(at.Basis.Z.X, at.Basis.Z.Z);
+            vel = Vector3.Zero;
+            flying = true;
+        }
+        if (e.Motion.AnyActive && dt > 0)
+        {
+            var (local, yawDeg) = e.Motion.Step(dt * SequenceRunner.FramesPerSecond);
+            e.Yaw += yawDeg * MathF.PI / 180;
+            var fw = new Vector3(MathF.Sin(e.Yaw), 0, MathF.Cos(e.Yaw));
+            var right = new Vector3(fw.Z, 0, -fw.X);
+            vel += (right * local.X + fw * local.Z) / dt;
+            if (e.Motion[1].Active) { vel.Y = local.Y / dt; flying = true; if (local.Y > 0) e.Airborne = true; }
+        }
+        if (!flying)
+        {
+            if (e.Airborne && e.Body.IsOnFloor()) e.Airborne = false;
+            vel.Y = e.Airborne ? 0 : e.Body.IsOnFloor() ? -1f : e.Body.Velocity.Y - Gravity * dt;
+        }
         e.Body.Velocity = vel;
         e.Body.MoveAndSlide();
         if (e.Model != null) e.Model.Rotation = new Vector3(0, e.Yaw, 0);

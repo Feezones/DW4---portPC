@@ -1295,7 +1295,7 @@ if (args.Length == 1)
         True(r.Start("SQ_JUMP", "slash"), "bloco slash");
         Equal("Jump", r.Move?.S(0), "MOVE Jump");
         Equal((1.44f, 6.3f), (r.Move!.F(1), r.Move.F(2)), "argumentos do Jump");
-        True(Math.Abs(JumpMotion.PeakHeight(r.Move) - 13.78f) < 0.01f, "pico ≈ 13,8 (passa o degrau de 10 do pedestal)");
+        True(Math.Abs(JumpMotion.PeakHeight(r.Move) - 14.29f) < 0.01f, "pico ≈ 14,3 (passa o degrau de 10 do pedestal)");
         const float frame = 1 / SequenceRunner.FramesPerSecond;
         var actions = new List<string>();
         for (int i = 0; i < 300 && r.Running; i++)
@@ -1311,6 +1311,60 @@ if (args.Length == 1)
         True(peak > 10 && peak < 14.5f, $"altura alcançada {peak:0.0}");
         y = 20; // no ar: o SQ_FALL para no "Landing"
         True(r.Start("SQ_FALL", "slash") && r.Move?.S(0) == "Fall" && jump.Active, "SQ_FALL começa pelo Fall e espera o pouso");
+    });
+
+    Test("Jogo: MOVEEX/MOVE pelos canais do executor (0x8030A1F4/0x8030A2D8): texto → canal e modo, acelera, freia, troca de sequência", () =>
+    {
+        Equal((1, 0), MotionChannels.ParseEx("TYPACC")!.Value, "TYPACC = Y, acelera +");
+        Equal((0, 1), MotionChannels.ParseEx("TXMACC")!.Value, "TXMACC = X, acelera −");
+        Equal((2, 5), MotionChannels.ParseEx("TZMTGD")!.Value, "TZMTGD = Z, começa em −máx e freia");
+        Equal((3, 0), MotionChannels.ParseEx("RYPACC")!.Value, "RYPACC = giro Y");
+        var m = new MotionChannels();
+        // f_luce SQ_ATCKON: MOVEEX "TYPACC" 1.8 6 120 True 1 4 → 0,1/quadro² até 1,8; aos 120 quadros freia com 1/(0,5·16).
+        True(m.Apply(new SeqCommand("MOVEEX", ["TYPACC", 1.8f, 6, 120, true, 1, 4])), "aplica");
+        float y = 0;
+        for (int i = 0; i < 18; i++) y += m.Step(1).Local.Y;
+        True(Math.Abs(m[1].Velocity - 1.8f) < 1e-4f, $"chega a 1,8 em 18 quadros ({m[1].Velocity})");
+        for (int i = 18; i < 120; i++) y += m.Step(1).Local.Y;
+        // FATO do código: o tempo só vence quando fica abaixo de 0; caindo em 0 exato ele vira "sem fim" (120 − 120 passos de 1).
+        y += m.Step(1).Local.Y;
+        True(m[1].Timer == 0 && m[1].Mode == 0, "tempo zerado exato não troca de fase");
+        m.SequenceChanged();
+        Equal(2, m[1].Mode, "o bool: a troca de sequência passa ao freio (modo 2)");
+        True(Math.Abs(m[1].Accel - 0.125f) < 1e-5f, "freio 1/(0,5·4²)");
+        for (int i = 0; i < 20; i++) y += m.Step(1).Local.Y;
+        True(!m[1].Active && m[1].Velocity == 0, "parou no 0");
+        True(y > 200 && y < 230, $"subiu {y:0.0}");
+        m.Apply(new SeqCommand("MOVEEX", ["TXMACC", 1f, 6, 10, false, 1, 4]));
+        for (int i = 0; i < 4; i++) m.Step(3);
+        Equal(3, m[0].Mode, "tempo 10 passa de 0 no 4º passo de 3: o modo 1 vai ao 3");
+        m.Stop();
+        // O bool: troca de sequência antecipa o freio; sem ele, segue. O giro sempre para.
+        m.Apply(new SeqCommand("MOVEEX", ["TXPACC", 0.7f, 5, 0, true, 5, 0.1f]));
+        m.Apply(new SeqCommand("MOVEEX", ["TZPACC", 0.3f, 6, 0, false, 5, 1]));
+        m.Apply(new SeqCommand("MOVEEX", ["RYPACC", 2f, 6, 0, false, 1, 4]));
+        m.Step(1);
+        m.SequenceChanged();
+        True(m[0].Active && m[0].Mode == 2, "X com o bool passa ao freio");
+        True(m[2].Active && m[2].Mode == 0, "Z sem o bool continua acelerando");
+        True(!m[MotionChannels.RotateY].Active, "giro para");
+        // MOVE "Push" 1,5 25 (projétil): começa em 1,5 e freia até parar.
+        var p = new MotionChannels();
+        p.Apply(new SeqCommand("MOVE", ["Push", 1.5f, 25]));
+        float z = 0;
+        for (int i = 0; i < 400 && p.AnyActive; i++) z += p.Step(1).Local.Z;
+        True(!p.AnyActive && z > 230 && z < 240, $"Push percorre ≈ v·n²/4 = 234 ({z:0.0})");
+        // MOVERL prende (os canais param) e o MOVE seguinte solta (0x8030CD30, 0x8030A71C).
+        var q = new MotionChannels();
+        q.Apply(new SeqCommand("MOVEEX", ["TXPACC", 1f, 6, 0, false, 1, 4]));
+        True(q.Apply(new SeqCommand("MOVERL", ["ACTOR", "f_luce", "ball"])) && q.Attached?.S(2) == "ball" && !q.AnyActive, "preso à junta ball do f_luce");
+        Equal(0f, q.Step(1).Local.X, "preso não anda");
+        q.Apply(new SeqCommand("MOVE", ["Stop", 1f, 4]));
+        True(q.Attached == null && q.AnyActive, "MOVE solta e o canal X volta a andar");
+        // Todos os MOVEEX dos chefes caem num canal válido.
+        foreach (var f in Directory.GetFiles(Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fases"), "*_seq.json", SearchOption.AllDirectories).Where(f => f.Contains("stagbs")))
+            foreach (var c in SeqCommand.LoadAll(File.ReadAllText(f)).Values.SelectMany(s => s).Where(c => c.Kind == "MOVEEX"))
+                True(new MotionChannels().Apply(c), $"{Path.GetFileName(f)}: {c.S(0)}");
     });
 
     Test("Jogo: ADX #35 (DG_CAVE1) decodifica com o loop do cabeçalho; #6 (AM_DUNGE) faz loop inteiro", () =>

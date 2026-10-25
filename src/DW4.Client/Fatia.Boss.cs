@@ -86,6 +86,9 @@ public partial class Fatia
             case "AIMAP" when c.S(0) is { } map:
                 e.Brain?.SetMap(map);
                 break;
+            case "MOVEEX" or "MOVERL":
+                e.Motion.Apply(c);
+                break;
             case "LUACALL":
                 // FATO: SQ_ATCK2 do f_apocaly faz LUACALL "bit" e a fase tem bit_f_apocaly.lua (gera o f_bit se ele não está vivo,
                 // senão manda o chefe de volta ao SQ_WAIT): o script é "<nome>_<modelo>.lua", no contexto do modelo.
@@ -111,10 +114,26 @@ public partial class Fatia
         else if (_warnedLua.Add($"{model}:{name}")) ScriptLog($"{model}: LUACALL \"{name}\" sem {name}_{model}.lua");
     }
 
+    // MOVERL (FATO, ver MotionChannels): "JOINT" peça = copia a matriz da peça; "ACTOR" modelo junta = a matriz da junta do modelo.
+    // HIPÓTESE: junta sem osso com o nome cai no nó com o nome (peles rígidas) e, sem ele, na raiz do modelo.
+    Transform3D? AttachTarget(SeqCommand rl, string self)
+    {
+        string model = rl.S(1), joint = rl.S(2);
+        if (model.Length == 0 || model == self) return null;
+        Node3D? root = _enemies.FirstOrDefault(x => x.Kind.Model == model && !x.Dead)?.Model
+            ?? _objects.FirstOrDefault(o => o.Name == model && !o.Erased)?.Actor.Root;
+        if (root == null) return null; // sem resposta ao GETTRCDATA/GETMATRIX: não prende
+        if (rl.S(0) == "JOINT" || joint.Length == 0) return root.GlobalTransform;
+        foreach (var sk in FindAll<Skeleton3D>(root))
+            if (sk.FindBone(joint) is var b and >= 0) return sk.GlobalTransform * sk.GetBoneGlobalPose(b);
+        return FindAll<Node3D>(root).FirstOrDefault(n => n.Name == joint)?.GlobalTransform ?? root.GlobalTransform;
+    }
+
     // Começa uma sequência do inimigo no rótulo guardado dela (SETLABEL/LABELCTRL), ou "common", "NORM", ou o primeiro rótulo.
     bool StartEnemySequence(Enemy e, string seq)
     {
         if (e.Runner == null) return false;
+        e.Motion.SequenceChanged(); // 0x8030EA38: troca de sequência
         if (e.Labels.TryGetValue(seq, out var l) && e.Runner.Start(seq, l)) return true;
         if (e.Runner.Start(seq, "common") || e.Runner.Start(seq, "NORM")) return true;
         var first = e.Kind.Sequences.TryGetValue(seq, out var cmds) ? cmds.FirstOrDefault(c => c.Kind == "LABEL")?.S(0) : null;
