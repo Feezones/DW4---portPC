@@ -1468,8 +1468,16 @@ int IgbDropsCmd(string path, string which, string outDir)
         root[name] = new JsonArray(entries.Select(e => (JsonNode?)new JsonObject { ["table"] = e.Table, ["row"] = e.Row, ["rank"] = e.Rank, ["rate"] = e.Rate }).ToArray());
         Console.WriteLine($"{name,-12} {entries.Count} itens, soma {entries.Sum(e => e.Rate)}/10000: {string.Join(" ", entries.Select(e => $"{e.Table}:{e.Row}({e.Rank},{e.Rate})"))}");
     }
+    // Gerador → listas por número de jogadores (índice 0 = 1 jogador) e dificuldade (0..2).
+    var gens = new JsonObject();
+    foreach (var (gname, perPlayers) in IgbDrops.GeneratorLists(IgbFile.Read(data), data))
+        gens[gname] = new JsonArray(perPlayers.Select(p => (JsonNode?)new JsonObject
+        {
+            ["drop"] = new JsonArray(p.Each.Select(n => (JsonNode?)n).ToArray()),
+            ["final"] = new JsonArray(p.Last.Select(n => (JsonNode?)n).ToArray()),
+        }).ToArray());
     File.WriteAllText(Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_drops.json"),
-        new JsonObject { ["lists"] = root }.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        new JsonObject { ["lists"] = root , ["generators"] = gens }.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
     return 0;
 }
 
@@ -1961,7 +1969,7 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
                       Kind: o.Fields.FirstOrDefault(v => v.Desc.Slot == 7 && v.Desc.ShortName == "String")?.Text ?? ""))
         .Distinct().ToList();
     // KIND_OBJECT g_/n_ e também os g_ de KIND_ENEMY (rígidos com hit_*.lua, FATO: g_b01cpole, as colunas do stagbs01).
-    var objectNames = actors.Where(a => (a.Kind == "KIND_OBJECT" && (a.Name.StartsWith("g_") || a.Name.StartsWith("n_"))) || (a.Kind == "KIND_ENEMY" && a.Name.StartsWith("g_"))).Select(a => a.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
+    var objectNames = actors.Where(a => (a.Kind == "KIND_OBJECT" && (a.Name.StartsWith("g_") || a.Name.StartsWith("n_"))) || (a.Kind == "KIND_ENEMY" && a.Name.StartsWith("g_")) || (a.Kind == "KIND_OBJECT" && a.Name.StartsWith("f_"))).Select(a => a.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
     var mapNames = actors.Where(a => a.Kind is "KIND_MAPBASE" or "KIND_MAPCURSOR").Select(a => a.Name).ToArray();
     var menuNames = actors.Where(a => a.Name.StartsWith("i_st") && !a.Name.StartsWith("i_stpnl") && !a.Name.StartsWith("i_stdownic")).Select(a => a.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
     // Raiz de cada ator: o @7 do beAction2Info com o mesmo nome (FATO: n_recorderdng → igSwitch #23790 na dng1, sem igAttrSet

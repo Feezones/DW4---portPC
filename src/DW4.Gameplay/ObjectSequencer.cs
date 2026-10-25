@@ -20,7 +20,8 @@ public sealed class ObjectSequencer
     readonly IReadOnlyDictionary<string, List<SeqCommand>> _seqs;
     readonly IReadOnlyDictionary<string, List<SeqCommand>> _actions;
     readonly Dictionary<string, string> _labels = [];
-    readonly List<(HitBox Box, float Left)> _boxes = [];
+    // Caixa e quadros desde que foi armada (começa a valer no quadro inicial do HITBOX e dura os quadros pedidos; −1 = até limpar).
+    readonly List<(HitBox Box, float Age)> _boxes = [];
     List<SeqCommand> _cmds = [];
     int _pc, _end, _jumps;
     float _wait;
@@ -47,7 +48,10 @@ public sealed class ObjectSequencer
     public bool Running { get; private set; }
     /// <summary>SQ_ERAS: o objeto deve sumir.</summary>
     public bool Erased { get; private set; }
-    public IEnumerable<HitBox> ActiveHitBoxes => _boxes.Select(b => b.Box);
+    public IEnumerable<HitBox> ActiveHitBoxes => _boxes.Where(b => b.Age >= b.Box.StartFrame).Select(b => b.Box);
+    /// <summary>Último AIMAP executado (ex.: SQ_PHASE2 do f_bit troca para MAP01); quem roda a IA consome com <see cref="TakeAiMap"/>.</summary>
+    public string? AiMap { get; private set; }
+    public string? TakeAiMap() { var m = AiMap; AiMap = null; return m; }
     /// <summary>Contador de caixas ligadas (muda a cada HITBOX "Set"): um acerto por caixa.</summary>
     public int BoxSerial { get; private set; }
 
@@ -101,10 +105,9 @@ public sealed class ObjectSequencer
         }
         for (int i = _boxes.Count - 1; i >= 0; i--)
         {
-            var (box, left) = _boxes[i];
-            if (left < 0) continue;
-            left -= frames;
-            if (left <= 0) _boxes.RemoveAt(i); else _boxes[i] = (box, left);
+            var (box, age) = _boxes[i];
+            age += frames;
+            if (box.Frames >= 0 && age >= box.StartFrame + box.Frames) _boxes.RemoveAt(i); else _boxes[i] = (box, age);
         }
         if (_actWait > 0) _actWait -= frames;
         RunAction();
@@ -141,7 +144,7 @@ public sealed class ObjectSequencer
                     _boxes.Clear();
                     break;
                 case "HITBOX":
-                    _boxes.Add((new HitBox(c.I(1), c.F(2), c.F(3), c.V(4), c.V(5)), c.F(3) < 0 ? -1 : c.F(2) + c.F(3)));
+                    _boxes.Add((new HitBox(c.I(1), c.F(2), c.F(3), c.V(4), c.V(5)), 0));
                     BoxSerial++;
                     break;
                 case "LABELCTRL":
@@ -158,6 +161,9 @@ public sealed class ObjectSequencer
                     var next = c.S(0);
                     if (!Begin(next)) Running = false;
                     return;
+                case "AIMAP":
+                    AiMap = c.S(0);
+                    break;
                 case "FADESET":
                     Fade(c);
                     break;

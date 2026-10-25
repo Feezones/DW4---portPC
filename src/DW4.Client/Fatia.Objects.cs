@@ -40,6 +40,11 @@ public partial class Fatia
         /// <summary>BoxSerial da última caixa que já acertou o jogador (um acerto por caixa ligada).</summary>
         public int HitSerial { get; set; } = -1;
         /// <summary>Personagem com esqueleto (NPC n_*, exportado em npcs&lt;nome&gt;) e a ação que está tocando.</summary>
+        /// <summary>Modelo dono (GENERATE "f_apocaly/I&lt;0&gt;/…": o f_bit fica preso ao chefe e usa os atributos dele nos golpes).</summary>
+        public Enemy? Owner { get; set; }
+        /// <summary>IA de objeto com mapas (f_bit: MAP00 e MAP01, SQ_PHASE2 troca pelo AIMAP) e a sequência que ela pediu.</summary>
+        public EnemyBrain? Brain { get; set; }
+        public string? AiSequence { get; set; }
         public AnimationPlayer? CharacterAnim { get; set; }
         public string? CharacterAction { get; set; }
 
@@ -95,6 +100,8 @@ public partial class Fatia
             Actions = json != null ? SeqCommand.LoadActions(json) : [],
             Seq = json != null ? new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)) : null,
         };
+        // Só os f_* (f_bit) por enquanto: os NPCs n_* também têm mapas, mas andam pelos scripts (SQ_WALK… com MOVETRANS).
+        if (name.StartsWith("f_", StringComparison.Ordinal) && json != null && AiMap.LoadAll(json) is { Count: > 0 } maps) o.Brain = new EnemyBrain(maps, SeqCommand.LoadAll(json), () => _rng.Next(16));
         AddChild(actor.Root);
         // HIPÓTESE: rotação do GENERATE em graus no eixo do mundo (0/±90/180 nos scripts; o −90° do Numemon já bate assim).
         actor.Root.Position = pos;
@@ -130,6 +137,21 @@ public partial class Fatia
                 var spawned = Spawn(m.Name, m.Index, new Vector3((float)p.Numbers[0], (float)p.Numbers[1], (float)p.Numbers[2]), rot);
                 if (spawned != null) MakeHittable(spawned);
             }
+            // FATO (bit_f_apocaly.lua, hit_g_b01cpole.lua): GENERATE "f_apocaly/I<0>/V<0,30,0>/V<0,90,0>/SQ_ENTR" = dono, índice
+            // do dono, posição, rotação e sequência inicial. HIPÓTESE: posição no mundo (= a do chefe no pedestal; assim as caixas
+            // 70069, com y −3..−6, alcançam o jogador no topo) e o objeto acompanha o dono dali em diante.
+            else if (m.Text(0) is { } ownerName && _enemies.FirstOrDefault(e => e.Kind.Model == ownerName && !e.Dead) is { } owner
+                && m.Arg(2) is { Kind: 'V', Numbers.Length: 3 } at)
+            {
+                var rot = m.Arg(3) is { Kind: 'V', Numbers.Length: 3 } r ? new Vector3((float)r.Numbers[0], (float)r.Numbers[1], (float)r.Numbers[2]) : Vector3.Zero;
+                if (Spawn(m.Name, m.Index, new Vector3((float)at.Numbers[0], (float)at.Numbers[1], (float)at.Numbers[2]), rot) is { } child)
+                {
+                    child.Owner = owner;
+                    child.Actor.Root.Reparent(owner.Body, keepGlobalTransform: true);
+                    if (m.Text(4) is { } first && first.StartsWith("SQ_", StringComparison.Ordinal)) child.SetSequence(first);
+                    MakeHittable(child);
+                }
+            }
             return false;
         }
         var targets = _objects.Where(o => o.Name == m.Name && (m.Index < 0 || o.Index == m.Index)).ToList();
@@ -148,6 +170,7 @@ public partial class Fatia
         {
             var o = _objects[i];
             o.Tick(dt);
+            UpdateObjectAi(o, dt);
             UpdateCharacterAnim(o);
             CheckFloorHit(o);
             if (!o.Erased) continue;
@@ -191,7 +214,7 @@ public partial class Fatia
             var c = BoxCenter(h);
             foreach (var o in _objects.Where(o => o.Body != null && !o.Dead && !_objectsHitThisAction.Contains(o)).ToList())
             {
-                var p = o.Actor.Root.Position;
+                var p = o.Actor.Root.GlobalPosition; // global: o f_bit fica preso ao chefe
                 if (Math.Abs(c.X - p.X) > h.Size.X / 2 + GboxSize.X / 2 || Math.Abs(c.Z - p.Z) > h.Size.Z / 2 + GboxSize.Z / 2
                     || c.Y + h.Size.Y / 2 < p.Y || c.Y - h.Size.Y / 2 > p.Y + GboxSize.Y) continue;
                 _objectsHitThisAction.Add(o);
@@ -210,6 +233,29 @@ public partial class Fatia
         }
     }
 
+    // IA de objeto (f_bit): parado em SQ_WAIT, o cérebro sorteia pelo mapa (MAP00: SQ_SMN01/02; MAP01, depois do SQ_PHASE2:
+    // SQ_ATK01..15 e SQ_ATKROT, FATO pelos mapas) e a sequência roda até voltar ao SQ_WAIT (JUMP "SQ_WAIT" no fim de cada ataque).
+    void UpdateObjectAi(WorldObject o, float dt)
+    {
+        if (o.Brain is not { } brain || o.Seq is not { } seq || o.Dead) return;
+        if (seq.TakeAiMap() is { } map) { brain.SetMap(map); brain.Release(); o.AiSequence = null; }
+        if (o.AiSequence != null)
+        {
+            if (seq.Sequence == o.AiSequence && seq.Running) return;
+            brain.Release();
+            o.AiSequence = null;
+        }
+        if (seq.Sequence != "SQ_WAIT") return; // entrada, saída e as sequências pedidas pelos scripts mandam
+        var p = o.Actor.Root.GlobalPosition;
+        var t = _player.GlobalPosition;
+        brain.Tick(dt, new System.Numerics.Vector3(p.X, p.Y, p.Z), new System.Numerics.Vector3(t.X, t.Y, t.Z), o.Actor.Root.GlobalRotation.Y);
+        if (brain.External is { } ext)
+        {
+            o.SetSequence(ext);
+            o.AiSequence = ext;
+        }
+    }
+
     // Caixas que os objetos ligam no próprio SQ (FATO: g_ddamagefloor liga HITBOX 70112 (0,0,0) (17,1,17) no ciclo ON) contra a
     // caixa de corpo do Guilmon (5 × 7 × 5). FATO: eneatk 112 = TYPE 2, TSUYOSA 5 (5% do HP máximo, sem elemento).
     // HIPÓTESE: um acerto por caixa ligada; a caixa do objeto está em eixos do objeto (rotação Y aplicada).
@@ -221,12 +267,12 @@ public partial class Fatia
         foreach (var h in o.Seq.ActiveHitBoxes)
         {
             if (h.Type / 10000 != 7) continue; // 7xxxx: golpe contra o jogador (como o 70004 do Numemon)
-            var c = root.GlobalPosition + new Vector3(h.Position.X, h.Position.Y, h.Position.Z).Rotated(Vector3.Up, root.Rotation.Y);
+            var c = root.GlobalPosition + new Vector3(h.Position.X, h.Position.Y, h.Position.Z).Rotated(Vector3.Up, root.GlobalRotation.Y);
             if (!(Math.Abs(c.X - g.X) <= h.Size.X / 2 + 2.5f && Math.Abs(c.Z - g.Z) <= h.Size.Z / 2 + 2.5f
                 && c.Y + h.Size.Y / 2 >= g.Y && c.Y - h.Size.Y / 2 <= g.Y + 7)) continue;
             o.HitSerial = o.Seq.BoxSerial;
             _hitsTaken++;
-            string? reaction = EnemyStrikes(h.Type, null, o.Name);
+            string? reaction = EnemyStrikes(h.Type, o.Owner?.Kind.Stats, o.Name); // f_bit: os atributos do chefe dono
             if (reaction != null && _runner != null && (_runner.Start(reaction, WeaponStyle) || _runner.Start(reaction, "common")))
             {
                 _wazaPending = null;

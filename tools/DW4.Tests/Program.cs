@@ -219,6 +219,26 @@ Test("Câmera por volumes: escolha do volume e pose com recuo e inclinação", (
     True(Vector3.Distance(pos, expected) < 1e-3f, $"câmera {pos}, esperado {expected}");
 });
 
+Test("Objeto: caixa do HITBOX vale do quadro inicial até o fim da duração; AIMAP fica para a IA (f_bit SQ_PHASE2)", () =>
+{
+    SeqCommand C(string k, params object[] v) => new(k, v);
+    var seqs = new Dictionary<string, List<SeqCommand>>
+    {
+        ["SQ_ATK01"] = [C("HITBOX", "Set", 70069, 24f, 6f, new[] { 0f, -6, -52 }, new[] { 4f, 4, 4 }), C("WAITCHECK", "Frame", 60f), C("JUMP", "SQ_WAIT")],
+        ["SQ_WAIT"] = [C("WAITCHECK", "Frame", 1000f)],
+        ["SQ_PHASE2"] = [C("AIMAP", "MAP01"), C("JUMP", "SQ_WAIT")],
+    };
+    var s = new ObjectSequencer(seqs, new Dictionary<string, List<SeqCommand>>());
+    s.Start("SQ_ATK01");
+    const float f = 1 / ObjectSequencer.FramesPerSecond;
+    var on = new List<int>();
+    for (int i = 0; i < 50; i++) { if (s.ActiveHitBoxes.Any()) on.Add(i); s.Tick(f); }
+    True(on.Count > 0 && on.Min() >= 23 && on.Min() <= 25 && on.Max() <= 30, $"caixa dos quadros 24 a 30 ({string.Join(",", on)})");
+    s.Start("SQ_PHASE2");
+    Equal("MAP01", s.TakeAiMap(), "AIMAP do SQ_PHASE2");
+    Equal(null, s.TakeAiMap(), "consumido");
+});
+
 Test("Sequência: caixas agendadas antes de uma ação curta passam para a ação seguinte (CarryHitBoxes, SQ_MAGIC do f_apocaly)", () =>
 {
     SeqCommand C(string k, params object[] v) => new(k, v);
@@ -1480,6 +1500,20 @@ if (args.Length == 1)
         var tech = tables.First(t => t.Name == "pcTech");
         Equal(100, tech.Rows, "linhas da pcTech");
         Equal("fire1,16,-160,75,6", string.Join(",", new[] { "LABEL", "MP", "HP", "DELAY", "SKILL" }.Select(c => tech.Column(c)!.Cells[0]?.ToString())), "プチファイア");
+    });
+
+    Test("Jogo: geradores da dng102b1 (#200) apontam para as listas de drop por jogadores e dificuldade (GENE-01 → nZ1scum1/hZ1scum1/vZ1scum1)", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[200], ms);
+        var data = ms.ToArray();
+        var gens = IgbDrops.GeneratorLists(IgbFile.Read(data), data);
+        True(gens.ContainsKey("GENE-01"), "GENE-01");
+        Equal(4, gens["GENE-01"].Count, "uma entrada por número de jogadores");
+        Equal("nZ1scum1,hZ1scum1,vZ1scum1", string.Join(",", gens["GENE-01"][0].Each), "por dificuldade");
+        var lists = IgbDrops.Read(IgbFile.Read(data), data, []);
+        True(gens.Values.SelectMany(p => p).SelectMany(p => p.Each.Concat(p.Last)).All(n => n != null && lists.ContainsKey(n)), "toda lista apontada existe");
     });
 
     Test("Jogo: IA do Numemon (#179, e_nume) tem MAP00 e MAP01 com 4 listas e faixas 36²/45²/150² e 22²/40²/150²", () =>

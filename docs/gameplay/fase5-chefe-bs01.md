@@ -87,8 +87,36 @@ Entrada pela dng103f2: o matz02 chama `funcStageChange("stagBS01", 0)`. Exportar
 
 ## Pendências
 
-- **DESCONHECIDO** f_bit (bit_f_apocaly.lua, hit_f_bit.lua) não foi portado: o LUACALL "bit" e o GENERATE do f_bit só
-  ficam no log. Na fase 2 o chefe fica com menos ataques do que no original.
+- f_bit: ver a seção abaixo.
 - FLGset 67 / COUNTERset depois da derrota não foram conferidos na volta à dng.
 - A câmera de demo "dead" e o MOVETRANS dos jogadores não foram conferidos quadro a quadro.
 - Tempos de estado (BLTgetSleepTime, BLTgetPoisonTime…) seguem neutros.
+
+## f_bit, os ataques da fase 2 (2026-10-25)
+
+- **FATO** (scripts):
+  - SQ_ATCK2 do chefe faz `LUACALL "bit"`, que roda bit_f_apocaly.lua. Se o f_bit não está vivo, o script manda
+    `MODELCTRL f_bit 0 GENERATE "f_apocaly/I<0>/V<0,30,0>/V<0,90,0>/SQ_ENTR"` (dono, índice do dono, posição, rotação,
+    sequência); se está vivo, manda o chefe de volta ao SQ_WAIT.
+  - Quebrar as 5 colunas gera o f_bit já com SQ_PHASE2.
+  - hit_f_bit.lua: −50 por golpe; com 50 ou mais de HP vai a SQ_SDMG, senão SQ_DDMG.
+- **FATO** (#730):
+  - O f_bit é KIND_OBJECT, sem esqueleto: um objeto rígido animado por JOINTSET.
+  - Tem 24 sequências: SQ_ATK01..15, SQ_ATKALL, SQ_ATKROT, SQ_SMN01/02, SQ_ENTR (TRNS01), SQ_EXIT (TRNS02 → SQ_ERAS),
+    SQ_PHASE2 (AIMAP MAP01 → SQ_ENTR), SQ_WAIT e SQ_WALK.
+  - Os ataques são caixas 70069 (quadros 24..30, tamanhos 4..10) em leque a 50..70 unidades, em várias direções.
+  - Mapas de IA: MAP00 (faixa 0: SQ_SMN01/SQ_SMN02) e MAP01 (faixa 0: SQ_ATK01..15 e SQ_ATKROT, sorteio uniforme). As faixas
+    são de 1000², ou seja, sempre a faixa 0.
+- No port:
+  - O exportador inclui os KIND_OBJECT f_*.
+  - O LUACALL roda "<nome>_<modelo>.lua" no contexto do modelo.
+  - O GENERATE com dono cria o objeto preso ao chefe.
+  - O ObjectSequencer agora respeita o quadro inicial das caixas (antes ligava tudo no quadro 0) e entrega o AIMAP.
+  - O f_bit ganhou IA de objeto (EnemyBrain com os mapas dele, só parado em SQ_WAIT).
+  - As caixas 70069 acertam o jogador com os atributos do chefe dono (eneatk 69).
+  - O golpe do Guilmon roda o hit_f_bit.lua.
+- **HIPÓTESES:**
+  - A posição do GENERATE é no mundo (a do chefe no pedestal); assim as caixas, com y −3..−6, alcançam o jogador no topo.
+  - O f_bit acompanha o chefe.
+  - HP inicial 50 (cai num golpe, e o próximo LUACALL gera outro).
+  - Não gira para o alvo.

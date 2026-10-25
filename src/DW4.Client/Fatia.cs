@@ -67,10 +67,12 @@ public partial class Fatia : Node3D
     // Projéteis das técnicas (KIND_PBULLET x_200fire01…: MOVE "Push" 1,5 e HITBOX 4 × 4 × 4 por 1000 quadros, FATO).
     // A fatia desenha uma esfera no lugar do modelo do projétil.
     readonly List<(MeshInstance3D Mesh, Vector3 Dir, float Life, Technique Tech)> _shots = [];
-    // Drops (Drops, Inventory): lista do gerador do Numemon no modo normal (GENE-01..07 do #183 → nZ1nume1, FATO), um
-    // sorteio por Numemon morto. A fatia desenha uma caixa com o nome no lugar do modelo do item.
+    // Drops (Drops, Inventory): FATO (beGeneraterPlayerData): cada gerador aponta, por número de jogadores, para 3 listas (uma por
+    // dificuldade, nZ1/hZ1/vZ1) de drop por inimigo morto. A fatia desenha uma caixa com o nome no lugar do modelo do item.
+    // Sem gerador (o Numemon fixo da fatia), vale a lista do Numemon normal.
     const string DropList = "nZ1nume1";
-    List<DropEntry>? _drops;
+    Dictionary<string, List<DropEntry>> _dropLists = [];
+    readonly Dictionary<string, string?[][]> _dropOfGenerator = [];
     // O inventário é da GAMERAM (registro do jogador 0): sobrevive à troca de fase e os SYSctl*Folder dos scripts o usam.
     static Inventory _inventory => Ram.Players[0].Items;
     int _xdata;
@@ -95,6 +97,7 @@ public partial class Fatia : Node3D
     HudOverlay? _overlay;
     DamageNumbers? _damageNumbers;
     readonly List<string> _problems = [];
+    int _problemsLogged;
 
     // FATO (colisão #1862): sobre as vagas do grupo 0 (y 40) há uma peça de colisão de 10 de altura (topo em y 50); nascer
     // dentro dela derruba o Guilmon pelo chão. HIPÓTESE: o jogo assenta o jogador no chão acima do ponto. No primeiro quadro
@@ -411,6 +414,7 @@ public partial class Fatia : Node3D
 
     void UpdateCamera(float dt)
     {
+        while (_problemsLogged < _problems.Count) GD.Print($"[problema] {_problems[_problemsLogged++]}"); // também no log (passadas)
         DebugKeepAim();
         var p = _player.GlobalPosition;
         if (_cameraDemo != null) UpdateCameraDemo(dt);
@@ -494,7 +498,16 @@ public partial class Fatia : Node3D
         var dropsDir = System.IO.Path.Combine(_dir, "drops");
         var dropsFile = System.IO.Directory.Exists(dropsDir) ? System.IO.Directory.EnumerateFiles(dropsDir, "*_drops.json").FirstOrDefault() : null;
         if (dropsFile == null) _problems.Add("falta o *_drops.json (dw4 igb-drops ndmw.afs 183 <fatia>\\drops): sem drops");
-        else if (!Drops.FromJson(System.IO.File.ReadAllText(dropsFile)).TryGetValue(DropList, out _drops)) _problems.Add($"{DropList} não está no *_drops.json");
+        else
+        {
+            var dropsJson = System.IO.File.ReadAllText(dropsFile);
+            _dropLists = Drops.FromJson(dropsJson);
+            using var dd = System.Text.Json.JsonDocument.Parse(dropsJson);
+            if (dd.RootElement.TryGetProperty("generators", out var gens))
+                foreach (var g in gens.EnumerateObject())
+                    _dropOfGenerator[g.Name] = g.Value.EnumerateArray().Select(p => p.GetProperty("drop").EnumerateArray().Select(n => n.GetString()).ToArray()).ToArray();
+            else _problems.Add("o *_drops.json não liga gerador a lista (regere com o fase-exportar atual): só a lista do Numemon");
+        }
     }
 
     void Recalc()
@@ -623,11 +636,15 @@ public partial class Fatia : Node3D
     // conhecida; a ligação inimigo → lista de drop dos outros ainda não foi lida.
     void DropItem(Enemy e)
     {
-        if (e.Kind.Model != "e_nume" && OS.GetEnvironment("DW4_DROP").Length == 0) return;
+        // Lista do gerador do inimigo: [jogadores − 1][dificuldade].
+        string? listName = e.Gen != null && _dropOfGenerator.TryGetValue(e.Gen.Name, out var perPlayers) && perPlayers.Length > 0
+            ? perPlayers[Math.Clamp(Ram.Ninzu, 1, perPlayers.Length) - 1].ElementAtOrDefault(Math.Clamp(Ram.Difficulty, 0, 2)) : e.Gen == null ? DropList : null;
+        var drops = listName != null ? _dropLists.GetValueOrDefault(listName) : null;
+        if (drops == null && OS.GetEnvironment("DW4_DROP").Length == 0) return;
         var at = e.Body.GlobalPosition;
         // DW4_DROP="tabela:linha" (ex.: insItem:0): força o item, para conferir a coleta sem depender do sorteio.
         DropEntry? d = OS.GetEnvironment("DW4_DROP").Split(':') is [var tb, var rw] && int.TryParse(rw, out int forced)
-            ? new DropEntry(new ItemRef(tb, forced), 0, 0) : _drops != null ? Drops.Roll(_drops, _mt) : null;
+            ? new DropEntry(new ItemRef(tb, forced), 0, 0) : drops != null ? Drops.Roll(drops, _mt) : null;
         if (d == null) return;
         string name = _db!.Contains(d.Item.Table) ? _db[d.Item.Table].Text(d.Item.Row, "NAME") : "";
         if (name.Length == 0) name = $"{d.Item.Table}:{d.Item.Row}";

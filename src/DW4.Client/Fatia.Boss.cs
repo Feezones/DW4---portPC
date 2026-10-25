@@ -86,8 +86,10 @@ public partial class Fatia
                 e.Brain?.SetMap(map);
                 break;
             case "LUACALL":
-                // FATO: SQ_ATCK2 do f_apocaly faz LUACALL "bit" → bit_f_apocaly.lua gera o f_bit (ainda não portado).
-                if (_warnedLua.Add($"{e.Kind.Model}:{c.S(0)}")) ScriptLog($"{e.Kind.Model}: LUACALL \"{c.S(0)}\" ainda não portado");
+                // FATO: SQ_ATCK2 do f_apocaly faz LUACALL "bit" e a fase tem bit_f_apocaly.lua (gera o f_bit se ele não está vivo,
+                // senão manda o chefe de volta ao SQ_WAIT): o script é "<nome>_<modelo>.lua", no contexto do modelo.
+                if (_stage?.Has($"{c.S(0)}_{e.Kind.Model}.lua") == true) _stage.RunAs($"{c.S(0)}_{e.Kind.Model}.lua", e);
+                else if (_warnedLua.Add($"{e.Kind.Model}:{c.S(0)}")) ScriptLog($"{e.Kind.Model}: LUACALL \"{c.S(0)}\" sem {c.S(0)}_{e.Kind.Model}.lua");
                 break;
         }
     }
@@ -134,13 +136,15 @@ public partial class Fatia
     const int ScriptedObjectHp = 50;
     void MakeHittable(WorldObject o)
     {
-        if (!o.Name.StartsWith("g_", StringComparison.Ordinal) || o.Name == "g_box" || o.Body != null) return;
+        bool owned = o.Name.StartsWith("f_", StringComparison.Ordinal);
+        if (!(o.Name.StartsWith("g_", StringComparison.Ordinal) || owned) || o.Name == "g_box" || o.Body != null) return;
         if (_stage?.Has($"hit_{o.Name}.lua") != true) return;
-        o.Hp = ScriptedObjectHp;
-        var at = o.Actor.Root.Position;
-        var body = new StaticBody3D { Position = at + new Vector3(0, 20, 0) };
+        o.Hp = ScriptedObjectHp; // f_bit: HIPÓTESE (hit_f_bit.lua tira 50 por golpe e passa a SQ_DDMG abaixo de 50)
+        // A caixa vai presa ao ator (o f_bit acompanha o chefe); o f_bit não bloqueia o jogador (camada 0, só marca o alvo).
+        var body = new StaticBody3D { Position = new Vector3(0, 20, 0) };
+        if (owned) body.CollisionLayer = 0;
         body.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(14, 40, 14) } });
-        AddChild(body);
+        o.Actor.Root.AddChild(body);
         o.Body = body;
     }
 
