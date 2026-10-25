@@ -30,6 +30,7 @@ public partial class Fatia
         public int Hp { get; set; }
         (double X, double Y, double Z) IBeModel.Position => (Actor.Root.GlobalPosition.X, Actor.Root.GlobalPosition.Y, Actor.Root.GlobalPosition.Z);
         double IBeModel.Yaw => Actor.Root.Rotation.Y;
+        string? IBeModel.SequenceName => Seq?.Sequence;
         string IBeModel.ModelName => Name;
         public int BulletKind { get; set; }
         public bool Dead { get; set; }

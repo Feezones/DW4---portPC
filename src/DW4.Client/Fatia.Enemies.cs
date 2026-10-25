@@ -45,6 +45,7 @@ public partial class Fatia
         public string ModelName => Kind.Model;
         (double X, double Y, double Z) IBeModel.Position => (Body.GlobalPosition.X, Body.GlobalPosition.Y, Body.GlobalPosition.Z);
         double IBeModel.Yaw => Yaw;
+        string? IBeModel.SequenceName => Started && Runner?.Running == true ? Runner.Sequence : "SQ_WAIT";
         /// <summary>Rótulo guardado por sequência (SETLABEL "SQ_SDMG/common", LABELCTRL "FLOAT" "SQ_WAIT").</summary>
         public Dictionary<string, string> Labels { get; } = [];
         /// <summary>MDLsetSeq / MODELCTRL nome SQ_X: interrompe a IA com a sequência.</summary>
@@ -95,8 +96,10 @@ public partial class Fatia
     {
         public required string Model { get; init; }
         public required int Row { get; init; }
-        public required GltfDocument Doc { get; init; }
-        public required GltfState State { get; init; }
+        public GltfDocument? Doc { get; init; }
+        public GltfState? State { get; init; }
+        /// <summary>Inimigo sem esqueleto (ex.: f_luce2): nó do ator no objetos.json usado como modelo; −1 = personagem glTF.</summary>
+        public int RigidRoot { get; init; } = -1;
         public Fighter? Stats { get; init; }
         public string? Json { get; init; }
         public Dictionary<string, List<SeqCommand>> Sequences { get; init; } = [];
@@ -133,7 +136,7 @@ public partial class Fatia
         EnemyKind? kind = null;
         if (same != null) kind = new EnemyKind
         {
-            Model = model, Row = row, Doc = same.Doc, State = same.State, Stats = _db?.Enemy(row), Json = same.Json,
+            Model = model, Row = row, Doc = same.Doc, State = same.State, RigidRoot = same.RigidRoot, Stats = _db?.Enemy(row), Json = same.Json,
             Sequences = same.Sequences, Actions = same.Actions, Wait = same.Wait, Run = same.Run, Hurt = same.Hurt, Walk = same.Walk,
         };
         else kind = LoadEnemyKind(model, row);
@@ -145,7 +148,7 @@ public partial class Fatia
     {
         var root = EnemyDir(model);
         var file = root != null ? Directory.EnumerateFiles(root, "personagem.gltf", SearchOption.AllDirectories).FirstOrDefault() : null;
-        if (file == null) { _problems.Add($"falta inimigos\\{model}\\personagem.gltf (dw4 fase-exportar)"); return null; }
+        if (file == null) return LoadRigidEnemyKind(model, row);
         var doc = new GltfDocument();
         var state = new GltfState();
         if (doc.AppendFromFile(file, state) != Error.Ok) { _problems.Add($"{file}: erro ao ler"); return null; }
@@ -166,9 +169,30 @@ public partial class Fatia
         };
     }
 
+    // Inimigo sem esqueleto (exportado como objeto rígido: objetos.json + objetos\<modelo>\*_seq.json).
+    EnemyKind? LoadRigidEnemyKind(string model, int row)
+    {
+        if (ObjectData() is not { } data || !data.Actors.TryGetValue(model, out int root))
+        {
+            _problems.Add($"falta inimigos\\{model}\\personagem.gltf (dw4 fase-exportar)");
+            return null;
+        }
+        var seqDir = Path.Combine(_dir, "objetos", model);
+        var seqFile = Directory.Exists(seqDir) ? Directory.EnumerateFiles(seqDir, "*_seq.json").FirstOrDefault() : null;
+        string? json = seqFile != null ? File.ReadAllText(seqFile) : null;
+        return new EnemyKind
+        {
+            Model = model, Row = row, RigidRoot = root, Stats = _db?.Enemy(row), Json = json,
+            Sequences = json != null ? SeqCommand.LoadAll(json) : [], Actions = json != null ? SeqCommand.LoadActions(json) : [],
+        };
+    }
+
     Enemy? SpawnEnemy(int row, Vector3 pos, float yaw, Generator? gen, bool respawns = false)
     {
-        if (Kind(row) is not { } kind || kind.Doc.GenerateScene(kind.State) is not Node3D model) return null;
+        if (Kind(row) is not { } kind) return null;
+        Node3D? model = kind.RigidRoot >= 0 && ObjectData() is { } od ? new HudActor(od, kind.RigidRoot, slot: 0).Root
+            : kind.Doc?.GenerateScene(kind.State!) as Node3D;
+        if (model == null) return null;
         // Caixa de corpo do Numemon (igAABox do HIT): 8 × 14 × 8, FATO; HIPÓTESE: a mesma para os outros até ler o HIT de cada um.
         var body = new CharacterBody3D { Position = pos, FloorSnapLength = 4f };
         body.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 4f, Height = 14f }, Position = new Vector3(0, 7, 0) });

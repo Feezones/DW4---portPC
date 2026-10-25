@@ -1134,6 +1134,17 @@ if (args.Length == 1)
             "volta à dng101b2, entrada 2: " + string.Join(" | ", engine.Log.Take(40)));
         engine.Responder = null;
 
+        // Métodos da varredura (FATO pelos nativos).
+        host.Mat = new BeMatEvent(true, true, 0, _ => { });
+        Equal((1.0, 0.0), ((double)Be("MATisRidePlayer", 0.0)[0]!, (double)Be("MATisRideOffPlayer", 0.0)[0]!), "entrou: Ride 1, RideOff 0");
+        host.Mat = null;
+        host.Model = new TestModel { Position = (3, 0, 4) };
+        Equal(25.0, Be("MDLgetKyoriSquare", 0.0, 0.0, 0.0)[0], "distância ao quadrado");
+        host.Model = null;
+        Equal(1.0, Be("SYSctlDiskFolder", "SET", 0.0, 11.0, 2.0)[0], "2 discos 11");
+        Equal(2, ram.Players[0].Items.Disks(11), "contagem");
+        Equal(1.0, Be("SYSctlDiskFolder", "CLR", 0.0, 11.0, 9.0)[0], "tira os discos 11");
+        Equal(0, ram.Players[0].Items.Disks(11), "sem disco 11");
         host.CallName = "WPos";
         Equal(1.0, Be("MDLisCallName", "WPos")[0], "chamada WPos");
         Be("MDLsetWorldPosTarget", "V<1,2,3>");

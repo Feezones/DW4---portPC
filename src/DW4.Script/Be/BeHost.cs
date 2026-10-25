@@ -20,6 +20,9 @@ public interface IBeEngine
     /// <summary>Versão texto (BLTgetAttributeStr, MDLgetBulletName). null = sem resposta.</summary>
     string? FightText(string method, double[] args) => null;
 
+    /// <summary>Posição e direção (radianos, atan2(frente.x, frente.z)) do jogador p (PLAYERgetPosStr). null = sem jogador.</summary>
+    (double X, double Y, double Z, double Yaw)? PlayerPose(int player) => null;
+
 }
 
 /// <summary>
@@ -41,6 +44,8 @@ public interface IBeModel
     (double X, double Y, double Z) Position => default;
     /// <summary>Direção em radianos em torno de Y, atan2(frente.x, frente.z) (MDLgetRotStr; mesma convenção do PadMovement).</summary>
     double Yaw => 0;
+    /// <summary>Sequência atual (MDLisSeqName); null se não se sabe.</summary>
+    string? SequenceName => null;
 }
 
 /// <summary>
@@ -249,9 +254,9 @@ public sealed class BeHost
                 return Nothing;
             }
             // Luta (hit_f_apocaly.lua e outros hit_*.lua de chefe): o motor calcula pelo golpe atual; sem resposta, 0 e aviso.
-            case "BLTgetAttributeStr" or "MDLgetBulletName":
-                return [_engine.FightText(name, Numbers(a)) ?? Warn(name, name == "BLTgetAttributeStr" ? "common" : "")];
-            case var f when f.StartsWith("BLT", StringComparison.Ordinal) && f is not ("BLTgetShootRamNo") || f == "MDLdspDamage":
+            case "BLTgetAttributeStr" or "MDLgetBulletName" or "BLPgetAttackZokusei":
+                return [_engine.FightText(name, Numbers(a)) ?? Warn(name, name is "BLTgetAttributeStr" or "BLPgetAttackZokusei" ? "common" : "")];
+            case var f when (f.StartsWith("BLT", StringComparison.Ordinal) || f.StartsWith("BLP", StringComparison.Ordinal)) && f is not ("BLTgetShootRamNo") || f is "MDLdspDamage" or "MDLdspDamageP":
                 return N(_engine.Fight(name, Numbers(a)) ?? Warn(name, 0.0));
             case "MDLaddHp": if (Model != null) Model.Hp += I(a, 1); return Nothing;
             case "MDLsetSeq": if (Model != null && S(a, 1) is { } seq) Model.SetSequence(seq); return Nothing;
@@ -402,6 +407,52 @@ public sealed class BeHost
             // FATO (0x802ED9A4): direção do modelo em graus (atan2 da frente × 57,29578) somada ao y pedido: "V<x,giro+y,z>".
             case "MDLgetRotStr":
                 return [Vec(D(a, 1), (Model?.Yaw ?? 0) * 180 / Math.PI + D(a, 2), D(a, 3))];
+
+            // FATO (0x802ECF50 → 0x80302D08 / 0x802ECF80 → 0x80302D58): o jogador p acabou de entrar (bit só no mapa atual) /
+            // de sair (bit só no anterior) do volume do gatilho atual. Mesma leitura do MATgetPlayerMatStat (2 entrou, 1 saiu).
+            case "MATisRidePlayer": return Bool(Mat is { } mr && I(a, 1) == mr.PlayerNo && mr.Entered);
+            case "MATisRideOffPlayer": return Bool(Mat is { } mo && I(a, 1) == mo.PlayerNo && !mo.Entered);
+            // FATO (0x802ED8D0): nome de informação do modelo do contexto (+0x18 de 0x80535914).
+            case "MDLgetInfoName": return [Model?.ModelName];
+            // FATO (0x802EE02C): o modelo do contexto está na sequência pedida.
+            case "MDLisSeqName": return Bool(Model?.SequenceName is { } cur && cur == S(a, 1));
+            // FATO (0x802EDF84): distância ao quadrado do modelo do contexto até o ponto.
+            case "MDLgetKyoriSquare":
+            {
+                var (px, py, pz) = Model?.Position ?? default;
+                double dx = px - D(a, 1), dy = py - D(a, 2), dz = pz - D(a, 3);
+                return N(dx * dx + dy * dy + dz * dz);
+            }
+            // FATO (0x802EE144): manda MODELCTRL nome índice CHECKSTATUS estado e devolve a resposta (1 = está nesse estado).
+            case "MDLisStatus":
+                return Bool(_engine.Query(new BeMessage("MODELCTRL", S(a, 1), I(a, 2), "CHECKSTATUS", BeArg.Parse(S(a, 3)), S(a, 3))) is > 0);
+            // FATO (0x802EDE70 → 0x802EDC54 com 1): mostra o número de EXP ganho sobre o modelo (MODELCTRL FIND_SPACE…). O motor desenha.
+            case "MDLdspExp":
+                _engine.Deliver(new BeMessage("MODELCTRL", Model?.ModelName, Model?.Index ?? 0, "DSPEXP", [], I(a, 1).ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                return Nothing;
+            // FATO (0x802EE36C): posição do jogador p levada pelo deslocamento → "V<%f,%f,%f>". O motor dá a pose do jogador.
+            case "PLAYERgetPosStr":
+            {
+                var (px, py, pz, yaw) = _engine.PlayerPose(I(a, 1)) ?? default;
+                double x = D(a, 2), z = D(a, 4);
+                return [Vec(px + x * Math.Cos(yaw) + z * Math.Sin(yaw), py + D(a, 3), pz - x * Math.Sin(yaw) + z * Math.Cos(yaw))];
+            }
+            // SYSctlDiskFolder(comando, p, linha da conItem, quantidade): GAMERAM CTRLITEM "DISK" (FATO: 0x802EC064, mesma forma do
+            // DEVICE). HIPÓTESE pelo uso: SET soma, CLR tira, IS = tem, ISMAX = cheio (9 por tipo, FATO do DISKFOLDER).
+            case "SYSctlDiskFolder":
+            {
+                if (PlayerData(I(a, 2)) is not { } dp) return N(0);
+                int row = I(a, 3), count = Math.Max(1, I(a, 4));
+                var disk = new ItemRef("conItem", row);
+                switch (S(a, 1))
+                {
+                    case "IS": return Bool(dp.Items.Disks(row) > 0);
+                    case "ISMAX": return Bool(dp.Items.Disks(row) >= Inventory.DiskMax);
+                    case "SET": { bool any = false; for (int k = 0; k < count && dp.Items.Add(disk); k++) any = true; return Bool(any); }
+                    case "CLR": { bool any = false; for (int k = 0; k < count && dp.Items.Remove(disk); k++) any = true; return Bool(any); }
+                    default: return Warn("SYSctlDiskFolder " + S(a, 1), N(0));
+                }
+            }
 
             case "MDLisCallName": return Bool(CallName == S(a, 1));
             case "MDLsetWorldPosTarget":

@@ -103,6 +103,10 @@ public partial class Fatia : IBeEngine
     }
 
     // PLAYERgetPos: ponto de entrada na fase. DW4_ENTRADA escolhe (0 = porta inicial, com a demo de entrada; FATO pelo first.lua).
+    // PLAYERgetPosStr: só o jogador 0 existe na fatia.
+    public (double X, double Y, double Z, double Yaw)? PlayerPose(int player) =>
+        player == 0 ? (_player.GlobalPosition.X, _player.GlobalPosition.Y, _player.GlobalPosition.Z, _move.Facing) : null;
+
     public double? Query(BeMessage m) => QueryShop(m) ?? QueryListMenu(m) ?? QueryStageChange(m) ?? QueryRecorder(m) ?? m.Command switch
     {
         "GETGENERATEPOS" => int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var e) ? e : 0,

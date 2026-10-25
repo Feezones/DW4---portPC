@@ -1460,7 +1460,8 @@ int IgbDropsCmd(string path, string which, string outDir)
     var notes = new List<string>();
     var lists = IgbDrops.Read(IgbFile.Read(data), data, notes);
     foreach (var n in notes) Console.WriteLine($"nota: {n}");
-    if (lists.Count == 0) { Console.Error.WriteLine("nenhuma lista de beGeneraterItemDataOne"); return 1; }
+    // Fases sem lista de drop (chefes, campos sem baús): nada a gravar, não é erro.
+    if (lists.Count == 0) { Console.WriteLine("nenhuma lista de beGeneraterItemDataOne (fase sem drops)"); return 0; }
     Directory.CreateDirectory(full);
     var root = new JsonObject();
     foreach (var (name, entries) in lists)
@@ -1969,7 +1970,9 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
                       Kind: o.Fields.FirstOrDefault(v => v.Desc.Slot == 7 && v.Desc.ShortName == "String")?.Text ?? ""))
         .Distinct().ToList();
     // KIND_OBJECT g_/n_ e também os g_ de KIND_ENEMY (rígidos com hit_*.lua, FATO: g_b01cpole, as colunas do stagbs01).
-    var objectNames = actors.Where(a => (a.Kind == "KIND_OBJECT" && (a.Name.StartsWith("g_") || a.Name.StartsWith("n_"))) || (a.Kind == "KIND_ENEMY" && a.Name.StartsWith("g_")) || (a.Kind == "KIND_OBJECT" && a.Name.StartsWith("f_"))).Select(a => a.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
+    var objectNames = actors.Where(a => (a.Kind == "KIND_OBJECT" && (a.Name.StartsWith("g_") || a.Name.StartsWith("n_"))) || (a.Kind == "KIND_ENEMY" && a.Name.StartsWith("g_")) || (a.Kind == "KIND_OBJECT" && a.Name.StartsWith("f_"))
+        // Inimigos sem esqueleto (FATO: f_luce2 do stagbs03, "sem esqueleto"): vão como objeto rígido, e o cliente usa o ator como modelo.
+        || (a.Kind == "KIND_ENEMY" && (a.Name.StartsWith("e_") || a.Name.StartsWith("f_")) && IgbCharacter.Read(mainFile, mainData, a.Name).Bones.Count == 0)).Select(a => a.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
     var mapNames = actors.Where(a => a.Kind is "KIND_MAPBASE" or "KIND_MAPCURSOR").Select(a => a.Name).ToArray();
     var menuNames = actors.Where(a => a.Name.StartsWith("i_st") && !a.Name.StartsWith("i_stpnl") && !a.Name.StartsWith("i_stdownic")).Select(a => a.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
     // Raiz de cada ator: o @7 do beAction2Info com o mesmo nome (FATO: n_recorderdng → igSwitch #23790 na dng1, sem igAttrSet
@@ -2061,7 +2064,7 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
             if (inMain && (model.StartsWith("e_") || model.StartsWith("f_")) && exported.Add(model))
             {
                 var dir = Path.Combine(outDir, "inimigos", model);
-                Step($"inimigos/{model}", () => IgbGltf(ndmwPath, M, dir, ["--ator=" + model]));
+                if (!objectNames.Contains(model)) Step($"inimigos/{model}", () => IgbGltf(ndmwPath, M, dir, ["--ator=" + model]));
                 Step($"inimigos/{model} seq", () => IgbSeq(ndmwPath, M, dir, "--ator=" + model));
             }
         }
