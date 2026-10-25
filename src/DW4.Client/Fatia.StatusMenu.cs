@@ -48,12 +48,47 @@ public partial class Fatia
             return false;
         }
         if (_menuClosing) return true;
+        int hover = e is InputEventMouseMotion motion ? MenuItemAt(motion.Position) : -1;
+        if (hover >= 0 && hover != _menuCursor)
+        {
+            _menuCursor = hover;
+            UpdateMenuText();
+            return true;
+        }
+        if (e is InputEventMouseButton { Pressed: true } click)
+        {
+            if (click.ButtonIndex == MouseButton.Right) CloseMenu();
+            else if (click.ButtonIndex == MouseButton.Left && MenuItemAt(click.Position) is int hit && hit >= 0)
+            {
+                _menuCursor = hit;
+                UpdateMenuText();
+                ScriptLog($"menu: {Text(26 + _menuCursor)} (submenu ainda não portado)");
+            }
+            return true;
+        }
         if (Key(Godot.Key.Tab, Godot.Key.Escape, Godot.Key.K) || Pad(JoyButton.Start, JoyButton.B)) CloseMenu();
         else if (Key(Godot.Key.W, Godot.Key.Up) || Pad(JoyButton.DpadUp)) { _menuCursor = (_menuCursor + 2) % 3; UpdateMenuText(); }
         else if (Key(Godot.Key.S, Godot.Key.Down) || Pad(JoyButton.DpadDown)) { _menuCursor = (_menuCursor + 1) % 3; UpdateMenuText(); }
         else if (Key(Godot.Key.J, Godot.Key.Enter) || Pad(JoyButton.A))
             ScriptLog($"menu: {Text(26 + _menuCursor)} (submenu ainda não portado)");
         return true;
+    }
+
+    // Topo das linhas do i_stmenu01 (y para cima) e a faixa x da moldura (−110..54).
+    static readonly float[] MenuRows = [212, 189, 167];
+
+    // DECISÃO DO PORT PC (docs/decisoes-port-pc.md): o mouse aponta os itens do menu, clique esquerdo escolhe, direito cancela.
+    // Mouse da janela → ponto da tela 640 × 480 do menu (mesma escala do TextureRect, KeepAspectCentered) → linha do menu.
+    int MenuItemAt(Vector2 mouse)
+    {
+        var size = GetViewport().GetVisibleRect().Size;
+        float s = Math.Min(size.X / 640, size.Y / 480);
+        var p = (mouse - new Vector2((size.X - 640 * s) / 2, (size.Y - 480 * s) / 2)) / s;
+        float x = p.X - 320, y = 240 - p.Y;
+        if (x < -110 || x > 54) return -1;
+        for (int i = 0; i < MenuRows.Length; i++)
+            if (y <= MenuRows[i] + 2 && y > MenuRows[i] - 21) return i;
+        return -1;
     }
 
     void OpenMenu()
@@ -177,7 +212,7 @@ public partial class Fatia
         }
         // i_stmenu01 (L3, SQ_3LINEUPOPEN): moldura em x −110..54, y 140..216; separadores em y 188..192 e 166..170 (x −84..48).
         // Linhas: topo 212, 189 e 167.
-        float[] rows = [212, 189, 167];
+        float[] rows = MenuRows;
         for (int i = 0; i < 3; i++)
             MenuLabel((i == _menuCursor ? "▶ " : "    ") + Text(26 + i), -100, rows[i], 13);
         // i_staccount (win01: x 128..312, y 156..216): nome.

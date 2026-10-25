@@ -27,3 +27,5 @@ Levantamento estático (main.dol e #179) de 2026-10-25. Nada executado.
   i_stmenu01 abre em SQ_3LINEUPOPEN; resistências mostradas como o valor cru (HONOOTEIKO…).
 - **DECISÃO DA FATIA**: textos com a fonte da Godot em posições aproximadas, cursor "▶", Data e BITS como "-" (a fatia
   ainda não conta), submenus só registram a escolha.
+- **Pendente (refino)**: os glifos ⊂ ⊃ ∪ ∩ ¶ são ícones de elemento e de Data na fonte do jogo; com a fonte da Godot saem como
+  símbolos. O rosto do i_stdigiface aparece deslocado/cortado na aba. Os dois dependem da fonte e da ordem de desenho originais.

@@ -4,6 +4,7 @@ Mudanças pedidas para o PC que **não existem no original**. Ficam separadas da
 
 | Data | Decisão | Pedido por | Onde |
 |---|---|---|---|
+| 2026-10-25 | Menu de status com mouse: passar o cursor sobre um item seleciona, clique esquerdo escolhe, clique direito fecha. Teclado e controle continuam como antes. | feelipe, depois de abrir o menu | `src/DW4.Client/Fatia.StatusMenu.cs` (`MenuItemAt`) |
 | 2026-10-24 | O ataque sai na direção do cursor do mouse, mesmo andando para outro lado. No controle, continua na direção em que o personagem olha, como no original. | feelipe, depois de jogar a fatia | `src/DW4.Client/Fatia.cs` (`MouseGround`) |
 
 ## Constantes de regras e tabelas de dados (2026-10-24)
