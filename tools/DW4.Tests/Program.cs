@@ -988,6 +988,37 @@ if (args.Length == 1)
         Equal("19,20,12,13", string.Join(",", Enumerable.Range(0, 4).Select(g => allse.Cues.Count(c => c.Group == g))), "allse: cues por grupo A900..A903");
     });
 
+    Test("Jogo: geradores da dng1 (#184) com posições absolutas por vaga e gatilhos de área do #179", () =>
+    {
+        byte[] Read(int index)
+        {
+            using var afs = AfsArchive.Open(ndmwPath);
+            using var ms = new MemoryStream();
+            afs.CopyEntry(afs.Entries[index], ms);
+            return ms.ToArray();
+        }
+        var gd = Read(184);
+        var gens = IgbGenerators.ReadGenerators(IgbFile.Read(gd), gd);
+        Equal(12, gens.Count, "geradores (GENE-01..07 e GBOX-01..05)");
+        var g3 = gens.Single(g => g.Name == "GENE-03");
+        Equal("4,6,6,8 / 4,4,4,4", $"{string.Join(",", g3.Count)} / {string.Join(",", g3.MaxCount)}", "GENE-03 por nº de jogadores");
+        // Ponto (−180, 40, 60) + deslocamento (−20, 0, −55).
+        Equal((-200f, 40f, 5f), g3.Positions[0], "GENE-03 vaga 0 absoluta");
+        Equal(13, g3.EnemyRow, "Numemon (linha 13 da enemy)");
+        Equal("gene03.lua", g3.CallLua, "_callLua");
+        var g5 = gens.Single(g => g.Name == "GENE-05");
+        Equal(-90f, MathF.Round(g5.RotYDeg[1]), "GENE-05 virado −90°");
+        var box = gens.Single(g => g.Name == "GBOX-01");
+        Equal((-180f, 40f, 360f), box.Positions[0], "GBOX-01 global");
+        Equal(370, box.EnemyRow, "g_box (linha 370)");
+        var sd = Read(179);
+        var vols = IgbGenerators.ReadTriggers(IgbFile.Read(sd), sd);
+        Equal(11, vols.Count, "volumes");
+        var m3 = vols.Single(v => v.Name == "matg03");
+        static (float, float, float) R((float X, float Y, float Z) v) => (MathF.Round(v.X), MathF.Round(v.Y), MathF.Round(v.Z));
+        Equal(((-235f, 39f, -15f), (-125f, 140f, 135f)), (R(m3.Min), R(m3.Max)), "caixa do matg03");
+    });
+
     Test("Jogo: HUD da dng1 (#179 + usa_pack area #9): painel, medidores, números e texturas por nome", () =>
     {
         byte[] Read(string path, int index)

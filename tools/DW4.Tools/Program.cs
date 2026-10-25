@@ -51,6 +51,8 @@ try
         "igb-camera" when args.Length == 4 => IgbCamera(args[1], args[2], args[3]),
         "igb-db" when args.Length == 4 => IgbDb(args[1], args[2], args[3]),
         "igb-drops" when args.Length == 4 => IgbDropsCmd(args[1], args[2], args[3]),
+        "igb-geradores" when args.Length == 4 => IgbGeradores(args[1], args[2], args[3]),
+        "igb-gatilhos" when args.Length == 4 => IgbGatilhos(args[1], args[2], args[3]),
         "adx-wav" when args.Length >= 4 => AdxWav(args[1], args[2], args[3..]),
         "igb-sons" when args.Length == 4 => IgbSons(args[1], args[2], args[3]),
         "igb-hud" when args.Length is 4 or 6 => IgbHudCmd(args[1], args[2], args.Length == 6 ? args[3] : null, args.Length == 6 ? args[4] : null, args[^1]),
@@ -104,6 +106,8 @@ static int Usage()
           dw4 igb-camera   <arquivo.afs> <indice> <pasta-de-trabalho>   (volumes de câmera da fase em JSON, fora do repositório)
           dw4 igb-db       <arquivo.afs> <indice> <pasta-de-trabalho>   (as 12 tabelas beDataBase em CSV e JSON, fora do repositório)
           dw4 igb-drops    <arquivo.afs> <indice> <pasta-de-trabalho>   (listas de drop dos geradores em JSON, fora do repositório)
+          dw4 igb-geradores <arquivo.afs> <indice> <pasta-de-trabalho>   (geradores de onda em geradores.json: posições absolutas por vaga, contagem por nº de jogadores)
+          dw4 igb-gatilhos <arquivo.afs> <indice> <pasta-de-trabalho>   (volumes de gatilho de área beMatCtrlData em gatilhos.json)
           dw4 adx-wav      <arquivo.afs> <pasta-de-trabalho> <indice> [indice...]   (ADX → WAV com o loop num chunk smpl, fora do repositório)
           dw4 igb-sons     <arquivo.afs> <indice> <pasta-de-trabalho>   (bancos .sfp do IGB → WAV por cue A9GG_CC, e tabela de sons em JSON)
           dw4 igb-hud      <ndmw.afs> <indice-fase> [<area.afs> <indice-usa_pack>] <pasta-de-trabalho>   (atores de interface i_* com nós, sequências, medidores e números em JSON + PNG)
@@ -1478,6 +1482,59 @@ int IgbObjetos(string path, string which, string outDir, string[] actors)
     Console.WriteLine($"{json["actors"]!.AsArray().Count} atores, {json["nodes"]!.AsObject().Count} nós, {hud.Images.Count} imagens -> {file}");
     foreach (var n in hud.Notes) Console.WriteLine($"nota: {n}");
     return 0;
+}
+
+// Geradores de onda de um generatorN/H/V em geradores.json, no formato que a fatia lê (Fatia.Enemies.cs).
+int IgbGeradores(string path, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    var data = AfsEntryBytes(path, which);
+    var gens = IgbGenerators.ReadGenerators(IgbFile.Read(data), data);
+    JsonArray V(IEnumerable<float> v) => new(v.Select(x => (JsonNode?)Math.Round((double)x, 4)).ToArray());
+    var arr = new JsonArray(gens.Select(g => (JsonNode?)new JsonObject
+    {
+        ["name"] = g.Name,
+        ["positions"] = new JsonArray(g.Positions.Select(p => (JsonNode?)V([p.X, p.Y, p.Z])).ToArray()),
+        ["rotYDeg"] = V(g.RotYDeg),
+        ["count"] = new JsonArray(g.Count.Select(c => (JsonNode?)c).ToArray()),
+        ["maxCount"] = new JsonArray(g.MaxCount.Select(c => (JsonNode?)c).ToArray()),
+        ["enemyRow"] = g.EnemyRow,
+        ["callLua"] = g.CallLua,
+        ["global"] = g.Global,
+        ["startMode"] = g.StartMode, ["startData"] = g.StartData, ["fillMode"] = g.FillMode, ["fillData"] = g.FillData,
+    }).ToArray());
+    Directory.CreateDirectory(full);
+    var file = Path.Combine(full, "geradores.json");
+    File.WriteAllText(file, new JsonObject { ["source"] = $"{Path.GetFileName(path)} #{which}", ["generators"] = arr }.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    foreach (var g in gens) Console.WriteLine($"{g.Name}: {g.Positions.Count} vagas, inimigo {g.EnemyRow}, {string.Join("/", g.Count)} no total, {string.Join("/", g.MaxCount)} ao mesmo tempo, {g.CallLua}");
+    Console.WriteLine($"{gens.Count} geradores -> {file}");
+    return 0;
+}
+
+// Volumes de gatilho de área (beMatCtrlData) do IGB principal da fase em gatilhos.json.
+int IgbGatilhos(string path, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    var data = AfsEntryBytes(path, which);
+    var vols = IgbGenerators.ReadTriggers(IgbFile.Read(data), data);
+    JsonArray V((float X, float Y, float Z) p) => new((JsonNode?)Math.Round((double)p.X, 4), Math.Round((double)p.Y, 4), Math.Round((double)p.Z, 4));
+    Directory.CreateDirectory(full);
+    var file = Path.Combine(full, "gatilhos.json");
+    File.WriteAllText(file, new JsonObject { ["source"] = $"{Path.GetFileName(path)} #{which}", ["volumes"] = new JsonArray(vols.Select(v => (JsonNode?)new JsonObject { ["name"] = v.Name, ["min"] = V(v.Min), ["max"] = V(v.Max) }).ToArray()) }
+        .ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    Console.WriteLine($"{vols.Count} volumes ({string.Join(", ", vols.Select(v => v.Name))}) -> {file}");
+    return 0;
+}
+
+byte[] AfsEntryBytes(string path, string which)
+{
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) throw new InvalidDataException($"índice inválido: {which}");
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    return ms.ToArray();
 }
 
 // main.dol só como dados: desmontagem estática para achar as fórmulas (FightCom/BLT*), sem executar nada.
