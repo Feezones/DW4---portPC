@@ -8,7 +8,8 @@ namespace DW4.Gameplay;
 ///  · cada sequência guarda o rótulo atual (LABEL); começar uma sequência executa só o bloco desse rótulo;
 ///  · LABELCTRL &lt;rótulo&gt; [sequência] troca o rótulo guardado de outra sequência (padrão: SQ_WAIT);
 ///  · ACTION liga o JOINTSET a..b da ação (quadros de 60 Hz; "LP" repete, senão para no fim) e o FADESET dela;
-///  · WCHECK "Action" espera a ação sem repetição chegar ao fim; WAITCHECK "Frame" n espera n quadros;
+///  · a ação roda os comandos dela (JOINTSET, FADESET, WAITCHECK "Frame" n / "Joint"); WCHECK "Action" espera a ação
+///    passar por todos (as esperas do piso ficam nas ações: WIT2ON 30, ONSW01 120, WAIT02 180);
 ///  · HITBOX "Set" tipo início duração posição tamanho: caixa ativa por "duração" quadros (−1 = sempre), na unidade do
 ///    WAITCHECK (HITBOX 120 ↔ espera 120 no piso);
 ///  · JUMP vai para outra sequência no rótulo guardado dela (assim o ciclo do piso ligado se repete).
@@ -26,6 +27,11 @@ public sealed class ObjectSequencer
     bool _waitAction;
     float _from, _to, _fadeFrom = 1, _fadeTo = 1, _fadeLen, _fadeT;
     bool _loop;
+    // A ação também é um pequeno programa: JOINTSET, FADESET e as esperas dela (WAITCHECK "Frame" n / "Joint").
+    List<SeqCommand> _act = [];
+    int _apc;
+    float _actWait;
+    bool _actWaitJoint;
 
     public ObjectSequencer(IReadOnlyDictionary<string, List<SeqCommand>> sequences, IReadOnlyDictionary<string, List<SeqCommand>> actions)
     {
@@ -100,6 +106,8 @@ public sealed class ObjectSequencer
             left -= frames;
             if (left <= 0) _boxes.RemoveAt(i); else _boxes[i] = (box, left);
         }
+        if (_actWait > 0) _actWait -= frames;
+        RunAction();
         if (!Running) return;
         if (_wait > 0) _wait -= frames;
         _jumps = 0;
@@ -113,7 +121,7 @@ public sealed class ObjectSequencer
             if (_wait > 0) return;
             if (_waitAction)
             {
-                if (Action != null && !_loop && Frame < _to) return;
+                if (!ActionDone) return;
                 _waitAction = false;
             }
             if (_pc >= _end) { Running = false; return; }
@@ -161,19 +169,48 @@ public sealed class ObjectSequencer
     {
         Action = name;
         _loop = false;
-        if (!_actions.TryGetValue(name, out var cmds)) return;
-        foreach (var c in cmds)
+        _act = _actions.TryGetValue(name, out var cmds) ? cmds : [];
+        _apc = 0;
+        _actWait = 0;
+        _actWaitJoint = false;
+        RunAction();
+    }
+
+    // FATO: as esperas ficam dentro das ações (WIT2ON: JOINTSET 40–70 LP + WAITCHECK "Frame" 30; ONSW01: … "Frame" 120;
+    // OFF2ON: "Frame" 20, FADESET OUT, "Joint" 0). HIPÓTESE: o WCHECK "Action" da sequência espera a ação passar por todas.
+    void RunAction()
+    {
+        while (_apc < _act.Count)
         {
-            if (c.Kind == "JOINTSET")
+            if (_actWait > 0) return;
+            if (_actWaitJoint)
             {
-                _from = c.F(1);
-                _to = c.F(2);
-                _loop = c.S(3) == "LP";
-                Frame = _from;
+                if (!_loop && Frame < _to) return;
+                _actWaitJoint = false;
             }
-            else if (c.Kind == "FADESET") Fade(c);
+            var c = _act[_apc++];
+            switch (c.Kind)
+            {
+                case "JOINTSET":
+                    _from = c.F(1);
+                    _to = c.F(2);
+                    _loop = c.S(3) == "LP";
+                    Frame = _from;
+                    break;
+                case "FADESET":
+                    Fade(c);
+                    break;
+                case "WAITCHECK" when c.S(0) == "Frame":
+                    _actWait = c.F(1);
+                    break;
+                case "WAITCHECK" when c.S(0) == "Joint":
+                    _actWaitJoint = true;
+                    break;
+            }
         }
     }
+
+    bool ActionDone => _apc >= _act.Count && _actWait <= 0 && (!_actWaitJoint || _loop || Frame >= _to);
 
     // FADESET "IN"/"OUT" n: transparência em n quadros; "HIDE": escondido (porta aberta).
     void Fade(SeqCommand c)

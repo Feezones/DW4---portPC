@@ -124,7 +124,8 @@ public partial class Fatia
         var targets = _objects.Where(o => o.Name == m.Name && (m.Index < 0 || o.Index == m.Index)).ToList();
         foreach (var o in targets)
         {
-            if (m.Command == "SETLABEL" && m.Text(0) is { } label) o.SetSequence(label);
+            // O analisador separa os argumentos por "/": "SQ_WAIT/ON" chega como dois; SETLABEL usa o texto inteiro.
+            if (m.Command == "SETLABEL" && m.RawArgs is { Length: > 0 } label) o.SetSequence(label);
             else if (m.Command.StartsWith("SQ_", StringComparison.Ordinal)) o.SetSequence(m.Command);
         }
         return false;

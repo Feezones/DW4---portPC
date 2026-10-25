@@ -702,25 +702,26 @@ Test("API be:*: sd com atraso em quadros, diretor de demo com espera por condiç
 Test("Objetos: ciclo do piso de dano (rótulos, espera, HITBOX, JUMP)", () =>
 {
     static SeqCommand C(string k, params object[] v) => new(k, v);
-    // Forma do g_ddamagefloor (igb-seq #179), com os mesmos comandos e valores.
+    // Forma do g_ddamagefloor (igb-seq #179), com os mesmos comandos e valores: as esperas ficam dentro das ações.
     var seqs = new Dictionary<string, List<SeqCommand>>
     {
         ["SQ_WAIT"] =
         [
-            C("LABEL", "OFF"), C("ACTION", "WAIT01"),
-            C("LABEL", "ON"), C("ACTION", "WIT2ON"), C("WAITCHECK", "Frame", 30),
+            C("LABEL", "OFF"), C("ACTION", "WAIT01"), C("WCHECK", "Action"), C("JUMP", "SQ_INTRPT"),
+            C("LABEL", "ON"), C("ACTION", "WIT2ON"), C("WCHECK", "Action"),
             C("HITBOX", "Set", 70112, 0, 120, new[] { 0f, 0f, 0f }, new[] { 17f, 1f, 17f }),
-            C("ACTION", "ONSW01"), C("WAITCHECK", "Frame", 120), C("JUMP", "SQ_INTVL"),
+            C("ACTION", "ONSW01"), C("WCHECK", "Action"), C("JUMP", "SQ_INTVL"),
         ],
-        ["SQ_INTVL"] = [C("ACTION", "WAIT02"), C("WAITCHECK", "Frame", 180), C("JUMP", "SQ_WAIT")],
-        ["SQ_SWOF"] = [C("LABELCTRL", "OFF")],
+        ["SQ_INTRPT"] = [C("ACTION", "WAIT01"), C("WCHECK", "Action"), C("JUMP", "SQ_WAIT")],
+        ["SQ_INTVL"] = [C("ACTION", "WAIT02"), C("WCHECK", "Action"), C("JUMP", "SQ_WAIT")],
+        ["SQ_SWOF"] = [C("LABELCTRL", "OFF", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
     };
     var actions = new Dictionary<string, List<SeqCommand>>
     {
-        ["WAIT01"] = [C("JOINTSET", 0, 0, 30, "LP")],
-        ["WIT2ON"] = [C("JOINTSET", 0, 40, 70, "LP")],
-        ["ONSW01"] = [C("JOINTSET", 0, 80, 140, "LP")],
-        ["WAIT02"] = [C("JOINTSET", 0, 150, 180, "LP")],
+        ["WAIT01"] = [C("JOINTSET", "", 1, 1, "OS"), C("WAITCHECK", "Joint", 0)],
+        ["WIT2ON"] = [C("JOINTSET", "", 40, 70, "LP"), C("WAITCHECK", "Frame", 30)],
+        ["ONSW01"] = [C("JOINTSET", "", 80, 140, "LP"), C("WAITCHECK", "Frame", 120)],
+        ["WAIT02"] = [C("JOINTSET", "", 1, 1, "OS"), C("WAITCHECK", "Frame", 180)],
     };
     var q = new ObjectSequencer(seqs, actions);
     q.Start("SQ_WAIT");
