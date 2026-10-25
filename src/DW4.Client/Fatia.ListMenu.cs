@@ -17,6 +17,9 @@ public partial class Fatia
 
     readonly string?[] _listTexts = new string?[6];
     int _listCount, _listChoice = -1, _listResult;
+    // Menu aberto: "i_zzstchgcur" (teleporte, desistir = 4) ou "i_messcr" (escolha da conversa, funcChoiceMessage).
+    string _listOwner = "";
+    bool _listCancellable;
     bool _listMoveHeld;
     PanelContainer? _listPanel;
     Label? _listLabel;
@@ -25,7 +28,25 @@ public partial class Fatia
     {
         switch (m.Class, m.Name, m.Command)
         {
+            // FATO (funcChoiceMessage, bML01009.lua): TEXTSET "TALKFONT02/font0k/I<t>" para cada opção k = 1..n e depois
+            // SELECTCTRL i_messcr GENERATE "NOCANCEL/I<n>/V<x,y,z>"; o script lê GETSELECT (0..n−1). Os textos também vão para a
+            // janela de conversa (não consumidos aqui).
+            case ("TEXTCTL", _, "TEXTSET") when m.RawArgs?.StartsWith("TALKFONT02/font0", StringComparison.Ordinal) == true:
+                if (m.RawArgs.Length > 16 && m.RawArgs[16] - (int)'0' is var o && o >= 1 && o < _listTexts.Length)
+                    _listTexts[o] = m.Args.Count > 2 && m.Args[2] is { Kind: 'I', Numbers.Length: > 0 } ot ? Text((int)ot.Numbers[0]) : null;
+                return false;
+            case ("SELECTCTRL", "i_messcr", "GENERATE"):
+                _listOwner = "i_messcr";
+                _listCancellable = false; // HIPÓTESE: sem "NOCANCEL" haveria desistir, valor não lido
+                _listCount = Math.Clamp(m.Arg(1) is { Numbers.Length: > 0 } mn ? (int)mn.Numbers[0] : 2, 1, _listTexts.Length - 1);
+                _listChoice = 0;
+                _listResult = 0;
+                _listMoveHeld = true;
+                UpdateList();
+                return true;
             case ("SELECTCTRL", "i_zzstchgcur", "GENERATE"):
+                _listOwner = "i_zzstchgcur";
+                _listCancellable = true;
                 _listCount = Math.Clamp(m.Arg(0) is { Numbers.Length: > 0 } n ? (int)n.Numbers[0] : 1, 1, _listTexts.Length - 1);
                 _listChoice = 0;
                 _listResult = 0;
@@ -44,8 +65,8 @@ public partial class Fatia
 
     double? QueryListMenu(BeMessage m) => (m.Class, m.Name, m.Command) switch
     {
-        ("SELECTCTRL", "i_zzstchgcur", "ISSELECTNOW") => _listChoice >= 0 && !_selectEnded ? 1 : 0,
-        ("SELECTCTRL", "i_zzstchgcur", "GETSELECT") => _listResult,
+        ("SELECTCTRL", "i_zzstchgcur" or "i_messcr", "ISSELECTNOW") => _listChoice >= 0 && !_selectEnded ? 1 : 0,
+        ("SELECTCTRL", "i_zzstchgcur" or "i_messcr", "GETSELECT") => _listResult,
         _ => null,
     };
 
@@ -53,7 +74,7 @@ public partial class Fatia
     {
         if (_listChoice < 0) return;
         // Desistir: K / Backspace / botão B (o mesmo que fecha o menu de status).
-        if (Input.IsKeyPressed(Key.K) || Input.IsKeyPressed(Key.Backspace) || Input.IsJoyButtonPressed(0, JoyButton.B))
+        if (_listCancellable && (Input.IsKeyPressed(Key.K) || Input.IsKeyPressed(Key.Backspace) || Input.IsJoyButtonPressed(0, JoyButton.B)))
         {
             _listResult = ListCancel;
             _selectEnded = true;

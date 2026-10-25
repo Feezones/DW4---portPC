@@ -40,14 +40,47 @@
   de janela (_subWndNo: DISK, WPU, APU, CHIP, JUNK…) e diz de onde vêm os itens (tabela fixa, enredo/flags ou dificuldade).
   A classe é criada em código, por isso as referências de texto não chegam lá.
 
-## DESCONHECIDO
+## Estoque e compra/venda (FATO, terceira leitura, 2026-10-25)
 
-- **Quais itens cada loja vende.** As tabelas não têm coluna de loja e a fase não tem dados de loja. A lista chega pronta
-  em `this+0x60`, e não achei quem a monta.
-- Regras de compra/venda (BIT, pasta cheia, recompra) e as janelas de banco, laboratório e X-data.
+- As tabelas de estoque ficam no **banco da própria fase**: no #829 (stagml13), shopWeapon (175 × 36), shopArmor (30 × 36),
+  shopChip (30 × 36), shopJunk (9 × 72, pares "NNkind"/"NN") e shopDisk (1 × 36). O banco da área (usa_pack) só tem as 12
+  tabelas de sempre. O `fase-exportar` agora exporta também o banco da fase.
+- O SUBWND responde GETSHOPDATA em 0x80351794: lê o jogador 0 (GETPLAYER: LEVEL, DIGIMONNO) e conta os jogadores com ISUSE.
+  Depois escolhe pelo tipo de janela: 6 WPU → shopWeapon, 7 APU → shopArmor, 8 CHIP → shopChip, 9 JUNK → shopJunk.
+  - **shopWeapon:** linha = base + faixa do LEVEL.
+    - A base vem do DIGIMONNO pela tabela de saltos 0x804E8024: 0→0, 1→25, 2→50, 3→75, 4→25, 5→0, 6→100, 7→50, 8→125, 9→75,
+      10→100, 11→125, 12→25, 13→125, 14→50, 15→0. Com mais de um jogador, a base é 150.
+    - A faixa vai de 0 a 24: ≤ 9, 16, 21, 26, 31, 36, 41, 46, 51, 60, 67, 72, 77, 82, 87, 92, 97, 102, 107, 112, 117, 127, 137,
+      147, e acima disso 24.
+    - 150 + 24 + 1 = 175 linhas, o tamanho exato da tabela.
+  - **shopArmor e shopChip:** linha = faixa do LEVEL, de 0 a 29 (as mesmas faixas e mais 157, 167, 177, 187, 197); 30 linhas.
+  - **shopJunk:** linha pela COMMON.COUNTER[1]: ≥ 1000 → 0, 6000, 26000, 86000, 206000, 456000, 956000, 1956000, ≥ 3960000 → 8.
+    Abaixo de 1000, a loja fica vazia. São 9 linhas.
+  - A lista tem 36 posições, uma por coluna "00".."35" (3 páginas de 12): um item ou vazio ("----") por coluna, sem tirar
+    repetidos (0x80351BE8..0x80351CCC).
+  - Tipo de item: 0 weapon (0x803B0CB4), 1 armor1 (0x803B0DE8), 2 armor2 (0x803B0F20), 3 abChip (0x803B1014), 4 conItem
+    (0x803B10A0).
+- Compra (0x803A3604..0x803A3678): BIT −= HANBAI e o item vai para o DEVICEFOLDER.
+- Venda (0x803A0AF8..0x803A0B58): BIT += KAITORI, com teto de 9 999 999, e o item sai da pasta. Só dá para vender item não
+  equipado e com KAITORI ≥ 1 (0x803A1338).
 
 ## No port
 
-Nada implementado. Inventar o estoque iria contra a regra do projeto. Hoje o SUBWND só aparece no log: o script já devolve o
-controle antes, então o jogador não fica preso. Próximo passo: achar quem preenche `this+0x60`, a partir do construtor da
-janela do tipo WPU (tabela 0x804E16B0, código perto de 0x80325B74).
+- `src/DW4.Gameplay/ShopStock.cs`: `ShopStock` (linha e itens) e `ShopTrade` (compra e venda). Teste com o #829 real.
+- Cliente:
+  - `Fatia.Shop.cs`: o SUBWND GENERATE "WPU|APU|CHIP|JUNK/I<p>" abre a loja (12 por página) em modo Comprar ou Vender.
+  - A escolha da conversa (`SELECTCTRL i_messcr`, funcChoiceMessage) agora tem menu (`Fatia.ListMenu.cs`).
+  - NPCs: uma sequência que acaba sem JUMP volta ao SQ_WAIT. Sem isso, a conversa de loja parava no DMchkSD ISSEQNAME
+    "SQ_WAIT".
+- **Conferido na janela (stagml13):** falar com o vendedor de armas → "View Weapon Shop Menu." → loja WPU com shopWeapon
+  linha 50 (Guilmon, forma 2, nível 1), 24 itens em 3 páginas.
+- **HIPÓTESES:**
+  - Não compra sem BIT suficiente nem com a pasta cheia (a condição não foi lida).
+  - Sequência de NPC sem JUMP volta ao SQ_WAIT.
+- **DECISÃO DA FATIA:** caixa da Godot no lugar da janela j_shwin (não exportada). V/Y alterna comprar/vender.
+
+## DESCONHECIDO / pendente
+
+- O auxiliar de item recebe o LEVEL (0x803B0AB4/0x803B0B9C, faixas 1/3/7/15/31) e calcula algo por item: grau ou bônus. Por
+  isso as colunas repetidas talvez não sejam o mesmo item na tela do jogo. Falta ler.
+- As lojas de disco (DISK: não há "shopDisk" no executável; a janela lê o conItem), X-data, laboratório, banco e cartas.

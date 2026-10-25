@@ -37,6 +37,9 @@ public sealed class DemoManager(BeMessenger messenger, Func<BeMessage, double?> 
 
     public bool Idle => _running.Count == 0;
 
+    /// <summary>Entrada que está segurando a fila (o chk que ainda não vale), para diagnóstico; null com a fila andando.</summary>
+    public Entry? Blocking { get; private set; }
+
     /// <summary>Executa o que der neste quadro; para no primeiro chk que ainda não vale.</summary>
     public void Tick()
     {
@@ -70,11 +73,12 @@ public sealed class DemoManager(BeMessenger messenger, Func<BeMessage, double?> 
                 case Kind.CheckNonZero or Kind.CheckZero:
                     var v = query(e.Message!);
                     if (v == null) Unanswered?.Invoke(e.Message!);
-                    else if ((v != 0) == (e.Kind == Kind.CheckNonZero)) return;
+                    else if ((v != 0) == (e.Kind == Kind.CheckNonZero)) { Blocking = e; return; }
                     break;
             }
             _running.Dequeue();
         }
+        Blocking = null;
         _skipping = _matched = false;
     }
 }

@@ -1516,6 +1516,40 @@ if (args.Length == 1)
         True(gens.Values.SelectMany(p => p).SelectMany(p => p.Each.Concat(p.Last)).All(n => n != null && lists.ContainsKey(n)), "toda lista apontada existe");
     });
 
+    Test("Jogo: estoque das lojas da Central Area (#829): linha por nível, forma e grupo; 36 posições por linha; compra e venda", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[829], ms);
+        var data = ms.ToArray();
+        var tables = IgbDatabase.Read(IgbFile.Read(data), data, []);
+        foreach (var n in new[] { "shopWeapon", "shopArmor", "shopChip", "shopJunk" }) True(tables.Any(t => t.Name == n), n);
+        int Cell(string table, int row, string col) => Convert.ToInt32(tables.First(t => t.Name == table).Columns.First(c => c.Name == col).Cells[row]);
+        // Faixas do nível (FATO 0x80351A2C..): 1 → 0, 16 → 1, 17 → 2, 147 → 23, 148 → 24; armadura/chip vão até 29.
+        Equal(0, ShopStock.Row(ShopStock.Weapon, 1, 0, 1, 0), "nv 1, forma 0");
+        Equal(1, ShopStock.Row(ShopStock.Weapon, 16, 0, 1, 0), "nv 16");
+        Equal(2, ShopStock.Row(ShopStock.Weapon, 17, 0, 1, 0), "nv 17");
+        Equal(25 + 23, ShopStock.Row(ShopStock.Weapon, 147, 1, 1, 0), "forma 1 = base 25, nv 147");
+        Equal(150 + 24, ShopStock.Row(ShopStock.Weapon, 200, 3, 2, 0), "grupo: base 150, última faixa = linha 174 (a tabela tem 175)");
+        Equal(29, ShopStock.Row(ShopStock.Armor, 250, 0, 1, 0), "armadura: última faixa 29 (a tabela tem 30)");
+        Equal(-1, ShopStock.Row(ShopStock.Junk, 1, 0, 1, 999), "sucata: abaixo de 1000, nada");
+        Equal(8, ShopStock.Row(ShopStock.Junk, 1, 0, 1, 3960000), "sucata: última linha 8 (a tabela tem 9)");
+        var items = ShopStock.Items(ShopStock.Weapon, col => Cell("shopWeapon", 0, col));
+        Equal(36, items.Count, "36 posições");
+        Equal(new ItemRef("weapon", 25), items[6], "coluna 06 da linha 0 = weapon 25 (Long Sword α)");
+        Equal(null, items[35], "coluna 35 vazia");
+        var junk = ShopStock.Items(ShopStock.Junk, col => Cell("shopJunk", 1, col));
+        Equal(new ItemRef("armor2", 42), junk[0], "sucata linha 1, coluna 00: tipo 2 = armor2, linha 42");
+        var inv = new Inventory { Bit = 500 };
+        True(!ShopTrade.Buy(inv, new ItemRef("weapon", 25), 600), "sem BIT não compra");
+        True(ShopTrade.Buy(inv, new ItemRef("weapon", 25), 196) && inv.Bit == 304 && inv.Has(new ItemRef("weapon", 25)), "comprou: BIT − HANBAI e item na pasta");
+        True(!ShopTrade.Sell(inv, new ItemRef("weapon", 25), 49, equipped: true), "equipado não vende");
+        True(ShopTrade.Sell(inv, new ItemRef("weapon", 25), 49, equipped: false) && inv.Bit == 353 && !inv.Has(new ItemRef("weapon", 25)), "vendeu: BIT + KAITORI");
+        inv.Bit = ShopTrade.BitMax - 10; inv.Add(new ItemRef("weapon", 0));
+        ShopTrade.Sell(inv, new ItemRef("weapon", 0), 49, false);
+        Equal(ShopTrade.BitMax, inv.Bit, "teto de 9 999 999");
+    });
+
     Test("Jogo: IA do Numemon (#179, e_nume) tem MAP00 e MAP01 com 4 listas e faixas 36²/45²/150² e 22²/40²/150²", () =>
     {
         using var afs = AfsArchive.Open(ndmwPath);

@@ -52,6 +52,8 @@ public sealed class ObjectSequencer
     /// <summary>Último AIMAP executado (ex.: SQ_PHASE2 do f_bit troca para MAP01); quem roda a IA consome com <see cref="TakeAiMap"/>.</summary>
     public string? AiMap { get; private set; }
     public string? TakeAiMap() { var m = AiMap; AiMap = null; return m; }
+    /// <summary>Volta ao SQ_WAIT quando uma sequência acaba sem JUMP (ligado nos NPCs n_*).</summary>
+    public bool ReturnToWaitAtEnd { get; set; }
     /// <summary>Contador de caixas ligadas (muda a cada HITBOX "Set"): um acerto por caixa.</summary>
     public int BoxSerial { get; private set; }
 
@@ -127,7 +129,14 @@ public sealed class ObjectSequencer
                 if (!ActionDone) return;
                 _waitAction = false;
             }
-            if (_pc >= _end) { Running = false; return; }
+            if (_pc >= _end)
+            {
+                // HIPÓTESE (NPCs): sequência que acaba sem JUMP volta ao SQ_WAIT. É a leitura em que fecha a espera dos scripts de conversa
+                // (hit_n_digilfm.lua: MDLsetSeq "SQ_TALK", sem JUMP no fim, e DMchkSD ISSEQNAME "SQ_WAIT" "==0" logo depois).
+                if (ReturnToWaitAtEnd && Sequence != "SQ_WAIT" && _seqs.ContainsKey("SQ_WAIT") && ++_jumps <= 16) { Begin("SQ_WAIT"); return; }
+                Running = false;
+                return;
+            }
             var c = _cmds[_pc++];
             switch (c.Kind)
             {

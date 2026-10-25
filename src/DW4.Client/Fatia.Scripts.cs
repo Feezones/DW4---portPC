@@ -50,6 +50,16 @@ public partial class Fatia : IBeEngine
         return true;
     }
 
+    // Diagnóstico: um chk do diretor de demo segurando a fila por 10 s vai para o log (uma vez por entrada).
+    DemoManager.Entry? _demoBlocking;
+    int _demoBlockedTicks;
+    void WatchDemo()
+    {
+        var b = _stage?.Host.Demo.Blocking;
+        if (b == null || !ReferenceEquals(b, _demoBlocking)) { _demoBlocking = b; _demoBlockedTicks = 0; return; }
+        if (++_demoBlockedTicks == 600) ScriptLog($"[debug] fila de demo parada há 10 s em {b.Kind} {b.Message}");
+    }
+
     void ScriptLog(string line)
     {
         _scriptLog.Add(line);
@@ -62,7 +72,7 @@ public partial class Fatia : IBeEngine
         ScriptLog(m.ToString());
         // A trava do ISEND zera em todo SELECTCTRL GENERATE, antes de quem trata a janela (troca de área, mensagem) consumir a mensagem.
         if (m.Class == "SELECTCTRL" && m.Command == "GENERATE") { _confirmArmed = false; _selectEnded = false; }
-        if (DeliverToListMenu(m) || DeliverToStageChange(m) || DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToBossBar(m) || DeliverToEnemies(m) || DeliverToObjects(m)) return;
+        if (DeliverToShop(m) || DeliverToListMenu(m) || DeliverToStageChange(m) || DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToBossBar(m) || DeliverToEnemies(m) || DeliverToObjects(m)) return;
         switch (m.Class, m.Command)
         {
             // FATO: "HITLANDMODEL doorwallNN OFFHIT" desliga a parede de colisão da porta (filho do igSwitch da colisão #1862).
@@ -93,7 +103,7 @@ public partial class Fatia : IBeEngine
     }
 
     // PLAYERgetPos: ponto de entrada na fase. DW4_ENTRADA escolhe (0 = porta inicial, com a demo de entrada; FATO pelo first.lua).
-    public double? Query(BeMessage m) => QueryListMenu(m) ?? QueryStageChange(m) ?? QueryRecorder(m) ?? m.Command switch
+    public double? Query(BeMessage m) => QueryShop(m) ?? QueryListMenu(m) ?? QueryStageChange(m) ?? QueryRecorder(m) ?? m.Command switch
     {
         "GETGENERATEPOS" => int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var e) ? e : 0,
         // ISDEMOCAMERA = 1 enquanto a demo toca (o first.lua espera enquanto "==0", até começar, e enquanto "!=0", até acabar).

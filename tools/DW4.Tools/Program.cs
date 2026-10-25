@@ -2005,6 +2005,8 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
     {
         Step("textos", () => IgbTextos(areaPath, usa.ToString(inv), Path.Combine(outDir, "textos")));
         Step("db", () => IgbDb(areaPath, usa.ToString(inv), Path.Combine(outDir, "db")));
+    // Tabelas do banco da própria fase (FATO: o #829 da Central Area tem shopWeapon/shopArmor/shopChip/shopJunk/shopDisk).
+    if (IgbDatabase.Read(mainFile, mainData, []).Count > 0) Step("db da fase", () => IgbDb(ndmwPath, M, Path.Combine(outDir, "db")));
         Step("hud", () => IgbHudCmd(["igb-hud", ndmwPath, M, areaPath, usa.ToString(inv), Path.Combine(outDir, "hud")], null));
         if (menuNames.Length > 0)
             Step("menu", () => IgbHudCmd(["igb-hud", ndmwPath, M, areaPath, usa.ToString(inv), Path.Combine(outDir, "menu")], Specs(menuNames)));
