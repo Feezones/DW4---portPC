@@ -37,3 +37,7 @@ Boa parte das **regras de jogo** (diálogos, eventos, dano, crítico, status, EX
 2. **Traduzir** os scripts para C#/GDScript a partir das listagens. Mais trabalho e risco de divergência.
 
 As fórmulas internas de `BLTcalc*`/`BLTgetDamageValue` estão no executável (código nativo), não nos scripts; para essas vale a medição comparativa.
+
+## Decisão (2026-10-25)
+
+O responsável escolheu executar os originais: ver `docs/adr/0002-executar-scripts-lua-originais.md` e `src/DW4.Script`.

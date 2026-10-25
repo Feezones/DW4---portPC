@@ -97,7 +97,7 @@ public static class IgbSequences
         return result;
     }
 
-    static List<object> Values(IgbObject o, bool le)
+    internal static List<object> Values(IgbObject o, bool le)
     {
         float F(byte[] b, int at) => le ? BinaryPrimitives.ReadSingleLittleEndian(b.AsSpan(at)) : BinaryPrimitives.ReadSingleBigEndian(b.AsSpan(at));
         var values = new List<object>();

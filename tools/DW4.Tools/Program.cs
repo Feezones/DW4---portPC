@@ -8,6 +8,7 @@ using DW4.Formats.Images;
 using DW4.Formats.Export;
 using System.Text.Json.Nodes;
 using DW4.Formats.Lua;
+using DW4.Script;
 using DW4.Formats.Sofdec;
 using System.Buffers.Binary;
 
@@ -48,9 +49,26 @@ try
         "dolphin-gdb-teste" when args.Length == 2 => DolphinGdbTeste(args[1]),
         "dolphin-gdb" when args.Length >= 4 => DolphinGdb(args[1], args[2], args[3..]),
         "igb-camera" when args.Length == 4 => IgbCamera(args[1], args[2], args[3]),
+        "igb-camera-demo" when args.Length == 4 => IgbCameraDemoCmd(args[1], args[2], args[3]),
+        "igb-textos" when args.Length == 4 => IgbTextos(args[1], args[2], args[3]),
+        "igb-entradas" when args.Length == 4 => IgbEntradas(args[1], args[2], args[3]),
+        "igb-db" when args.Length == 4 => IgbDb(args[1], args[2], args[3]),
+        "igb-drops" when args.Length == 4 => IgbDropsCmd(args[1], args[2], args[3]),
+        "igb-geradores" when args.Length == 4 => IgbGeradores(args[1], args[2], args[3]),
+        "igb-gatilhos" when args.Length == 4 => IgbGatilhos(args[1], args[2], args[3]),
+        "adx-wav" when args.Length >= 4 => AdxWav(args[1], args[2], args[3..]),
+        "igb-sons" when args.Length == 4 => IgbSons(args[1], args[2], args[3]),
+        "igb-hud" when args.Count(a => !a.StartsWith("--atores=", StringComparison.Ordinal)) is 4 or 6 => IgbHudCmd(args.Where(a => !a.StartsWith("--atores=", StringComparison.Ordinal)).ToArray(), args.FirstOrDefault(a => a.StartsWith("--atores=", StringComparison.Ordinal))?["--atores=".Length..].Split(',', StringSplitOptions.RemoveEmptyEntries)),
+        "igb-objetos" when args.Length >= 5 => IgbObjetos(args[1], args[2], args[3], args[4..]),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
+        "lua-extrair" when args.Length == 4 => LuaExtrair(args[1], int.Parse(args[2], CultureInfo.InvariantCulture), args[3]),
+        "lua-trace" when args.Length >= 3 => LuaTrace(args[1], int.Parse(args[2], CultureInfo.InvariantCulture), args[3..]),
+        "dol-info" when args.Length == 2 => DolInfo(args[1]),
+        "dol-desmontar" when args.Length == 4 => DolDesmontar(args[1], args[2], args[3]),
+        "dol-refs" when args.Length == 3 => DolRefs(args[1], args[2]),
+        "dol-skilltab" when args.Length == 3 => DolSkillTab(args[1], args[2]),
         _ => Usage(),
     };
 }
@@ -89,9 +107,27 @@ static int Usage()
           dw4 ram-busca    <a.bin> <b.bin> <quadros-entre-eles> [--y=40]   (contadores de quadro e posições candidatas)
           dw4 dolphin-gdb  <porta> <pasta> <quadro>... [--contador=0x814541D8] [--amostra=ENDERECO,TAM]   (MEM1 nos quadros pedidos, via servidor GDB do Dolphin)
           dw4 igb-camera   <arquivo.afs> <indice> <pasta-de-trabalho>   (volumes de câmera da fase em JSON, fora do repositório)
+          dw4 igb-camera-demo <arquivo.afs> <indice> <pasta-de-trabalho>   (câmeras de demo do acmr_pack, amostradas a 60 Hz, em JSON, fora do repositório)
+          dw4 igb-textos   <arquivo.afs> <indice> <pasta-de-trabalho>   (textos de um *_pack: índice na lista, chave e texto, em textos.json, fora do repositório)
+          dw4 igb-entradas <arquivo.afs> <indice> <pasta-de-trabalho>   (pontos de entrada do jogador, bePoint01Info, em pontos_entrada.json, fora do repositório)
+          dw4 igb-db       <arquivo.afs> <indice> <pasta-de-trabalho>   (as 12 tabelas beDataBase em CSV e JSON, fora do repositório)
+          dw4 igb-drops    <arquivo.afs> <indice> <pasta-de-trabalho>   (listas de drop dos geradores em JSON, fora do repositório)
+          dw4 igb-geradores <arquivo.afs> <indice> <pasta-de-trabalho>   (geradores de onda em geradores.json: posições absolutas por vaga, contagem por nº de jogadores)
+          dw4 igb-gatilhos <arquivo.afs> <indice> <pasta-de-trabalho>   (volumes de gatilho de área beMatCtrlData em gatilhos.json)
+          dw4 adx-wav      <arquivo.afs> <pasta-de-trabalho> <indice> [indice...]   (ADX → WAV com o loop num chunk smpl, fora do repositório)
+          dw4 igb-sons     <arquivo.afs> <indice> <pasta-de-trabalho>   (bancos .sfp do IGB → WAV por cue A9GG_CC, e tabela de sons em JSON)
+          dw4 igb-hud      <ndmw.afs> <indice-fase> [<area.afs> <indice-usa_pack>] <pasta-de-trabalho> [--atores=a,b,c]   (atores de interface i_* com nós, sequências, medidores e números em JSON + PNG)
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
+          dw4 igb-objetos  <ndmw.afs> <entrada> <pasta> <ator|ator=raiz>...   (objetos rígidos da fase para a fatia)
+          dw4 lua-extrair  <ndmw.afs> <entrada> <pasta-de-trabalho>   (scripts da fase para o cliente; fora do repositório)
+          dw4 lua-trace    <ndmw.afs> <entrada> [x.lua ...] [Metodo=valor ...]
+                           (executa os scripts da fase na VM própria, na ordem do motor, e mostra cada chamada be:*)
+          dw4 dol-info     <main.dol>   (seções, entrada e bases r13/r2; leitura estática, nada é executado)
+          dw4 dol-desmontar <main.dol> <endereco-hex> <instrucoes>   (PowerPC no console, com strings e floats anotados)
+          dw4 dol-refs     <main.dol> <endereco-hex | "texto">   (ponteiros em dados e código que montam o endereço)
+          dw4 dol-skilltab <main.dol> <pasta-de-trabalho>   (taxas do P2ESKILLUP em JSON, fora do repositório)
         """);
     return 1;
 }
@@ -1018,24 +1054,63 @@ int IgbColisao(string path, string which, string rootArg, string outDir)
     var scene = IgbScene.Read(IgbFile.Read(data), data);
     var parts = scene.Parts.Where(p => p.SceneRoot == rootIndex && p.Positions.Count > 0 && p.Triangles.Count > 0).ToList();
     if (parts.Count == 0) { Console.Error.WriteLine($"nenhuma geometria na raiz {rootIndex}; raízes: {string.Join(", ", scene.Parts.Select(p => p.SceneRoot).Distinct())}"); return 1; }
-    var pos = new List<float>();
-    var tris = new List<int>();
-    foreach (var part in parts)
+    // Partes com nome (FATO no #179): beHitLandModelInfo = [@8 igSwitch com as geometrias, @9 igNamedObjectList com os nomes,
+    // na mesma ordem] → doorwall01..03, que o "HITLANDMODEL doorwallNN OFFHIT" desliga. Cada uma vai num nó próprio.
+    var file = IgbFile.Read(data);
+    bool le = file.Header.LittleEndian;
+    IgbObject? Ref(IgbObject o, int slot) { var v = o.Fields.FirstOrDefault(x => x.Desc.Slot == slot && x.Desc.ShortName == "ObjectRef"); int i = v?.AsInt32(le) ?? -1; return i >= 0 && i < file.Slots.Count ? file.Slots[i] as IgbObject : null; }
+    var nameOfGeometry = new Dictionary<int, string>();
+    foreach (var hl in file.Slots.OfType<IgbObject>().Where(o => o.TypeName == "beHitLandModelInfo"))
     {
-        int b = pos.Count / 3;
-        foreach (var (x, y, z) in part.Positions) pos.AddRange([x, y, z]);
-        tris.AddRange(part.Triangles.Select(t => t + b));
+        if (Ref(hl, 8) is not { } sw || Ref(sw, 7) is not { } kids || Ref(hl, 9) is not { } names) continue;
+        var geoms = scene.ObjectList(kids);
+        var labels = scene.ObjectList(names).Select(n => n.Fields.FirstOrDefault(v => v.Desc.ShortName == "String")?.Text ?? "").ToList();
+        for (int k = 0; k < geoms.Count && k < labels.Count; k++)
+            foreach (var ga in scene.AttrList(geoms[k]).Where(a => file.Is(a, "igGeometryAttr"))) nameOfGeometry[ga.Index] = labels[k];
     }
+    // FATO no #179: os marcadores dos pontos de entrada (bePoint01Info @7 igSwitch → beGroupKeep → igTransform → igGeometry,
+    // pirâmides de y 40 a 50 em cada vaga) ficam sob a mesma raiz da colisão. Não são chão: o jogador nascia dentro deles e
+    // afundava. Ficam de fora.
+    var markers = new HashSet<int>();
+    void Collect(IgbObject n, int depth)
+    {
+        if (depth > 16) return;
+        if (file.Is(n, "igGeometry"))
+            foreach (var ga in scene.AttrList(n).Where(a => file.Is(a, "igGeometryAttr"))) markers.Add(ga.Index);
+        if (Ref(n, 7) is { } kids && file.Is(kids, "igNodeList"))
+            foreach (var c in scene.ObjectList(kids)) Collect(c, depth + 1);
+    }
+    foreach (var pi in file.Slots.OfType<IgbObject>().Where(o => o.TypeName == "bePoint01Info"))
+        if (Ref(pi, 7) is { } sw) Collect(sw, 0);
+    int before = parts.Count;
+    parts = parts.Where(p => !markers.Contains(p.GeometryIndex)).ToList();
+    if (parts.Count != before) Console.WriteLine($"{before - parts.Count} geometria(s) de marcador de entrada (bePoint01Info) fora da colisão");
     var dir = Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_colisao_{rootIndex}");
     Directory.CreateDirectory(dir);
     var g = new GltfBuilder();
-    var prim = new JsonObject { ["attributes"] = new JsonObject { ["POSITION"] = g.AddFloats(pos, 3, "VEC3", true, minMax: true) }, ["indices"] = g.AddIndices(tris), ["mode"] = 4 };
-    int mesh = g.AddMesh(new JsonObject { ["name"] = "colisao", ["primitives"] = new JsonArray(prim) });
-    g.AddRootNode(g.AddNode(new JsonObject { ["name"] = "colisao-colonly", ["mesh"] = mesh }));
+    var pos = new List<float>();
+    int tri = 0;
+    foreach (var grp in parts.GroupBy(pt => nameOfGeometry.GetValueOrDefault(pt.GeometryIndex, "colisao")).OrderBy(x => x.Key == "colisao" ? 0 : 1).ThenBy(x => x.Key, StringComparer.Ordinal))
+    {
+        var gp = new List<float>();
+        var gt = new List<int>();
+        foreach (var part in grp)
+        {
+            int b = gp.Count / 3;
+            foreach (var (x, y, z) in part.Positions) gp.AddRange([x, y, z]);
+            gt.AddRange(part.Triangles.Select(t => t + b));
+        }
+        pos.AddRange(gp);
+        tri += gt.Count / 3;
+        var prim = new JsonObject { ["attributes"] = new JsonObject { ["POSITION"] = g.AddFloats(gp, 3, "VEC3", true, minMax: true) }, ["indices"] = g.AddIndices(gt), ["mode"] = 4 };
+        int mesh = g.AddMesh(new JsonObject { ["name"] = grp.Key, ["primitives"] = new JsonArray(prim) });
+        g.AddRootNode(g.AddNode(new JsonObject { ["name"] = $"{grp.Key}-colonly", ["mesh"] = mesh }));
+        if (grp.Key != "colisao") Console.WriteLine($"parte {grp.Key}: {grp.Count()} geometria(s), {gt.Count / 3} triângulos");
+    }
     g.Save(dir, "colisao");
     float minY = float.MaxValue, maxY = float.MinValue;
     for (int i = 1; i < pos.Count; i += 3) { minY = Math.Min(minY, pos[i]); maxY = Math.Max(maxY, pos[i]); }
-    Console.WriteLine($"{parts.Count} geometrias, {pos.Count / 3} vértices, {tris.Count / 3} triângulos, y de {minY:0.##} a {maxY:0.##} -> {dir}");
+    Console.WriteLine($"{parts.Count} geometrias, {pos.Count / 3} vértices, {tri} triângulos, y de {minY:0.##} a {maxY:0.##} -> {dir}");
     return 0;
 }
 
@@ -1247,6 +1322,336 @@ int DtmEntradas(string path, string? csvPath)
 }
 
 // Extrai a MEM1 de um save state do Dolphin (para achar onde o jogo guarda posição, quadro etc.).
+// Tabelas de balanceamento (beDBManagerInfo → beDataBase): um CSV (separador ;) por tabela e um JSON com todas.
+int IgbDb(string path, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    var notes = new List<string>();
+    var tables = IgbDatabase.Read(IgbFile.Read(data), data, notes);
+    foreach (var n in notes) Console.WriteLine($"nota: {n}");
+    if (tables.Count == 0) { Console.Error.WriteLine("nenhuma tabela beDataBase"); return 1; }
+    Directory.CreateDirectory(full);
+    string Cell(object v) => v switch
+    {
+        float x => x.ToString("R", inv),
+        bool b => b ? "1" : "0",
+        string t => t.Replace("\r", "").Replace("\n", " / ").Replace(";", ","),
+        _ => Convert.ToString(v, inv) ?? "",
+    };
+    var root = new JsonObject();
+    foreach (var t in tables)
+    {
+        var lines = new List<string> { "linha;" + string.Join(";", t.Columns.Select(c => c.Name)) };
+        for (int r = 0; r < t.Rows; r++) lines.Add($"{r};" + string.Join(";", t.Columns.Select(c => Cell(c.Cells[r]))));
+        File.WriteAllLines(Path.Combine(full, $"db_{t.Name}.csv"), lines, new UTF8Encoding(true));
+        root[t.Name] = new JsonObject
+        {
+            ["rows"] = t.Rows,
+            ["columns"] = new JsonArray(t.Columns.Select(c => (JsonNode?)new JsonObject
+            {
+                ["name"] = c.Name,
+                ["kind"] = c.Kind,
+                ["cells"] = new JsonArray(c.Cells.Select(v => v switch
+                {
+                    sbyte x => (JsonNode?)JsonValue.Create((int)x),
+                    short x => JsonValue.Create((int)x),
+                    int x => JsonValue.Create(x),
+                    float x => JsonValue.Create(x),
+                    bool x => JsonValue.Create(x),
+                    string x => JsonValue.Create(x),
+                    _ => null,
+                }).ToArray()),
+            }).ToArray()),
+        };
+        Console.WriteLine($"{t.Name,-10} #{t.InfoIndex} → beDataBase #{t.DataIndex}: {t.Rows} linhas, {t.Columns.Count} colunas");
+    }
+    File.WriteAllText(Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_db.json"),
+        root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = false, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
+    return 0;
+}
+
+int IgbDropsCmd(string path, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    var notes = new List<string>();
+    var lists = IgbDrops.Read(IgbFile.Read(data), data, notes);
+    foreach (var n in notes) Console.WriteLine($"nota: {n}");
+    if (lists.Count == 0) { Console.Error.WriteLine("nenhuma lista de beGeneraterItemDataOne"); return 1; }
+    Directory.CreateDirectory(full);
+    var root = new JsonObject();
+    foreach (var (name, entries) in lists)
+    {
+        root[name] = new JsonArray(entries.Select(e => (JsonNode?)new JsonObject { ["table"] = e.Table, ["row"] = e.Row, ["rank"] = e.Rank, ["rate"] = e.Rate }).ToArray());
+        Console.WriteLine($"{name,-12} {entries.Count} itens, soma {entries.Sum(e => e.Rate)}/10000: {string.Join(" ", entries.Select(e => $"{e.Table}:{e.Row}({e.Rank},{e.Rate})"))}");
+    }
+    File.WriteAllText(Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_drops.json"),
+        new JsonObject { ["lists"] = root }.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    return 0;
+}
+
+int AdxWav(string path, string outDir, string[] which)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    Directory.CreateDirectory(full);
+    foreach (var w in which)
+    {
+        if (!int.TryParse(w, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine($"índice inválido: {w}"); return 1; }
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[idx], ms);
+        var pcm = DW4.Formats.Audio.Adx.Decode(ms.ToArray(), out var h);
+        var file = Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}.wav");
+        File.WriteAllBytes(file, DW4.Formats.Audio.Adx.ToWav(pcm, h));
+        Console.WriteLine($"#{idx}: {h.Channels} canais, {h.SampleRate} Hz, {h.Samples} amostras ({h.Samples / (double)h.SampleRate:0.0} s)" +
+            (h.Loop ? $", loop {h.LoopStart}..{h.LoopEnd}" : ", sem loop") + $" -> {file}");
+    }
+    return 0;
+}
+
+int IgbSons(string path, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    Directory.CreateDirectory(full);
+    var bankList = new JsonArray();
+    foreach (var (at, size) in DW4.Formats.Audio.Sfp.Find(data))
+    {
+        var bytes = data.AsSpan(at, size).ToArray();
+        var sfp = DW4.Formats.Audio.Sfp.Read(bytes);
+        var cues = new JsonArray();
+        foreach (var c in sfp.Cues)
+        {
+            var file = $"A9{c.Group:X2}_{c.Cue:X2}.wav";
+            if (c.Sample >= 0 && c.Sample < sfp.Samples.Count)
+            {
+                var smp = sfp.Samples[c.Sample];
+                var pcm = sfp.Decode(smp, out var ls, out var le);
+                File.WriteAllBytes(Path.Combine(full, file), DW4.Formats.Audio.Wav.Write(pcm, 1, smp.Rate, ls, le));
+            }
+            cues.Add(new JsonObject { ["id"] = $"0xA9{c.Group:X2}{c.Cue:X2}00", ["voice"] = c.Voice, ["sample"] = c.Sample, ["volume"] = c.Volume, ["pan"] = c.Pan, ["file"] = file });
+        }
+        bankList.Add(new JsonObject { ["offset"] = at, ["size"] = size, ["samples"] = sfp.Samples.Count, ["cues"] = cues });
+        Console.WriteLine($"banco em 0x{at:X}: {sfp.Samples.Count} amostras, {sfp.Cues.Count} cues (grupos {string.Join(",", sfp.Cues.Select(c => c.Group.ToString("X2")).Distinct())})");
+    }
+    var file2 = IgbFile.Read(data);
+    var (sounds, banks, se, soundInfo) = IgbSounds.Read(file2, data);
+    JsonNode? V(object v) => v switch { string t => JsonValue.Create(t), float x => JsonValue.Create(x), int x => JsonValue.Create(x), bool x => JsonValue.Create(x), float[] a => new JsonArray(a.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray()), _ => null };
+    JsonObject O(IgbSoundObject o) => new() { ["index"] = o.Index, ["values"] = new JsonArray(o.Values.Select(V).ToArray()) };
+    var root = new JsonObject
+    {
+        ["sounds"] = new JsonArray(sounds.Select(o => (JsonNode?)O(o)).ToArray()),
+        ["sfpData"] = new JsonArray(banks.Select(o => (JsonNode?)O(o)).ToArray()),
+        ["se"] = new JsonArray(se.Select(s => (JsonNode?)new JsonObject { ["name"] = s.Name, ["entries"] = new JsonArray(s.Entries.Select(e => (JsonNode?)O(e)).ToArray()) }).ToArray()),
+        ["banks"] = bankList,
+        ["soundInfo"] = new JsonArray(soundInfo.Select(i => (JsonNode?)new JsonObject { ["index"] = i.Index, ["strings"] = new JsonArray(i.Strings.Select(t => (JsonNode?)JsonValue.Create(t)).ToArray()) }).ToArray()),
+    };
+    File.WriteAllText(Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_sons.json"),
+        root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
+    Console.WriteLine($"{sounds.Count} beSoundData, {banks.Count} beCriSfpData, {se.Count} beSeInfoData");
+    return 0;
+}
+
+// Atores de interface da fase (i_dmgnum, i_pcdmgnum, i_stpnl03, i_stbase) com o grafo de nós, as sequências, os medidores
+// e os números, em JSON, e as texturas em PNG; as texturas por nome vêm do pacote de idioma da fase (usa_pack).
+int IgbHudCmd(string[] a, string[]? only)
+{
+    string path = a[1], which = a[2], outDir = a[^1];
+    string? packPath = a.Length == 6 ? a[3] : null, packWhich = a.Length == 6 ? a[4] : null;
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    byte[] Entry(string afsPath, string w)
+    {
+        using var afs = AfsArchive.Open(afsPath);
+        if (!int.TryParse(w, NumberStyles.None, inv, out int i) || i >= afs.Entries.Count) throw new InvalidDataException($"índice inválido: {w}");
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[i], ms);
+        return ms.ToArray();
+    }
+    var data = Entry(path, which);
+    byte[]? packData = packPath != null && packWhich != null ? Entry(packPath, packWhich) : null;
+    // Painéis de status: i_stpnl01..05 gerados juntos em V<x,-160,0> pelos Lua (ded_g_tcounter00 e outros); i_stbase = menu de status.
+    string[] actors = only ?? ["i_dmgnum", "i_pcdmgnum", "i_stpnl01", "i_stpnl02", "i_stpnl03", "i_stpnl04", "i_stpnl05", "i_stbase"];
+    var (json, hud) = IgbHud.Export(IgbFile.Read(data), data, packData != null ? IgbFile.Read(packData) : null, packData, actors);
+    Directory.CreateDirectory(full);
+    foreach (var img in hud.Images)
+    {
+        using var fs = File.Create(Path.Combine(full, img.File));
+        Png.WriteRgba(fs, img.Width, img.Height, img.Rgba);
+    }
+    json["source"] = $"{Path.GetFileName(path)} #{which}" + (packPath != null ? $" + {Path.GetFileName(packPath)} #{packWhich}" : "");
+    var file = Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{int.Parse(which, inv):D4}_hud.json");
+    File.WriteAllText(file, json.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = false }));
+    Console.WriteLine($"{json["actors"]!.AsArray().Count} atores, {json["nodes"]!.AsObject().Count} nós, {json["meters"]!.AsArray().Count} medidores, {json["numbers"]!.AsArray().Count} números, {hud.Images.Count} imagens -> {file}");
+    foreach (var n in hud.Notes) Console.WriteLine($"nota: {n}");
+    return 0;
+}
+
+// Objetos de cenário rígidos (portas, pisos, caixas…: KIND_OBJECT sem esqueleto, animados por igTransformSequence) no
+// mesmo formato do igb-hud, para a fatia gerar pelos GENERATE dos scripts. Ator "nome" (raiz = igAttrSet com o nome) ou
+// "nome=índice" (raiz explícita).
+int IgbObjetos(string path, string which, string outDir, string[] actors)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int i) || i >= afs.Entries.Count) throw new InvalidDataException($"índice inválido: {which}");
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[i], ms);
+    var data = ms.ToArray();
+    var (json, hud) = IgbHud.Export(IgbFile.Read(data), data, null, null, actors);
+    Directory.CreateDirectory(full);
+    foreach (var img in hud.Images)
+    {
+        using var fs = File.Create(Path.Combine(full, img.File));
+        Png.WriteRgba(fs, img.Width, img.Height, img.Rgba);
+    }
+    json["source"] = $"{Path.GetFileName(path)} #{which}";
+    var file = Path.Combine(full, "objetos.json");
+    File.WriteAllText(file, json.ToJsonString());
+    Console.WriteLine($"{json["actors"]!.AsArray().Count} atores, {json["nodes"]!.AsObject().Count} nós, {hud.Images.Count} imagens -> {file}");
+    foreach (var n in hud.Notes) Console.WriteLine($"nota: {n}");
+    return 0;
+}
+
+// Geradores de onda de um generatorN/H/V em geradores.json, no formato que a fatia lê (Fatia.Enemies.cs).
+int IgbGeradores(string path, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    var data = AfsEntryBytes(path, which);
+    var gens = IgbGenerators.ReadGenerators(IgbFile.Read(data), data);
+    JsonArray V(IEnumerable<float> v) => new(v.Select(x => (JsonNode?)Math.Round((double)x, 4)).ToArray());
+    var arr = new JsonArray(gens.Select(g => (JsonNode?)new JsonObject
+    {
+        ["name"] = g.Name,
+        ["positions"] = new JsonArray(g.Positions.Select(p => (JsonNode?)V([p.X, p.Y, p.Z])).ToArray()),
+        ["rotYDeg"] = V(g.RotYDeg),
+        ["count"] = new JsonArray(g.Count.Select(c => (JsonNode?)c).ToArray()),
+        ["maxCount"] = new JsonArray(g.MaxCount.Select(c => (JsonNode?)c).ToArray()),
+        ["enemyRow"] = g.EnemyRow,
+        ["callLua"] = g.CallLua,
+        ["global"] = g.Global,
+        ["startMode"] = g.StartMode, ["startData"] = g.StartData, ["fillMode"] = g.FillMode, ["fillData"] = g.FillData,
+    }).ToArray());
+    Directory.CreateDirectory(full);
+    var file = Path.Combine(full, "geradores.json");
+    File.WriteAllText(file, new JsonObject { ["source"] = $"{Path.GetFileName(path)} #{which}", ["generators"] = arr }.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    foreach (var g in gens) Console.WriteLine($"{g.Name}: {g.Positions.Count} vagas, inimigo {g.EnemyRow}, {string.Join("/", g.Count)} no total, {string.Join("/", g.MaxCount)} ao mesmo tempo, {g.CallLua}");
+    Console.WriteLine($"{gens.Count} geradores -> {file}");
+    return 0;
+}
+
+// Volumes de gatilho de área (beMatCtrlData) do IGB principal da fase em gatilhos.json.
+int IgbGatilhos(string path, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    var data = AfsEntryBytes(path, which);
+    var vols = IgbGenerators.ReadTriggers(IgbFile.Read(data), data);
+    JsonArray V((float X, float Y, float Z) p) => new((JsonNode?)Math.Round((double)p.X, 4), Math.Round((double)p.Y, 4), Math.Round((double)p.Z, 4));
+    Directory.CreateDirectory(full);
+    var file = Path.Combine(full, "gatilhos.json");
+    File.WriteAllText(file, new JsonObject { ["source"] = $"{Path.GetFileName(path)} #{which}", ["volumes"] = new JsonArray(vols.Select(v => (JsonNode?)new JsonObject { ["name"] = v.Name, ["min"] = V(v.Min), ["max"] = V(v.Max) }).ToArray()) }
+        .ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    Console.WriteLine($"{vols.Count} volumes ({string.Join(", ", vols.Select(v => v.Name))}) -> {file}");
+    return 0;
+}
+
+byte[] AfsEntryBytes(string path, string which)
+{
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) throw new InvalidDataException($"índice inválido: {which}");
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    return ms.ToArray();
+}
+
+// main.dol só como dados: desmontagem estática para achar as fórmulas (FightCom/BLT*), sem executar nada.
+int DolInfo(string path)
+{
+    var dol = DW4.Formats.Ppc.DolFile.Read(File.ReadAllBytes(path));
+    foreach (var s in dol.Sections) Console.WriteLine($"{s.Name,-6} arquivo 0x{s.Offset:X6} -> 0x{s.Address:X8}, 0x{s.Size:X} bytes");
+    Console.WriteLine($"bss 0x{dol.BssAddress:X8}, 0x{dol.BssSize:X}; entrada 0x{dol.Entry:X8}");
+    var (r13, r2) = dol.SmallDataBases();
+    Console.WriteLine($"r13 = {(r13 is { } a ? $"0x{a:X8}" : "?")}, r2 = {(r2 is { } b ? $"0x{b:X8}" : "?")}");
+    return 0;
+}
+
+static bool TryHex(string text, out uint value) =>
+    uint.TryParse(text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
+
+int DolDesmontar(string path, string addr, string count)
+{
+    if (!TryHex(addr, out uint a) || !int.TryParse(count, out int n) || n <= 0) { Console.Error.WriteLine("endereço ou contagem inválidos"); return 1; }
+    var dol = DW4.Formats.Ppc.DolFile.Read(File.ReadAllBytes(path));
+    foreach (var line in DW4.Formats.Ppc.PpcDisassembler.Listing(dol, a & ~3u, Math.Min(n, 20000))) Console.WriteLine(line);
+    return 0;
+}
+
+int DolRefs(string path, string what)
+{
+    var dol = DW4.Formats.Ppc.DolFile.Read(File.ReadAllBytes(path));
+    var (r13, r2) = dol.SmallDataBases();
+    // Endereço: "0x8045…" ou 8 dígitos hexadecimais que caem numa seção; o resto é texto.
+    bool isAddress = TryHex(what, out uint a) && (what.StartsWith("0x", StringComparison.OrdinalIgnoreCase) || (what.Length == 8 && dol.SectionAt(a) != null));
+    var targets = isAddress ? new List<uint> { a } : dol.FindString(what).ToList();
+    if (targets.Count == 0) { Console.Error.WriteLine("não encontrado"); return 1; }
+    foreach (var t in targets)
+    {
+        Console.WriteLine($"0x{t:X8}{(dol.CString(t, 64) is { Length: > 0 } s ? $" \"{s}\"" : "")}");
+        foreach (var p in dol.FindPointers(t)) Console.WriteLine($"  ponteiro em 0x{p:X8} (vizinhos: {string.Join(" ", Enumerable.Range(-2, 5).Select(k => dol.TryWord((uint)(p + k * 4), out uint w) ? $"{w:X8}" : "--------"))})");
+        foreach (var c in dol.FindCodeRefs(t, r13, r2)) Console.WriteLine($"  código em 0x{c:X8}");
+    }
+    return 0;
+}
+
+// Taxas de crescimento de skill do P2ESKILLUP: int16 big-endian, 4 × 21 × 3, em 0x804EAF18 (lido em 2026-10-24).
+int DolSkillTab(string path, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    var dol = DW4.Formats.Ppc.DolFile.Read(File.ReadAllBytes(path));
+    const uint At = 0x804EAF18;
+    long off = dol.OffsetOf(At);
+    if (off < 0 || off + 4 * 21 * 3 * 2 > dol.Data.Length) { Console.Error.WriteLine("tabela fora das seções"); return 1; }
+    var levels = new JsonArray();
+    for (int i = 0; i < 4; i++)
+    {
+        var bands = new JsonArray();
+        for (int j = 0; j < 21; j++)
+        {
+            var cols = new JsonArray();
+            for (int k = 0; k < 3; k++)
+                cols.Add((JsonNode?)JsonValue.Create((int)System.Buffers.Binary.BinaryPrimitives.ReadInt16BigEndian(dol.Data.AsSpan((int)off + 2 * ((i * 21 + j) * 3 + k)))));
+            bands.Add(cols);
+        }
+        levels.Add(bands);
+    }
+    Directory.CreateDirectory(full);
+    var file = Path.Combine(full, "skillup.json");
+    File.WriteAllText(file, new JsonObject { ["source"] = $"main.dol 0x{At:X8}", ["rates"] = levels }.ToJsonString());
+    Console.WriteLine($"4 × 21 × 3 taxas -> {file}; primeira faixa: {levels[0]![0]!.ToJsonString()}, última: {levels[3]![20]!.ToJsonString()}");
+    return 0;
+}
+
 int DolphinRam(string savPath, string outPath)
 {
     var full = Path.GetFullPath(outPath);
@@ -1412,6 +1817,123 @@ int IgbCamera(string path, string which, string outDir)
     return 0;
 }
 
+// Pontos de entrada do jogador (bePoint01Info → beGroupKeep → igTransform): pontos_entrada.json, uma vaga por jogador.
+int IgbEntradas(string path, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    var points = IgbEntryPoints.Read(IgbFile.Read(data), data);
+    if (points.Count == 0) { Console.Error.WriteLine("nenhum bePoint01Info"); return 1; }
+    JsonArray V((float X, float Y, float Z) v) => [v.X, v.Y, v.Z];
+    var root = new JsonObject
+    {
+        ["source"] = $"{Path.GetFileName(path)} #{idx}",
+        ["points"] = new JsonArray(points.Select(p => (JsonNode?)new JsonObject
+        {
+            ["index"] = p.Index, ["min"] = V(p.Min), ["max"] = V(p.Max),
+            ["slots"] = new JsonArray(p.Slots.Select(s => (JsonNode?)new JsonObject
+            {
+                ["player"] = s.Player, ["position"] = V(s.Position), ["rotYDeg"] = s.RotYDeg,
+                ["matrix"] = new JsonArray(s.Matrix.Select(x => (JsonNode?)x).ToArray()),
+            }).ToArray()),
+        }).ToArray()),
+    };
+    Directory.CreateDirectory(full);
+    var file = Path.Combine(full, "pontos_entrada.json");
+    File.WriteAllText(file, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    foreach (var p in points)
+        Console.WriteLine(string.Create(inv, $"{p.Index}: {string.Join("  ", p.Slots.Select(s => $"({s.Position.X}, {s.Position.Y}, {s.Position.Z}) {s.RotYDeg}°"))}"));
+    Console.WriteLine($"{points.Count} pontos -> {file}");
+    return 0;
+}
+
+// Textos de um *_pack (beFontInfo → beUnicodeObjList): textos.json com índice (o k de "I<k>" nos scripts), chave e texto.
+int IgbTextos(string path, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    var texts = IgbTexts.Read(IgbFile.Read(data), data);
+    if (texts.Count == 0) { Console.Error.WriteLine("nenhum beUnicodeObj"); return 1; }
+    Directory.CreateDirectory(full);
+    var root = new JsonObject
+    {
+        ["source"] = $"{Path.GetFileName(path)} #{idx}",
+        ["texts"] = new JsonArray(texts.Select(t => (JsonNode?)new JsonObject { ["index"] = t.Index, ["key"] = t.Key, ["text"] = t.Text }).ToArray()),
+    };
+    var file = Path.Combine(full, "textos.json");
+    File.WriteAllText(file, root.ToJsonString(new System.Text.Json.JsonSerializerOptions
+    {
+        WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    }));
+    Console.WriteLine($"{texts.Count} textos -> {file}");
+    return 0;
+}
+
+// Câmeras de demo (beCameraCtrlInfo → beCameraDemoData) de um acmr_pack: um JSON por câmera com o caminho cru (matrizes e
+// canais das sequências) e os quadros amostrados a 60 Hz (posição, frente, cima e matriz do mundo, em linhas).
+int IgbCameraDemoCmd(string path, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    var demos = IgbCameraDemo.Read(IgbFile.Read(data), data);
+    if (demos.Count == 0) { Console.Error.WriteLine("nenhuma câmera de demo"); return 1; }
+    JsonArray Arr(IEnumerable<float> v) => new(v.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray());
+    JsonArray Times(IEnumerable<double> v) => new(v.Select(x => (JsonNode?)JsonValue.Create(Math.Round(x, 6))).ToArray());
+    Directory.CreateDirectory(full);
+    foreach (var d in demos)
+    {
+        foreach (var n in d.Notes) Console.WriteLine($"nota ({d.Name}): {n}");
+        var nodes = new JsonArray();
+        foreach (var n in d.Path)
+        {
+            var j = new JsonObject { ["index"] = n.Index, ["name"] = n.Name, ["matrix"] = Arr(n.Matrix) };
+            if (n.Sequence is { } s)
+                j["sequence"] = new JsonObject
+                {
+                    ["mask"] = s.Mask, ["interpolation"] = new JsonArray(s.Interpolation.Select(b => (JsonNode?)(int)b).ToArray()),
+                    ["duration"] = s.Duration, ["times"] = Times(s.Times), ["translation"] = Arr(s.Translation),
+                    ["rotation"] = Arr(s.Rotation), ["scale"] = Arr(s.Scale), ["raw12"] = Arr(s.Raw12), ["raw13"] = Arr(s.Raw13),
+                };
+            nodes.Add(j);
+        }
+        var frames = d.Sample();
+        var root = new JsonObject
+        {
+            ["source"] = $"{Path.GetFileName(path)} #{idx}", ["name"] = d.Name, ["duration"] = d.Duration, ["rate"] = 60,
+            ["fovHorizontalDeg"] = d.Fov, ["near"] = d.Near, ["far"] = d.Far,
+            ["frames"] = new JsonArray(frames.Select(fr => (JsonNode?)new JsonObject
+            {
+                ["t"] = Math.Round(fr.Time, 6), ["position"] = Arr(fr.Position), ["forward"] = Arr(fr.Forward), ["up"] = Arr(fr.Up),
+                ["world"] = Arr(fr.World),
+            }).ToArray()),
+            ["path"] = nodes,
+        };
+        var file = Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_{d.Name}.json");
+        File.WriteAllText(file, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        IgbDemoFrame a = frames[0], b = frames[^1];
+        Console.WriteLine(string.Create(inv, $"{d.Name}: {d.Duration:0.###} s, {frames.Count} quadros, fov {d.Fov:0.##}° (horizontal), {d.Path.Count} nós"));
+        Console.WriteLine(string.Create(inv, $"  início ({a.Position[0]:0.#}, {a.Position[1]:0.#}, {a.Position[2]:0.#}) frente ({a.Forward[0]:0.##}, {a.Forward[1]:0.##}, {a.Forward[2]:0.##})"));
+        Console.WriteLine(string.Create(inv, $"  fim    ({b.Position[0]:0.#}, {b.Position[1]:0.#}, {b.Position[2]:0.#}) frente ({b.Forward[0]:0.##}, {b.Forward[1]:0.##}, {b.Forward[2]:0.##})"));
+        Console.WriteLine($"  -> {file}");
+    }
+    return 0;
+}
+
 // Levantamento por IGB: quantos objetos de classes-chave (geometria, imagem, esqueleto, animação, colisão) e nomes de
 // exemplo, para escolher amostras da Fase 2. Grava CSV fora do repositório (contém nomes do jogo).
 int IgbSurvey(string path, string csvPath)
@@ -1536,6 +2058,88 @@ int IgbLua(string path)
     Console.WriteLine($"strings em objetos beLua* ({names.Count}, até 60):");
     foreach (var n in names.Take(60)) Console.WriteLine($"  {n}");
     return 0;
+}
+
+// Grava os chunks Lua de uma fase (um arquivo por nome de beLuaData) para o cliente executar; nunca dentro de um repositório.
+int LuaExtrair(string afsPath, int entry, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    Directory.CreateDirectory(full);
+    using var afs = AfsArchive.Open(afsPath);
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[entry], ms);
+    var data = ms.ToArray();
+    var chunks = DW4.Formats.Igb.IgbLua.Chunks(IgbFile.Read(data), data);
+    foreach (var (name, chunk) in chunks)
+        File.WriteAllBytes(Path.Combine(full, string.Concat(name.Select(c => char.IsLetterOrDigit(c) || c is '_' or '.' ? c : '_'))), chunk);
+    Console.WriteLine($"{chunks.Count} scripts gravados em {full}");
+    return 0;
+}
+
+// Executa os scripts de uma fase na VM Lua própria (ADR 0002), na ordem fixa do motor (func.lua, boot.lua, start.lua,
+// first.lua; máquina de estados em 0x802F8A64) ou nos nomes passados, e imprime cada chamada be:* com os argumentos.
+// A API ainda é simulada: cada método devolve nil, salvo os valores passados como Metodo=valor (número, texto ou nil)
+// e SYSisJoinPlayer, que só confirma o jogador 0. Só imprime; não grava nada.
+int LuaTrace(string afsPath, int entry, string[] rest)
+{
+    var scripts = rest.Where(a => a.EndsWith(".lua", StringComparison.Ordinal)).ToList();
+    if (scripts.Count == 0) scripts = ["func.lua", "boot.lua", "start.lua", "first.lua"];
+    var returns = new Dictionary<string, object?>(StringComparer.Ordinal);
+    foreach (var a in rest.Where(a => a.Contains('=')))
+    {
+        var (k, v) = (a[..a.IndexOf('=')], a[(a.IndexOf('=') + 1)..]);
+        returns[k] = v == "nil" ? null : double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : v;
+    }
+
+    byte[] data;
+    using (var afs = AfsArchive.Open(afsPath))
+    using (var ms = new MemoryStream())
+    {
+        afs.CopyEntry(afs.Entries[entry], ms);
+        data = ms.ToArray();
+    }
+    var chunks = DW4.Formats.Igb.IgbLua.Chunks(IgbFile.Read(data), data);
+    Console.WriteLine($"-- entrada #{entry}: {chunks.Count} scripts ({string.Join(", ", chunks.Keys.Order(StringComparer.Ordinal))})");
+
+    var vm = new LuaVM { InstructionLimit = 5_000_000, Print = s => Console.WriteLine($"   print: {s}") };
+    string Show(object? v) => v switch
+    {
+        null => "nil",
+        string str => $"\"{str}\"",
+        double d => DW4.Script.Lua.NumberToString(d),
+        LuaTable => "{tabela}",
+        LuaFunction fn => $"<função {fn.Name}>",
+        _ => v.ToString() ?? "?",
+    };
+    var be = new LuaTable();
+    var dmQueue = new List<string>();
+    be.Missing = (_, key) => key is not string name ? null : new LuaHostFunction(name, a =>
+    {
+        var shown = string.Join(", ", a.Skip(1).Select(Show));
+        object? ret = returns.TryGetValue(name, out var rv) ? rv
+            : name == "SYSisJoinPlayer" ? (a.Length > 1 && a[1] is double p && p == 0 ? DW4.Script.Lua.True : null)
+            : null;
+        Console.WriteLine($"   be:{name}({shown}){(ret != null ? $" -> {Show(ret)}" : "")}");
+        if (name == "DMsetLua" && a.Length > 1 && a[1] is string next) dmQueue.Add(next);
+        return [ret];
+    });
+    vm.Globals["be"] = be;
+    var undefined = new SortedSet<string>(StringComparer.Ordinal);
+    vm.Globals.Missing = (_, key) => { if (key is string g) undefined.Add(g); return null; };
+
+    int failures = 0;
+    foreach (var name in scripts)
+    {
+        if (!chunks.TryGetValue(name, out var chunk)) { Console.WriteLine($"-- {name}: não existe nesta entrada"); continue; }
+        Console.WriteLine($"-- {name}");
+        try { vm.DoChunk(chunk); }
+        catch (LuaException ex) { failures++; Console.WriteLine($"   ERRO: {ex.Message}"); }
+    }
+    if (dmQueue.Count > 0) Console.WriteLine($"-- be:DMsetLua agendou: {string.Join(", ", dmQueue)}");
+    Console.WriteLine($"-- globais lidas sem definição: {string.Join(", ", undefined)}");
+    Console.WriteLine($"-- {vm.Executed} instruções executadas, {failures} scripts com erro");
+    return failures == 0 ? 0 : 3;
 }
 
 // Lê todos os chunks Lua 4.0 referenciados por beLuaDataObject, valida a estrutura e resume o uso de nomes globais.

@@ -142,10 +142,23 @@ public sealed class SequenceRunner
     public string? Next { get; private set; }
     /// <summary>Contador de ações iniciadas (muda quando é preciso tocar uma nova animação).</summary>
     public int ActionSerial { get; private set; }
+    /// <summary>A sonda de conversa (60000) da última ACTION pulada, até quem confere conversa consumi-la (TakeTalkProbe).</summary>
+    public HitBox? TalkProbeBox { get; private set; }
+    public HitBox? TakeTalkProbe() { var h = TalkProbeBox; TalkProbeBox = null; return h; }
     public List<string> Skipped { get; } = [];
     /// <summary>MUTEKI "ON" na sequência em andamento (HIPÓTESE: invencível até ela acabar; "N" N com tempo ainda não tratado).</summary>
     public bool Invincible => Running && _muteki;
     bool _muteki;
+
+    /// <summary>Interrompe a sequência (MODELCTRL &lt;jogador&gt; SQ_WAIT dos scripts de conversa).</summary>
+    public void Stop()
+    {
+        Running = false;
+        Action = null;
+        ActionHitBoxes = [];
+        _pending.Clear();
+        Next = null;
+    }
 
     /// <summary>Inicia a sequência no bloco do estilo; false se a sequência ou o estilo não existem.</summary>
     public bool Start(string sequence, string? style)
@@ -203,6 +216,7 @@ public sealed class SequenceRunner
                     else _pending.Add(new HitBox(c.I(1), c.F(2), c.F(3), c.V(4), c.V(5)));
                     break;
                 case "ACTION" when _pending.Any(h => h.Type == TalkProbe):
+                    TalkProbeBox = _pending.First(h => h.Type == TalkProbe);
                     _pending.RemoveAll(h => h.Type == TalkProbe);
                     _skipWait = true;
                     break;
