@@ -144,6 +144,9 @@ public sealed class BeHost
             case "DMcase":
                 Demo.Add(new DemoManager.Entry(DemoManager.Kind.Case, null, 0, I(a, 1)));
                 return Nothing;
+            case "DMswtEnd":
+                Demo.Add(new DemoManager.Entry(DemoManager.Kind.SwitchEnd, null, 0));
+                return Nothing;
             case "DMrun":
                 Demo.Run();
                 return Nothing;
@@ -170,6 +173,9 @@ public sealed class BeHost
             case "SYSgetPlayerName": return [Player(I(a, 1))?.Model];
             case "SYSgetWeaponName":
                 return [Player(I(a, 1)) is { } p && I(a, 2) is var w && w >= 0 && w < p.Weapons.Length ? p.Weapons[w] : null];
+            // SYSctlPlayer(tipo, comando, jogador, valor), ex.: ("HP", "GETHP", p, 0): pergunta ao motor (classe SYSCTL).
+            case "SYSctlPlayer":
+                return N(_engine.Query(new BeMessage("SYSCTL", S(a, 1), I(a, 3), S(a, 2) ?? "", [], null)) ?? 0);
             case "SYSgetDifficulty": return N(Ram.Difficulty);
             case "SYSgetCountry": return N(Sys.Country);
             case "SYSgetCameraMode": return N(Ram.CameraMode);

@@ -10,14 +10,14 @@ namespace DW4.Script.Be;
 /// </summary>
 public sealed class DemoManager(BeMessenger messenger, Func<BeMessage, double?> query)
 {
-    public enum Kind { Set = 0, CheckNonZero = 2, CheckZero = 3, Switch = 4, Case = 5 }
+    public enum Kind { Set = 0, CheckNonZero = 2, CheckZero = 3, Switch = 4, Case = 5, SwitchEnd = 6 }
 
     public sealed record Entry(Kind Kind, BeMessage? Message, long Delay, int CaseValue = 0);
 
     readonly List<Entry> _building = [];
     readonly Queue<Entry> _running = new();
     double _switch;
-    bool _skipping;
+    bool _skipping, _matched;
 
     /// <summary>Chamado quando uma condição não pôde ser avaliada (consulta sem resposta) e foi considerada satisfeita.</summary>
     public Action<BeMessage>? Unanswered { get; set; }
@@ -41,9 +41,17 @@ public sealed class DemoManager(BeMessenger messenger, Func<BeMessage, double?> 
         while (_running.Count > 0)
         {
             var e = _running.Peek();
+            // HIPÓTESE: DMcase(−1) é o padrão (vale se nenhum caso anterior valeu); DMswtEnd fecha o bloco.
             if (e.Kind == Kind.Case)
             {
-                _skipping = e.CaseValue != (int)_switch;
+                _skipping = e.CaseValue == -1 ? _matched : e.CaseValue != (int)_switch;
+                _matched |= !_skipping;
+                _running.Dequeue();
+                continue;
+            }
+            if (e.Kind == Kind.SwitchEnd)
+            {
+                _skipping = _matched = false;
                 _running.Dequeue();
                 continue;
             }
@@ -55,6 +63,7 @@ public sealed class DemoManager(BeMessenger messenger, Func<BeMessage, double?> 
                     break;
                 case Kind.Switch:
                     _switch = query(e.Message!) ?? 0;
+                    _matched = false;
                     break;
                 case Kind.CheckNonZero or Kind.CheckZero:
                     var v = query(e.Message!);
@@ -64,6 +73,6 @@ public sealed class DemoManager(BeMessenger messenger, Func<BeMessage, double?> 
             }
             _running.Dequeue();
         }
-        _skipping = false;
+        _skipping = _matched = false;
     }
 }

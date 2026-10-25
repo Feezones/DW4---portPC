@@ -17,6 +17,7 @@ namespace DW4.Client;
 public partial class Fatia : IBeEngine
 {
     StageScripts? _stage;
+    static GameRam? s_ram;
     bool _padEnabled = true;
     readonly List<string> _scriptLog = [];
     readonly Dictionary<string, AudioStreamPlayer> _music = [];
@@ -35,7 +36,8 @@ public partial class Fatia : IBeEngine
         // HIPÓTESE: nome da pasta da dng1; o boot.lua só o usa para montar a lista de arquivos, que a fatia não usa.
         var sys = new BeSystem { FolderName = "dng101b1" };
         sys.Players[0] = ("p_girumon", new[] { "w_sword01", "w_sword01", "w_sword01" });
-        var host = new BeHost(this, new GameRam(), sys) { Unimplemented = (n, _) => ScriptLog($"be:{n} ainda não implementado") };
+        // A GAMERAM sobrevive à troca de fase (recarga da cena): flags e contadores são do jogo, não da cena.
+        var host = new BeHost(this, s_ram ??= new GameRam(), sys) { Unimplemented = (n, _) => ScriptLog($"be:{n} ainda não implementado") };
         _stage = new StageScripts(chunks, host) { Error = (n, m) => ScriptLog($"ERRO {n}: {m}") };
         _stage.Boot();
         _stage.Start();
@@ -52,7 +54,7 @@ public partial class Fatia : IBeEngine
     public void Deliver(BeMessage m)
     {
         ScriptLog(m.ToString());
-        if (DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToObjects(m)) return;
+        if (DeliverToStageChange(m) || DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToObjects(m)) return;
         switch (m.Class, m.Command)
         {
             // FATO: "HITLANDMODEL doorwallNN OFFHIT" desliga a parede de colisão da porta (filho do igSwitch da colisão #1862).
@@ -83,7 +85,7 @@ public partial class Fatia : IBeEngine
     }
 
     // PLAYERgetPos: ponto de entrada na fase. DW4_ENTRADA escolhe (0 = porta inicial, com a demo de entrada; FATO pelo first.lua).
-    public double? Query(BeMessage m) => QueryRecorder(m) ?? m.Command switch
+    public double? Query(BeMessage m) => QueryStageChange(m) ?? QueryRecorder(m) ?? m.Command switch
     {
         "GETGENERATEPOS" => int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var e) ? e : 0,
         // HIPÓTESE: 0 enquanto a demo toca, 1 quando acabou (o first.lua espera "==0" e depois "!=0" antes do SETBOXCAMERA).

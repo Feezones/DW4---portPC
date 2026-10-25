@@ -259,6 +259,7 @@ public partial class Fatia : Node3D
         float dt = (float)delta;
         if (_snapToFloor) SnapToFloor();
         _stage?.Tick();
+        TickStageChange(dt);
         TickObjects(dt);
         var input = Input.GetVector("ui_left", "ui_right", "ui_up", "ui_down");
         if (Input.IsKeyPressed(Key.A)) input.X -= 1;
@@ -285,6 +286,7 @@ public partial class Fatia : Node3D
         // Só vale um toque que começou depois de abrir a mensagem (o ataque que abriu a conversa ainda pode estar apertado).
         if (!attackDown) _confirmArmed = true;
         _confirmDown = attackDown && _confirmArmed;
+        _menuInput = input;
         if (!_padEnabled || !_playerCtrl) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; _techKey = -1; } // STAGECTL PADINPUT DISABLE do script
         bool attackPressed = attackDown && !_attackHeld;
         _attackHeld = attackDown;

@@ -762,6 +762,24 @@ Test("Câmera de demo: leitura do JSON e amostragem", () =>
     Equal(0f, d.Sample(-1f).Position.X, "presa no início");
 });
 
+Test("be: DMswtSD/DMcase com padrão (−1) e DMswtEnd", () =>
+{
+    foreach (var (answer, expected) in new[] { (0.0, "A,FIM"), (1.0, "B,FIM"), (7.0, "PADRAO,FIM") })
+    {
+        var log = new List<string>();
+        var dm = new DemoManager(new BeMessenger(m => log.Add(m.Command)), _ => answer);
+        BeMessage M(string c) => new("X", null, -1, c, [], null);
+        dm.Add(new(DemoManager.Kind.Switch, M("GETSELECT"), 0));
+        dm.Add(new(DemoManager.Kind.Case, null, 0, 0)); dm.Add(new(DemoManager.Kind.Set, M("A"), 0));
+        dm.Add(new(DemoManager.Kind.Case, null, 0, 1)); dm.Add(new(DemoManager.Kind.Set, M("B"), 0));
+        dm.Add(new(DemoManager.Kind.Case, null, 0, -1)); dm.Add(new(DemoManager.Kind.Set, M("PADRAO"), 0));
+        dm.Add(new(DemoManager.Kind.SwitchEnd, null, 0)); dm.Add(new(DemoManager.Kind.Set, M("FIM"), 0));
+        dm.Run();
+        dm.Tick();
+        Equal(expected, string.Join(",", log), $"GETSELECT = {answer}");
+    }
+});
+
 // ---------- dados do jogo (opcional) ----------
 
 if (args.Length == 1)

@@ -112,3 +112,20 @@ geradores, doorwall separado na colisão, dano do piso e o gravador.
 - **DECISÃO DA FATIA**: janela de mensagem com fonte da Godot até exportar i_messwn e a fonte do jogo.
 - **FATO** start.lua só gera j_map101b1 e j_mapcur com FLGisOn(291) == 1 (volta à fase depois de usar o gravador).
   `MDLisLive` dos dois responde pelo minimapa.
+
+## Saídas e troca de fase (2026-10-25)
+
+- **FATO** matz01.lua / matz02.lua: com `MATisAllPlayer() == 1` e a fila do DM vazia, `funcStageChange("stag0101", 2,
+  "STCHGFONT00/font00/I<10>")` ("Goblin Pass") / `funcStageChange("dng101b2", 0)`. `g_StChangeKind = "stay"` nas duas.
+- **FATO** funcStageChange (func.lua main.4): trava jogador e inimigos, `i_fadewn01 SQ_BHLFOUT30`, janela `i_zzstchgwb` +
+  seleção `i_zzstchgwn` (texto em STCHGFONT00 com a cor do jogador), espera ISEND/ISSELECTNOW, `DMswtSD GETSELECT`;
+  caso 0: PADINPUT DISABLE, fade `SQ_STCHANGE01` até `SQ_STCHANGELP`, `PLAYERPOINT SETGENERATEPOS "I<n>"` e
+  `STAGECTL NEXTSTAGE "<fase>"`; caso 1 e padrão (−1): volta o fade, `MODELCTRL nil −1 ONCTRL`, PADINPUT ENABLE.
+- **FATO** NEXTSTAGE é do beNDMWStageCtlInfo (`0x804E2124`); tratador não achado. **HIPÓTESE**: guarda nome e entrada,
+  descarrega a fase e roda boot/start/first da nova (índice igAdxAfsFile do ndmw.igb). Fases destino: dng101b2 = ndmw #187
+  (usa_pack area #16), stag0101 = ndmw #614 (usa_pack area #422).
+- No port (`src/DW4.Client/Fatia.StageChange.cs`): DMswtEnd e DMcase(−1) como padrão (**HIPÓTESE**); janela e fade
+  provisórios (DECISÃO DA FATIA); GETSELECT 0 = sim (**HIPÓTESE** pela ordem dos casos); NEXTSTAGE para dng101b1 recarrega a
+  cena na entrada pedida, outras fases ficam para a Fase 5. A GAMERAM sobrevive à recarga.
+- **FATO** menus: o menu de status/pausa é código nativo (classes beNDMWStatus* do main.dol, atores i_st*); a Lua só põe os
+  textos (txt_status.lua). Seleção de técnica (i_wzslbase00) também é nativa.
