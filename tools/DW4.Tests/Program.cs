@@ -1100,6 +1100,25 @@ if (args.Length == 1)
         Equal(((-235f, 39f, -15f), (-125f, 140f, 135f)), (R(m3.Min), R(m3.Max)), "caixa do matg03");
     });
 
+    Test("Jogo: índice do ndmw.igb acha os blocos das fases (dng101b1, dng101b2, stag0101)", () =>
+    {
+        var igb = File.ReadAllBytes(Path.Combine(dir, "ndmw.igb"));
+        var index = IgbStageIndex.Read(IgbFile.Read(igb), igb);
+        Equal(2080, index.Files.Count, "igAdxAfsFile");
+        var stub = index.Stub("dng101b1")!;
+        Equal("0 80", $"{stub.Afs} {stub.Index}", "esboço dng101b1.igb");
+        using var ndmw = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        ndmw.CopyEntry(ndmw.Entries[stub.Index], ms);
+        var refs = IgbStageIndex.StubRefs(IgbFile.Read(ms.ToArray()), ms.ToArray());
+        Equal("178s 179", string.Join(" ", refs.Select(r => $"{r.Index}{(r.Sound ? "s" : "")}")), "principal e som");
+        var sep = index.Separate("dng101b1").ToList();
+        Equal(182, sep.Single(x => x.Name == "acmr_pack.igb").Index, "acmr_pack");
+        Equal("1 9", $"{sep.Single(x => x.Name == "usa_pack.igb").Afs} {sep.Single(x => x.Name == "usa_pack.igb").Index}", "usa_pack no area.afs");
+        Equal(192, index.Separate("dng101b2").Single(x => x.Name == "generatorn.igb").Index, "generatorn da dng101b2");
+        Equal(0, index.Separate("stag0101").Count(x => x.Name == "aaacamera.igb"), "campo sem câmera por volumes");
+    });
+
     Test("Jogo: pontos de entrada da dng1 (#179): 2 grupos de 4 vagas junto do matz01 e do matz02", () =>
     {
         using var afs = AfsArchive.Open(ndmwPath);
