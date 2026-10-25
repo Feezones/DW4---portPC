@@ -1961,7 +1961,11 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
         .Select(r => (Index: r, Name: r >= 0 && r < mainFile.Slots.Count && mainFile.Slots[r] is IgbObject o ? o.Fields.FirstOrDefault(v => v.Desc.Slot == 2 && v.Desc.ShortName == "String")?.Text ?? "" : ""))
         .ToList();
     // FATO na dng1: há 4 raízes "BG01" (#401, #1677, #2776 e #1862); a colisão é a com mais geometrias (#1862, 28 partes).
-    int Biggest(string name) => roots.Where(r => r.Name == name).OrderByDescending(r => allParts.Count(p => p.SceneRoot == r.Index)).Select(r => r.Index).DefaultIfEmpty(-1).First();
+    // FATO (stagml14): uma raiz "BG01" com 4 partes e nenhum triângulo (#766) e outra com a caixa de 24 (#1589): conta triângulos
+    // primeiro e, no empate, partes.
+    int Biggest(string name) => roots.Where(r => r.Name == name)
+        .OrderByDescending(r => allParts.Where(p => p.SceneRoot == r.Index).Sum(p => p.Triangles.Count))
+        .ThenByDescending(r => allParts.Count(p => p.SceneRoot == r.Index)).Select(r => r.Index).DefaultIfEmpty(-1).First();
     int bg01 = Biggest("BG01"), bg02 = Biggest("BG02");
 
     // Atores por tipo (beModelCtrlInfo [@2 nome, @7 KIND_*]).
@@ -1989,7 +1993,21 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
     Step("lua", () => LuaExtrair(ndmwPath, main, Path.Combine(outDir, "lua")));
     if (bg02 >= 0) Step("cenario", () => IgbCena(ndmwPath, M, bg02.ToString(inv), Path.Combine(outDir, "cenario"), lh >= 0 ? $"{ndmwPath}:{lh}" : null));
     else problems.Add("cenario: sem raiz BG02");
-    if (bg01 >= 0) Step("colisao", () => IgbColisao(ndmwPath, M, bg01.ToString(inv), Path.Combine(outDir, "colisao")));
+    // Sem triângulo de colisão (ex.: #766 da stagml14 só tem marcadores de entrada), tenta as outras raízes "BG01".
+    if (bg01 >= 0) Step("colisao", () =>
+    {
+        var colDir = Path.Combine(outDir, "colisao");
+        int rc = 0;
+        foreach (var r in roots.Where(r => r.Name == "BG01").Select(r => r.Index).OrderBy(r => r == bg01 ? 0 : 1))
+        {
+            rc = IgbColisao(ndmwPath, M, r.ToString(inv), colDir);
+            var one = Path.Combine(colDir, $"ndmw_{main:D4}_colisao_{r}");
+            var bin = Path.Combine(one, "colisao.bin");
+            if (File.Exists(bin) && new FileInfo(bin).Length > 0) { bg01 = r; break; }
+            if (Directory.Exists(one)) Directory.Delete(one, true);
+        }
+        return rc;
+    });
     else problems.Add("colisao: sem raiz BG01");
     if (cam >= 0) Step("camera", () => IgbCamera(ndmwPath, cam.ToString(inv), outDir));
     if (camFar >= 0) Step("camera afastada", () => IgbCamera(ndmwPath, camFar.ToString(inv), outDir));
@@ -2066,6 +2084,16 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
                 var dir = Path.Combine(outDir, "inimigos", model);
                 if (!objectNames.Contains(model)) Step($"inimigos/{model}", () => IgbGltf(ndmwPath, M, dir, ["--ator=" + model]));
                 Step($"inimigos/{model} seq", () => IgbSeq(ndmwPath, M, dir, "--ator=" + model));
+            }
+            // FATO (varredura 2026-10-25): e_arachne (stag0202) e e_torta (stag0302) ficam num IGB próprio da fase ("<modelo>.igb"
+            // na lista do índice), não no principal.
+            else if (!inMain && (model.StartsWith("e_") || model.StartsWith("f_")) && sep.FirstOrDefault(x => x.Afs == 0 && x.Name == model + ".igb") is { } own
+                     && own.Name != null && exported.Add(model))
+            {
+                var dir = Path.Combine(outDir, "inimigos", model);
+                string at = own.Index.ToString(CultureInfo.InvariantCulture);
+                Step($"inimigos/{model} (#{at})", () => IgbGltf(ndmwPath, at, dir, ["--ator=" + model]));
+                Step($"inimigos/{model} seq (#{at})", () => IgbSeq(ndmwPath, at, dir, "--ator=" + model));
             }
         }
     }

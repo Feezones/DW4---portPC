@@ -322,6 +322,8 @@ public sealed class BeHost
 
             // FATO (0x802EC380): LEVEL do registro do jogador p.
             case "SYSgetPlayerLevel": return N(PlayerData(I(a, 1))?.Level() ?? 0);
+            // FATO (0x802EA634 → 0x802EC3B4): DIGIMONNO do jogador p (forma atual).
+            case "SYSgetPlayerDigimon": return N(PlayerData(I(a, 1))?.Forms.Current ?? 0);
             // FATO (0x802EC3E8): BASE_ISUSE[i] do jogador p (forma i já obtida).
             case "SYSisGetShinkaDigimon":
                 return Bool(PlayerData(I(a, 1)) is { } who && Form(I(a, 2)) is { } fi && who.Forms[fi].Unlocked);

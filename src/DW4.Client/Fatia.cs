@@ -220,6 +220,7 @@ public partial class Fatia : Node3D
             _damageNumbers = new DamageNumbers(hud, this);
         }
         SetupChat();
+        SetupPrints();
         // Som da dng1 (FATO: first.lua toca "AM_DUNGE" e "DG_CAVE1"; beSoundInfo da fase → ndmw #6 e #35), com o loop do
         // cabeçalho ADX. Gerado por: dw4 adx-wav ndmw.afs <fatia>\audio 6 35. Volume do beSoundData (S8): unidade
         // desconhecida, por isso os dois tocam a 0 dB.
@@ -274,6 +275,7 @@ public partial class Fatia : Node3D
         TickChat(dt);
         TickDeath(dt);
         TickEnding(dt);
+        TickPrints(dt);
         if (_leaving || !IsInsideTree()) return;
         if (_snapToFloor) SnapToFloor();
         if (TickMenu(dt)) { _jumpHeld = true; return; } // o botão que fechou o menu não vira pulo

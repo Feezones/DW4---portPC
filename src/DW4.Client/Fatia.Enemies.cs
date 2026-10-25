@@ -128,6 +128,12 @@ public partial class Fatia
     {
         var dir = Path.Combine(_dir, "inimigos", model);
         if (Directory.Exists(dir)) return dir;
+        // FATO (varredura 2026-10-25): alguns campos usam inimigos cujo IGB não está entre os da fase (e_mummy na stag0204,
+        // e_mecha3/e_megadra na stag0403). HIPÓTESE: o modelo é o mesmo exportado em outra fase; usa a primeira que tiver.
+        var stagesRoot = Path.GetDirectoryName(_dir);
+        if (stagesRoot != null && Directory.Exists(stagesRoot))
+            foreach (var other in Directory.EnumerateDirectories(stagesRoot).OrderBy(d => d, StringComparer.Ordinal))
+                if (Directory.Exists(Path.Combine(other, "inimigos", model))) return Path.Combine(other, "inimigos", model);
         dir = Path.Combine(_dir, "numemon");
         return model == "e_nume" && Directory.Exists(dir) ? dir : null;
     }
