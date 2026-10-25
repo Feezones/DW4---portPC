@@ -991,6 +991,70 @@ if (args.Length == 1)
         Console.WriteLine($"       {engine.Log.Count} comandos; métodos ainda não implementados: {string.Join(", ", unimpl.Distinct())}");
     });
 
+    Test("Jogo: lobby stagml11 (#821): func/boot/start/first, quest01 e callshop rodam sem erro e sem os 17 métodos faltando", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[821], ms);
+        var data = ms.ToArray();
+        var engine = new RecordingEngine();
+        var sys = new BeSystem { FolderName = "stagml11" };
+        sys.Players[0] = ("p_girumon", new[] { "w_sword01", "w_sword01", "w_sword01" });
+        var ram = new GameRam();
+        ram.Players[0].Forms.Start(0);
+        ram.Players[0].Level = () => 20;
+        var host = new BeHost(engine, ram, sys);
+        var unimpl = new List<string>();
+        host.Unimplemented = (n, _) => unimpl.Add(n);
+        var stage = new StageScripts(IgbLua.Chunks(IgbFile.Read(data), data), host);
+        var errors = new List<string>();
+        stage.Error = (n, m) => errors.Add($"{n}: {m}");
+        stage.Boot();
+        stage.Start();
+        for (int i = 0; i < 600; i++) stage.Tick();
+        foreach (var s in new[] { "quest01.lua", "callshop.lua" }) if (stage.Has(s)) stage.Run(s); else errors.Add($"{s} não existe");
+        for (int i = 0; i < 600; i++) stage.Tick();
+        Equal(0, errors.Count, $"erros ({string.Join("; ", errors)})");
+        string[] lobby = ["MATgetPlayerMatStat", "MDLgetPosStr", "MDLgetRotStr", "MDLisCallName", "MDLsetWorldPosTarget", "MsgBox", "SYSctlBit",
+            "SYSctlCardFolder", "SYSctlDeviceFolder", "SYSctlFlagFolder", "SYSctlShinka", "SYSgetArea", "SYSgetGateStageName", "SYSgetGateStageNo",
+            "SYSgetPlayerLevel", "SYSisGetShinkaDigimon", "SYSsetGateStage"];
+        Equal("", string.Join(", ", unimpl.Where(u => lobby.Any(l => u.StartsWith(l, StringComparison.Ordinal)))), "nenhum dos 17 sem resposta");
+        // FATO (start.lua): sem portão gravado, SYSsetGateStage("GateOff", −1).
+        Equal(("GateOff", -1), (ram.GateStageName, ram.GateStageNo), "portão desligado no começo");
+        // FATO (start.lua): nível ≥ 16 liga a FLG 908; 46 e 76 ligam 909 e 910.
+        Equal((1, 0, 0), (ram.FlagOn(908), ram.FlagOn(909), ram.FlagOn(910)), "FLG 908..910 pelo nível 20");
+        True(engine.Log.Any(l => l.StartsWith("MODELCTRL g_cyheal 0 GENERATE", StringComparison.Ordinal)), "g_cyheal gerado");
+        Console.WriteLine($"       {engine.Log.Count} comandos; ainda sem resposta: {string.Join(", ", unimpl.Distinct())}");
+
+        // Chamadas diretas (FATO pelos nativos lidos).
+        object?[] Be(string m, params object?[] args) => ((LuaHostFunction)host.Table.Get(m)!).Body([host.Table, .. args]);
+        Equal(1.0, Be("SYSgetArea")[0], "SYSgetArea = 1");
+        Equal(1.0, Be("SYSctlCardFolder", "SET", 3.0)[0], "carta 3 marcada");
+        Equal(0.0, Be("SYSctlCardFolder", "SET", 3.0)[0], "já tinha");
+        Equal(1.0, Be("SYSctlCardFolder", "KAZU", 0.0)[0], "1 carta");
+        Equal(-1.0, Be("SYSctlShinka", "GETEXP", 0.0, 5.0)[0], "forma 5 não obtida: −1");
+        Equal(1.0, Be("SYSctlShinka", "SETSHINKA", 0.0, 5.0)[0], "libera a forma 5");
+        Equal(1.0, Be("SYSisGetShinkaDigimon", 0.0, 5.0)[0], "forma 5 obtida");
+        Equal(0.0, Be("SYSctlShinka", "SETSHINKA", 0.0, 5.0)[0], "já liberada");
+        int bit = ram.Players[0].Items.Bit;
+        Be("SYSctlBit", "ADD", 0.0, 2000.0);
+        Equal(bit + 2000, ram.Players[0].Items.Bit, "BIT +2000");
+        Equal(1.0, Be("SYSctlDeviceFolder", "SET", 0.0, "weapon", 35.0, 0.0, 0.0)[0], "arma guardada");
+        Equal(1.0, Be("SYSctlDeviceFolder", "IS", 0.0, "weapon", 35.0, 0.0, 0.0)[0], "tem a arma");
+        Equal(1.0, Be("SYSctlFlagFolder", "SET", 11.0)[0], "impItem 11");
+        Equal(1.0, Be("SYSctlFlagFolder", "CLR", 11.0)[0], "impItem 11 tirado");
+        Equal(0.0, Be("SYSctlFlagFolder", "IS", 11.0)[0], "sem o impItem 11");
+        var npc = new TestModel { Position = (10, 0, 20), Yaw = Math.PI / 2 };
+        host.Model = npc;
+        Equal("V<15.000000,2.000000,20.000000>", Be("MDLgetPosStr", 0.0, 2.0, 5.0)[0], "5 à frente de quem olha para +X");
+        Equal("V<0.000000,90.000000,0.000000>", Be("MDLgetRotStr", 0.0, 0.0, 0.0)[0], "giro 90°");
+        host.Model = null;
+        host.CallName = "WPos";
+        Equal(1.0, Be("MDLisCallName", "WPos")[0], "chamada WPos");
+        Be("MDLsetWorldPosTarget", "V<1,2,3>");
+        Equal((1.0, 2.0, 3.0), host.WorldPosTarget, "alvo da mira");
+    });
+
     IgbScene Scene(int index)
     {
         using var afs = AfsArchive.Open(areaPath);
@@ -1442,4 +1506,14 @@ sealed class RecordingEngine : IBeEngine
     public double? Answer { get; set; }
     public void Deliver(BeMessage message) => Log.Add(message.ToString());
     public double? Query(BeMessage message) => message.Command == "GETGENERATEPOS" ? 0 : Answer;
+}
+
+sealed class TestModel : IBeModel
+{
+    public int Index => 0;
+    public int Hp { get; set; }
+    public int BulletKind => 0;
+    public void SetSequence(string name) { }
+    public (double X, double Y, double Z) Position { get; init; }
+    public double Yaw { get; init; }
 }

@@ -28,6 +28,9 @@ public partial class Fatia
         public StaticBody3D? Body { get; set; }
         public Generator? Gen { get; init; }
         public int Hp { get; set; }
+        (double X, double Y, double Z) IBeModel.Position => (Actor.Root.GlobalPosition.X, Actor.Root.GlobalPosition.Y, Actor.Root.GlobalPosition.Z);
+        double IBeModel.Yaw => Actor.Root.Rotation.Y;
+        string IBeModel.ModelName => Name;
         public int BulletKind { get; set; }
         public bool Dead { get; set; }
         public bool Erased => Seq?.Erased == true;

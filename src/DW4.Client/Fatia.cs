@@ -71,7 +71,8 @@ public partial class Fatia : Node3D
     // sorteio por Numemon morto. A fatia desenha uma caixa com o nome no lugar do modelo do item.
     const string DropList = "nZ1nume1";
     List<DropEntry>? _drops;
-    readonly Inventory _inventory = new();
+    // O inventário é da GAMERAM (registro do jogador 0): sobrevive à troca de fase e os SYSctl*Folder dos scripts o usam.
+    static Inventory _inventory => Ram.Players[0].Items;
     int _xdata;
     // Equipamento (RECALCPLAYER completo). DECISÃO DA FATIA: sem o menu de status, a tecla E equipa o último equipamento
     // pego, se a regra do jogo deixar; a arma muda só os números (o modelo na mão continua o da w_sword01).

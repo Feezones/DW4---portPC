@@ -82,6 +82,8 @@ Entrada pela dng103f2: o matz02 chama `funcStageChange("stagBS01", 0)`. Exportar
 - Derrota (com F9): SQ_DDMG, barra fecha, pisos desligam, BT_WIN02, SQ_ENJOY, +228 EXP, portal de volta e as caixas do
   GBOX-01 aparecem.
 - Correção feita no caminho: o BLTgetDamageRank tratava o HP como dano, e o chefe morria no primeiro golpe.
+- **FATO: conferido pelo usuário** (2026-10-25, jogando na janela, sem atalhos): venceu o Apocalymon e entrou pelo portal
+  de volta, que levou ao lobby (`NEXTSTAGE "stagML11"`).
 
 ## Pendências
 

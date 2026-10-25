@@ -1,3 +1,5 @@
+using DW4.Gameplay;
+
 namespace DW4.Script.Be;
 
 /// <summary>O que o jogo (cliente ou servidor) faz com os comandos dos scripts.</summary>
@@ -17,6 +19,13 @@ public interface IBeEngine
 
     /// <summary>Versão texto (BLTgetAttributeStr, MDLgetBulletName). null = sem resposta.</summary>
     string? FightText(string method, double[] args) => null;
+
+    /// <summary>
+    /// MATgetPlayerMatStat(n): estado do jogador do contexto no volume n. FATO (0x80302DB8): 0 fora, 1 só agora dentro,
+    /// 2 só antes dentro, 3 dentro antes e agora (dois mapas de bits por jogador). HIPÓTESE: 1 = entrou, 2 = saiu.
+    /// null = o motor não sabe (0).
+    /// </summary>
+    int? MatStat(int volume) => null;
 }
 
 /// <summary>
@@ -34,6 +43,10 @@ public interface IBeModel
     int MaxHp => 0;
     /// <summary>Nome do modelo (MDLsetSD manda a mensagem para ele mesmo: MODELCTRL nome índice comando).</summary>
     string ModelName => "";
+    /// <summary>Posição no mundo (MDLgetPosStr).</summary>
+    (double X, double Y, double Z) Position => default;
+    /// <summary>Direção em radianos em torno de Y, atan2(frente.x, frente.z) (MDLgetRotStr; mesma convenção do PadMovement).</summary>
+    double Yaw => 0;
 }
 
 /// <summary>
@@ -79,6 +92,14 @@ public sealed class BeHost
 
     /// <summary>Gatilho de área no contexto do script atual (mat*.lua); null fora desse contexto.</summary>
     public BeMatEvent? Mat { get; set; }
+
+    /// <summary>
+    /// Script de mira em execução (aim_*.lua): o nome da chamada que o motor fez (MDLisCallName compara com ele) e o alvo que
+    /// o script devolve (MDLsetWorldPosTarget). FATO (0x802EDEB0, 0x802EDEFC): os dois ficam no contexto em 0x80535914
+    /// (+0x34 nome, +0x38 vetor de saída); sem nome, MDLisCallName só é 1 para nome nulo; sem vetor, o alvo é ignorado.
+    /// </summary>
+    public string? CallName { get; set; }
+    public (double X, double Y, double Z)? WorldPosTarget { get; set; }
 
     /// <summary>Lista montada pelo boot.lua (CFLclear/CFLsetName): os IGB que a fase carrega.</summary>
     public IReadOnlyList<string> Files => _files;
@@ -260,9 +281,153 @@ public sealed class BeHost
             case "PLAYERgetPos":
                 return N(_engine.Query(new BeMessage("PLAYERPOINT", null, -1, "GETGENERATEPOS", [], null)) ?? 0);
         }
+        if (Lobby(name, a) is { } done) return done;
         if (_warned.Add(name)) Unimplemented?.Invoke(name, a[1..]);
         return Nothing;
     }
+
+    // Métodos que o lobby (stagml11) usa, lidos no main.dol em 2026-10-25 (docs/gameplay/fase5-lobby-be.md).
+    object?[]? Lobby(string name, object?[] a)
+    {
+        switch (name)
+        {
+            // FATO (0x802EE480): corpo vazio (blr). Caixa de depuração do desenvolvimento, sem efeito no jogo.
+            case "MsgBox": return Nothing;
+            // FATO (0x802EBC88): devolve sempre 1.
+            case "SYSgetArea": return N(1);
+
+            // FATO (0x802EBCFC, 0x802EBE94, 0x802EBEF8): GAMERAM GATESTAGENO = n e GATESTAGENAME = nome (nulo → texto vazio).
+            case "SYSsetGateStage":
+                Ram.GateStageName = S(a, 1) ?? "";
+                Ram.GateStageNo = I(a, 2);
+                return Nothing;
+            case "SYSgetGateStageName": return [Ram.GateStageName];
+            case "SYSgetGateStageNo": return N(Ram.GateStageNo);
+
+            // FATO (0x802EC380): LEVEL do registro do jogador p.
+            case "SYSgetPlayerLevel": return N(PlayerData(I(a, 1))?.Level() ?? 0);
+            // FATO (0x802EC3E8): BASE_ISUSE[i] do jogador p (forma i já obtida).
+            case "SYSisGetShinkaDigimon":
+                return Bool(PlayerData(I(a, 1)) is { } who && Form(I(a, 2)) is { } fi && who.Forms[fi].Unlocked);
+            // FATO (0x802EC590): SYSctlShinka(comando, p, i). GETEXP/GETLEVEL = BASE_EXP/BASE_LEVEL[i] se a forma foi obtida,
+            // senão −1; SETSHINKA = libera (0 se já estava, 1 se liberou); outro comando = 0.
+            case "SYSctlShinka":
+            {
+                if (PlayerData(I(a, 2)) is not { } pd || Form(I(a, 3)) is not { } f) return N(0);
+                var form = pd.Forms[f];
+                return S(a, 1) switch
+                {
+                    "GETEXP" => N(form.Unlocked ? form.Exp : -1),
+                    "GETLEVEL" => N(form.Unlocked ? form.Level : -1),
+                    "SETSHINKA" => Bool(pd.Forms.Unlock(f)),
+                    _ => N(0),
+                };
+            }
+            // FATO (0x802EC430): CARDLIST do jogador 0. KAZU = quantas valem 1; SET = 0 se já tinha, senão marca e 1;
+            // CLR = 0 se não tinha, senão desmarca e 1; outro = 0.
+            case "SYSctlCardFolder":
+            {
+                var cards = Ram.Players[0].Cards;
+                int i = I(a, 2);
+                bool inRange = i >= 0 && i < cards.Length;
+                switch (S(a, 1))
+                {
+                    case "KAZU": return N(cards.Count(c => c == 1));
+                    case "SET":
+                        if (inRange && cards[i] != 0) return N(0);
+                        if (inRange) cards[i] = 1;
+                        return N(1);
+                    case "CLR":
+                        if (!inRange || cards[i] == 0) return N(0);
+                        cards[i] = 0;
+                        return N(1);
+                    default: return N(0);
+                }
+            }
+
+            // FATO (0x802EC26C, 0x802EBF5C, 0x802EC164): os três viram a mensagem GAMERAM CTRLITEM com a pasta ("BIT", "DEVICE",
+            // "FLAG") e os argumentos, e devolvem a resposta. O tratador do CTRLITEM não foi lido: o efeito de cada comando abaixo
+            // é HIPÓTESE pelos nomes e pelo uso nos scripts (ex.: treasure02 "ADD" 0 2000 depois de dar o prêmio).
+            // SYSctlBit(comando, p, quantia)
+            case "SYSctlBit":
+            {
+                if (PlayerData(I(a, 2)) is not { } pd) return N(0);
+                var items = pd.Items;
+                switch (S(a, 1))
+                {
+                    case "ADD": items.Bit = Math.Max(0, items.Bit + I(a, 3)); return N(1);
+                    case "SET": items.Bit = Math.Max(0, I(a, 3)); return N(1);
+                    case "GET": return N(items.Bit);
+                    default: return Warn("SYSctlBit " + S(a, 1), N(0));
+                }
+            }
+            // SYSctlDeviceFolder(comando, p, tabela, linha, 0, 0): ISMAX = pasta cheia (36, FATO do DEVICEFOLDER); IS = tem o
+            // item; ISEQUIP = equipado; SET = guarda (0 se a pasta está cheia); CLR = tira.
+            case "SYSctlDeviceFolder":
+            {
+                if (PlayerData(I(a, 2)) is not { } pd) return N(0);
+                var item = new ItemRef(S(a, 3) ?? "", I(a, 4));
+                return S(a, 1) switch
+                {
+                    "ISMAX" => Bool(pd.Items.Devices.Count >= Inventory.DeviceMax),
+                    "IS" => Bool(pd.Items.Has(item)),
+                    "ISEQUIP" => Bool(pd.IsEquipped(item)),
+                    "SET" => Bool(pd.Items.Add(item)),
+                    "CLR" => Bool(pd.Items.Remove(item)),
+                    var c => Warn("SYSctlDeviceFolder " + c, N(0)),
+                };
+            }
+            // SYSctlFlagFolder(comando, n): bit n da FLAGFOLDER (FATO: 12 bytes; os impItem ligam esses bits) do jogador 0.
+            case "SYSctlFlagFolder":
+            {
+                var items = Ram.Players[0].Items;
+                var item = new ItemRef("impItem", I(a, 2));
+                return S(a, 1) switch
+                {
+                    "IS" => Bool(items.Has(item)),
+                    "SET" => Bool(items.Add(item)),
+                    "CLR" => Bool(items.Remove(item)),
+                    var c => Warn("SYSctlFlagFolder " + c, N(0)),
+                };
+            }
+
+            // FATO (0x802ECFB0 → 0x80302DB8): estado do jogador no volume n (0..3). Pergunta ao motor.
+            case "MATgetPlayerMatStat": return N(_engine.MatStat(I(a, 1)) ?? 0);
+
+            // FATO (0x802ED8E0): leva o deslocamento local (x, y, z) pela matriz do modelo do contexto e devolve "V<%f,%f,%f>".
+            // HIPÓTESE: a matriz é só posição + giro em Y (sem escala nem inclinação).
+            case "MDLgetPosStr":
+            {
+                var (px, py, pz) = Model?.Position ?? default;
+                double yaw = Model?.Yaw ?? 0, x = D(a, 1), z = D(a, 3);
+                return [Vec(px + x * Math.Cos(yaw) + z * Math.Sin(yaw), py + D(a, 2), pz - x * Math.Sin(yaw) + z * Math.Cos(yaw))];
+            }
+            // FATO (0x802ED9A4): direção do modelo em graus (atan2 da frente × 57,29578) somada ao y pedido: "V<x,giro+y,z>".
+            case "MDLgetRotStr":
+                return [Vec(D(a, 1), (Model?.Yaw ?? 0) * 180 / Math.PI + D(a, 2), D(a, 3))];
+
+            case "MDLisCallName": return Bool(CallName == S(a, 1));
+            case "MDLsetWorldPosTarget":
+            {
+                if (n(a) >= 3) WorldPosTarget = (D(a, 1), D(a, 2), D(a, 3));
+                else if (BeArg.Parse(S(a, 1)).FirstOrDefault() is { Kind: 'V', Numbers.Length: 3 } v)
+                    WorldPosTarget = (v.Numbers[0], v.Numbers[1], v.Numbers[2]);
+                return Nothing;
+            }
+        }
+        return null;
+
+        static int n(object?[] args) => args.Length - 1;
+    }
+
+    static double D(object?[] a, int i) => i < a.Length && Lua.TryNumber(a[i], out double d) ? d : 0;
+
+    // printf "%f" (6 casas, ponto) como o jogo.
+    static string Vec(double x, double y, double z) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"V<{x:F6},{y:F6},{z:F6}>");
+
+    BePlayer? PlayerData(int p) => p >= 0 && p < Ram.Players.Length ? Ram.Players[p] : null;
+    static int? Form(int i) => i >= 0 && i < Evolution.Forms ? i : null;
 
     (string Model, string[] Weapons)? Player(int p) => p >= 0 && p < Sys.Players.Length ? Sys.Players[p] : null;
 }

@@ -43,6 +43,8 @@ public partial class Fatia
         public int BulletKind { get; set; }
         public int MaxHp => Kind.Stats?.MaxHp ?? 0;
         public string ModelName => Kind.Model;
+        (double X, double Y, double Z) IBeModel.Position => (Body.GlobalPosition.X, Body.GlobalPosition.Y, Body.GlobalPosition.Z);
+        double IBeModel.Yaw => Yaw;
         /// <summary>Rótulo guardado por sequência (SETLABEL "SQ_SDMG/common", LABELCTRL "FLOAT" "SQ_WAIT").</summary>
         public Dictionary<string, string> Labels { get; } = [];
         /// <summary>MDLsetSeq / MODELCTRL nome SQ_X: interrompe a IA com a sequência.</summary>
@@ -83,6 +85,8 @@ public partial class Fatia
         public Vector3 Max { get; init; }
         public bool Run { get; set; } = true;
         public bool Inside { get; set; }
+        /// <summary>Dentro no passo anterior (MATgetPlayerMatStat).</summary>
+        public bool WasInside { get; set; }
     }
 
     /// <summary>
@@ -313,6 +317,7 @@ public partial class Fatia
         foreach (var v in _volumes)
         {
             bool inside = p.X >= v.Min.X && p.X <= v.Max.X && p.Y >= v.Min.Y && p.Y <= v.Max.Y && p.Z >= v.Min.Z && p.Z <= v.Max.Z;
+            v.WasInside = v.Inside;
             if (inside == v.Inside) continue;
             v.Inside = inside;
             if (!v.Run) continue;

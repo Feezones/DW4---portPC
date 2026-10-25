@@ -18,6 +18,7 @@ public partial class Fatia : IBeEngine
 {
     StageScripts? _stage;
     static GameRam? s_ram;
+    static GameRam Ram => s_ram ??= new GameRam();
     bool _padEnabled = true;
     readonly List<string> _scriptLog = [];
     readonly Dictionary<string, AudioStreamPlayer> _music = [];
@@ -36,7 +37,10 @@ public partial class Fatia : IBeEngine
         var sys = new BeSystem { FolderName = _stageName };
         sys.Players[0] = ("p_girumon", new[] { "w_sword01", "w_sword01", "w_sword01" });
         // A GAMERAM sobrevive à troca de fase (recarga da cena): flags e contadores são do jogo, não da cena.
-        var host = new BeHost(this, s_ram ??= new GameRam(), sys) { Unimplemented = (n, _) => ScriptLog($"be:{n} ainda não implementado") };
+        // LEVEL e as formas do registro do jogador 0 (SYSgetPlayerLevel, SYSisGetShinkaDigimon, SYSctlShinka).
+        Ram.Players[0].Level = () => _level;
+        if (Ram.Players[0].Forms.Current < 0 && _shinkaRow is >= 0 and < Evolution.Forms) Ram.Players[0].Forms.Start(_shinkaRow);
+        var host = new BeHost(this, Ram, sys) { Unimplemented = (n, _) => ScriptLog($"be:{n} ainda não implementado") };
         _stage = new StageScripts(chunks, host) { Error = (n, m) => ScriptLog($"ERRO {n}: {m}") };
         _stage.Boot();
         _stage.Start();
@@ -86,6 +90,9 @@ public partial class Fatia : IBeEngine
     }
 
     // PLAYERgetPos: ponto de entrada na fase. DW4_ENTRADA escolhe (0 = porta inicial, com a demo de entrada; FATO pelo first.lua).
+    // MATgetPlayerMatStat(n): HIPÓTESE: n é a ordem do volume no gatilhos.json (a ordem dos beMat da fase).
+    public int? MatStat(int volume) => volume >= 0 && volume < _volumes.Count ? (_volumes[volume].WasInside ? 2 : 0) + (_volumes[volume].Inside ? 1 : 0) : null;
+
     public double? Query(BeMessage m) => QueryStageChange(m) ?? QueryRecorder(m) ?? m.Command switch
     {
         "GETGENERATEPOS" => int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var e) ? e : 0,

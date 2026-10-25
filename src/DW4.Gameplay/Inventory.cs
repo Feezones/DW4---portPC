@@ -46,6 +46,30 @@ public sealed class Inventory
         }
     }
 
+    /// <summary>Item guardado? (DEVICEFOLDER para armas, armaduras e chips; DISKFOLDER &gt; 0; FLAGFOLDER para impItem.)</summary>
+    public bool Has(ItemRef item) => item.Table switch
+    {
+        "conItem" => Disks(item.Row) > 0,
+        "impItem" => _flags.Contains(item.Row),
+        _ => _devices.Contains(item),
+    };
+
+    /// <summary>Tira um item (o primeiro igual na pasta; um disco; o bit do impItem). false se não havia.</summary>
+    public bool Remove(ItemRef item)
+    {
+        switch (item.Table)
+        {
+            case "conItem":
+                if (Disks(item.Row) <= 0) return false;
+                _disks[item.Row]--;
+                return true;
+            case "impItem":
+                return _flags.Remove(item.Row);
+            default:
+                return _devices.Remove(item);
+        }
+    }
+
     /// <summary>
     /// Disco usado no painel (0x80349B0C): exige quantidade &gt; 0, gasta 1 e devolve a cura de HP e MP da conItem (o jogo
     /// soma com limite no máximo, como o ADDHP/ADDMP em 0x8036F220). Null sem disco. A recarga do slot não está aqui
