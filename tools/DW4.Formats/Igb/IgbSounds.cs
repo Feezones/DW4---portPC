@@ -3,7 +3,7 @@ namespace DW4.Formats.Igb;
 /// <summary>Objeto de som de um IGB de fase com os valores em ordem de slot (beSoundData, beCriSfpData, beSeData…).</summary>
 public sealed record IgbSoundObject(int Index, string Type, IReadOnlyList<object> Values);
 
-/// <summary>Lista de arquivos de um beSoundInfo: textos dos objetos alcançáveis, na ordem do arquivo ("sound/sfp/GC/x.sfp", "[0.35]").</summary>
+/// <summary>Lista de arquivos de um beSoundInfo, na ordem indexada pelo S5 ("allse", "[0.35]"…).</summary>
 public sealed record IgbSoundInfo(int Index, IReadOnlyList<string> Strings);
 
 /// <summary>Sons por ação de um ator (beSeInfoData "p_girumon" → beSeData(ação, som, atraso)).</summary>
@@ -33,9 +33,17 @@ public static class IgbSounds
                 .Where(l => f.Is(l, "igObjectList")).SelectMany(l => scene.ObjectList(l)).Select(Obj).ToList();
             se.Add(new IgbSeInfo(info.Index, name, entries));
         }
-        var info2 = objects.Where(o => o.TypeName == "beSoundInfo").Select(o => new IgbSoundInfo(o.Index,
-            scene.Reachable(o).Order().Select(i => Slot(i)).OfType<IgbObject>()
-                .SelectMany(x => x.Fields.Where(v => v.Desc.ShortName == "String" && v.Text != null).Select(v => v.Text!)).ToList())).ToList();
+        // A lista de arquivos é a igNamedObjectList do campo 7 do beSoundInfo (FATO no #178: allse, COMMON_BLST, "[0.35]",
+        // "[0.6]", dng00, e_nume), na ordem que o S5 do beSoundData indexa. Cada item vale pelo primeiro texto.
+        var info2 = objects.Where(o => o.TypeName == "beSoundInfo").Select(o =>
+        {
+            var r = o.Fields.FirstOrDefault(v => v.Desc.Slot == 7 && v.Desc.ShortName == "ObjectRef");
+            var list = r != null ? Slot(r.AsInt32(le)) as IgbObject : null;
+            var names = list != null && f.Is(list, "igObjectList")
+                ? scene.ObjectList(list).Select(x => x.Fields.FirstOrDefault(v => v.Desc.ShortName == "String")?.Text ?? $"#{x.Index}").ToList()
+                : [];
+            return new IgbSoundInfo(o.Index, names);
+        }).ToList();
         return (sounds, banks, se, info2);
     }
 
