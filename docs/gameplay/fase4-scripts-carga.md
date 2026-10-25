@@ -41,3 +41,21 @@ Ordem: **func.lua → boot.lua → carga dos IGB da lista CFL → start.lua → 
 
 `dw4 lua-trace <ndmw.afs> 179` roda essa sequência na VM própria e imprime cada chamada `be:*`: é o roteiro para
 implementar a API, método por método.
+
+## Trace da dng1 (2026-10-25, `lua-trace` no PC; saída em `D:\dw4-work\lua\dng1\trace-179*.txt`, fora do repo)
+
+Valores simulados (escolhidos pela listagem do `boot.lua`): `SYSgetCountry` = 1 (**FATO**: número, índice em
+JPN_, USA_, ENG_, FRA_, ITA_, GER_, SPN_ começando em 0), `SYSgetPlayerName` = `p_girumon`, `SYSgetDifficulty` = 0 (N),
+`SYSgetWeaponName` = `w_sword01` (pedido para 3 posições de arma), `CFLgetFolderName` = `dng101b1`.
+
+- Resultado: os quatro scripts rodam sem erro (≈2.400 instruções). Globais lidas sem definição: `NULL` (usada como nil nos
+  argumentos) e `g_delayTime` (lida antes de ser atribuída). **FATO**
+- `start.lua`: `COUNTERget(2)` diferente de 101 → `COUNTERset(2, 101)` e `FLGset(100..299, 0)`. **HIPÓTESE forte**: o contador 2
+  guarda a área atual (101 = dng1) e, ao entrar numa área nova, as flags 100..299 da área são zeradas.
+- `start.lua` gera os objetos da fase com posição em texto (`"V<220,40,-200>/V<0,-90,0>"`): 4 `g_ddamagefloor`, 3 `g_d1door`,
+  `n_recorderdng`; inicia os geradores `GBOX-01..05` só se as flags 107..111 estiverem desligadas; portas por flags 102/106.
+- `first.lua`: abre o painel de status (`i_stpnl00..05`, o rosto pelo nome do jogador), habilita o controle
+  (`PADINPUT ENABLE 30`), `DMrun`, e decide pela `PLAYERgetPos()`: **FATO** (JMPNE 0) valor 0 → entrada com demo de câmera
+  `entry`, `SQ_DEMOWALK 15`, `SQ_DEMOWAIT 60`, `DG_CAVE1 120`, `SETBOXCAMERA`; outro valor → sem demo. Em ambos: músicas
+  `AM_DUNGE` e `DG_CAVE1`, `SWITCHCTRL ALLON`, `LAYERCTL REMOVE "LOADING"`, `LAYERCTL SWITCH "ALL/DISPON"`, fade
+  `i_fadewn01 SQ_BLIN30 5`. **HIPÓTESE**: `PLAYERgetPos` = índice do ponto de entrada (0 = porta inicial).
