@@ -41,6 +41,13 @@ public partial class Fatia
             case ("MODELCTRL", "i_fadewn01", _) when m.Command.StartsWith("SQ_", StringComparison.Ordinal):
                 StartFade(m.Command);
                 return true;
+            // FATO (funcHealGate): GAMERAM ADDHP "I<jogador>/I<quantia>/I<1>" e ADDMP "I<jogador>/I<quantia>" (a quantia é o
+            // máximo: cura tudo). HIPÓTESE: soma com limite no máximo, como o ADDHP/ADDMP do jogo (0x8036F220).
+            case ("GAMERAM", _, "ADDHP" or "ADDMP") when _pf != null && m.Arg(0) is { Numbers.Length: > 0 } who && who.Numbers[0] == 0 && m.Arg(1) is { Numbers.Length: > 0 } amount:
+                if (m.Command == "ADDHP") _hp = Math.Clamp(_hp + (int)amount.Numbers[0], 0, _pf.MaxHp);
+                else _mp = Math.Clamp(_mp + (int)amount.Numbers[0], 0, _pf.MaxMp);
+                ScriptLog($"{m.Command}: HP {_hp}/{_pf.MaxHp} MP {_mp}/{_pf.MaxMp}");
+                return true;
             case ("SELECTCTRL", "i_zzstchgwn", "GENERATE"):
                 _choice = 0;
                 _choiceMoveHeld = true; // só vale um movimento que começou depois de abrir (o que levou ao tapete ainda pode estar apertado)
@@ -94,6 +101,10 @@ public partial class Fatia
             case ("SELECTCTRL", "i_zzstchgwn", "ISSELECTNOW"): return _choice >= 0 && !_selectEnded ? 1 : 0;
             case ("SELECTCTRL", "i_zzstchgwn", "GETSELECT"): return _choice;
             case ("SYSCTL", "HP", "GETHP"): return _pf != null ? _hp : 1;
+            // funcHealGate (func.lua do lobby) compara HP/MP com os máximos antes de curar.
+            case ("SYSCTL", "HP", "GETMHP"): return _pf?.MaxHp ?? 1;
+            case ("SYSCTL", "MP", "GETMP"): return _pf != null ? _mp : 1;
+            case ("SYSCTL", "MP", "GETMMP"): return _pf?.MaxMp ?? 1;
         }
         return null;
     }

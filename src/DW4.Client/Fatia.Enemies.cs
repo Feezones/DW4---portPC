@@ -85,8 +85,6 @@ public partial class Fatia
         public Vector3 Max { get; init; }
         public bool Run { get; set; } = true;
         public bool Inside { get; set; }
-        /// <summary>Dentro no passo anterior (MATgetPlayerMatStat).</summary>
-        public bool WasInside { get; set; }
     }
 
     /// <summary>
@@ -317,7 +315,6 @@ public partial class Fatia
         foreach (var v in _volumes)
         {
             bool inside = p.X >= v.Min.X && p.X <= v.Max.X && p.Y >= v.Min.Y && p.Y <= v.Max.Y && p.Z >= v.Min.Z && p.Z <= v.Max.Z;
-            v.WasInside = v.Inside;
             if (inside == v.Inside) continue;
             v.Inside = inside;
             if (!v.Run) continue;

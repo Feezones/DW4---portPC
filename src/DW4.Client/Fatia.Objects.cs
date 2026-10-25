@@ -39,6 +39,9 @@ public partial class Fatia
         public ObjectSequencer? Seq { get; set; }
         /// <summary>BoxSerial da última caixa que já acertou o jogador (um acerto por caixa ligada).</summary>
         public int HitSerial { get; set; } = -1;
+        /// <summary>Personagem com esqueleto (NPC n_*, exportado em npcs&lt;nome&gt;) e a ação que está tocando.</summary>
+        public AnimationPlayer? CharacterAnim { get; set; }
+        public string? CharacterAction { get; set; }
 
         /// <summary>"SQ_WAIT" ou "SQ_WAIT/ON" (SETLABEL: guarda o rótulo e começa a sequência nele).</summary>
         public void SetSequence(string spec)
@@ -89,12 +92,14 @@ public partial class Fatia
         var o = new WorldObject
         {
             Name = name, Index = index, Actor = actor, Gen = gen,
+            Actions = json != null ? SeqCommand.LoadActions(json) : [],
             Seq = json != null ? new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)) : null,
         };
         AddChild(actor.Root);
         // HIPÓTESE: rotação do GENERATE em graus no eixo do mundo (0/±90/180 nos scripts; o −90° do Numemon já bate assim).
         actor.Root.Position = pos;
         actor.Root.RotationDegrees = rotDeg;
+        AttachCharacter(o);
         o.SetSequence("SQ_WAIT");
         _objects.Add(o);
         return o;
@@ -143,12 +148,37 @@ public partial class Fatia
         {
             var o = _objects[i];
             o.Tick(dt);
+            UpdateCharacterAnim(o);
             CheckFloorHit(o);
             if (!o.Erased) continue;
             o.Actor.Root.QueueFree();
             o.Body?.QueueFree();
             _objects.RemoveAt(i);
         }
+    }
+
+    // NPCs do lobby (n_agumon, n_leomon…): o nó do ator no IGB é um igActor, então o desenho vem do personagem exportado
+    // (dw4 fase-exportar → npcs<nome>…personagem.gltf). A animação segue a ACTION da sequência do objeto (MOTIONSET).
+    void AttachCharacter(WorldObject o)
+    {
+        var dir = Path.Combine(_dir, "npcs", o.Name);
+        var file = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "personagem.gltf", SearchOption.AllDirectories).FirstOrDefault() : null;
+        if (file == null) return;
+        var doc = new GltfDocument();
+        var state = new GltfState();
+        if (doc.AppendFromFile(file, state) != Error.Ok || doc.GenerateScene(state) is not Node3D model) { _problems.Add($"{file}: erro ao ler"); return; }
+        if (!FindAll<MeshInstance3D>(model).Any()) _problems.Add($"{o.Name}: personagem sem malha (pele igSkin sem igBlendMatrixSelect, formato ainda não lido)");
+        o.Actor.Root.AddChild(model);
+        o.CharacterAnim = FindAll<AnimationPlayer>(model).FirstOrDefault();
+    }
+
+    void UpdateCharacterAnim(WorldObject o)
+    {
+        if (o.CharacterAnim is not { } anim || o.Seq?.Action is not { } action || action == o.CharacterAction) return;
+        o.CharacterAction = action;
+        if (ActionAnimations.Motion(o.Actions, action) is not { } motion || !anim.HasAnimation(motion)) return;
+        anim.GetAnimation(motion).LoopMode = ActionAnimations.Loops(o.Actions, action) ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
+        anim.Play(motion, 0.13f);
     }
 
     // Golpe físico do jogador contra as caixas: roda o hit_<nome>.lua no contexto do objeto (FATO: hit_g_box.lua tira 100

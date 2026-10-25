@@ -5,6 +5,8 @@ namespace DW4.Formats.Igb;
 /// <summary>Uma geometria (igGeometryAttr) já resolvida, em coordenadas do mundo quando havia igTransform acima dela.</summary>
 public sealed class IgbMeshPart
 {
+    /// <summary>Osso a que a geometria inteira está presa (igModelViewMatrixBoneSelect); −1 = pele por vértice.</summary>
+    public int RigidBone { get; set; } = -1;
     public int GeometryIndex { get; init; }
     public int ImageIndex { get; set; } = -1;
     /// <summary>Textura por nome (beTextureCtrlAttr sobre um igAttrSet acima da geometria), resolvida num pacote; null sem.</summary>

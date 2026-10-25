@@ -90,9 +90,6 @@ public partial class Fatia : IBeEngine
     }
 
     // PLAYERgetPos: ponto de entrada na fase. DW4_ENTRADA escolhe (0 = porta inicial, com a demo de entrada; FATO pelo first.lua).
-    // MATgetPlayerMatStat(n): HIPÓTESE: n é a ordem do volume no gatilhos.json (a ordem dos beMat da fase).
-    public int? MatStat(int volume) => volume >= 0 && volume < _volumes.Count ? (_volumes[volume].WasInside ? 2 : 0) + (_volumes[volume].Inside ? 1 : 0) : null;
-
     public double? Query(BeMessage m) => QueryStageChange(m) ?? QueryRecorder(m) ?? m.Command switch
     {
         "GETGENERATEPOS" => int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var e) ? e : 0,

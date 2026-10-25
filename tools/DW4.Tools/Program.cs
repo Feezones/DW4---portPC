@@ -935,6 +935,27 @@ int IgbGltf(string path, string which, string outDir, string[] options)
             foreach (var n in part.Notes) report.AppendLine($"    {n}");
             int nv = part.Positions.Count;
             if (nv == 0 || part.Triangles.Count == 0) continue;
+            if (part.RigidBone >= 0)
+            {
+                // Pele rígida por osso: vértices no espaço do osso. Para o glTF (mundo = junta · inversa de bind · v), leva v para
+                // o espaço do modelo pela inversa da inversa de bind dessa junta; todos os vértices ficam na junta.
+                var m = new System.Numerics.Matrix4x4(ibm[16 * part.RigidBone], ibm[16 * part.RigidBone + 1], ibm[16 * part.RigidBone + 2], ibm[16 * part.RigidBone + 3],
+                    ibm[16 * part.RigidBone + 4], ibm[16 * part.RigidBone + 5], ibm[16 * part.RigidBone + 6], ibm[16 * part.RigidBone + 7],
+                    ibm[16 * part.RigidBone + 8], ibm[16 * part.RigidBone + 9], ibm[16 * part.RigidBone + 10], ibm[16 * part.RigidBone + 11],
+                    ibm[16 * part.RigidBone + 12], ibm[16 * part.RigidBone + 13], ibm[16 * part.RigidBone + 14], ibm[16 * part.RigidBone + 15]);
+                System.Numerics.Matrix4x4.Invert(m, out var bind);
+                for (int i = 0; i < nv; i++)
+                {
+                    var p = System.Numerics.Vector3.Transform(new System.Numerics.Vector3(part.Positions[i].X, part.Positions[i].Y, part.Positions[i].Z), bind);
+                    part.Positions[i] = (p.X, p.Y, p.Z);
+                }
+                for (int i = 0; i < part.Normals.Count; i++)
+                {
+                    var q = System.Numerics.Vector3.Normalize(System.Numerics.Vector3.TransformNormal(new System.Numerics.Vector3(part.Normals[i].X, part.Normals[i].Y, part.Normals[i].Z), bind));
+                    part.Normals[i] = (q.X, q.Y, q.Z);
+                }
+                part.BlendIndices.Clear();
+            }
             var pos = new List<float>(); foreach (var (x, y, z) in part.Positions) pos.AddRange([x, y, z]);
             var attrs = new JsonObject { ["POSITION"] = g.AddFloats(pos, 3, "VEC3", true, minMax: true) };
             if (part.Normals.Count == nv)
@@ -947,7 +968,12 @@ int IgbGltf(string path, string which, string outDir, string[] options)
                 var uv = new List<float>(); foreach (var (u, v) in part.TexCoords) uv.AddRange([u, 1 - v]); // glTF: origem no topo
                 attrs["TEXCOORD_0"] = g.AddFloats(uv, 2, "VEC2", true);
             }
-            if (part.BlendIndices.Count == nv)
+            if (part.RigidBone >= 0)
+            {
+                attrs["JOINTS_0"] = g.AddJoints(Enumerable.Range(0, nv).SelectMany(_ => new[] { part.RigidBone, 0, 0, 0 }).ToList());
+                attrs["WEIGHTS_0"] = g.AddFloats(Enumerable.Range(0, nv).SelectMany(_ => new[] { 1f, 0, 0, 0 }).ToList(), 4, "VEC4", true);
+            }
+            else if (part.BlendIndices.Count == nv)
             {
                 var j4 = new List<int>();
                 var w4 = new List<float>();
@@ -2029,6 +2055,15 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
                 Step($"inimigos/{model} seq", () => IgbSeq(ndmwPath, M, dir, "--ator=" + model));
             }
         }
+    }
+
+    // NPCs (n_*, sem os ícones de conversa *ic): o nó do ator é um igActor com esqueleto (FATO: n_agumon, n_leomon,
+    // n_digilff, n_digilfm no stagml11), então sai como personagem; as sequências já vão em objetos\<nome>.
+    foreach (var npc in objectNames.Where(n => n.StartsWith("n_") && !n.EndsWith("ic")))
+    {
+        var probe = IgbCharacter.Read(mainFile, mainData, npc);
+        if (probe.Bones.Count == 0) continue; // objeto parado (ex.: n_recorderdng), já exportado como objeto
+        Step($"npcs/{npc}", () => IgbGltf(ndmwPath, M, Path.Combine(outDir, "npcs", npc), ["--ator=" + npc]));
     }
 
     var generated = new JsonArray(Directory.EnumerateFiles(outDir, "*", SearchOption.AllDirectories)

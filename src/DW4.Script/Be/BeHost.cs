@@ -20,12 +20,6 @@ public interface IBeEngine
     /// <summary>Versão texto (BLTgetAttributeStr, MDLgetBulletName). null = sem resposta.</summary>
     string? FightText(string method, double[] args) => null;
 
-    /// <summary>
-    /// MATgetPlayerMatStat(n): estado do jogador do contexto no volume n. FATO (0x80302DB8): 0 fora, 1 só agora dentro,
-    /// 2 só antes dentro, 3 dentro antes e agora (dois mapas de bits por jogador). HIPÓTESE: 1 = entrou, 2 = saiu.
-    /// null = o motor não sabe (0).
-    /// </summary>
-    int? MatStat(int volume) => null;
 }
 
 /// <summary>
@@ -391,8 +385,11 @@ public sealed class BeHost
                 };
             }
 
-            // FATO (0x802ECFB0 → 0x80302DB8): estado do jogador no volume n (0..3). Pergunta ao motor.
-            case "MATgetPlayerMatStat": return N(_engine.MatStat(I(a, 1)) ?? 0);
+            // FATO (0x802ECFB0 → 0x80302DB8): MATgetPlayerMatStat(p) = estado do jogador p no volume do gatilho atual (bit p de
+            // dois mapas): 0, 1, 2 ou 3 (os dois). FATO (func.lua do lobby, funcHealGate): o volume da cura conta 0, 1 e 2 e só cura
+            // quem dá 2. HIPÓTESE: 2 = entrou agora, 1 = saiu agora. O gatilho roda quando alguém entra ou sai (0x803037D0).
+            case "MATgetPlayerMatStat":
+                return N(Mat is { } mat && I(a, 1) == mat.PlayerNo ? (mat.Entered ? 2 : 1) : 0);
 
             // FATO (0x802ED8E0): leva o deslocamento local (x, y, z) pela matriz do modelo do contexto e devolve "V<%f,%f,%f>".
             // HIPÓTESE: a matriz é só posição + giro em Y (sem escala nem inclinação).

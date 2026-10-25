@@ -18,7 +18,7 @@ main.dol em 2026-10-25: o despachante `0x802EA1FC` chama um nativo por método (
 | `SYSctlBit(cmd, p, n)` | 0x802EC26C | mensagem GAMERAM CTRLITEM "BIT" | **FATO** a mensagem; **HIPÓTESE** ADD/SET/GET pelo nome (o tratador não foi lido) |
 | `SYSctlDeviceFolder(cmd, p, tabela, linha, 0, 0)` | 0x802EBF5C | mensagem GAMERAM CTRLITEM "DEVICE" | **FATO** a mensagem; **HIPÓTESE**: ISMAX = pasta cheia (36), IS = tem, ISEQUIP = equipado, SET = guarda, CLR = tira |
 | `SYSctlFlagFolder(cmd, n)` | 0x802EC164 | mensagem GAMERAM CTRLITEM "FLAG" | **FATO** a mensagem; **HIPÓTESE**: IS/SET/CLR no bit n da FLAGFOLDER (os impItem) |
-| `MATgetPlayerMatStat(n)` | 0x802ECFB0 → 0x80302DB8 | estado do jogador no volume n: 0 fora, 1 só agora, 2 só antes, 3 antes e agora | **FATO** os valores; **HIPÓTESE**: 1 = entrou, 2 = saiu; n = ordem do volume |
+| `MATgetPlayerMatStat(p)` | 0x802ECFB0 → 0x80302DB8 | estado do **jogador p** no volume do gatilho atual (bit p de dois mapas): 0, 1, 2 ou 3 | **FATO** os valores e o argumento (funcHealGate passa o número do jogador); **HIPÓTESE**: 2 = entrou agora (é quem a cura atende), 1 = saiu |
 | `MDLgetPosStr(x, y, z)` | 0x802ED8E0 | leva (x, y, z) pela matriz do modelo do contexto → `"V<%f,%f,%f>"` | **FATO**; **HIPÓTESE**: matriz só com posição e giro em Y |
 | `MDLgetRotStr(x, y, z)` | 0x802ED9A4 | `"V<x, giro+y, z>"`, giro = atan2(frente.x, frente.z) em graus | **FATO** |
 | `MDLisCallName(nome)` | 0x802EDEB0 | compara com o nome da chamada do contexto (+0x34 de 0x80535914) | **FATO** |
@@ -35,7 +35,7 @@ Uso nos scripts do jogo (todas as fases): `SYSctlBit "ADD" p quantia`; `SYSctlDe
 - `src/DW4.Script/Be/BeHost.cs` (`Lobby`): os 17 métodos. O registro do jogador fica em `GameRam.Players[p]` (`BePlayer`):
   `Level` (o cliente liga ao nível), `Forms` (`Evolution`), `Items` (`Inventory`: DEVICEFOLDER, DISKFOLDER, FLAGFOLDER e
   BIT) e `Cards`. O DW4.Script passou a referenciar o DW4.Gameplay.
-- `IBeEngine.MatStat` responde o MATgetPlayerMatStat; `IBeModel.Position`/`Yaw` servem o MDLgetPosStr/RotStr;
+- MATgetPlayerMatStat sai do `BeMatEvent` do gatilho em execução; `IBeModel.Position`/`Yaw` servem o MDLgetPosStr/RotStr;
   `BeHost.CallName`/`WorldPosTarget` são o contexto dos aim_*.lua.
 - `gsub` no Lua 4: o boot.lua do lobby troca "p_" por "m_"/"q_" no nome do jogador. Só padrões sem caracteres especiais
   (são os únicos nos scripts do jogo).
@@ -51,7 +51,28 @@ A primeira entrada no lobby pelo portal do stagbs01: `boot.lua: attempt to call 
 `start.lua: attempt to compare nil with number` (SYSgetPlayerLevel), SYSget/setGateStage não implementados. Mesmo assim a
 conversa de entrada das Digimon (n_digilff/n_digilfm, textos 36..48) rodou.
 
+## Conferido na janela (2026-10-25, depois da liberação)
+
+- Entrada 0: sem erro nem "não implementado" no log. A conversa de entrada (n_digilff 2 e n_digilfm 0, textos em inglês
+  "You must be new to the Digital Security Guard…") roda até o fim, a NPC sai andando (SQ_WALK02) e o controle volta.
+- Músicas: AM_LOBBY (#13) e ST_LOBBY (#58) tocam pelo first/start.lua.
+- NPCs: o nó de cada n_* no IGB é um igActor (personagem), que o exportador de objetos não desenhava. Agora o
+  `fase-exportar` grava `npcs/<nome>` (n_agumon, n_digilff, n_digilfm, n_leomon) e o cliente põe o personagem no objeto,
+  com a animação da ACTION da sequência.
+- n_digilff/n_digilfm usam `igSkin → igModelViewMatrixBoneSelect` (pele rígida presa a um osso pelo nome, "CharaRoot"),
+  que o conversor não lia. Agora lê. **HIPÓTESE**: vértices no espaço desse osso. Na janela, a NPC aparece em pé, com
+  textura, e anda.
+- Saída matz00: entrando no volume abre a janela "Central Area — Sim/Não"; com Sim, `NEXTSTAGE "StagML12"` carrega a
+  Central Area (exportada agora, junto com a stagml02 e a stagml13). FATO pelo script: o matz00 só age com a fila de demo
+  vazia (DMgetCount == 0), então não dispara durante a conversa de entrada.
+- Cura (mate03.lua → funcHealGate): conferida pelo teste com o script real (HP 100/150 → `GAMERAM ADDHP "I<0>/I<150>/I<1>"`,
+  ADDMP, ONCTRL). O cliente agora atende SYSctlPlayer GETMHP/GETMP/GETMMP e GAMERAM ADDHP/ADDMP. Na janela não deu para
+  conferir: no lobby não há como perder HP.
+
 ## Pendente
 
-- Conferir na janela: NPCs, falas, cura (g_cyheal) e saídas, quando a janela for liberada.
+- Cones brancos no cenário do lobby e da Central Area (geometria sem textura).
+- `mlBEEP01` na stagml12 sem entrada de som conhecida.
+- mate00/mate02 (menu do teleporte e portão), matf* (nomes dos lugares) e os teleportes g_cytelep1/g_cytrerp2 não foram
+  percorridos na janela.
 - O tratador do GAMERAM CTRLITEM (efeito exato de BIT/DEVICE/FLAG) não foi lido.

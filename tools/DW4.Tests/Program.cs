@@ -1049,6 +1049,15 @@ if (args.Length == 1)
         Equal("V<15.000000,2.000000,20.000000>", Be("MDLgetPosStr", 0.0, 2.0, 5.0)[0], "5 à frente de quem olha para +X");
         Equal("V<0.000000,90.000000,0.000000>", Be("MDLgetRotStr", 0.0, 0.0, 0.0)[0], "giro 90°");
         host.Model = null;
+
+        // Cura (mate03.lua → funcHealGate do func.lua): entrou no volume com HP 100/150 → GAMERAM ADDHP até o máximo.
+        engine.Answers["GETHP"] = 100; engine.Answers["GETMHP"] = 150; engine.Answers["GETMP"] = 80; engine.Answers["GETMMP"] = 80;
+        engine.Log.Clear();
+        True(stage.RunMat("mate03.lua", new BeMatEvent(true, true, 0, _ => { })), "mate03.lua rodou");
+        for (int i = 0; i < 120; i++) stage.Tick();
+        True(engine.Log.Any(l => l.StartsWith("GAMERAM - 0 ADDHP \"I<0>/I<150>", StringComparison.Ordinal)), "ADDHP: " + string.Join(" | ", engine.Log.Take(12)));
+        True(engine.Log.Contains("PLAYER - 0 ONCTRL"), "devolve o controle");
+
         host.CallName = "WPos";
         Equal(1.0, Be("MDLisCallName", "WPos")[0], "chamada WPos");
         Be("MDLsetWorldPosTarget", "V<1,2,3>");
@@ -1505,7 +1514,8 @@ sealed class RecordingEngine : IBeEngine
     public List<string> Log { get; } = [];
     public double? Answer { get; set; }
     public void Deliver(BeMessage message) => Log.Add(message.ToString());
-    public double? Query(BeMessage message) => message.Command == "GETGENERATEPOS" ? 0 : Answer;
+    public Dictionary<string, double> Answers { get; } = [];
+    public double? Query(BeMessage message) => message.Command == "GETGENERATEPOS" ? 0 : Answers.TryGetValue(message.Command, out var v) ? v : Answer;
 }
 
 sealed class TestModel : IBeModel
