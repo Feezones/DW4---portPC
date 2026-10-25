@@ -27,6 +27,19 @@
 - A lista (0x803A3938 em diante) pagina de 12 em 12 (`this+0x54 * 12`) uma lista de itens pronta em `this+0x60`.
   Escreve NAME (STWINFONT14) e HANBAI (STWINFONT17) e mostra "----" num caso especial.
 
+## Rastro do estoque (2026-10-25, segunda leitura)
+
+- Classes de UI das lojas (só existem no executável; nenhum IGB as tem): beNDMWShopDevice, beNDMWShopJunk,
+  beNDMWShopCtrlSales/Sell/DeviceSell/DiskSell/XdataChip/EditBit/Evolve/Digilabo, beNDMWShopSelect*, beNDMWShopTitle*.
+  Registro de metadados do beNDMWShopDevice em 0x8032BD14.
+- **FATO:** a janela da loja pede a lista com a mensagem `SUBWND GETSHOPDATA` (0x803A2984, e 0x80397EC4 na de disco) e
+  guarda o objeto da resposta em `this+0x60` (0x803A2A00), que é a lista que a tela pagina de 12 em 12.
+- **FATO:** os comandos do SUBWND (enum "Message" do beNDMWWindowCtrl, 0x804E20B4) são GENERATE, REMOVE, UPDATE,
+  GETSHOPDATA, ONPREVIEW, OFPREVIEW e ISRUN, com os campos _windowPro, _whoGenerate e _subWndNo.
+- Próximo passo: achar o tratador de mensagens do beNDMWWindowCtrl (caso 3, GETSHOPDATA). É ele que monta a lista pelo tipo
+  de janela (_subWndNo: DISK, WPU, APU, CHIP, JUNK…) e diz de onde vêm os itens (tabela fixa, enredo/flags ou dificuldade).
+  A classe é criada em código, por isso as referências de texto não chegam lá.
+
 ## DESCONHECIDO
 
 - **Quais itens cada loja vende.** As tabelas não têm coluna de loja e a fase não tem dados de loja. A lista chega pronta
