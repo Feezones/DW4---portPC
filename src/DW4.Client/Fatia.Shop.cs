@@ -65,7 +65,7 @@ public partial class Fatia
         return true;
     }
 
-    double? QueryShop(BeMessage m) => m.Class == "SUBWND" && m.Command == "ISRUN" ? (ShopOpen ? 1 : 0) : null;
+    double? QueryShop(BeMessage m) => m.Class == "SUBWND" && m.Command == "ISRUN" ? (ShopOpen || _saveLayer != null ? 1 : 0) : null;
 
     IEnumerable<string> ShopKeys()
     {

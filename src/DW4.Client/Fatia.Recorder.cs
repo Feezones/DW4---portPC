@@ -22,7 +22,8 @@ public partial class Fatia
     const int TalkProbe = 60000;
     // HIPÓTESE: volume de conversa do gravador (não lido ainda): caixa 10 × 20 × 10 na base do objeto.
     static readonly Vector3 TalkVolume = new(10, 20, 10);
-    const string PlayerModel = "p_girumon";
+    /// <summary>Modelo da forma atual do jogador (MODEL_NAME da shinka). Vem da vaga (Session) e muda na evolução.</summary>
+    public static string PlayerModel { get; set; } = "p_girumon";
 
     bool _playerCtrl = true, _enemiesFrozen, _generatorsFrozen;
     bool _confirmDown, _confirmArmed, _selectEnded;

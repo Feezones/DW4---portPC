@@ -59,6 +59,7 @@ public static class Session
         ram.CameraMode = PortSettings.Current.CameraMode;
         ram.LightMode = PortSettings.Current.LightMode;
         Fatia.UseRam(ram);
+        Fatia.PlayerModel = character.Model.Length > 0 ? character.Model : "p_girumon";
         OS.SetEnvironment("DW4_FASE", character.Stage.Length > 0 ? character.Stage : NewGameStage);
         OS.SetEnvironment("DW4_ENTRADA", (character.Stage.Length > 0 ? character.Entry : NewGameEntry).ToString());
         OS.SetEnvironment("DW4_INICIO", "");
@@ -72,7 +73,7 @@ public static class Session
         if (Character is not { } c) return;
         var s = CharacterSave.Capture(ram, 0, c.Name, stage, entry);
         s.Starter = c.Starter;
-        s.Model = c.Model;
+        s.Model = Fatia.PlayerModel; // muda na evolução
         Store.Save(Account, Slot, s);
         Character = s;
     }

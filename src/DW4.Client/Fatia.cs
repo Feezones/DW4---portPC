@@ -188,7 +188,7 @@ public partial class Fatia : Node3D
         _player = new CharacterBody3D { Position = start, FloorSnapLength = 4f };
         _player.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 2.5f, Height = 7f }, Position = new Vector3(0, 3.5f, 0) });
         AddChild(_player);
-        _model = Load("guilmon", "personagem.gltf");
+        _model = Load(PlayerFolder, "personagem.gltf");
         if (_model != null)
         {
             _player.AddChild(_model);
@@ -196,8 +196,8 @@ public partial class Fatia : Node3D
             if (_anim != null)
             {
             }
-            var seqFile = SeqFile("guilmon");
-            if (seqFile == null) _problems.Add("falta o *_seq.json do Guilmon (dw4 igb-seq ndmw.afs 857 <fatia>\\guilmon)");
+            var seqFile = SeqFile(PlayerFolder);
+            if (seqFile == null) _problems.Add($"falta o *_seq.json de {PlayerModel} em {PlayerFolder} (dw4 igb-seq)");
             else
             {
                 var json = System.IO.File.ReadAllText(seqFile);
@@ -399,7 +399,7 @@ public partial class Fatia : Node3D
                 _enemiesHitThisAction.Clear();
                 _objectsHitThisAction.Clear();
                 CheckTalkProbe();
-                if (_runner.Action != null) _sfx?.Action("p_girumon", _runner.Action);
+                if (_runner.Action != null) _sfx?.Action(PlayerModel, _runner.Action);
                 if (_anim != null && _runner.Action != null && AnimName(_runner.Action) is { } an)
                 {
                     _anim.GetAnimation(an).LoopMode = ActionAnimations.Loops(_actions, _runner.Action) ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
@@ -456,7 +456,7 @@ public partial class Fatia : Node3D
             $"ataque [J, clique ou X]: {(_runner?.Running == true ? $"{_runner.Action} → {(_runner.Action == null ? "-" : AnimName(_runner.Action) ?? "sem animação")} quadro {_runner.ActionFrame:0}/{_runner.ActionLength:0}" : "-")}  acertos no Numemon: {_hits}  [F2 caixas]\n" +
             $"Numemon: {(_lastEnemy?.Brain is not { } br ? "-" : $"{br.Map.Name}, {(br.External ?? br.Current?.Sequence ?? "-")}")}{(_lastEnemy?.Runner?.Running == true ? $" ({_lastEnemy.Runner.Action})" : "")}  golpes no Guilmon: {_hitsTaken}\n" +
             (_pf == null ? "combate: sem tabelas (dw4 igb-db area.afs 3 <fatia>\\db)\n" :
-                $"Guilmon nv {_level}  HP {_hp}/{_pf.MaxHp}  MP {_mp}/{_pf.MaxMp}  EXP {_exp}/{PlayerGrowth.NextExp(_level)}  SLASH {_skill[1]}  |  {_lastEnemy?.Kind.Name ?? "inimigo"} HP {(_lastEnemy is { } le ? (le.Dead || le.Killed ? "derrotado" : $"{le.Hp}/{le.Kind.Stats?.MaxHp}") : "-")} (vivos {_enemies.Count(x => !x.Dead)})  |  {_lastEvent}{(_hp <= 0 ? "  |  CAIU: F5 reinicia" : "")}\n" +
+                $"{FormName} nv {_level}  HP {_hp}/{_pf.MaxHp}  MP {_mp}/{_pf.MaxMp}  EXP {_exp}/{PlayerGrowth.NextExp(_level)}  SLASH {_skill[1]}  |  {_lastEnemy?.Kind.Name ?? "inimigo"} HP {(_lastEnemy is { } le ? (le.Dead || le.Killed ? "derrotado" : $"{le.Hp}/{le.Kind.Stats?.MaxHp}") : "-")} (vivos {_enemies.Count(x => !x.Dead)})  |  {_lastEvent}{(_hp <= 0 ? "  |  CAIU: F5 reinicia" : "")}\n" +
                 $"técnicas [1..6; K, botão direito ou Y = 1]: {(_techs.Count == 0 ? "-" : string.Join("  ", _techs.Select((t, i) => $"{i + 1} {t.Name} {t.Mp} MP{(_panel.Cooldown(t) > 0 ? $" ({_panel.Cooldown(t):0.0} s)" : "")}")))}  skills ataque/cura/suporte {_skill[6]}/{_skill[7]}/{_skill[8]}\n" +
                 $"arma {_db!["weapon"].Text(_equip!.WeaponRow, "NAME")}  armaduras {(_equip.Armor1Row >= 0 ? _db["armor1"].Text(_equip.Armor1Row, "NAME") : "-")} / {(_equip.Armor2Row >= 0 ? _db["armor2"].Text(_equip.Armor2Row, "NAME") : "-")}  [E equipa o último pego]  " +
                 $"BIT {_inventory.Bit}  Xデータ {_xdata}  equipamentos {_inventory.Devices.Count}/{Inventory.DeviceMax}{(_inventory.Devices.Count > 0 ? ": " + string.Join(", ", _inventory.Devices.TakeLast(3).Select(d => _db![d.Table].Text(d.Row, "NAME"))) : "")}\n") +
@@ -502,11 +502,11 @@ public partial class Fatia : Node3D
         var skillFile = StagePath("skillup.json");
         if (System.IO.File.Exists(skillFile)) _skillGrowth = SkillGrowth.FromJson(System.IO.File.ReadAllText(skillFile));
         else _problems.Add("falta skillup.json (dw4 dol-skilltab <main.dol> <fatia>): skill não sobe");
-        _shinkaRow = _db["shinka"].RowsWhere("MODEL_NAME", "p_girumon").DefaultIfEmpty(-1).First();
+        _shinkaRow = _db["shinka"].RowsWhere("MODEL_NAME", PlayerModel).DefaultIfEmpty(-1).First();
         // DECISÃO DA FATIA: Guilmon com a w_sword01 α (linha 25, SKILLPOINT 1: equipável com as skills iniciais). No jogo
         // ele começa com INI_WEAPON1 = 268 (adaga STAB, TSUYOSA 22) ativa e 275/274 de reserva; a espada fica mais forte.
         _weaponRow = _db["weapon"].RowsWhere("MODEL", "w_sword01").DefaultIfEmpty(-1).First();
-        if (_shinkaRow < 0 || _weaponRow < 0) { _problems.Add("p_girumon ou w_sword01 não estão nas tabelas"); _db = null; return; }
+        if (_shinkaRow < 0 || _weaponRow < 0) { _problems.Add($"{PlayerModel} ou w_sword01 não estão nas tabelas"); _db = null; return; }
         // FATO (GAMEDATAINIT 0x8036CFEC..D0B8): jogador novo com nível 1, EXP 0, as 9 skills em 1 e sem armaduras.
         Array.Fill(_skill, 1);
         LoadProgress();

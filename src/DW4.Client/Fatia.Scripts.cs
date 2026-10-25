@@ -37,7 +37,7 @@ public partial class Fatia : IBeEngine
         var chunks = Directory.GetFiles(dir).ToDictionary(f => Path.GetFileName(f), File.ReadAllBytes);
         // HIPÓTESE: nome da pasta da dng1; o boot.lua só o usa para montar a lista de arquivos, que a fatia não usa.
         var sys = new BeSystem { FolderName = _stageName };
-        sys.Players[0] = ("p_girumon", new[] { "w_sword01", "w_sword01", "w_sword01" });
+        sys.Players[0] = (PlayerModel, new[] { "w_sword01", "w_sword01", "w_sword01" });
         // A GAMERAM sobrevive à troca de fase (recarga da cena): flags e contadores são do jogo, não da cena.
         // LEVEL e as formas do registro do jogador 0 (SYSgetPlayerLevel, SYSisGetShinkaDigimon, SYSctlShinka).
         // DEPURAÇÃO (só no build Debug, não é do jogo): DW4_FLG=4,409 liga essas flags da GAMERAM ao abrir a fase (estado do enredo).
@@ -74,7 +74,7 @@ public partial class Fatia : IBeEngine
         ScriptLog(m.ToString());
         // A trava do ISEND zera em todo SELECTCTRL GENERATE, antes de quem trata a janela (troca de área, mensagem) consumir a mensagem.
         if (m.Class == "SELECTCTRL" && m.Command == "GENERATE") { _confirmArmed = false; _selectEnded = false; }
-        if (DeliverToSavePoint(m) || DeliverToShop(m) || DeliverToListMenu(m) || DeliverToStageChange(m) || DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToBossBar(m) || DeliverToEnemies(m) || DeliverToObjects(m)) return;
+        if (DeliverToSavePoint(m) || DeliverToEvolve(m) || DeliverToShop(m) || DeliverToListMenu(m) || DeliverToStageChange(m) || DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToBossBar(m) || DeliverToEnemies(m) || DeliverToObjects(m)) return;
         switch (m.Class, m.Command)
         {
             // FATO: "HITLANDMODEL doorwallNN OFFHIT" desliga a parede de colisão da porta (filho do igSwitch da colisão #1862).

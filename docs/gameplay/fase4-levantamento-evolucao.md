@@ -43,3 +43,16 @@ Cada forma tem o próprio IGB (esqueleto, animações e sequências SQ_*), escol
 ## Port
 
 `src/DW4.Gameplay/Evolution.cs`: estado por forma, liberar, trocar e a escolha da arma mais forte. A fatia ainda não troca de modelo (falta exportar o IGB da forma).
+
+## Port: menu da Digi-lab e as 16 formas no cliente (2026-10-25)
+
+- As 16 formas foram exportadas para `<fatia>\formas\<MODEL_NAME>` (`dw4 igb-gltf` e `dw4 igb-seq` ndmw.afs 850..865).
+  - Todas têm malha, o osso RArm04 e os blocos "slash" nas sequências.
+  - p_wargrey e p_bwargrey têm o mesmo .bin (mesmo modelo); as texturas não foram comparadas.
+- O cliente carrega o modelo da forma atual (`Fatia.PlayerModel`), que vem da vaga.
+  - `SUBWND GENERATE "LABO/..."` (digilabshop.lua) abre a lista das formas liberadas com o nível de cada.
+  - A escolha faz a troca do jogo: `Evolution.Switch`, a forma nova com o nível/EXP/skills dela, armaduras e chips fora.
+  - Depois grava a vaga e recarrega a fase no mesmo ponto.
+  - A arma da fatia continua a w_sword01 (DECISÃO DA FATIA).
+- O menu inicial agora deixa criar as 4 iniciais, porque os modelos existem.
+- Não conferido na janela: pose, escala e animações das formas novas, e o osso da arma em cada uma.

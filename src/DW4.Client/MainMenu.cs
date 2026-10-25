@@ -13,8 +13,8 @@ namespace DW4.Client;
 ///   "Jogar online" → as 4 vagas da conta (vazia: "Criar novo Digimon"; ocupada: o Digimon criado ali) → escolhe a vaga → entra;
 ///   "Configurações" → jogo, gráfico, som e controles (user://config.cfg).
 /// Mouse, teclado e controle (foco dos botões pelas ações ui_* da Godot). A criação usa o que se sabe da stagIS13: as 4
-/// formas iniciais (FATO: DIGIMONNO 0..3 no GAMEDATAINIT), nome e dificuldade (mswkMem0232, 0163/0167, 0168). O cliente só tem
-/// o modelo do Guilmon por enquanto; as outras iniciais aparecem desligadas.
+/// formas iniciais (FATO: DIGIMONNO 0..3 no GAMEDATAINIT), nome e dificuldade (mswkMem0232, 0163/0167, 0168). As iniciais sem modelo
+/// exportado aparecem desligadas.
 /// Abrir com DW4_FASE definido (depuração) pula o menu e vai direto à fase, sem vaga.
 /// </summary>
 public partial class MainMenu : Control
@@ -22,8 +22,9 @@ public partial class MainMenu : Control
     // HIPÓTESE (DIFFICULTY 0..2 pela ordem das listas de drop nZ1/hZ1/vZ1): Normal, Hard, Very Hard. "Normal" e "Very Hard" são
     // textos da stagIS13; "Hard" não está nos textos exportados.
     static readonly string[] Difficulties = ["Normal", "Hard", "Very Hard"];
-    // Modelos que o cliente já sabe desenhar e controlar.
-    static readonly HashSet<string> Playable = ["p_girumon"];
+    // O cliente desenha e controla as formas cuja pasta foi exportada (<fatia>/formas/<modelo>, ver Fatia.Evolve.cs).
+    static readonly string Common = OS.GetEnvironment("DW4_FATIA") is { Length: > 0 } d ? d : @"D:\dw4-work\fatia";
+    static bool Playable(string model) => Fatia.HasPlayerModel(Common, model);
     const int NameMax = 12; // DECISÃO DO PORT: o limite do jogo não foi lido
 
     VBoxContainer _root = null!;
@@ -136,7 +137,7 @@ public partial class MainMenu : Control
 
     void Play(int slot, CharacterSave c)
     {
-        if (!Playable.Contains(c.Model)) { Message($"{FormName(c.CurrentForm)} ainda não tem modelo no cliente.", ShowSlots); return; }
+        if (!Playable(c.Model)) { Message($"{FormName(c.CurrentForm)} ainda não tem modelo no cliente.", ShowSlots); return; }
         if (!Session.Begin(GetTree(), slot, c, out var error)) Message(error ?? "Não deu para entrar.", ShowSlots);
     }
 
@@ -171,7 +172,7 @@ public partial class MainMenu : Control
         for (int d = 0; d < 4; d++)
         {
             int form = d;
-            bool ok = Playable.Contains(FormModel(d));
+            bool ok = Playable(FormModel(d));
             var b = Btn(forms, FormName(d) + (ok ? "" : "\n(sem modelo ainda)"), () => { chosen = form; foreach (var p in picks) p.ButtonPressed = p == picks[form]; }, ok);
             b.ToggleMode = true;
             b.SizeFlagsHorizontal = SizeFlags.ExpandFill;
