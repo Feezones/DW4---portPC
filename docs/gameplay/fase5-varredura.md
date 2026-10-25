@@ -98,3 +98,34 @@
 | stag0101 | sim | 141 |  |  |  |  |  |  | e_goburi, e_nume, e_ogre, g_boxfield, g_bbarrelsz01, g_woodencasez01 |
 | stag0102 | sim | 114 |  |  |  |  |  |  | e_goburi, e_ogre, e_blosso, g_boxfield, g_bbarrelsz01, g_woodencasez01 |
 | stag0103 | sim | 75 |  |  | CheckZero SELECTCTRL i_messky 0 ISEND |  | falta o *_drops.json (dw4 igb-drops ndmw.afs 183 <fatia>\drops): sem drops |  | e_nume |
+
+## Varredura das 36 fases restantes e dos chefes 02..06 (2026-10-25, com janela, autorizado)
+
+- Método: uma janela da Godot por vez.
+  - Cada janela fechou sozinha (`--quit-after` ou tempo limite), com `--log-file` por fase.
+  - Prints de depuração pelo `DW4_PRINT` (só no build Debug).
+  - Nenhuma janela ficou aberta no fim.
+- **Resultado:** as 36 abrem e saem sem travar.
+  - 0 erros de script em todas, menos stagml14 (5, corrigidos) e stagis11/12/13 (colisão vazia; são telas de menu que o
+    port trata no lugar, ver docs/decisoes-port-pc.md).
+- **Corrigido nesta varredura:**
+  - Inimigos cujo modelo fica num IGB próprio da fase ("<modelo>.igb"): e_arachne (stag0202), e_torta (stag0302),
+    e_skulgrey, e_tonogeko. O `fase-exportar` agora os exporta.
+  - Inimigos cujo IGB não está entre os da fase: e_mummy (stag0204), e_mecha3 e e_megadra (stag0403). O cliente usa o
+    modelo exportado em outra fase (dng204, dng308, dng411). HIPÓTESE: é o mesmo modelo.
+  - stagml14 (cena da evolução: caixa de 24 triângulos, i_evoline/i_evowipe):
+    - a colisão saía vazia porque a raiz "BG01" escolhida (#766) só tem marcadores de entrada; o exportador agora tenta as
+      outras raízes BG01 (#1589);
+    - o boot.lua pedia be:SYSgetPlayerDigimon (FATO 0x802EC3B4: DIGIMONNO do jogador), agora implementado.
+  - Barra de HP dos chefes: cada chefe usa i_bosshp0N e bshp0N (stagbs02: i_bosshp02); o cliente só tratava o 01. Agora
+    trata todos (não revisto na janela).
+- **Chefes na janela** (sem ninguém jogando: o Guilmon parado no ponto de entrada):
+  - stagbs02, Belphemon: carrega com a câmera de entrada; ficou em SQ_WAIT por 30 s, sem golpe no Guilmon parado longe.
+  - stagbs03, Lucemon: chega perto e repete SQ_MISSILE; nenhum dano no Guilmon.
+  - stagbs04, stagbs05 (troca para f_devl23 com SQ_CHANGE) e stagbs06: carregam sem erro.
+  - stagbs06: aos 30 s o fundo aparece branco num ângulo da câmera (a neblina é preta); causa não achada. Um script manda
+    MOVETRANS ao f_devl3 a cada quadro, com deriva pequena na posição.
+- **Pendente:**
+  - Por que os chefes não acertam o Guilmon parado: a IA de longe e os projéteis do SQ_MISSILE (f_luce2?).
+  - O fundo branco da stagbs06.
+  - A derrota com F9 jogando de verdade.

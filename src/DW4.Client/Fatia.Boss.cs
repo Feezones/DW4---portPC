@@ -227,7 +227,10 @@ public partial class Fatia
 
     bool DeliverToBossBar(BeMessage m)
     {
-        switch (m.Class, m.Name, m.Command)
+        // FATO (varredura 2026-10-25): cada chefe tem a sua barra, i_bosshp01..06 com o medidor bshp01..06 (stagbs02: i_bosshp02 e
+        // "SETMODELHP f_belvam/I<0>"). Todas vão para a mesma barra do port.
+        string? name = m.Name is { } n0 && n0.StartsWith("i_bosshp", StringComparison.Ordinal) ? "i_bosshp01" : m.Name is { } n1 && n1.StartsWith("bshp", StringComparison.Ordinal) ? "bshp01" : m.Name;
+        switch (m.Class, name, m.Command)
         {
             case ("MODELCTRL", "i_bosshp01", "GENERATE"):
                 ShowBossBar(true);
