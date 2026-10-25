@@ -147,7 +147,7 @@ public partial class Fatia : Node3D
         AddChild(new WorldEnvironment { Environment = new Godot.Environment { AmbientLightSource = Godot.Environment.AmbientSource.Color, AmbientLightColor = new Color(0.6f, 0.6f, 0.65f), BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black } });
         AddChild(new DirectionalLight3D { RotationDegrees = new Vector3(-60, 30, 0) });
 
-        if (Load("cenario", "cena.gltf") is { } scenery) AddChild(scenery);
+        if (Load("cenario", "cena.gltf") is { } scenery) { ApplyAdditive(scenery); AddChild(scenery); }
         if (Load("colisao", "colisao.gltf") is { } collision) AddChild(MakeStaticBody(collision));
 
         _demo = OS.GetEnvironment("DW4_DEMO") == "1";
@@ -816,6 +816,21 @@ public partial class Fatia : Node3D
         var err = doc.AppendFromFile(file, state);
         if (err != Error.Ok) { _problems.Add($"{file}: {err}"); return null; }
         return doc.GenerateScene(state) as Node3D;
+    }
+
+    // Materiais "_add" do exportador = igBlendFunctionAttr SRC_ALPHA/ONE do jogo (luzes, brilhos): mistura aditiva, sem luz e
+    // sem gravar profundidade (os atores com essa mistura também têm igDepthWriteStateAttr).
+    static void ApplyAdditive(Node root)
+    {
+        foreach (var mi in FindAll<MeshInstance3D>(root))
+            for (int s = 0; s < mi.Mesh.GetSurfaceCount(); s++)
+                if (mi.Mesh.SurfaceGetMaterial(s) is StandardMaterial3D m && m.ResourceName.EndsWith("_add", StringComparison.Ordinal))
+                {
+                    m.BlendMode = BaseMaterial3D.BlendModeEnum.Add;
+                    m.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
+                    m.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
+                    m.DepthDrawMode = BaseMaterial3D.DepthDrawModeEnum.Disabled;
+                }
     }
 
     // Cada malha vira uma forma; o caminho de nomes fica guardado para o HITLANDMODEL dos scripts ligar e desligar partes

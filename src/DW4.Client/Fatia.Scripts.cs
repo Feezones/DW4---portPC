@@ -59,7 +59,7 @@ public partial class Fatia : IBeEngine
         ScriptLog(m.ToString());
         // A trava do ISEND zera em todo SELECTCTRL GENERATE, antes de quem trata a janela (troca de área, mensagem) consumir a mensagem.
         if (m.Class == "SELECTCTRL" && m.Command == "GENERATE") { _confirmArmed = false; _selectEnded = false; }
-        if (DeliverToStageChange(m) || DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToBossBar(m) || DeliverToEnemies(m) || DeliverToObjects(m)) return;
+        if (DeliverToListMenu(m) || DeliverToStageChange(m) || DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToBossBar(m) || DeliverToEnemies(m) || DeliverToObjects(m)) return;
         switch (m.Class, m.Command)
         {
             // FATO: "HITLANDMODEL doorwallNN OFFHIT" desliga a parede de colisão da porta (filho do igSwitch da colisão #1862).
@@ -90,7 +90,7 @@ public partial class Fatia : IBeEngine
     }
 
     // PLAYERgetPos: ponto de entrada na fase. DW4_ENTRADA escolhe (0 = porta inicial, com a demo de entrada; FATO pelo first.lua).
-    public double? Query(BeMessage m) => QueryStageChange(m) ?? QueryRecorder(m) ?? m.Command switch
+    public double? Query(BeMessage m) => QueryListMenu(m) ?? QueryStageChange(m) ?? QueryRecorder(m) ?? m.Command switch
     {
         "GETGENERATEPOS" => int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var e) ? e : 0,
         // ISDEMOCAMERA = 1 enquanto a demo toca (o first.lua espera enquanto "==0", até começar, e enquanto "!=0", até acabar).
@@ -128,7 +128,13 @@ public partial class Fatia : IBeEngine
     {
         if (!_music.TryGetValue(name, out var player))
         {
-            if (!_musicIndex.TryGetValue(name, out int idx)) { ScriptLog($"música {name} sem entrada conhecida"); return; }
+            // FATO (stagml12): SOUND PLAY também toca efeitos do banco da fase (mlBEEP01 → cue 0xA9250900 → A925_09.wav).
+            if (!_musicIndex.TryGetValue(name, out int idx))
+            {
+                if (_sfx?.Has(name) == true) _sfx.Play(name);
+                else ScriptLog($"som {name} sem entrada conhecida (nem música nem efeito do banco)");
+                return;
+            }
             var wav = Path.Combine(_dir, "audio", $"ndmw_{idx:D4}.wav");
             if (LoadWav(wav) is not { } stream) { _problems.Add($"falta {wav} (dw4 adx-wav ndmw.afs <fatia>\\audio 6 35)"); return; }
             AddChild(player = new AudioStreamPlayer { Stream = stream });

@@ -1163,7 +1163,7 @@ int IgbCena(string path, string which, string rootArg, string outDir, string? pa
     Directory.CreateDirectory(dir);
     var g = new GltfBuilder();
     var report = new StringBuilder();
-    var materialOfImage = new Dictionary<int, int>();
+    var materialOfImage = new Dictionary<(int, bool), int>();
     // Texturas por nome (beTextureCtrlAttr → beTextureCtrlData do pacote: lh_pack/ls_pack nos campos).
     IgbScene? packScene = null;
     var packImage = new Dictionary<string, int>();
@@ -1182,10 +1182,10 @@ int IgbCena(string path, string which, string rootArg, string outDir, string? pa
             if (name != null && r >= 0 && pf.Slots.ElementAtOrDefault(r) is IgbObject attr && packScene.FindImage(attr) is int pi && pi >= 0) packImage.TryAdd(name, pi);
         }
     }
-    var materialOfName = new Dictionary<string, int>();
-    int NamedMaterial(string name)
+    var materialOfName = new Dictionary<(string, bool), int>();
+    int NamedMaterial(string name, bool add)
     {
-        if (materialOfName.TryGetValue(name, out int m)) return m;
+        if (materialOfName.TryGetValue((name, add), out int m)) return m;
         string? uri = null;
         bool alpha = false;
         if (packScene != null && packImage.TryGetValue(name, out int pi) && packScene.Images.TryGetValue(pi, out var img) && IgbScene.ToRgba(img) is { } rgba)
@@ -1197,11 +1197,11 @@ int IgbCena(string path, string which, string rootArg, string outDir, string? pa
             report.AppendLine($"textura \"{name}\" do pacote: {img.Width}x{img.Height} formato {img.PixelFormat}{(alpha ? ", com alfa" : "")}");
         }
         else report.AppendLine($"textura \"{name}\": {(packScene == null ? "sem --pacote" : "não achada no pacote")}");
-        return materialOfName[name] = g.AddMaterial(uri ?? name, uri, alpha);
+        return materialOfName[(name, add)] = g.AddMaterial(uri ?? name, uri, alpha, add);
     }
-    int Material(int image)
+    int Material(int image, bool add)
     {
-        if (materialOfImage.TryGetValue(image, out int m)) return m;
+        if (materialOfImage.TryGetValue((image, add), out int m)) return m;
         string? uri = null;
         bool alpha = false;
         if (scene.Images.TryGetValue(image, out var img) && IgbScene.ToRgba(img) is { } rgba)
@@ -1213,7 +1213,7 @@ int IgbCena(string path, string which, string rootArg, string outDir, string? pa
             report.AppendLine($"imagem #{image} \"{img.Name}\" {img.Width}x{img.Height} formato {img.PixelFormat}{(alpha ? ", com alfa" : "")}");
         }
         else report.AppendLine($"imagem #{image}: {(image < 0 ? "sem textura" : "não decodificada")}");
-        return materialOfImage[image] = g.AddMaterial(uri ?? "sem_textura", uri, alpha);
+        return materialOfImage[(image, add)] = g.AddMaterial(uri ?? "sem_textura", uri, alpha, add);
     }
     var prims = new JsonArray();
     foreach (var part in parts)
@@ -1231,7 +1231,7 @@ int IgbCena(string path, string which, string rootArg, string outDir, string? pa
             var uv = new List<float>(); foreach (var (u, v) in part.TexCoords) uv.AddRange([u, 1 - v]); // glTF: origem no topo
             attrs["TEXCOORD_0"] = g.AddFloats(uv, 2, "VEC2", true);
         }
-        prims.Add(new JsonObject { ["attributes"] = attrs, ["indices"] = g.AddIndices(part.Triangles), ["mode"] = 4, ["material"] = part.ImageIndex < 0 && part.TextureName != null ? NamedMaterial(part.TextureName) : Material(part.ImageIndex) });
+        prims.Add(new JsonObject { ["attributes"] = attrs, ["indices"] = g.AddIndices(part.Triangles), ["mode"] = 4, ["material"] = part.ImageIndex < 0 && part.TextureName != null ? NamedMaterial(part.TextureName, part.BlendDst == 1) : Material(part.ImageIndex, part.BlendDst == 1) });
     }
     // A Godot aceita no máximo 256 superfícies por malha (RenderingServer MAX_MESH_SURFACES; o campo stag0101 tem 331
     // geometrias): acima disso, mais malhas "cena_2", "cena_3"… num nó cada.

@@ -141,6 +141,7 @@ public partial class Fatia
 
     void TickStageChange(float dt)
     {
+        TickListMenu();
         if (_fade != null && _fadeT < _fadeLen)
         {
             _fadeT = Math.Min(_fadeLen, _fadeT + dt * 60);

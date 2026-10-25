@@ -69,10 +69,29 @@ conversa de entrada das Digimon (n_digilff/n_digilfm, textos 36..48) rodou.
   ADDMP, ONCTRL). O cliente agora atende SYSctlPlayer GETMHP/GETMP/GETMMP e GAMERAM ADDHP/ADDMP. Na janela não deu para
   conferir: no lobby não há como perder HP.
 
+## Teleporte, portão, mistura aditiva e efeitos (2026-10-25, só código; janela com o usuário)
+
+- **Teleporte (mate00.lua, g_cytelep1).** FATO pelo script: oferece os campos conforme o enredo (FLG 2 → stag0001 ou
+  stag0101 pela FLG 503; FLG 4 → stag0101, 0201; FLG 5 → + 0301; FLG 6/86 → + 0401; FLG 409 → só stag0401 entrada 3, o
+  destino da missão). Uma função local recebe trios fase/entrada/texto (`arg.n`), escreve "STCHGFONT01/font0k" e abre
+  `SELECTCTRL i_zzstchgcur GENERATE "I<n>"`; espera ISEND/ISSELECTNOW; `DMswtSD GETSELECT`: DMcase 0..3 = NEXTSTAGE da
+  opção, DMcase 4 = desistir (volta o fade e o controle). No cliente: `Fatia.ListMenu.cs` (lista com cima/baixo,
+  confirmar = ataque, desistir = K/Backspace/B → 4, **HIPÓTESE**). DECISÃO DA FATIA: caixa da Godot (o i_zzstchgcur não foi
+  exportado).
+- **Portão de volta (mate02.lua, g_cyexit).** Com o portão gravado (SYSsetGateStage no gatedisc.lua da dungeon), mostra o nome
+  da dungeon (STCHGFONT00 I<60..>) na janela sim/não e leva à fase e à entrada gravadas. Sem portão ("GateOff") ou com a
+  FLG 3/409, não faz nada.
+- Teste (com os scripts reais): teleporte com a FLG 4 → 2 opções, a 2ª leva ao stag0201; desistir não troca de fase e devolve
+  o controle; portão gravado em dng101b2/2 → NEXTSTAGE dng101b2 com SETGENERATEPOS I<2>.
+- **Cones brancos.** O cenário não lia o `igBlendFunctionAttr` (os campos são Enum). No #821 há um só aditivo (#1251: 4/1 =
+  SRC_ALPHA/ONE, com igBlendStateAttr ligado) e um normal (#9242: 4/5). Agora o conversor leva o destino da mistura pela
+  árvore, o glTF marca o material com "_add" (BLEND) e o cliente usa mistura aditiva, sem luz e sem gravar profundidade.
+  No lobby, 8 materiais (luzes, ícones, faixas do chão); 9, 10 e 7 nas stagml02/12/13. **HIPÓTESE** (a conferir na janela):
+  os cones brancos são essas peças aditivas desenhadas opacas.
+- **mlBEEP01.** Não é música: é efeito do banco da fase (stagml12 #824, beSoundData cue 0xA9250900 → A925_09.wav, já
+  exportado). O SOUND PLAY do cliente agora toca efeitos do banco quando o nome não é música.
+
 ## Pendente
 
-- Cones brancos no cenário do lobby e da Central Area (geometria sem textura).
-- `mlBEEP01` na stagml12 sem entrada de som conhecida.
-- mate00/mate02 (menu do teleporte e portão), matf* (nomes dos lugares) e os teleportes g_cytelep1/g_cytrerp2 não foram
-  percorridos na janela.
+- Conferir na janela: cones, teleporte, portão e o bipe da Central Area.
 - O tratador do GAMERAM CTRLITEM (efeito exato de BIT/DEVICE/FLAG) não foi lido.

@@ -7,6 +7,8 @@ public sealed class IgbMeshPart
 {
     /// <summary>Osso a que a geometria inteira está presa (igModelViewMatrixBoneSelect); −1 = pele por vértice.</summary>
     public int RigidBone { get; set; } = -1;
+    /// <summary>Destino do igBlendFunctionAttr que vale para a geometria (GL: 1 = ONE → mistura aditiva); −1 sem.</summary>
+    public int BlendDst { get; set; } = -1;
     public int GeometryIndex { get; init; }
     public int ImageIndex { get; set; } = -1;
     /// <summary>Textura por nome (beTextureCtrlAttr sobre um igAttrSet acima da geometria), resolvida num pacote; null sem.</summary>
@@ -67,6 +69,7 @@ public sealed class IgbScene
     // (FATO no campo stag0101: o cenário BG02 usa P10G00n, P11G00n… do lh_pack/ls_pack #618/#619).
     readonly Dictionary<int, string> _textureNameOf = [];
     string? _textureName;
+    int _blendDst = -1;
 
     IgbScene(IgbFile f, byte[] data)
     {
@@ -114,6 +117,7 @@ public sealed class IgbScene
     {
         if (!ancestors.Add(node.Index)) return;
         var savedName = _textureName;
+        var savedBlend = _blendDst;
         if (_textureNameOf.TryGetValue(node.Index, out var tn)) _textureName = tn;
         var world = parent;
         if (_f.Is(node, "igTransform"))
@@ -131,6 +135,9 @@ public sealed class IgbScene
         if (_f.Is(node, "igAttrSet"))
         {
             var attrs = AttrList(node);
+            // igBlendFunctionAttr [@4 origem, @5 destino] (GL 4 = SRC_ALPHA, 1 = ONE, 5 = ONE_MINUS_SRC_ALPHA): vale para o que está abaixo.
+            foreach (var a in attrs.Where(a => _f.Is(a, "igBlendFunctionAttr")))
+                _blendDst = a.Fields.FirstOrDefault(v => v.Desc.Slot == 5 && v.Desc.ShortName is "Int" or "Enum")?.AsInt32(_le) ?? _blendDst;
             foreach (var a in attrs.Where(a => _f.Is(a, "igTextureBindAttr")))
             {
                 int img = FindImage(a);
@@ -143,6 +150,7 @@ public sealed class IgbScene
         foreach (var child in Children(node)) Visit(child, world, image, ancestors);
         ancestors.Remove(node.Index);
         _textureName = savedName;
+        _blendDst = savedBlend;
     }
 
     // Filhos de um igGroup: igNodeList (igObjectList) ou referência direta a igNode.
@@ -218,7 +226,7 @@ public sealed class IgbScene
 
     IgbMeshPart BuildPart(IgbObject geom, float[]? world, int image)
     {
-        var part = new IgbMeshPart { GeometryIndex = geom.Index, ImageIndex = image, SceneRoot = _root, TextureName = image < 0 ? _textureName : null };
+        var part = new IgbMeshPart { GeometryIndex = geom.Index, ImageIndex = image, SceneRoot = _root, TextureName = image < 0 ? _textureName : null, BlendDst = _blendDst };
         IgbObject? va = null, ia = null, pla = null;
         foreach (var r in Refs(geom))
         {

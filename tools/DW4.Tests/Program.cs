@@ -1058,6 +1058,62 @@ if (args.Length == 1)
         True(engine.Log.Any(l => l.StartsWith("GAMERAM - 0 ADDHP \"I<0>/I<150>", StringComparison.Ordinal)), "ADDHP: " + string.Join(" | ", engine.Log.Take(12)));
         True(engine.Log.Contains("PLAYER - 0 ONCTRL"), "devolve o controle");
 
+        // Teleporte (mate00.lua): os destinos crescem com o enredo (FLG 2 → 1 campo, 4 → 2, 5 → 3, 6/86 → 4; 409 → destino da
+        // missão). Com a FLG 4: stag0101 e stag0201; escolher o 2º leva ao stag0201.
+        int t = 0;
+        engine.Responder = m => (m.Name, m.Command) switch
+        {
+            ("i_zzstchgcur", "ISSELECTNOW") => t < 20 ? 1 : 0,
+            ("i_zzstchgcur", "ISEND") => t < 20 ? 0 : 1,
+            ("i_zzstchgcur", "GETSELECT") => 1,
+            _ => null,
+        };
+        // FATO (mate00.lua): com a FLG 2 o teleporte só oferece o primeiro campo; com a 409 (ligada pelo quest01 acima), só o
+        // destino da missão (stag0401, entrada 3).
+        ram.SetFlag(2, false);
+        ram.SetFlag(409, false);
+        ram.SetFlag(4, true);
+        engine.Log.Clear();
+        True(stage.RunMat("mate00.lua", new BeMatEvent(true, true, 0, _ => { })), "mate00.lua rodou");
+        for (; t < 600; t++) stage.Tick();
+        True(engine.Log.Any(l => l == "SELECTCTRL i_zzstchgcur 0 GENERATE \"I<2>\""), "menu com 2 opções: "  + string.Join(" | ", engine.Log.Where(l => l.Contains("zzstchgcur"))));
+        Equal(2, engine.Log.Count(l => l.StartsWith("TEXTCTL - -1 TEXTSET \"STCHGFONT01/font0", StringComparison.Ordinal)), "2 textos de destino");
+        True(engine.Log.Contains("STAGECTL - -1 NEXTSTAGE \"stag0201\""), "2ª opção → stag0201: " + string.Join(" | ", engine.Log.TakeLast(15)));
+
+        // Desistir (DMcase 4): nada de troca de fase, o controle volta.
+        t = 0;
+        engine.Responder = m => (m.Name, m.Command) switch
+        {
+            ("i_zzstchgcur", "ISSELECTNOW") => t < 20 ? 1 : 0,
+            ("i_zzstchgcur", "ISEND") => t < 20 ? 0 : 1,
+            ("i_zzstchgcur", "GETSELECT") => 4,
+            _ => null,
+        };
+        engine.Log.Clear();
+        stage.RunMat("mate00.lua", new BeMatEvent(true, true, 0, _ => { }));
+        for (; t < 600; t++) stage.Tick();
+        True(!engine.Log.Any(l => l.Contains("NEXTSTAGE")), "desistiu: sem troca");
+        True(engine.Log.Any(l => l.Contains("ONCTRL")), "desistiu: controle volta");
+
+        // Portão de volta (mate02.lua): com o portão gravado na dng101b2 (entrada 2), a janela sim/não leva até lá.
+        Be("SYSsetGateStage", "dng101b2", 2.0);
+        t = 0;
+        engine.Responder = m => (m.Name, m.Command) switch
+        {
+            ("i_zzstchgwn", "ISSELECTNOW") => t < 20 ? 1 : 0,
+            (_, "ISEND") => t < 20 ? 0 : 1,
+            ("i_zzstchgwn", "GETSELECT") => 0,
+            ("i_zzstchgwb", "ISRUN") => t < 40 ? 1 : 0, // como o cliente: aberta até a escolha
+            _ => null,
+        };
+        engine.Log.Clear();
+        True(stage.RunMat("mate02.lua", new BeMatEvent(true, true, 0, _ => { })), "mate02.lua rodou");
+        for (; t < 600; t++) stage.Tick();
+        True(engine.Log.Contains("TEXTCTL - -1 TEXTSET \"STCHGFONT00/font00/I<60>\""), "nome da dng101b2 na janela");
+        True(engine.Log.Contains("STAGECTL - -1 NEXTSTAGE \"dng101b2\"") && engine.Log.Contains("PLAYERPOINT - -1 SETGENERATEPOS \"I<2>\""),
+            "volta à dng101b2, entrada 2: " + string.Join(" | ", engine.Log.Take(40)));
+        engine.Responder = null;
+
         host.CallName = "WPos";
         Equal(1.0, Be("MDLisCallName", "WPos")[0], "chamada WPos");
         Be("MDLsetWorldPosTarget", "V<1,2,3>");
@@ -1515,7 +1571,8 @@ sealed class RecordingEngine : IBeEngine
     public double? Answer { get; set; }
     public void Deliver(BeMessage message) => Log.Add(message.ToString());
     public Dictionary<string, double> Answers { get; } = [];
-    public double? Query(BeMessage message) => message.Command == "GETGENERATEPOS" ? 0 : Answers.TryGetValue(message.Command, out var v) ? v : Answer;
+    public Func<BeMessage, double?>? Responder { get; set; }
+    public double? Query(BeMessage message) => Responder?.Invoke(message) ?? (message.Command == "GETGENERATEPOS" ? 0 : Answers.TryGetValue(message.Command, out var v) ? v : Answer);
 }
 
 sealed class TestModel : IBeModel
