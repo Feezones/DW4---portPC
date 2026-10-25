@@ -325,7 +325,7 @@ public partial class Fatia : Node3D
                 if (to.X * to.X + to.Z * to.Z > 0.01f) _move.Face(MathF.Atan2(to.X, to.Z));
             }
         }
-        else if (attacking) _runner!.Tick(dt, attackPressed && !wasWaza);
+        else if (attacking) _runner!.Tick(dt, attackPressed && !wasWaza, attackDown && !wasWaza);
         _techKey = -1;
         _panel.Tick(dt);
         if (_wazaPending is { } waza && _runner?.Running != true) { _wazaPending = null; ReleaseTechnique(waza); }

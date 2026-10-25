@@ -252,7 +252,22 @@ Test("Sequência: bloco do estilo, sonda de conversa pulada, caixa no quadro cer
     Equal("KATCS1", r.Action, "com o botão na janela, segue o combo");
     r.Tick(frame, true);
     for (int i = 0; i < 20; i++) r.Tick(frame, false);
-    True(!r.Running && r.Next == "SQ_ATCKTM", "fim do combo pula para SQ_ATCKTM");
+    True(!r.Running && r.Next == null, "toques rápidos: o último golpe não solta o carregado (SQ_ATCKTM)");
+
+    // Segurando o botão durante o último golpe: segue para o carregado.
+    r.Start("SQ_ATCK1", "slash");
+    r.Tick(frame, true);
+    for (int i = 0; i < 40 && r.Action != "KATCS1"; i++) r.Tick(frame, false);
+    Equal("KATCS1", r.Action, "segundo golpe");
+    for (int i = 0; i < 21; i++) r.Tick(frame, i == 0, attackHeld: true);
+    True(!r.Running && r.Next == "SQ_ATCKTM", "segurando: pula para SQ_ATCKTM");
+
+    // Segurou mas soltou no meio: não sai o carregado.
+    r.Start("SQ_ATCK1", "slash");
+    r.Tick(frame, true);
+    for (int i = 0; i < 40 && r.Action != "KATCS1"; i++) r.Tick(frame, false);
+    for (int i = 0; i < 21; i++) r.Tick(frame, i == 0, attackHeld: i < 10);
+    True(!r.Running && r.Next == null, "soltou antes do fim: sem carregado");
     True(!r.Start("SQ_ATCK1", "gun"), "estilo inexistente");
 
     // Numemon: caixas do golpe depois da ACTION valem para ela.

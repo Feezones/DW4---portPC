@@ -118,6 +118,8 @@ public sealed class SequenceRunner
     public const float FramesPerSecond = 30f;
     /// <summary>Tipo de HITBOX da sonda de conversa (HIPÓTESE).</summary>
     public const int TalkProbe = 60000;
+    /// <summary>Golpe carregado (tame) que fecha o combo do SQ_ATCK1.</summary>
+    public const string ChargedSequence = "SQ_ATCKTM";
 
     readonly IReadOnlyDictionary<string, List<SeqCommand>> _seqs;
     readonly Func<string, float?> _animFrames;
@@ -125,6 +127,8 @@ public sealed class SequenceRunner
     int _pc, _end;
     readonly List<HitBox> _pending = [];
     bool _attackBuffered, _skipWait;
+    // Botão de ataque segurado sem soltar desde o início da ação atual (para o golpe carregado, SQ_ATCKTM).
+    bool _heldSinceAction;
 
     public SequenceRunner(IReadOnlyDictionary<string, List<SeqCommand>> sequences, Func<string, float?> animationFrames)
     {
@@ -188,10 +192,12 @@ public sealed class SequenceRunner
         return true;
     }
 
-    /// <summary>Avança <paramref name="dt"/> segundos. <paramref name="attackPressed"/> = botão de ataque apertado neste passo.</summary>
-    public void Tick(float dt, bool attackPressed)
+    /// <summary>Avança <paramref name="dt"/> segundos. <paramref name="attackPressed"/> = botão de ataque apertado neste passo;
+    /// <paramref name="attackHeld"/> = botão de ataque segurado agora (o padrão repete o apertado: sem informação de segurar).</summary>
+    public void Tick(float dt, bool attackPressed, bool? attackHeld = null)
     {
         if (!Running) return;
+        if (!(attackHeld ?? attackPressed)) _heldSinceAction = false;
         if (attackPressed && Action != null) _attackBuffered = true;
         ActionFrame += dt * FramesPerSecond;
         Advance();
@@ -227,6 +233,7 @@ public sealed class SequenceRunner
                     ActionHitBoxes = _pending.ToList();
                     _pending.Clear();
                     _attackBuffered = false;
+                    _heldSinceAction = true;
                     ActionSerial++;
                     break;
                 case "WCHECK" when _skipWait && c.S(0) == "Action":
@@ -234,7 +241,14 @@ public sealed class SequenceRunner
                     break;
                 case "WCHECK" when c.S(0) is "Action" or "Moving" || c.S(0).StartsWith("Atck", StringComparison.Ordinal):
                     if (Action != null && ActionFrame < ActionLength) return; // espera a animação
-                    if (c.S(0).StartsWith("Atck", StringComparison.Ordinal) && !_attackBuffered) { Finish(null); return; }
+                    if (c.S(0).StartsWith("Atck", StringComparison.Ordinal))
+                    {
+                        // FATO (Guilmon #857): nos 8 estilos, o último WCHECK "Atck03" do SQ_ATCK1 é seguido de JUMP "SQ_ATCKTM"; os dois
+                        // primeiros continuam o combo. HIPÓTESE: "TM" = tame (溜め, carregar): o golpe carregado só sai segurando o botão
+                        // durante o 3º golpe; tocar de novo não basta (antes, o 4º toque rápido soltava o carregado).
+                        bool toCharged = _pc + 1 < _end && _cmds[_pc + 1].Kind == "JUMP" && _cmds[_pc + 1].S(0) == ChargedSequence;
+                        if (toCharged ? !_heldSinceAction : !_attackBuffered) { Finish(null); return; }
+                    }
                     break;
                 case "WCHECK":
                     break;
