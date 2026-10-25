@@ -30,7 +30,15 @@ janela.
    erro e sem be: faltando. FATO: a recompensa vai pela COUNTER 0 (≥ 900 → +100 BIT para cada jogador, depois 600…). Falta jogar na
    janela. FATO: a COUNTER 0 é o tempo da missão (1800/2400/3000 s no first.lua das dngq*), contado pelo chk_i_timenm0.lua;
    o cliente agora roda o cronômetro (1 chamada por segundo, HIPÓTESE).
-9. **Loja de cartas (stagIS11) e as cartas.** As regras não foram lidas. Hoje o NPC mostra "ainda não portada".
+9. **Loja de cartas (stagIS11) e as cartas.** FATO:
+   - tabela "card" (area.afs #621): 50 cartas com RARE (0 comum, 1 incomum, 2 rara), KAKURITSU (peso), NAME e a imagem
+     do álbum (j_shcardNN);
+   - a carta vem do conItem 10 "B. Pack" ("Card Keeper will exchange this with trading cards"), e a coleção é a CARDLIST
+     (50);
+   - os scripts só contam (SYSctlCardFolder "KAZU" ≥ 25/35/45 dão recompensas na conversa n_digilfm_04);
+   - o álbum fica no menu de status (DATABASE "card": CARDINFO, SQALBUM).
+   DESCONHECIDO: quantas cartas vêm por pacote e o sorteio (código perto de 0x8039A5xx, j_shbooster, não lido). Hoje o NPC
+   mostra "ainda não portada".
 10. **Efeitos de estado no jogador** (atordoar, sono, prender, veneno, ataque/defesa baixos). O jogo faz pelos hit_p_*.lua; o
     port calcula o dano por conta própria e não roda esses scripts.
 
