@@ -84,3 +84,28 @@
 - O auxiliar de item recebe o LEVEL (0x803B0AB4/0x803B0B9C, faixas 1/3/7/15/31) e calcula algo por item: grau ou bônus. Por
   isso as colunas repetidas talvez não sejam o mesmo item na tela do jogo. Falta ler.
 - As lojas de disco (DISK: não há "shopDisk" no executável; a janela lê o conItem), X-data, laboratório, banco e cartas.
+
+## stagIS13: gravar e sair (2026-10-25)
+
+- **FATO:**
+  - O first.lua manda LOADCTRL2 NULL GENERATE. A tela é nativa: beNDMWLoadCtrl2 e beNDMWLoadIntf2 (SelSlot, MakeChr, NameSel,
+    Diffselect, MesWin, ChrDataSel, DegiState).
+  - Os textos da fase (mswkMem0160..0268) dão o fluxo:
+    - "Create Digimon." e "Call Digimon.";
+    - "Select Difficulty", com Normal e Very Hard;
+    - "Do you want to save?" (Save. / Do not save.);
+    - "Select the save box." e as caixas j_saveareawin01..04;
+    - "Return to the lobby?" (Return to the lobby. / End the game.).
+    - O resto é do cartão de memória.
+  - A gatedisc.lua sai com SETGENERATEPOS I<3> e NEXTSTAGE "stagML11".
+  - As formas escolhíveis são DIGIMONNO 0..3 (Agumon, Veemon, Guilmon, Dorumon na shinka).
+- **No port:**
+  - Criar e chamar Digimon ficam no menu inicial: as vagas da conta (ver docs/decisoes-port-pc.md).
+  - Na stagIS13, o cliente abre uma janela com os textos do jogo:
+    - Save grava na vaga com o personagem no lobby, entrada 3;
+    - Return to the lobby vai à stagML11, entrada 3;
+    - End the game volta ao menu inicial sem gravar de novo.
+- **DESCONHECIDO:**
+  - O limite de letras do nome.
+  - O texto e o valor do "Hard" (só "Normal" e "Very Hard" estão nos textos exportados).
+  - Quantas caixas o save do original tem (as janelas sugerem 4).

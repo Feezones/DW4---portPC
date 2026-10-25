@@ -77,10 +77,10 @@ public static class Session
         Character = s;
     }
 
-    /// <summary>Grava e volta ao menu.</summary>
-    public static void ReturnToMenu(SceneTree tree, GameRam ram, string stage, int entry)
+    /// <summary>Grava (ou não, no "End the game" sem gravar da stagIS13) e volta ao menu.</summary>
+    public static void ReturnToMenu(SceneTree tree, GameRam ram, string stage, int entry, bool save = true)
     {
-        SaveProgress(ram, stage, entry);
+        if (save) SaveProgress(ram, stage, entry);
         Gate.Leave();
         Character = null;
         Slot = -1;
