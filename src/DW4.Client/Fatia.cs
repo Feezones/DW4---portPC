@@ -13,7 +13,7 @@ namespace DW4.Client;
 /// Regras (câmera, movimento) ficam em DW4.Gameplay; aqui só entrada, física da Godot e apresentação.
 /// Recursos lidos em tempo de execução da pasta DW4_FATIA (fora do repositório), gerada por:
 ///   dw4 igb-cena ndmw.afs 179 2877 &lt;fatia&gt;\cenario · dw4 igb-colisao ndmw.afs 179 1862 &lt;fatia&gt;\colisao
-///   dw4 igb-gltf ndmw.afs 857 &lt;fatia&gt;\guilmon · dw4 igb-seq ndmw.afs 857 &lt;fatia&gt;\guilmon · dw4 igb-cena ndmw.afs 967 todas &lt;fatia&gt;\arma · dw4 igb-gltf ndmw.afs 179 &lt;fatia&gt;\numemon --ator=e_nume · dw4 igb-camera ndmw.afs 180 e 181 &lt;fatia&gt;
+///   dw4 igb-gltf ndmw.afs 857 &lt;fatia&gt;\guilmon · dw4 igb-seq ndmw.afs 857 &lt;fatia&gt;\guilmon · dw4 igb-cena ndmw.afs 967 todas &lt;fatia&gt;\arma · dw4 igb-gltf ndmw.afs 179 &lt;fatia&gt;\numemon --ator=e_nume · dw4 igb-camera ndmw.afs 180 e 181 &lt;fatia&gt; · dw4 igb-hud ndmw.afs 179 area.afs 9 &lt;fatia&gt;\hud
 /// </summary>
 public partial class Fatia : Node3D
 {
@@ -103,6 +103,9 @@ public partial class Fatia : Node3D
     readonly List<MeshInstance3D> _boxMeshes = [];
     Camera3D _camera = null!;
     Label _hud = null!;
+    // HUD do jogo (Hud.cs): painel de status do jogador 1 e números de dano i_dmgnum/i_pcdmgnum, de <fatia>hud.
+    HudOverlay? _overlay;
+    DamageNumbers? _damageNumbers;
     readonly List<string> _problems = [];
 
     public override void _Ready()
@@ -206,6 +209,11 @@ public partial class Fatia : Node3D
         }
 
         LoadCombat();
+        if (HudData.Load(System.IO.Path.Combine(_dir, "hud"), _problems) is { } hud)
+        {
+            _overlay = new HudOverlay(hud, this);
+            _damageNumbers = new DamageNumbers(hud, this);
+        }
         // Som da dng1 (FATO: first.lua toca "AM_DUNGE" e "DG_CAVE1"; beSoundInfo da fase → ndmw #6 e #35), com o loop do
         // cabeçalho ADX. Gerado por: dw4 adx-wav ndmw.afs <fatia>\audio 6 35. Volume do beSoundData (S8): unidade
         // desconhecida, por isso os dois tocam a 0 dB.
@@ -337,6 +345,8 @@ public partial class Fatia : Node3D
         }
         UpdateEnemy(dt);
         UpdateFloaters(dt);
+        _damageNumbers?.Update(dt);
+        if (_pf != null) _overlay?.Update(dt, _hp, _pf.MaxHp, _mp, _pf.MaxMp, _level);
         UpdateShots(dt);
         UpdateGround();
         _sfx?.Tick(dt);
@@ -534,7 +544,7 @@ public partial class Fatia : Node3D
         RaiseSkill(t.Stats.SkillIndex, technique: true);
         _enemyHp = Math.Max(0, _enemyHp - r.Damage);
         _hits++;
-        Float(_enemy!, crit ? $"{r.Damage}!" : r.Damage.ToString(), crit ? Colors.Orange : Colors.Gold);
+        Damage(_enemy!, r.Damage, onPlayer: false, crit ? $"{r.Damage}!" : r.Damage.ToString(), crit ? Colors.Orange : Colors.Gold);
         _lastEvent = $"{t.Name}: {r.Damage}{(crit ? " crítico" : "")} (código {code})";
         if (_enemyHp <= 0 && !_killed) { _killed = true; GainExp(); DropItem(); }
         if (_brain != null && _enemyRunner != null)
@@ -560,7 +570,7 @@ public partial class Fatia : Node3D
         SkillUp();
         _enemyHp = Math.Max(0, _enemyHp - r.Damage);
         int rank = DamageFormula.Rank(r.Damage, _enemyHp, _ef.MaxHp);
-        Float(_enemy!, crit ? $"{r.Damage}!" : r.Damage.ToString(), crit ? Colors.Orange : Colors.White);
+        Damage(_enemy!, r.Damage, onPlayer: false, crit ? $"{r.Damage}!" : r.Damage.ToString(), crit ? Colors.Orange : Colors.White);
         _lastEvent = $"Guilmon: {r.Damage}{(crit ? " crítico" : "")}{(r.Strong ? " forte" : "")} (código {code})";
         if (_enemyHp <= 0 && !_killed) { _killed = true; GainExp(); DropItem(); }
         return DamageSequences[rank];
@@ -684,9 +694,17 @@ public partial class Fatia : Node3D
         if (!DamageFormula.EnemyHits(_ef, atk, _pf, _mt)) { Float(_player, "MISS", Colors.LightGray); return null; }
         var r = DamageFormula.EnemyDamage(_ef, atk, _pf, new StatusMods(), _mt);
         _hp = Math.Max(0, _hp - r.Damage);
-        Float(_player, r.Damage.ToString(), Colors.Red);
+        Damage(_player, r.Damage, onPlayer: true, r.Damage.ToString(), Colors.Red);
         _lastEvent = $"Numemon: {r.Damage} (eneatk {code % 10000})";
         return DamageSequences[DamageFormula.Rank(r.Damage, _hp, _pf.MaxHp)];
+    }
+
+    // Dano com o número do jogo (i_dmgnum no inimigo, i_pcdmgnum no jogador) na posição do modelo (HIPÓTESE: o jogo gera
+    // o número ali; o dmgnmtrans já sobe 10). Sem o HUD exportado, cai no texto.
+    void Damage(Node3D over, int value, bool onPlayer, string text, Color color)
+    {
+        if (_damageNumbers?.Show(onPlayer, value, over.GlobalPosition) == true) return;
+        Float(over, text, color);
     }
 
     void Float(Node3D over, string text, Color color)
