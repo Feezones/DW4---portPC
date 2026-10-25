@@ -34,10 +34,10 @@ public sealed class HudData
 
     HudData(string dir) => Dir = dir;
 
-    public static HudData? Load(string dir, List<string> problems)
+    public static HudData? Load(string dir, List<string> problems, string pattern = "*_hud.json", string? missing = null)
     {
-        var file = System.IO.Directory.Exists(dir) ? System.IO.Directory.EnumerateFiles(dir, "*_hud.json").FirstOrDefault() : null;
-        if (file == null) { problems.Add($"falta o *_hud.json (dw4 igb-hud ndmw.afs 179 area.afs 9 <fatia>\\hud): HUD em texto"); return null; }
+        var file = System.IO.Directory.Exists(dir) ? System.IO.Directory.EnumerateFiles(dir, pattern).FirstOrDefault() : null;
+        if (file == null) { problems.Add(missing ?? $"falta o *_hud.json (dw4 igb-hud ndmw.afs 179 area.afs 9 <fatia>\\hud): HUD em texto"); return null; }
         var h = new HudData(dir);
         using var doc = JsonDocument.Parse(System.IO.File.ReadAllText(file));
         var root = doc.RootElement;

@@ -51,6 +51,7 @@ public partial class Fatia : IBeEngine
     public void Deliver(BeMessage m)
     {
         ScriptLog(m.ToString());
+        if (DeliverToObjects(m)) return;
         switch (m.Class, m.Command)
         {
             case ("STAGECTL", "PADINPUT"):

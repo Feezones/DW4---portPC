@@ -54,6 +54,7 @@ try
         "adx-wav" when args.Length >= 4 => AdxWav(args[1], args[2], args[3..]),
         "igb-sons" when args.Length == 4 => IgbSons(args[1], args[2], args[3]),
         "igb-hud" when args.Length is 4 or 6 => IgbHudCmd(args[1], args[2], args.Length == 6 ? args[3] : null, args.Length == 6 ? args[4] : null, args[^1]),
+        "igb-objetos" when args.Length >= 5 => IgbObjetos(args[1], args[2], args[3], args[4..]),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
@@ -109,6 +110,7 @@ static int Usage()
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
+          dw4 igb-objetos  <ndmw.afs> <entrada> <pasta> <ator|ator=raiz>...   (objetos rígidos da fase para a fatia)
           dw4 lua-extrair  <ndmw.afs> <entrada> <pasta-de-trabalho>   (scripts da fase para o cliente; fora do repositório)
           dw4 lua-trace    <ndmw.afs> <entrada> [x.lua ...] [Metodo=valor ...]
                            (executa os scripts da fase na VM própria, na ordem do motor, e mostra cada chamada be:*)
@@ -1447,6 +1449,33 @@ int IgbHudCmd(string path, string which, string? packPath, string? packWhich, st
     var file = Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{int.Parse(which, inv):D4}_hud.json");
     File.WriteAllText(file, json.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = false }));
     Console.WriteLine($"{json["actors"]!.AsArray().Count} atores, {json["nodes"]!.AsObject().Count} nós, {json["meters"]!.AsArray().Count} medidores, {json["numbers"]!.AsArray().Count} números, {hud.Images.Count} imagens -> {file}");
+    foreach (var n in hud.Notes) Console.WriteLine($"nota: {n}");
+    return 0;
+}
+
+// Objetos de cenário rígidos (portas, pisos, caixas…: KIND_OBJECT sem esqueleto, animados por igTransformSequence) no
+// mesmo formato do igb-hud, para a fatia gerar pelos GENERATE dos scripts. Ator "nome" (raiz = igAttrSet com o nome) ou
+// "nome=índice" (raiz explícita).
+int IgbObjetos(string path, string which, string outDir, string[] actors)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int i) || i >= afs.Entries.Count) throw new InvalidDataException($"índice inválido: {which}");
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[i], ms);
+    var data = ms.ToArray();
+    var (json, hud) = IgbHud.Export(IgbFile.Read(data), data, null, null, actors);
+    Directory.CreateDirectory(full);
+    foreach (var img in hud.Images)
+    {
+        using var fs = File.Create(Path.Combine(full, img.File));
+        Png.WriteRgba(fs, img.Width, img.Height, img.Rgba);
+    }
+    json["source"] = $"{Path.GetFileName(path)} #{which}";
+    var file = Path.Combine(full, "objetos.json");
+    File.WriteAllText(file, json.ToJsonString());
+    Console.WriteLine($"{json["actors"]!.AsArray().Count} atores, {json["nodes"]!.AsObject().Count} nós, {hud.Images.Count} imagens -> {file}");
     foreach (var n in hud.Notes) Console.WriteLine($"nota: {n}");
     return 0;
 }

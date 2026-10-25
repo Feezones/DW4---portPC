@@ -260,6 +260,7 @@ public partial class Fatia : Node3D
     {
         float dt = (float)delta;
         _stage?.Tick();
+        TickObjects(dt);
         var input = Input.GetVector("ui_left", "ui_right", "ui_up", "ui_down");
         if (Input.IsKeyPressed(Key.A)) input.X -= 1;
         if (Input.IsKeyPressed(Key.D)) input.X += 1;
@@ -334,6 +335,7 @@ public partial class Fatia : Node3D
             {
                 _lastSerial = _runner.ActionSerial;
                 _hitThisAction.Clear();
+                _objectsHitThisAction.Clear();
                 if (_runner.Action != null) _sfx?.Action("p_girumon", _runner.Action);
                 if (_anim != null && _runner.Action != null && AnimName(_runner.Action) is { } an)
                 {
@@ -342,6 +344,7 @@ public partial class Fatia : Node3D
                 }
             }
             CheckHits();
+            CheckObjectHits();
         }
         else
         {

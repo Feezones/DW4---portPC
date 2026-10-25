@@ -30,6 +30,15 @@ public sealed class StageScripts
         catch (LuaException ex) { Error?.Invoke(name, ex.Message); return false; }
     }
 
+    /// <summary>Executa um script no contexto de um modelo (hit_*.lua do objeto atingido).</summary>
+    public bool RunAs(string name, IBeModel model)
+    {
+        var previous = Host.Model;
+        Host.Model = model;
+        try { return Run(name); }
+        finally { Host.Model = previous; }
+    }
+
     /// <summary>Estado 3: func.lua e boot.lua. Devolve a lista de IGB que a fase pediu.</summary>
     public IReadOnlyList<string> Boot()
     {

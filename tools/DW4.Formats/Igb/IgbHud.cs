@@ -73,10 +73,14 @@ public sealed class IgbHud
     {
         var h = new IgbHud(f, data, pack, packData);
         var list = new JsonArray();
-        foreach (var name in actors)
+        foreach (var spec in actors)
         {
-            var root = f.Slots.OfType<IgbObject>().FirstOrDefault(o => f.Is(o, "igAttrSet") && Text(o, 2) == name);
-            if (root == null) { h.Notes.Add($"ator {name}: igAttrSet não encontrado"); continue; }
+            // "nome=índice": raiz explícita (atores cuja raiz é o igSwitch do beAction2Info, ex.: n_recorderdng, g_dbutton1).
+            var name = spec.Split('=')[0];
+            var root = spec.Contains('=') && int.TryParse(spec[(spec.IndexOf('=') + 1)..], out int ri)
+                ? f.Slots.ElementAtOrDefault(ri) as IgbObject
+                : f.Slots.OfType<IgbObject>().FirstOrDefault(o => f.Is(o, "igAttrSet") && Text(o, 2) == name);
+            if (root == null) { h.Notes.Add($"ator {name}: raiz não encontrada"); continue; }
             h.Visit(root);
             list.Add(new JsonObject { ["name"] = name, ["root"] = root.Index });
         }

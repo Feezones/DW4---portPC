@@ -10,6 +10,17 @@ public interface IBeEngine
     double? Query(BeMessage message);
 }
 
+/// <summary>
+/// O modelo "dono" do script em execução (hit_*.lua roda no contexto do objeto atingido): MDLaddHp, MDLsetSeq etc.
+/// </summary>
+public interface IBeModel
+{
+    int Hp { get; set; }
+    /// <summary>Código do golpe que acertou (MDLgetBulletKind): 10000 físico, 40000 + linha técnica (HIPÓTESE), …</summary>
+    int BulletKind { get; }
+    void SetSequence(string name);
+}
+
 /// <summary>Dados do sistema que os SYS* devolvem (escolhas do menu e do grupo).</summary>
 public sealed class BeSystem
 {
@@ -41,6 +52,9 @@ public sealed class BeHost
     public BeMessenger Messenger { get; }
     public DemoManager Demo { get; }
     public LuaTable Table { get; } = new();
+
+    /// <summary>Modelo no contexto do script atual (hit_*.lua); null fora desse contexto.</summary>
+    public IBeModel? Model { get; set; }
 
     /// <summary>Lista montada pelo boot.lua (CFLclear/CFLsetName): os IGB que a fase carrega.</summary>
     public IReadOnlyList<string> Files => _files;
@@ -150,6 +164,15 @@ public sealed class BeHost
             case "SYSgetCameraMode": return N(Ram.CameraMode);
             case "SYSgetLightMode": return N(Ram.LightMode);
             case "SYSgetIsPackOnly": return N(Sys.IsPackOnly);
+
+            // Modelo do contexto (hit_g_box.lua: MDLsetDMGTurn(0); se não for técnica 40040..40099, MDLaddHp(−100) e SQ_DDMG).
+            case "MDLgetBulletKind": return N(Model?.BulletKind ?? 0);
+            case "MDLgetHp": return N(Model?.Hp ?? 0);
+            case "MDLaddHp": if (Model != null) Model.Hp += I(a, 1); return Nothing;
+            case "MDLsetSeq": if (Model != null && S(a, 1) is { } seq) Model.SetSequence(seq); return Nothing;
+            case "MDLisLive": return Bool(Model is { Hp: > 0 });
+            // HIPÓTESE pelo nome: turno de dano (reação); sem efeito na fatia.
+            case "MDLsetDMGTurn": return Nothing;
 
             // FATO (0x802EE1F0): envia PLAYERPOINT GETGENERATEPOS e devolve o inteiro (ponto de entrada na fase).
             case "PLAYERgetPos":
