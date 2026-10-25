@@ -49,6 +49,7 @@ try
         "dolphin-gdb-teste" when args.Length == 2 => DolphinGdbTeste(args[1]),
         "dolphin-gdb" when args.Length >= 4 => DolphinGdb(args[1], args[2], args[3..]),
         "igb-camera" when args.Length == 4 => IgbCamera(args[1], args[2], args[3]),
+        "igb-camera-demo" when args.Length == 4 => IgbCameraDemoCmd(args[1], args[2], args[3]),
         "igb-db" when args.Length == 4 => IgbDb(args[1], args[2], args[3]),
         "igb-drops" when args.Length == 4 => IgbDropsCmd(args[1], args[2], args[3]),
         "igb-geradores" when args.Length == 4 => IgbGeradores(args[1], args[2], args[3]),
@@ -104,6 +105,7 @@ static int Usage()
           dw4 ram-busca    <a.bin> <b.bin> <quadros-entre-eles> [--y=40]   (contadores de quadro e posições candidatas)
           dw4 dolphin-gdb  <porta> <pasta> <quadro>... [--contador=0x814541D8] [--amostra=ENDERECO,TAM]   (MEM1 nos quadros pedidos, via servidor GDB do Dolphin)
           dw4 igb-camera   <arquivo.afs> <indice> <pasta-de-trabalho>   (volumes de câmera da fase em JSON, fora do repositório)
+          dw4 igb-camera-demo <arquivo.afs> <indice> <pasta-de-trabalho>   (câmeras de demo do acmr_pack, amostradas a 60 Hz, em JSON, fora do repositório)
           dw4 igb-db       <arquivo.afs> <indice> <pasta-de-trabalho>   (as 12 tabelas beDataBase em CSV e JSON, fora do repositório)
           dw4 igb-drops    <arquivo.afs> <indice> <pasta-de-trabalho>   (listas de drop dos geradores em JSON, fora do repositório)
           dw4 igb-geradores <arquivo.afs> <indice> <pasta-de-trabalho>   (geradores de onda em geradores.json: posições absolutas por vaga, contagem por nº de jogadores)
@@ -1789,6 +1791,61 @@ int IgbCamera(string path, string which, string outDir)
     var root = new JsonObject { ["source"] = $"{Path.GetFileName(path)} #{idx}", ["common"] = Arr(cam.Common), ["boxes"] = boxes };
     File.WriteAllText(file, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
     Console.WriteLine($"{cam.Boxes.Count} volumes -> {file}");
+    return 0;
+}
+
+// Câmeras de demo (beCameraCtrlInfo → beCameraDemoData) de um acmr_pack: um JSON por câmera com o caminho cru (matrizes e
+// canais das sequências) e os quadros amostrados a 60 Hz (posição, frente, cima e matriz do mundo, em linhas).
+int IgbCameraDemoCmd(string path, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    var demos = IgbCameraDemo.Read(IgbFile.Read(data), data);
+    if (demos.Count == 0) { Console.Error.WriteLine("nenhuma câmera de demo"); return 1; }
+    JsonArray Arr(IEnumerable<float> v) => new(v.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray());
+    JsonArray Times(IEnumerable<double> v) => new(v.Select(x => (JsonNode?)JsonValue.Create(Math.Round(x, 6))).ToArray());
+    Directory.CreateDirectory(full);
+    foreach (var d in demos)
+    {
+        foreach (var n in d.Notes) Console.WriteLine($"nota ({d.Name}): {n}");
+        var nodes = new JsonArray();
+        foreach (var n in d.Path)
+        {
+            var j = new JsonObject { ["index"] = n.Index, ["name"] = n.Name, ["matrix"] = Arr(n.Matrix) };
+            if (n.Sequence is { } s)
+                j["sequence"] = new JsonObject
+                {
+                    ["mask"] = s.Mask, ["interpolation"] = new JsonArray(s.Interpolation.Select(b => (JsonNode?)(int)b).ToArray()),
+                    ["duration"] = s.Duration, ["times"] = Times(s.Times), ["translation"] = Arr(s.Translation),
+                    ["rotation"] = Arr(s.Rotation), ["scale"] = Arr(s.Scale), ["raw12"] = Arr(s.Raw12), ["raw13"] = Arr(s.Raw13),
+                };
+            nodes.Add(j);
+        }
+        var frames = d.Sample();
+        var root = new JsonObject
+        {
+            ["source"] = $"{Path.GetFileName(path)} #{idx}", ["name"] = d.Name, ["duration"] = d.Duration, ["rate"] = 60,
+            ["fovHorizontalDeg"] = d.Fov, ["near"] = d.Near, ["far"] = d.Far,
+            ["frames"] = new JsonArray(frames.Select(fr => (JsonNode?)new JsonObject
+            {
+                ["t"] = Math.Round(fr.Time, 6), ["position"] = Arr(fr.Position), ["forward"] = Arr(fr.Forward), ["up"] = Arr(fr.Up),
+                ["world"] = Arr(fr.World),
+            }).ToArray()),
+            ["path"] = nodes,
+        };
+        var file = Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_{d.Name}.json");
+        File.WriteAllText(file, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        IgbDemoFrame a = frames[0], b = frames[^1];
+        Console.WriteLine(string.Create(inv, $"{d.Name}: {d.Duration:0.###} s, {frames.Count} quadros, fov {d.Fov:0.##}° (horizontal), {d.Path.Count} nós"));
+        Console.WriteLine(string.Create(inv, $"  início ({a.Position[0]:0.#}, {a.Position[1]:0.#}, {a.Position[2]:0.#}) frente ({a.Forward[0]:0.##}, {a.Forward[1]:0.##}, {a.Forward[2]:0.##})"));
+        Console.WriteLine(string.Create(inv, $"  fim    ({b.Position[0]:0.#}, {b.Position[1]:0.#}, {b.Position[2]:0.#}) frente ({b.Forward[0]:0.##}, {b.Forward[1]:0.##}, {b.Forward[2]:0.##})"));
+        Console.WriteLine($"  -> {file}");
+    }
     return 0;
 }
 

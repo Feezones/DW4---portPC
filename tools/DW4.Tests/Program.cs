@@ -1019,6 +1019,25 @@ if (args.Length == 1)
         Equal(((-235f, 39f, -15f), (-125f, 140f, 135f)), (R(m3.Min), R(m3.Max)), "caixa do matg03");
     });
 
+    Test("Jogo: câmera de demo \"entry\" da dng1 (#182): órbita de 181 quadros em volta do pivô", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[182], ms);
+        var data = ms.ToArray();
+        var d = IgbCameraDemo.Read(IgbFile.Read(data), data).Single();
+        Equal("entry", d.Name, "nome");
+        Equal(5, d.Path.Count, "transformações do caminho");
+        Equal(54.43f, MathF.Round(d.Fov, 2), "ângulo de visão");
+        var f = d.Sample();
+        Equal(182, f.Count, "quadros (0..181)");
+        static (float, float, float) R(float[] v) => (MathF.Round(v[0]), MathF.Round(v[1]), MathF.Round(v[2]));
+        // Pivô (−300, 40, 325) virado 180°, inclinação −30° e recuo 120; no fim pivô (−300, 40, 410), 0°, −55° e recuo 160.
+        Equal((-300f, 100f, 221f), R(f[0].Position), "posição inicial");
+        Equal((-300f, 171f, 502f), R(f[^1].Position), "posição final");
+        Equal((0f, -0.5f, 0.87f), (MathF.Round(f[0].Forward[0], 2), MathF.Round(f[0].Forward[1], 2), MathF.Round(f[0].Forward[2], 2)), "frente inicial");
+    });
+
     Test("Jogo: HUD da dng1 (#179 + usa_pack area #9): painel, medidores, números e texturas por nome", () =>
     {
         byte[] Read(string path, int index)
