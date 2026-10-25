@@ -52,7 +52,7 @@ public partial class Fatia : IBeEngine
     public void Deliver(BeMessage m)
     {
         ScriptLog(m.ToString());
-        if (DeliverToGenerators(m) || DeliverToObjects(m)) return;
+        if (DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToObjects(m)) return;
         switch (m.Class, m.Command)
         {
             // FATO: "HITLANDMODEL doorwallNN OFFHIT" desliga a parede de colisão da porta (filho do igSwitch da colisão #1862).
@@ -83,7 +83,7 @@ public partial class Fatia : IBeEngine
     }
 
     // PLAYERgetPos: ponto de entrada na fase. DW4_ENTRADA escolhe (0 = porta inicial, com a demo de entrada; FATO pelo first.lua).
-    public double? Query(BeMessage m) => m.Command switch
+    public double? Query(BeMessage m) => QueryRecorder(m) ?? m.Command switch
     {
         "GETGENERATEPOS" => int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var e) ? e : 0,
         // HIPÓTESE: 0 enquanto a demo toca, 1 quando acabou (o first.lua espera "==0" e depois "!=0" antes do SETBOXCAMERA).

@@ -89,3 +89,20 @@ geradores, doorwall separado na colisão, dano do piso e o gravador.
   (o recuo do original usa Bézier, diferença de poucas unidades); fov horizontal mantido em tela 16:9 (largura fixa).
 - **DESCONHECIDO**: a posição de entrada do jogador (HIPÓTESE: o fim do pivô, (−300, 40, 410)); o SQ_DEMOWALK do jogador
   ainda não anda.
+
+## Gravador e minimapa (2026-10-25)
+
+- **FATO** (ndmw #857) a sonda de conversa é o HITBOX `Set 60000 1 1 (0,4,7) (3,3,3)` da ACTION `TALKWF`, primeiro passo de
+  todo bloco de estilo do SQ_ATCK1: conversa sai do botão de ataque. O `hit_n_recorderdng.lua` usa `BLTgetShootRamNo`.
+- **FATO** texto: `"TALKFONT01/font00/I<k>"` → k = posição na beUnicodeObjList do pacote (area #9: 113 itens; 113 dos 136
+  pares mswk dos scripts conferem). `mswk65000` = item 9 = "Open Map / Humid Cave B1". Exportação: `dw4 igb-textos`.
+- **FATO** minimapa: j_map101b1 (KIND_MAPBASE) e j_mapcur (KIND_MAPCURSOR) em unidades de mundo no plano XZ; projeção
+  ortográfica 360 × 360 unidades num viewport 120 × 120 em (500, 52) da tela 640 × 480. MAPBASE (`0x803B3A18`) usa a média
+  das posições dos jogadores (y = 0); MAPCURSOR (`0x803B3EE8`) soma a posição do jogador à do mapa. Nenhum script manda
+  SQ_CLOSE ao mapa; SQ_OPEN termina em SQ_WAIT em laço.
+- No port (`src/DW4.Client/Fatia.Recorder.cs`): a sonda é conferida na troca de ação do jogador; o gravador roda o script
+  original; PLAYER/ENEMY OFCTRL/ONCTRL e GENERATER ONFREEZE/OFFREEZE travam e soltam; TEXTCTL TEXTSET/SWITCH mostram o texto;
+  o minimapa aparece no canto com o mapa centrado no jogador.
+- **HIPÓTESES** do port: volume de conversa 10 × 20 × 10 no gravador; ISEND = confirmar (ataque) apertado; ISSEQNAME = 0
+  quando o modelo está na sequência; vista de cima com −Z para cima; o mapa fica até sair da fase.
+- **DECISÃO DA FATIA**: janela de mensagem com fonte da Godot até exportar i_messwn e a fonte do jogo.
