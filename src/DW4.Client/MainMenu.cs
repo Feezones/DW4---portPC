@@ -279,7 +279,7 @@ public partial class MainMenu : Control
     [
         ("Andar", "WASD / setas / analógico"),
         ("Atacar", "J / botão esquerdo do mouse / X"),
-        ("Técnica", "K / 1..6 / botão direito"),
+        ("Técnica", "1..6 direto; K / botão direito / Y usam a selecionada; roda do mouse / LB-RB trocam"),
         ("Pular", "Espaço"),
         ("Menu de status", "Tab / Start"),
         ("Confirmar", "J / Enter / A"),

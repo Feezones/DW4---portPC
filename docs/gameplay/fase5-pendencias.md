@@ -24,8 +24,8 @@ janela.
 6. **Armas e estilos.** Feito: modelo na mão e blocos de sequência pela arma equipada (beWeaponSeqData das 74 armas). Armas
    iniciais INI_WEAPON1..3 e o equipamento no save. A evolução equipa a arma mais forte usável. Falta ver na tela e o osso
    das armas duplas (HIPÓTESE: tudo na mão direita).
-7. **Painel de técnicas.** As teclas 1..6 usam a técnica n da WAZALIST (DECISÃO DA FATIA); o painel do jogo (wazaPanel) não
-   foi portado.
+7. **Painel de técnicas.** Barra do port (custo, recarga, selecionada; 1..6, K/botão direito/Y, roda/LB-RB). O painel do jogo
+   (como ele escolhe a técnica) não foi lido.
 8. **Missões (quest01..06 e treasure01..08).** Rodam pelos scripts, mas nunca foram jogadas; a recompensa libera as formas.
 9. **Loja de cartas (stagIS11) e as cartas.** As regras não foram lidas. Hoje o NPC mostra "ainda não portada".
 10. **Efeitos de estado no jogador** (atordoar, sono, prender, veneno, ataque/defesa baixos). O jogo faz pelos hit_p_*.lua; o
