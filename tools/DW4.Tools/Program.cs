@@ -8,6 +8,7 @@ using DW4.Formats.Images;
 using DW4.Formats.Export;
 using System.Text.Json.Nodes;
 using DW4.Formats.Lua;
+using DW4.Script;
 using DW4.Formats.Sofdec;
 using System.Buffers.Binary;
 
@@ -56,6 +57,7 @@ try
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
+        "lua-trace" when args.Length >= 3 => LuaTrace(args[1], int.Parse(args[2], CultureInfo.InvariantCulture), args[3..]),
         "dol-info" when args.Length == 2 => DolInfo(args[1]),
         "dol-desmontar" when args.Length == 4 => DolDesmontar(args[1], args[2], args[3]),
         "dol-refs" when args.Length == 3 => DolRefs(args[1], args[2]),
@@ -106,6 +108,8 @@ static int Usage()
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
+          dw4 lua-trace    <ndmw.afs> <entrada> [x.lua ...] [Metodo=valor ...]
+                           (executa os scripts da fase na VM própria, na ordem do motor, e mostra cada chamada be:*)
           dw4 dol-info     <main.dol>   (seções, entrada e bases r13/r2; leitura estática, nada é executado)
           dw4 dol-desmontar <main.dol> <endereco-hex> <instrucoes>   (PowerPC no console, com strings e floats anotados)
           dw4 dol-refs     <main.dol> <endereco-hex | "texto">   (ponteiros em dados e código que montam o endereço)
@@ -1802,6 +1806,87 @@ int IgbLua(string path)
     Console.WriteLine($"strings em objetos beLua* ({names.Count}, até 60):");
     foreach (var n in names.Take(60)) Console.WriteLine($"  {n}");
     return 0;
+}
+
+// Executa os scripts de uma fase na VM Lua própria (ADR 0002), na ordem fixa do motor (func.lua, boot.lua, start.lua,
+// first.lua; máquina de estados em 0x802F8A64) ou nos nomes passados, e imprime cada chamada be:* com os argumentos.
+// A API ainda é simulada: cada método devolve nil, salvo os valores passados como Metodo=valor (número, texto ou nil)
+// e SYSisJoinPlayer, que só confirma o jogador 0. Só imprime; não grava nada.
+int LuaTrace(string afsPath, int entry, string[] rest)
+{
+    var scripts = rest.Where(a => a.EndsWith(".lua", StringComparison.Ordinal)).ToList();
+    if (scripts.Count == 0) scripts = ["func.lua", "boot.lua", "start.lua", "first.lua"];
+    var returns = new Dictionary<string, object?>(StringComparer.Ordinal);
+    foreach (var a in rest.Where(a => a.Contains('=')))
+    {
+        var (k, v) = (a[..a.IndexOf('=')], a[(a.IndexOf('=') + 1)..]);
+        returns[k] = v == "nil" ? null : double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : v;
+    }
+
+    byte[] data;
+    using (var afs = AfsArchive.Open(afsPath))
+    using (var ms = new MemoryStream())
+    {
+        afs.CopyEntry(afs.Entries[entry], ms);
+        data = ms.ToArray();
+    }
+    var f = IgbFile.Read(data);
+    bool le = f.Header.LittleEndian;
+    var chunks = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+    foreach (var o in f.Slots.OfType<IgbObject>().Where(o => o.TypeName == "beLuaData"))
+    {
+        var nm = o.Fields.FirstOrDefault(v => v.Text != null)?.Text;
+        var rf = o.Fields.FirstOrDefault(v => v.Desc.ShortName == "ObjectRef");
+        if (nm == null || rf == null) continue;
+        int t = rf.AsInt32(le);
+        if (t < 0 || t >= f.Slots.Count || f.Slots[t] is not IgbObject lo) continue;
+        foreach (var v in lo.Fields.Where(v => v.Desc.ShortName == "MemoryRef"))
+        {
+            int r = v.AsInt32(le);
+            if (r >= 0 && r < f.Slots.Count && f.Slots[r] is IgbMemoryBlock mb && mb.Size > 0 && Lua40Chunk.LooksLikeChunk(MemoryOf(data, mb)))
+                chunks[nm] = MemoryOf(data, mb);
+        }
+    }
+    Console.WriteLine($"-- entrada #{entry}: {chunks.Count} scripts ({string.Join(", ", chunks.Keys.Order(StringComparer.Ordinal))})");
+
+    var vm = new LuaVM { InstructionLimit = 5_000_000, Print = s => Console.WriteLine($"   print: {s}") };
+    string Show(object? v) => v switch
+    {
+        null => "nil",
+        string str => $"\"{str}\"",
+        double d => DW4.Script.Lua.NumberToString(d),
+        LuaTable => "{tabela}",
+        LuaFunction fn => $"<função {fn.Name}>",
+        _ => v.ToString() ?? "?",
+    };
+    var be = new LuaTable();
+    var dmQueue = new List<string>();
+    be.Missing = (_, key) => key is not string name ? null : new LuaHostFunction(name, a =>
+    {
+        var shown = string.Join(", ", a.Skip(1).Select(Show));
+        object? ret = returns.TryGetValue(name, out var rv) ? rv
+            : name == "SYSisJoinPlayer" ? (a.Length > 1 && a[1] is double p && p == 0 ? DW4.Script.Lua.True : null)
+            : null;
+        Console.WriteLine($"   be:{name}({shown}){(ret != null ? $" -> {Show(ret)}" : "")}");
+        if (name == "DMsetLua" && a.Length > 1 && a[1] is string next) dmQueue.Add(next);
+        return [ret];
+    });
+    vm.Globals["be"] = be;
+    var undefined = new SortedSet<string>(StringComparer.Ordinal);
+    vm.Globals.Missing = (_, key) => { if (key is string g) undefined.Add(g); return null; };
+
+    int failures = 0;
+    foreach (var name in scripts)
+    {
+        if (!chunks.TryGetValue(name, out var chunk)) { Console.WriteLine($"-- {name}: não existe nesta entrada"); continue; }
+        Console.WriteLine($"-- {name}");
+        try { vm.DoChunk(chunk); }
+        catch (LuaException ex) { failures++; Console.WriteLine($"   ERRO: {ex.Message}"); }
+    }
+    if (dmQueue.Count > 0) Console.WriteLine($"-- be:DMsetLua agendou: {string.Join(", ", dmQueue)}");
+    Console.WriteLine($"-- globais lidas sem definição: {string.Join(", ", undefined)}");
+    Console.WriteLine($"-- {vm.Executed} instruções executadas, {failures} scripts com erro");
+    return failures == 0 ? 0 : 3;
 }
 
 // Lê todos os chunks Lua 4.0 referenciados por beLuaDataObject, valida a estrutura e resume o uso de nomes globais.

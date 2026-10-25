@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DW4.Formats\DW4.Formats.csproj" />
+    <ProjectReference Include="..\..\src\DW4.Script\DW4.Script.csproj" />
   </ItemGroup>
 
 </Project>
