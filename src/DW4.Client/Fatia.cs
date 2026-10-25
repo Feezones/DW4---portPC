@@ -242,6 +242,7 @@ public partial class Fatia : Node3D
 
     public override void _UnhandledInput(InputEvent e)
     {
+        if (MenuInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (e is InputEventKey { Pressed: true, Echo: false } k)
         {
             if (k.Keycode == Key.F1 && _cameraSets.Length > 1) _cameraSet = (_cameraSet + 1) % _cameraSets.Length;
@@ -258,6 +259,7 @@ public partial class Fatia : Node3D
     {
         float dt = (float)delta;
         if (_snapToFloor) SnapToFloor();
+        if (TickMenu(dt)) return;
         _stage?.Tick();
         TickStageChange(dt);
         TickObjects(dt);
