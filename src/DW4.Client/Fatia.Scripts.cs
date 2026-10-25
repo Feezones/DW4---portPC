@@ -22,7 +22,6 @@ public partial class Fatia : IBeEngine
     readonly List<string> _scriptLog = [];
     readonly Dictionary<string, AudioStreamPlayer> _music = [];
     // FATO: beSoundInfo da dng1 liga esses nomes às entradas ndmw #6 e #35 (docs/gameplay/fase4-levantamento-audio.md).
-    static readonly Dictionary<string, int> MusicIndex = new() { ["AM_DUNGE"] = 6, ["DG_CAVE1"] = 35 };
 
     bool StartScripts()
     {
@@ -34,7 +33,7 @@ public partial class Fatia : IBeEngine
         }
         var chunks = Directory.GetFiles(dir).ToDictionary(f => Path.GetFileName(f), File.ReadAllBytes);
         // HIPÓTESE: nome da pasta da dng1; o boot.lua só o usa para montar a lista de arquivos, que a fatia não usa.
-        var sys = new BeSystem { FolderName = "dng101b1" };
+        var sys = new BeSystem { FolderName = _stageName };
         sys.Players[0] = ("p_girumon", new[] { "w_sword01", "w_sword01", "w_sword01" });
         // A GAMERAM sobrevive à troca de fase (recarga da cena): flags e contadores são do jogo, não da cena.
         var host = new BeHost(this, s_ram ??= new GameRam(), sys) { Unimplemented = (n, _) => ScriptLog($"be:{n} ainda não implementado") };
@@ -102,7 +101,7 @@ public partial class Fatia : IBeEngine
 
     void StartCameraDemo(string name)
     {
-        var file = Path.Combine(_dir, "camera-demo", $"ndmw_0182_{name}.json");
+        var file = Path.Combine(_dir, _demoPattern.Replace("<nome>", name));
         if (!File.Exists(file)) { _problems.Add($"falta {file} (dw4 igb-camera-demo ndmw.afs 182 <fatia>\\camera-demo): sem a demo {name}"); return; }
         _cameraDemo = CameraDemo.FromJson(File.ReadAllText(file));
         _cameraDemoT = 0;
@@ -124,7 +123,7 @@ public partial class Fatia : IBeEngine
     {
         if (!_music.TryGetValue(name, out var player))
         {
-            if (!MusicIndex.TryGetValue(name, out int idx)) { ScriptLog($"música {name} sem entrada conhecida"); return; }
+            if (!_music.TryGetValue(name, out int idx)) { ScriptLog($"música {name} sem entrada conhecida"); return; }
             var wav = Path.Combine(_dir, "audio", $"ndmw_{idx:D4}.wav");
             if (LoadWav(wav) is not { } stream) { _problems.Add($"falta {wav} (dw4 adx-wav ndmw.afs <fatia>\\audio 6 35)"); return; }
             AddChild(player = new AudioStreamPlayer { Stream = stream });

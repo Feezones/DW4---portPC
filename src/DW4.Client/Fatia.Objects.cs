@@ -97,9 +97,11 @@ public partial class Fatia
         return o;
     }
 
-    WorldObject? SpawnBox(Vector3 at, float rotDeg, Generator gen)
+    // Objetos destrutíveis gerados por gerador (g_box, e nos campos g_boxfield, g_bbarrelsz01, g_woodencasez01…).
+    // HIPÓTESE: corpo 14 × 10 × 14 do g_box para todos até ler o HIT de cada um.
+    WorldObject? SpawnBox(string model, Vector3 at, float rotDeg, Generator gen)
     {
-        if (Spawn("g_box", 0, at, new Vector3(0, rotDeg, 0), gen) is not { } box) return null;
+        if (Spawn(model, 0, at, new Vector3(0, rotDeg, 0), gen) is not { } box) return null;
         box.Hp = _db != null && _db.Contains("enemy") ? _db["enemy"].Int(gen.EnemyRow, "HPMAX") : GboxHp;
         box.SetSequence("SQ_ENTR");
         var body = new StaticBody3D { Position = at + new Vector3(0, GboxSize.Y / 2, 0) };
@@ -190,7 +192,7 @@ public partial class Fatia
                 && c.Y + h.Size.Y / 2 >= g.Y && c.Y - h.Size.Y / 2 <= g.Y + 7)) continue;
             o.HitSerial = o.Seq.BoxSerial;
             _hitsTaken++;
-            string? reaction = EnemyStrikes(h.Type, o.Name);
+            string? reaction = EnemyStrikes(h.Type, null, o.Name);
             if (reaction != null && _runner != null && (_runner.Start(reaction, WeaponStyle) || _runner.Start(reaction, "common")))
             {
                 _wazaPending = null;

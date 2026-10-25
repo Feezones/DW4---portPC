@@ -162,13 +162,16 @@ public partial class Fatia
         ScriptLog($"troca de fase: {stage}, entrada {_nextEntry}");
         _choice = -1;
         if (_choicePanel != null) _choicePanel.Visible = false;
-        if (stage == "dng101b1")
+        var stages = OS.GetEnvironment("DW4_FASES") is { Length: > 0 } s ? s : @"D:\dw4-work\fases";
+        if (stage == _stageName || System.IO.Directory.Exists(System.IO.Path.Combine(stages, stage)))
         {
-            // A própria fase: recarrega a cena na entrada pedida (o first.lua decide a demo pela entrada).
+            // Recarrega a cena com a fase e a entrada pedidas (o first.lua decide a demo pela entrada). A GAMERAM continua.
+            OS.SetEnvironment("DW4_FASE", stage);
             OS.SetEnvironment("DW4_ENTRADA", _nextEntry.ToString());
+            OS.SetEnvironment("DW4_INICIO", "");
             GetTree().ReloadCurrentScene();
             return;
         }
-        ShowMessage($"Troca para {stage} (entrada {_nextEntry})\nCarregar outras fases é a Fase 5. Esc sai.");
+        ShowMessage($"Troca para {stage} (entrada {_nextEntry})\nEssa fase ainda não foi exportada (dw4 fase-exportar). Esc sai.");
     }
 }

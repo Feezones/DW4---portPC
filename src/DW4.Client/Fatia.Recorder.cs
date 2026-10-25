@@ -67,9 +67,9 @@ public partial class Fatia
             case ("MODELCTRL", "SQ_WAIT") when m.Name == PlayerModel:
                 _runner?.Stop(); // corta o ataque que abriu a conversa
                 return true;
-            case ("MODELCTRL", "GENERATE") when m.Name == "j_map101b1" || m.Name == "j_mapcur":
+            case ("MODELCTRL", "GENERATE") when m.Name != null && m.Name.Length > 0 && (m.Name == _mapBase || m.Name == _mapCursor):
                 _minimap ??= Minimap.Create(Path.Combine(_dir, "mapa"), this, _problems);
-                _minimap?.Generate(m.Name, m.Index, m.Text(0));
+                _minimap?.Generate(m.Name, m.Index, m.Text(0), m.Name == _mapCursor);
                 return true;
             case ("PLAYER", "OFCTRL"): _playerCtrl = false; return true;
             case ("PLAYER", "ONCTRL"): _playerCtrl = true; return true;
@@ -179,13 +179,13 @@ sealed class Minimap
         return data == null ? null : new Minimap(dir, data, owner);
     }
 
-    public void Generate(string name, int index, string? sequence)
+    public void Generate(string name, int index, string? sequence, bool cursor)
     {
         if (!_data.Actors.TryGetValue(name, out int root)) return;
         int player = Math.Max(0, index);
         string key = $"{name}/{player}";
         if (_actors.Any(a => a.Key == key)) return;
-        var actor = new HudActor(_data, root, slot: name == "j_mapcur" ? player : 0);
+        var actor = new HudActor(_data, root, slot: cursor ? player : 0);
         var seqDir = Path.Combine(_dir, name);
         var seqFile = Directory.Exists(seqDir) ? Directory.EnumerateFiles(seqDir, "*_seq.json").FirstOrDefault() : null;
         ObjectSequencer? seq = null;
@@ -197,8 +197,8 @@ sealed class Minimap
             if (!(sequence != null && sequence.StartsWith("SQ_", StringComparison.Ordinal) && seq.Start(sequence))) seq.Start($"SQ_OPEN0{player}");
         }
         _vp.AddChild(actor.Root);
-        _actors.Add((key, actor, seq, name == "j_mapcur" ? player : -1));
-        if (name == "j_map101b1") _rect.Visible = true;
+        _actors.Add((key, actor, seq, cursor ? player : -1));
+        if (!cursor) _rect.Visible = true;
     }
 
     public bool Has(string name, int index) => _actors.Any(a => a.Key == $"{name}/{Math.Max(0, index)}");

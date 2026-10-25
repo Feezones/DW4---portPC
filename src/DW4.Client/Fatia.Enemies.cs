@@ -21,6 +21,7 @@ public partial class Fatia
     sealed class Enemy
     {
         public required CharacterBody3D Body { get; init; }
+        public required EnemyKind Kind { get; init; }
         public Node3D? Model { get; init; }
         public AnimationPlayer? Anim { get; init; }
         public EnemyBrain? Brain { get; set; }
@@ -70,74 +71,118 @@ public partial class Fatia
         public bool Inside { get; set; }
     }
 
+    /// <summary>
+    /// Tipo de inimigo (modelo da coluna MODEL da tabela enemy): cena, sequências, ações, mapas de IA e o lutador da linha.
+    /// Carregado uma vez por modelo; cada inimigo gera a própria cena a partir dele.
+    /// </summary>
+    sealed class EnemyKind
+    {
+        public required string Model { get; init; }
+        public required int Row { get; init; }
+        public required GltfDocument Doc { get; init; }
+        public required GltfState State { get; init; }
+        public Fighter? Stats { get; init; }
+        public string? Json { get; init; }
+        public Dictionary<string, List<SeqCommand>> Sequences { get; init; } = [];
+        public Dictionary<string, List<SeqCommand>> Actions { get; init; } = [];
+        public string? Wait { get; set; }
+        public string? Run { get; set; }
+        public string? Hurt { get; set; }
+        public float Walk { get; init; } = 0.24f;
+        public string Name => Model;
+    }
+
     readonly List<Enemy> _enemies = [];
     readonly HashSet<Enemy> _enemiesHitThisAction = [];
     readonly Dictionary<string, Generator> _generators = [];
     readonly List<MatVolume> _volumes = [];
-    GltfDocument? _enemyDoc;
-    GltfState? _enemyState;
-    string? _enemyJson;
-    Dictionary<string, List<SeqCommand>> _enemySequences = [];
+    readonly Dictionary<int, EnemyKind?> _enemyKinds = [];
     Enemy? _lastEnemy;
 
-    // Modelo do Numemon carregado uma vez; cada inimigo gera a própria cena a partir dele.
-    void LoadEnemyTemplate()
+    // Pasta do modelo: <fase>\inimigos\<modelo> (dw4 fase-exportar); a fatia antiga tinha <fatia>\numemon.
+    string? EnemyDir(string model)
     {
-        var root = Path.Combine(_dir, "numemon");
-        var file = Directory.Exists(root) ? Directory.EnumerateFiles(root, "personagem.gltf", SearchOption.AllDirectories).FirstOrDefault() : null;
-        if (file == null) { _problems.Add($"falta personagem.gltf em {root}"); return; }
-        var doc = new GltfDocument();
-        var state = new GltfState();
-        if (doc.AppendFromFile(file, state) != Error.Ok) { _problems.Add($"{file}: erro ao ler"); return; }
-        (_enemyDoc, _enemyState) = (doc, state);
-        if (SeqFile("numemon") is not { } enemySeq) _problems.Add("falta o *_seq.json do Numemon (dw4 igb-seq ndmw.afs 179 <fatia>\\numemon --ator=e_nume)");
-        else
-        {
-            _enemyJson = File.ReadAllText(enemySeq);
-            _enemyActions = SeqCommand.LoadActions(_enemyJson);
-            _enemySequences = SeqCommand.LoadAll(_enemyJson);
-            if (AiMap.LoadAll(_enemyJson).Count == 0) _problems.Add("o *_seq.json do Numemon não tem mapas de IA: regere com o igb-seq atual");
-            // Parado e andando: SQ_WAIT → WAIT01 → "wait01"; SQ_WALK → RUNN01 → "run01" e MOVE "Move" 0,24.
-            if (ActionAnimations.FirstAction(_enemySequences, "SQ_WAIT", null) is { } wa) _enemyWait = ActionAnimations.Motion(_enemyActions, wa);
-            if (ActionAnimations.FirstAction(_enemySequences, "SQ_WALK", null) is { } ra) _enemyRun = ActionAnimations.Motion(_enemyActions, ra);
-            if (_enemySequences.TryGetValue("SQ_WALK", out var walk) && walk.FirstOrDefault(c => c.Kind == "MOVE" && c.S(0) == "Move") is { } mv)
-                _enemyWalk = mv.F(1);
-        }
+        var dir = Path.Combine(_dir, "inimigos", model);
+        if (Directory.Exists(dir)) return dir;
+        dir = Path.Combine(_dir, "numemon");
+        return model == "e_nume" && Directory.Exists(dir) ? dir : null;
     }
 
-    Enemy? SpawnEnemy(Vector3 pos, float yaw, Generator? gen, bool respawns = false)
+    EnemyKind? Kind(int row)
     {
-        if (_enemyDoc == null || _enemyState == null || _enemyDoc.GenerateScene(_enemyState) is not Node3D model) return null;
-        // Caixa de corpo do Numemon (igAABox do HIT): 8 × 14 × 8, FATO; forma de cápsula é aproximação.
+        if (_enemyKinds.TryGetValue(row, out var known)) return known;
+        string model = _db != null && _db.Contains("enemy") ? _db["enemy"].Text(row, "MODEL") : "e_nume";
+        // Mesmo modelo em outra linha (ex.: e_nume 12/13/636): cena e sequências iguais, lutador da linha.
+        var same = _enemyKinds.Values.FirstOrDefault(k => k?.Model == model);
+        EnemyKind? kind = null;
+        if (same != null) kind = new EnemyKind
+        {
+            Model = model, Row = row, Doc = same.Doc, State = same.State, Stats = _db?.Enemy(row), Json = same.Json,
+            Sequences = same.Sequences, Actions = same.Actions, Wait = same.Wait, Run = same.Run, Hurt = same.Hurt, Walk = same.Walk,
+        };
+        else kind = LoadEnemyKind(model, row);
+        _enemyKinds[row] = kind;
+        return kind;
+    }
+
+    EnemyKind? LoadEnemyKind(string model, int row)
+    {
+        var root = EnemyDir(model);
+        var file = root != null ? Directory.EnumerateFiles(root, "personagem.gltf", SearchOption.AllDirectories).FirstOrDefault() : null;
+        if (file == null) { _problems.Add($"falta inimigos\\{model}\\personagem.gltf (dw4 fase-exportar)"); return null; }
+        var doc = new GltfDocument();
+        var state = new GltfState();
+        if (doc.AppendFromFile(file, state) != Error.Ok) { _problems.Add($"{file}: erro ao ler"); return null; }
+        var seqFile = Directory.EnumerateFiles(root!, "*_seq.json", SearchOption.AllDirectories).FirstOrDefault();
+        string? json = seqFile != null ? File.ReadAllText(seqFile) : null;
+        if (json == null) _problems.Add($"falta o *_seq.json de {model}: sem IA");
+        var seqs = json != null ? SeqCommand.LoadAll(json) : [];
+        var acts = json != null ? SeqCommand.LoadActions(json) : [];
+        if (json != null && AiMap.LoadAll(json).Count == 0) _problems.Add($"o *_seq.json de {model} não tem mapas de IA");
+        float walk = 0.24f;
+        // Parado e andando: SQ_WAIT → ação → MOTIONSET; SQ_WALK → ação e MOVE "Move" n.
+        if (seqs.TryGetValue("SQ_WALK", out var w) && w.FirstOrDefault(c => c.Kind == "MOVE" && c.S(0) == "Move") is { } mv) walk = mv.F(1);
+        return new EnemyKind
+        {
+            Model = model, Row = row, Doc = doc, State = state, Stats = _db?.Enemy(row), Json = json, Sequences = seqs, Actions = acts, Walk = walk,
+            Wait = ActionAnimations.FirstAction(seqs, "SQ_WAIT", null) is { } wa ? ActionAnimations.Motion(acts, wa) : null,
+            Run = ActionAnimations.FirstAction(seqs, "SQ_WALK", null) is { } ra ? ActionAnimations.Motion(acts, ra) : null,
+        };
+    }
+
+    Enemy? SpawnEnemy(int row, Vector3 pos, float yaw, Generator? gen, bool respawns = false)
+    {
+        if (Kind(row) is not { } kind || kind.Doc.GenerateScene(kind.State) is not Node3D model) return null;
+        // Caixa de corpo do Numemon (igAABox do HIT): 8 × 14 × 8, FATO; HIPÓTESE: a mesma para os outros até ler o HIT de cada um.
         var body = new CharacterBody3D { Position = pos, FloorSnapLength = 4f };
         body.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 4f, Height = 14f }, Position = new Vector3(0, 7, 0) });
         body.AddChild(model);
         model.Rotation = new Vector3(0, yaw, 0);
         AddChild(body);
-        var e = new Enemy { Body = body, Model = model, Anim = FindAll<AnimationPlayer>(model).FirstOrDefault(), Yaw = yaw, Hp = _ef?.MaxHp ?? 0, Gen = gen, Home = pos, Respawns = respawns };
-        if (_enemyJson != null)
+        var e = new Enemy { Body = body, Model = model, Kind = kind, Anim = FindAll<AnimationPlayer>(model).FirstOrDefault(), Yaw = yaw, Hp = kind.Stats?.MaxHp ?? 0, Gen = gen, Home = pos, Respawns = respawns };
+        if (kind.Json != null)
         {
-            e.Runner = new SequenceRunner(_enemySequences, a => EnemyAnimFrames(e, a));
-            var maps = AiMap.LoadAll(_enemyJson);
-            if (maps.Count > 0) e.Brain = new EnemyBrain(maps, _enemySequences, () => _rng.Next(16));
+            e.Runner = new SequenceRunner(kind.Sequences, a => EnemyAnimFrames(e, a));
+            var maps = AiMap.LoadAll(kind.Json);
+            if (maps.Count > 0) e.Brain = new EnemyBrain(maps, kind.Sequences, () => _rng.Next(16));
         }
         if (e.Anim != null)
         {
             var names = e.Anim.GetAnimationList();
-            _enemyWait ??= Pick(names, "wait01", "wait");
-            _enemyHurt ??= Pick(names, "Sdmg01", "dmg");
-            foreach (var n in new[] { _enemyWait, _enemyRun })
+            kind.Wait ??= Pick(names, "wait01", "wait");
+            kind.Hurt ??= Pick(names, "Sdmg01", "dmg");
+            foreach (var n in new[] { kind.Wait, kind.Run })
                 if (n != null && e.Anim.HasAnimation(n)) e.Anim.GetAnimation(n).LoopMode = Animation.LoopModeEnum.Linear;
-            if (_enemyWait != null && e.Anim.HasAnimation(_enemyWait)) e.Anim.Play(_enemyWait);
+            if (kind.Wait != null && e.Anim.HasAnimation(kind.Wait)) e.Anim.Play(kind.Wait);
         }
         _enemies.Add(e);
         return e;
     }
 
     string? EnemyAnimName(Enemy e, string action) =>
-        ActionAnimations.Motion(_enemyActions, action) is { } motion ? e.Anim?.GetAnimationList().FirstOrDefault(n => n == motion) : null;
+        ActionAnimations.Motion(e.Kind.Actions, action) is { } motion ? e.Anim?.GetAnimationList().FirstOrDefault(n => n == motion) : null;
 
-    float? EnemyAnimFrames(Enemy e, string action) => ActionAnimations.Length(_enemyActions, action, motion =>
+    float? EnemyAnimFrames(Enemy e, string action) => ActionAnimations.Length(e.Kind.Actions, action, motion =>
         e.Anim != null && e.Anim.HasAnimation(motion) ? (float)e.Anim.GetAnimation(motion).Length * SequenceRunner.FramesPerSecond : null);
 
     bool Vulnerable(Enemy e) => !e.Dead && !e.Killed && !(e.Started && e.Runner?.Invincible == true);
@@ -234,9 +279,9 @@ public partial class Fatia
             var pos = g.Positions[slot];
             float rot = g.RotYDeg.Length > slot ? g.RotYDeg[slot] : 0;
             string model = _db != null && _db.Contains("enemy") ? _db["enemy"].Text(g.EnemyRow, "MODEL") : "";
-            object? spawned = model == "g_box"
-                ? SpawnBox(pos, rot, g)
-                : SpawnEnemy(pos, rot * MathF.PI / 180, g);
+            object? spawned = model.StartsWith("g_", StringComparison.Ordinal)
+                ? SpawnBox(model, pos, rot, g)
+                : SpawnEnemy(g.EnemyRow, pos, rot * MathF.PI / 180, g);
             if (spawned == null) { g.Active = false; ScriptLog($"{g.Name}: não sei gerar {model} (linha {g.EnemyRow})"); continue; }
             g.Spawned++;
             g.Alive.Add(spawned);
@@ -277,7 +322,7 @@ public partial class Fatia
             e.RespawnTimer -= dt;
             if (e.RespawnTimer > 0) return;
             e.Dead = false;
-            e.Hp = _ef?.MaxHp ?? 0;
+            e.Hp = e.Kind.Stats?.MaxHp ?? 0;
             e.Killed = false;
             e.Body.Position = e.Home;
             e.Body.Visible = true;
@@ -309,7 +354,7 @@ public partial class Fatia
                     e.Started = false;
                     e.Brain.Release();
                     // SQ_DDMG termina em JUMP "SQ_ERAS" (depois do ERDE01 com FADESET "OUT"): o inimigo some.
-                    if (_ef != null && e.Hp <= 0) { Kill(e); return; }
+                    if (e.Kind.Stats != null && e.Hp <= 0) { Kill(e); return; }
                 }
             }
             if (e.Started && e.Runner.Running)
@@ -320,23 +365,23 @@ public partial class Fatia
                 {
                     e.Serial = e.Runner.ActionSerial;
                     e.HitThisAction.Clear();
-                    if (e.Runner.Action != null) _sfx?.Action("e_nume", e.Runner.Action);
+                    if (e.Runner.Action != null) _sfx?.Action(e.Kind.Model, e.Runner.Action);
                     if (e.Anim != null && e.Runner.Action != null && EnemyAnimName(e, e.Runner.Action) is { } an)
                     {
-                        e.Anim.GetAnimation(an).LoopMode = ActionAnimations.Loops(_enemyActions, e.Runner.Action) ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
-                        e.Anim.Play(an, ActionAnimations.Blend(_enemyActions, e.Runner.Action) / SequenceRunner.FramesPerSecond);
+                        e.Anim.GetAnimation(an).LoopMode = ActionAnimations.Loops(e.Kind.Actions, e.Runner.Action) ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
+                        e.Anim.Play(an, ActionAnimations.Blend(e.Kind.Actions, e.Runner.Action) / SequenceRunner.FramesPerSecond);
                     }
                 }
                 CheckEnemyHits(e);
             }
             else
             {
-                if (e.Brain.Walking) vel = forward * Speed(_enemyWalk);
-                var want = e.Brain.Walking ? _enemyRun : _enemyWait;
+                if (e.Brain.Walking) vel = forward * Speed(e.Kind.Walk);
+                var want = e.Brain.Walking ? e.Kind.Run : e.Kind.Wait;
                 if (e.Anim != null && want != null && e.Anim.HasAnimation(want) && e.Anim.CurrentAnimation != want) e.Anim.Play(want, 8 / SequenceRunner.FramesPerSecond);
             }
         }
-        else if (e.Anim != null && _enemyWait != null && !e.Anim.IsPlaying()) e.Anim.Play(_enemyWait);
+        else if (e.Anim != null && e.Kind.Wait != null && !e.Anim.IsPlaying()) e.Anim.Play(e.Kind.Wait);
         vel.Y = e.Body.IsOnFloor() ? -1f : e.Body.Velocity.Y - Gravity * dt;
         e.Body.Velocity = vel;
         e.Body.MoveAndSlide();
@@ -361,12 +406,12 @@ public partial class Fatia
 
     Vector3 EnemyBoxCenter(Enemy e, HitBox h) => e.Body.GlobalPosition + new Vector3(h.Position.X, h.Position.Y, h.Position.Z).Rotated(Vector3.Up, e.Yaw);
 
-    // Caixas 70004 do Numemon (ataque, HIPÓTESE pelo SQ_ATCK1) contra a caixa de corpo do Guilmon (5 × 7 × 5, FATO).
+    // Caixas 7xxxx do inimigo (ataque; 70004 no Numemon, HIPÓTESE pelo SQ_ATCK1) contra a caixa de corpo do Guilmon (5 × 7 × 5, FATO).
     void CheckEnemyHits(Enemy e)
     {
         if (e.Runner == null || _runner?.Invincible == true) return;
         var g = _player.GlobalPosition;
-        foreach (var h in e.Runner.ActiveHitBoxes().Where(h => h.Type == 70004))
+        foreach (var h in e.Runner.ActiveHitBoxes().Where(h => h.Type / 10000 == 7))
         {
             if (e.HitThisAction.Contains(h)) continue;
             var c = EnemyBoxCenter(e, h);
@@ -374,7 +419,7 @@ public partial class Fatia
             {
                 e.HitThisAction.UnionWith(e.Runner.ActionHitBoxes);
                 _hitsTaken++;
-                string? reaction = EnemyStrikes(h.Type);
+                string? reaction = EnemyStrikes(h.Type, e.Kind.Stats, e.Kind.Name);
                 if (reaction == null) break; // errou ou bloqueou: sem reação
                 // Reação do Guilmon pela faixa do dano (bloco do estilo da arma, ou "common"), virado para quem bateu (HIPÓTESE).
                 if (_runner != null && (_runner.Start(reaction, WeaponStyle) || _runner.Start(reaction, "common")))
@@ -413,7 +458,7 @@ public partial class Fatia
                     var to = _player.GlobalPosition - p;
                     e.Yaw = MathF.Atan2(to.X, to.Z); // HIPÓTESE: vira para quem bateu
                 }
-                else if (e.Anim != null && _enemyHurt != null) e.Anim.Play(_enemyHurt, 0.05f);
+                else if (e.Anim != null && e.Kind.Hurt != null) e.Anim.Play(e.Kind.Hurt, 0.05f);
                 break;
             }
         }
