@@ -18,4 +18,6 @@ Leitura estática em 2026-10-24. FATO = lido nos dados ou no código; HIPÓTESE 
 ## Port
 
 - `dw4 adx-wav` (decodificador próprio em `tools/DW4.Formats/Audio/Adx.cs`) grava WAV com o loop num chunk smpl. A fatia toca #6 e #35 em loop.
-- Pendente: leitor .sfp (efeitos), volume S8, sons por ação.
+- `.sfp` (FATO, `tools/DW4.Formats/Audio/Sfp.cs`): DTPK (+0C tamanho, +1C PCMD); TBLD com 9 ponteiros em 0x58 ([3] cues, [4] vozes, [8] amostras). Amostras: registros de 0x44 (offset relativo ao PCMD, endereços de loop e fim em nibbles, 16 coeficientes, ps/hist, flags com 0x400 = loop, taxa). Cues: u8 nº de grupos − 1; por grupo {0xA9GG, offset}; registros "c0 df VV vol pan ?" → voz VV → amostra (+03 do registro de voz). Decodificação DSP ADPCM idêntica ao vgmstream em 7 amostras.
+- beSoundData por slot: [nome, Int3, S4 tipo, S5 índice na lista do beSoundInfo (campo 7), Int6 cue, S7 canais, S8 volume, S9]. beSeData: [ação, som, atraso].
+- `dw4 igb-sons` grava um WAV por cue (A9GG_CC.wav) e o JSON das tabelas; a fatia toca os efeitos por ação. Pendente: quem para os sons em loop (passos, carga), volume S8 e o volume/pan do cue.
