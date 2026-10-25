@@ -7,6 +7,8 @@ public sealed class IgbMeshPart
 {
     public int GeometryIndex { get; init; }
     public int ImageIndex { get; set; } = -1;
+    /// <summary>Textura por nome (beTextureCtrlAttr sobre um igAttrSet acima da geometria), resolvida num pacote; null sem.</summary>
+    public string? TextureName { get; set; }
     public int PrimitiveType { get; set; }
     public int VertexCount { get; set; }
     public uint VertexFormat { get; set; }
@@ -59,6 +61,10 @@ public sealed class IgbScene
     public List<string> Notes { get; } = [];
     public int TransformCount { get; private set; }
     int _root = -1;
+    // beTextureCtrlAttr [@2 nome, @3 igAttrSet]: o igAttrSet e o que está abaixo dele usam a textura do pacote com esse nome
+    // (FATO no campo stag0101: o cenário BG02 usa P10G00n, P11G00n… do lh_pack/ls_pack #618/#619).
+    readonly Dictionary<int, string> _textureNameOf = [];
+    string? _textureName;
 
     IgbScene(IgbFile f, byte[] data)
     {
@@ -70,6 +76,12 @@ public sealed class IgbScene
     public static IgbScene Read(IgbFile f, byte[] data)
     {
         var s = new IgbScene(f, data);
+        foreach (var tc in f.Slots.OfType<IgbObject>().Where(o => o.TypeName == "beTextureCtrlAttr"))
+        {
+            var name = tc.Fields.FirstOrDefault(v => v.Desc.Slot == 2 && v.Desc.ShortName == "String")?.Text;
+            int target = tc.Fields.FirstOrDefault(v => v.Desc.Slot == 3 && v.Desc.ShortName == "ObjectRef")?.AsInt32(s._le) ?? -1;
+            if (name != null && target >= 0) s._textureNameOf.TryAdd(target, name);
+        }
         var roots = new List<IgbObject>();
         foreach (var si in f.Slots.OfType<IgbObject>().Where(o => f.Is(o, "igSceneInfo")))
             foreach (var r in s.Refs(si))
@@ -99,6 +111,8 @@ public sealed class IgbScene
     void Visit(IgbObject node, float[]? parent, int image, HashSet<int> ancestors)
     {
         if (!ancestors.Add(node.Index)) return;
+        var savedName = _textureName;
+        if (_textureNameOf.TryGetValue(node.Index, out var tn)) _textureName = tn;
         var world = parent;
         if (_f.Is(node, "igTransform"))
         {
@@ -126,6 +140,7 @@ public sealed class IgbScene
 
         foreach (var child in Children(node)) Visit(child, world, image, ancestors);
         ancestors.Remove(node.Index);
+        _textureName = savedName;
     }
 
     // Filhos de um igGroup: igNodeList (igObjectList) ou referência direta a igNode.
@@ -201,7 +216,7 @@ public sealed class IgbScene
 
     IgbMeshPart BuildPart(IgbObject geom, float[]? world, int image)
     {
-        var part = new IgbMeshPart { GeometryIndex = geom.Index, ImageIndex = image, SceneRoot = _root };
+        var part = new IgbMeshPart { GeometryIndex = geom.Index, ImageIndex = image, SceneRoot = _root, TextureName = image < 0 ? _textureName : null };
         IgbObject? va = null, ia = null, pla = null;
         foreach (var r in Refs(geom))
         {

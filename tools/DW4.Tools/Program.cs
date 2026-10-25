@@ -41,7 +41,7 @@ try
         "igb-tree" when args.Length is 3 or 4 => IgbTree(args[1], args[2], args.Length == 4 ? int.Parse(args[3], inv) : 6),
         "igb-gltf" when args.Length >= 4 => IgbGltf(args[1], args[2], args[3], args[4..]),
         "igb-colisao" when args.Length == 5 => IgbColisao(args[1], args[2], args[3], args[4]),
-        "igb-cena" when args.Length == 5 => IgbCena(args[1], args[2], args[3], args[4]),
+        "igb-cena" when args.Length is 5 or 6 => IgbCena(args[1], args[2], args[3], args[4], args.Length == 6 && args[5].StartsWith("--pacote=", StringComparison.Ordinal) ? args[5]["--pacote=".Length..] : null),
         "igb-seq" when args.Length is 4 or 5 => IgbSeq(args[1], args[2], args[3], args.Length == 5 ? args[4] : null),
         "dtm-entradas" when args.Length is 2 or 3 => DtmEntradas(args[1], args.Length == 3 ? args[2] : null),
         "dolphin-ram" when args.Length == 3 => DolphinRam(args[1], args[2]),
@@ -60,7 +60,8 @@ try
         "adx-wav" when args.Length >= 4 => AdxWav(args[1], args[2], args[3..]),
         "igb-sons" when args.Length == 4 => IgbSons(args[1], args[2], args[3]),
         "igb-hud" when args.Count(a => !a.StartsWith("--atores=", StringComparison.Ordinal)) is 4 or 6 => IgbHudCmd(args.Where(a => !a.StartsWith("--atores=", StringComparison.Ordinal)).ToArray(), args.FirstOrDefault(a => a.StartsWith("--atores=", StringComparison.Ordinal))?["--atores=".Length..].Split(',', StringSplitOptions.RemoveEmptyEntries)),
-        "igb-objetos" when args.Length >= 5 => IgbObjetos(args[1], args[2], args[3], args[4..]),
+        "igb-objetos" when args.Length >= 5 => IgbObjetos(args[1], args[2], args[3], args[4..].Where(a => !a.StartsWith("--pacote=", StringComparison.Ordinal)).ToArray(),
+            args.FirstOrDefault(a => a.StartsWith("--pacote=", StringComparison.Ordinal))?["--pacote=".Length..]),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
@@ -101,7 +102,7 @@ static int Usage()
           dw4 igb-gltf     <arquivo.afs> <indice> <pasta-de-trabalho> [--quat=as] [--trans=rest|anim] [--dxt=gc] [--todas-peles] [--anim=N] [--ator=NOME]
                            (personagem com esqueleto, pele e animações em glTF, fora do repositório)
           dw4 igb-colisao  <arquivo.afs> <indice> <no-raiz> <pasta-de-trabalho>   (malha de colisão em glTF, nó "-colonly" para a Godot)
-          dw4 igb-cena     <arquivo.afs> <indice> <no-raiz|todas> <pasta-de-trabalho>   (cenário ou objeto estático em glTF com texturas)
+          dw4 igb-cena     <arquivo.afs> <indice> <no-raiz|todas> <pasta-de-trabalho> [--pacote=<arquivo.afs>:<indice>]   (cenário ou objeto estático em glTF com texturas; o pacote resolve as texturas por nome, beTextureCtrlAttr)
           dw4 igb-seq      <arquivo.afs> <indice> <pasta-de-trabalho> [--ator=NOME]   (sequências beModelCtrlData em JSON e texto)
           dw4 dtm-entradas <gravacao.dtm> [saida.csv]   (linha do tempo das entradas de uma gravação do Dolphin)
           dw4 dolphin-ram  <estado.sav> <saida.bin>   (MEM1 de 24 MiB de um save state do Dolphin, fora do repositório)
@@ -122,7 +123,7 @@ static int Usage()
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
-          dw4 igb-objetos  <ndmw.afs> <entrada> <pasta> <ator|ator=raiz>...   (objetos rígidos da fase para a fatia)
+          dw4 igb-objetos  <ndmw.afs> <entrada> <pasta> <ator|ator=raiz>... [--pacote=<arquivo.afs>:<indice>]   (objetos rígidos da fase para a fatia)
           dw4 lua-extrair  <ndmw.afs> <entrada> <pasta-de-trabalho>   (scripts da fase para o cliente; fora do repositório)
           dw4 lua-trace    <ndmw.afs> <entrada> [x.lua ...] [Metodo=valor ...]
                            (executa os scripts da fase na VM própria, na ordem do motor, e mostra cada chamada be:*)
@@ -1118,7 +1119,7 @@ int IgbColisao(string path, string which, string rootArg, string outDir)
 
 // Exporta as geometrias visuais de uma raiz de cena (ex.: "BG02" da dng1) como glTF estático com normais, UV e um
 // material por imagem. As imagens de formato 14 usam o layout de PC (confirmado na Fase 2).
-int IgbCena(string path, string which, string rootArg, string outDir)
+int IgbCena(string path, string which, string rootArg, string outDir, string? packSpec = null)
 {
     var full = Path.GetFullPath(outDir);
     if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
@@ -1137,6 +1138,41 @@ int IgbCena(string path, string which, string rootArg, string outDir)
     var g = new GltfBuilder();
     var report = new StringBuilder();
     var materialOfImage = new Dictionary<int, int>();
+    // Texturas por nome (beTextureCtrlAttr → beTextureCtrlData do pacote: lh_pack/ls_pack nos campos).
+    IgbScene? packScene = null;
+    var packImage = new Dictionary<string, int>();
+    if (packSpec != null && packSpec.LastIndexOf(':') is int colon and > 0 && packSpec[(colon + 1)..] is var packIdx && packSpec[..colon] is var packAfs)
+    {
+        using var pa = AfsArchive.Open(packAfs);
+        using var pms = new MemoryStream();
+        pa.CopyEntry(pa.Entries[int.Parse(packIdx, inv)], pms);
+        var pd = pms.ToArray();
+        var pf = IgbFile.Read(pd);
+        packScene = IgbScene.Read(pf, pd);
+        foreach (var o in pf.Slots.OfType<IgbObject>().Where(o => o.TypeName == "beTextureCtrlData"))
+        {
+            var name = o.Fields.FirstOrDefault(v => v.Desc.Slot == 2 && v.Desc.ShortName == "String")?.Text;
+            int r = o.Fields.FirstOrDefault(v => v.Desc.Slot == 3 && v.Desc.ShortName == "ObjectRef")?.AsInt32(pf.Header.LittleEndian) ?? -1;
+            if (name != null && r >= 0 && pf.Slots.ElementAtOrDefault(r) is IgbObject attr && packScene.FindImage(attr) is int pi && pi >= 0) packImage.TryAdd(name, pi);
+        }
+    }
+    var materialOfName = new Dictionary<string, int>();
+    int NamedMaterial(string name)
+    {
+        if (materialOfName.TryGetValue(name, out int m)) return m;
+        string? uri = null;
+        bool alpha = false;
+        if (packScene != null && packImage.TryGetValue(name, out int pi) && packScene.Images.TryGetValue(pi, out var img) && IgbScene.ToRgba(img) is { } rgba)
+        {
+            uri = $"pack_{string.Concat(Path.GetFileNameWithoutExtension(name).Select(c => char.IsLetterOrDigit(c) || c is '_' or '-' ? c : '_'))}.png";
+            using var fs = File.Create(Path.Combine(dir, uri));
+            Png.WriteRgba(fs, img.Width, img.Height, rgba);
+            for (int i = 3; i < rgba.Length; i += 4) if (rgba[i] < 255) { alpha = true; break; }
+            report.AppendLine($"textura \"{name}\" do pacote: {img.Width}x{img.Height} formato {img.PixelFormat}{(alpha ? ", com alfa" : "")}");
+        }
+        else report.AppendLine($"textura \"{name}\": {(packScene == null ? "sem --pacote" : "não achada no pacote")}");
+        return materialOfName[name] = g.AddMaterial(uri ?? name, uri, alpha);
+    }
     int Material(int image)
     {
         if (materialOfImage.TryGetValue(image, out int m)) return m;
@@ -1169,10 +1205,18 @@ int IgbCena(string path, string which, string rootArg, string outDir)
             var uv = new List<float>(); foreach (var (u, v) in part.TexCoords) uv.AddRange([u, 1 - v]); // glTF: origem no topo
             attrs["TEXCOORD_0"] = g.AddFloats(uv, 2, "VEC2", true);
         }
-        prims.Add(new JsonObject { ["attributes"] = attrs, ["indices"] = g.AddIndices(part.Triangles), ["mode"] = 4, ["material"] = Material(part.ImageIndex) });
+        prims.Add(new JsonObject { ["attributes"] = attrs, ["indices"] = g.AddIndices(part.Triangles), ["mode"] = 4, ["material"] = part.ImageIndex < 0 && part.TextureName != null ? NamedMaterial(part.TextureName) : Material(part.ImageIndex) });
     }
-    int mesh = g.AddMesh(new JsonObject { ["name"] = "cena", ["primitives"] = prims });
-    g.AddRootNode(g.AddNode(new JsonObject { ["name"] = "cena", ["mesh"] = mesh }));
+    // A Godot aceita no máximo 256 superfícies por malha (RenderingServer MAX_MESH_SURFACES; o campo stag0101 tem 331
+    // geometrias): acima disso, mais malhas "cena_2", "cena_3"… num nó cada.
+    const int MaxSurfaces = 256;
+    var all = prims.Select(p => p!.DeepClone()).ToList();
+    for (int k = 0; k * MaxSurfaces < Math.Max(1, all.Count); k++)
+    {
+        string name = k == 0 ? "cena" : $"cena_{k + 1}";
+        int mesh = g.AddMesh(new JsonObject { ["name"] = name, ["primitives"] = new JsonArray(all.Skip(k * MaxSurfaces).Take(MaxSurfaces).ToArray()) });
+        g.AddRootNode(g.AddNode(new JsonObject { ["name"] = name, ["mesh"] = mesh }));
+    }
     g.Save(dir, "cena");
     var byImage = parts.GroupBy(p => p.ImageIndex).OrderByDescending(x => x.Count()).Select(x => $"#{x.Key}: {x.Count()}");
     report.AppendLine($"geometrias por imagem: {string.Join(", ", byImage)}");
@@ -1509,7 +1553,7 @@ int IgbHudCmd(string[] a, string[]? only)
 // Objetos de cenário rígidos (portas, pisos, caixas…: KIND_OBJECT sem esqueleto, animados por igTransformSequence) no
 // mesmo formato do igb-hud, para a fatia gerar pelos GENERATE dos scripts. Ator "nome" (raiz = igAttrSet com o nome) ou
 // "nome=índice" (raiz explícita).
-int IgbObjetos(string path, string which, string outDir, string[] actors)
+int IgbObjetos(string path, string which, string outDir, string[] actors, string? packSpec = null)
 {
     var full = Path.GetFullPath(outDir);
     if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
@@ -1518,7 +1562,16 @@ int IgbObjetos(string path, string which, string outDir, string[] actors)
     using var ms = new MemoryStream();
     afs.CopyEntry(afs.Entries[i], ms);
     var data = ms.ToArray();
-    var (json, hud) = IgbHud.Export(IgbFile.Read(data), data, null, null, actors);
+    // Pacote opcional para as texturas por nome (lh_pack nos campos, usa_pack nas masmorras).
+    byte[]? packData = null;
+    if (packSpec != null && packSpec.LastIndexOf(':') is int colon and > 0)
+    {
+        using var pa = AfsArchive.Open(packSpec[..colon]);
+        using var pms = new MemoryStream();
+        pa.CopyEntry(pa.Entries[int.Parse(packSpec[(colon + 1)..], inv)], pms);
+        packData = pms.ToArray();
+    }
+    var (json, hud) = IgbHud.Export(IgbFile.Read(data), data, packData != null ? IgbFile.Read(packData) : null, packData, actors);
     Directory.CreateDirectory(full);
     foreach (var img in hud.Images)
     {
@@ -1845,6 +1898,9 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
     var sep = index.Separate(stage).ToList();
     int Sep(string name, int afs = 0) => sep.FirstOrDefault(x => x.Afs == afs && string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase))?.Index ?? -1;
     int cam = Sep("aaacamera.igb"), camFar = Sep("aaacameral.igb"), acmr = Sep("acmr_pack.igb");
+    // Texturas por nome do cenário e dos objetos: lh_pack nos campos (FATO: ls_pack tem as mesmas 20 texturas, mais claras; HIPÓTESE:
+    // variante de iluminação), usa_pack nas masmorras.
+    int lh = Sep("lh_pack.igb");
     int genH = Sep("generatorh.igb"), genN = Sep("generatorn.igb"), genV = Sep("generatorv.igb"), usa = Sep("usa_pack.igb", 1);
     string M = main.ToString(inv);
     Directory.CreateDirectory(outDir);
@@ -1891,8 +1947,9 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
     var attrSets = mainFile.Slots.OfType<IgbObject>().Where(o => o.TypeName == "igAttrSet").Select(o => o.Fields.FirstOrDefault(v => v.Desc.Slot == 2 && v.Desc.ShortName == "String")?.Text ?? "").ToHashSet();
     string[] Specs(IEnumerable<string> names) => names.Select(n => !attrSets.Contains(n) && action2Root.TryGetValue(n, out int r) ? $"{n}={r}" : n).ToArray();
 
+    string? TexturePack() => lh >= 0 ? $"{ndmwPath}:{lh}" : usa >= 0 ? $"{areaPath}:{usa}" : null;
     Step("lua", () => LuaExtrair(ndmwPath, main, Path.Combine(outDir, "lua")));
-    if (bg02 >= 0) Step("cenario", () => IgbCena(ndmwPath, M, bg02.ToString(inv), Path.Combine(outDir, "cenario")));
+    if (bg02 >= 0) Step("cenario", () => IgbCena(ndmwPath, M, bg02.ToString(inv), Path.Combine(outDir, "cenario"), lh >= 0 ? $"{ndmwPath}:{lh}" : null));
     else problems.Add("cenario: sem raiz BG02");
     if (bg01 >= 0) Step("colisao", () => IgbColisao(ndmwPath, M, bg01.ToString(inv), Path.Combine(outDir, "colisao")));
     else problems.Add("colisao: sem raiz BG01");
@@ -1912,9 +1969,9 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
             Step("menu", () => IgbHudCmd(["igb-hud", ndmwPath, M, areaPath, usa.ToString(inv), Path.Combine(outDir, "menu")], Specs(menuNames)));
     }
     else problems.Add("usa_pack: não encontrado no índice (textos, db, hud e menu sem exportar)");
-    if (objectNames.Length > 0) Step("objetos", () => IgbObjetos(ndmwPath, M, Path.Combine(outDir, "objetos"), Specs(objectNames)));
+    if (objectNames.Length > 0) Step("objetos", () => IgbObjetos(ndmwPath, M, Path.Combine(outDir, "objetos"), Specs(objectNames), TexturePack()));
     foreach (var n in objectNames) Step($"objetos/{n} seq", () => IgbSeq(ndmwPath, M, Path.Combine(outDir, "objetos", n), "--ator=" + n));
-    if (mapNames.Length > 0) Step("mapa", () => IgbObjetos(ndmwPath, M, Path.Combine(outDir, "mapa"), Specs(mapNames)));
+    if (mapNames.Length > 0) Step("mapa", () => IgbObjetos(ndmwPath, M, Path.Combine(outDir, "mapa"), Specs(mapNames), TexturePack()));
     foreach (var n in mapNames) Step($"mapa/{n} seq", () => IgbSeq(ndmwPath, M, Path.Combine(outDir, "mapa", n), "--ator=" + n));
     foreach (var n in menuNames) Step($"menu/{n} seq", () => IgbSeq(ndmwPath, M, Path.Combine(outDir, "menu", n), "--ator=" + n));
     if (sound >= 0) Step("sons", () => IgbSons(ndmwPath, sound.ToString(inv), Path.Combine(outDir, "sons")));
