@@ -99,8 +99,11 @@ public partial class Fatia
         return true;
     }
 
-    // Comprar: as 36 posições do estoque. Vender: o DEVICEFOLDER (beNDMWShopCtrlDeviceSell).
-    List<ItemRef?> ShopList() => _shopSelling ? _inventory.Devices.Select(d => (ItemRef?)d).ToList() : _shopItems;
+    // Comprar: as 36 posições do estoque. Vender: o DEVICEFOLDER (beNDMWShopCtrlDeviceSell); na loja de discos, os discos
+    // guardados (HIPÓTESE: beNDMWShopCtrlDiskSell vende discos da DISKFOLDER, um por toque).
+    List<ItemRef?> ShopList() => !_shopSelling ? _shopItems
+        : _shopKind == ShopStock.Disk ? _inventory.DiskCounts.Where(kv => kv.Value > 0).OrderBy(kv => kv.Key).Select(kv => (ItemRef?)new ItemRef("conItem", kv.Key)).ToList()
+        : _inventory.Devices.Select(d => (ItemRef?)d).ToList();
 
     bool Equipped(ItemRef item) => _equip != null && item.Table switch
     {
@@ -119,7 +122,7 @@ public partial class Fatia
         {
             int price = _db[item.Table].Int(item.Row, "HANBAI");
             _shopMessage = ShopTrade.Buy(_inventory, item, price) ? $"Comprou {name} por {price} BIT."
-                : _inventory.Bit < price ? "BIT insuficiente." : "Pasta cheia.";
+                : _inventory.Bit < price ? "BIT insuficiente." : item.Table == "conItem" ? "Já tem 9 desse disco." : "Pasta cheia.";
         }
         else
         {

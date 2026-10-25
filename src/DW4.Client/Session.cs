@@ -28,8 +28,8 @@ public static class Session
 {
     public const string MenuScene = "res://MainMenu.tscn", GameScene = "res://Fatia.tscn";
     /// <summary>
-    /// FATO: a gatedisc.lua da stagIS13 (tela de criar/chamar Digimon) sai com SETGENERATEPOS I&lt;3&gt; e NEXTSTAGE "stagML11".
-    /// Personagem novo começa ali: lobby, entrada 3.
+    /// FATO: a gatedisc.lua da stagIS10 (título, onde começa o jogo) e a da stagIS13 (criar/chamar Digimon) saem com
+    /// SETGENERATEPOS I&lt;3&gt; e NEXTSTAGE "stagML11". Personagem novo começa ali: lobby, entrada 3.
     /// </summary>
     public const string NewGameStage = "stagml11";
     public const int NewGameEntry = 3;

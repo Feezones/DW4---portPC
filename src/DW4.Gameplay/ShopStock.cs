@@ -9,7 +9,7 @@ namespace DW4.Gameplay;
 public static class ShopStock
 {
     /// <summary>Tipos de SUBWND (tabela de nomes em 0x804E16B0, índice = tipo).</summary>
-    public const int Weapon = 6, Armor = 7, Chip = 8, Junk = 9;
+    public const int Disk = 5, Weapon = 6, Armor = 7, Chip = 8, Junk = 9;
 
     // FATO (0x80351A2C..0x80351BAC): faixa do LEVEL para a shopWeapon: ≤ 9 → 0, ≤ 16 → 1, … ≤ 147 → 23, acima → 24.
     static readonly int[] WeaponBands = [9, 16, 21, 26, 31, 36, 41, 46, 51, 60, 67, 72, 77, 82, 87, 92, 97, 102, 107, 112, 117, 127, 137, 147];
@@ -29,6 +29,10 @@ public static class ShopStock
         Armor => "shopArmor",
         Chip => "shopChip",
         Junk => "shopJunk",
+        // HIPÓTESE forte: a janela DISK (classe beNDMWShopCtrlDiskSell, campos _diskIdList, _cursor, _maxSell, _kazu, _tanka) lista
+        // a shopDisk do banco da fase (1 linha; no #829: conItem 2, 1, 0, 5, 4, 3, 6, 7, 8, 9). O GETSHOPDATA (0x80351794) não
+        // trata o tipo 5, e o código que enche o _diskIdList não foi lido.
+        Disk => "shopDisk",
         _ => null,
     };
 
@@ -38,6 +42,7 @@ public static class ShopStock
         Weapon => "weapon",
         Armor => "armor1", // FATO (0x803B0DE8): tipo de item 1
         Chip => "abChip",   // FATO (0x803B1014): tipo de item 3
+        Disk => "conItem",  // FATO (0x803B10A0): tipo de item 4
         _ => null,
     };
 
@@ -50,6 +55,7 @@ public static class ShopStock
         Weapon => (players > 1 ? PartyWeaponBase : digimonNo is >= 0 and < 16 ? WeaponBase[digimonNo] : 0) + Band(level, WeaponBands),
         Armor or Chip => Band(level, ArmorChipBands),
         Junk => JunkThresholds.Count(t => counter1 >= t) - 1,
+        Disk => 0,
         _ => -1,
     };
 
@@ -101,9 +107,14 @@ public static class ShopTrade
 
     public static bool CanBuy(Inventory inv, int hanbai) => hanbai >= 0 && inv.Bit >= hanbai && inv.Devices.Count < Inventory.DeviceMax;
 
+    /// <summary>Disco (conItem) vai para a DISKFOLDER, até 9 por tipo (FATO 0x803AC2B4); o resto vai para o DEVICEFOLDER.</summary>
+    public static bool CanBuy(Inventory inv, ItemRef item, int hanbai) => item.Table == "conItem"
+        ? hanbai >= 0 && inv.Bit >= hanbai && inv.Disks(item.Row) < Inventory.DiskMax
+        : CanBuy(inv, hanbai);
+
     public static bool Buy(Inventory inv, ItemRef item, int hanbai)
     {
-        if (!CanBuy(inv, hanbai)) return false;
+        if (!CanBuy(inv, item, hanbai)) return false;
         inv.Bit -= hanbai;
         return inv.Add(item);
     }

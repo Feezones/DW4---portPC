@@ -1691,6 +1691,14 @@ if (args.Length == 1)
         inv.Bit = ShopTrade.BitMax - 10; inv.Add(new ItemRef("weapon", 0));
         ShopTrade.Sell(inv, new ItemRef("weapon", 0), 49, false);
         Equal(ShopTrade.BitMax, inv.Bit, "teto de 9 999 999");
+        // Discos (HIPÓTESE da shopDisk, ver ShopStock.Table): 1 linha com conItem; a DISKFOLDER segura 9 por tipo.
+        var disks = ShopStock.Items(ShopStock.Disk, col => Cell(ShopStock.Table(ShopStock.Disk)!, ShopStock.Row(ShopStock.Disk, 1, 2, 1, 0), col));
+        Equal("conItem 2,1,0,5,4,3,6,7,8,9", "conItem " + string.Join(",", disks.Where(d => d != null).Select(d => d!.Value.Row)), "shopDisk linha 0");
+        True(disks.All(d => d == null || d.Value.Table == "conItem"), "tudo conItem");
+        var dinv = new Inventory { Bit = 100000 };
+        for (int i = 0; i < 9; i++) True(ShopTrade.Buy(dinv, new ItemRef("conItem", 2), 10), $"disco {i + 1}");
+        True(!ShopTrade.Buy(dinv, new ItemRef("conItem", 2), 10) && dinv.Disks(2) == 9, "o 10º não cabe");
+        True(ShopTrade.Sell(dinv, new ItemRef("conItem", 2), 5, false) && dinv.Disks(2) == 8, "vende um disco");
     });
 
     Test("Jogo: gameStart.lua da stagIS10 zera as flags de trabalho e copia as permanentes; hostLoad dá a dificuldade máxima", () =>

@@ -109,3 +109,20 @@
   - O limite de letras do nome.
   - O texto e o valor do "Hard" (só "Normal" e "Very Hard" estão nos textos exportados).
   - Quantas caixas o save do original tem (as janelas sugerem 4).
+
+## Loja de discos (2026-10-25)
+
+- **FATO:**
+  - As lojas são classes criadas em código: beNDMWShopCtrlDiskSell, DeviceSell, EditBit, XdataChip, Digilabo, Evolve, Sales,
+    Sell; beNDMWShopDevice, Junk, Select, Title.
+  - DiskSell tem os campos _diskIdList, _cursor, _maxSell, _kazu e _tanka.
+  - O GETSHOPDATA (0x80351794) só monta lista para 6..9; DISK (5) cai no caso padrão.
+  - O banco da stagml13 tem shopDisk (1 linha): conItem 2, 1, 0, 5, 4, 3, 6, 7, 8, 9.
+  - Não há o texto "shopDisk" no executável.
+- **HIPÓTESE forte:** a janela DISK lista a shopDisk.
+  - Comprar põe o disco na DISKFOLDER, até 9 por tipo (FATO do limite).
+  - Vender (DiskSell) tira um disco guardado por KAITORI.
+  - A escolha de quantidade (_kazu) ainda não foi feita: o port compra e vende um por toque.
+- Teste: na "Jogo: estoque das lojas da Central Area (#829) …".
+- **DESCONHECIDO:** BANK (EditBit: _editBit, _editMax), XDATA (XdataChip) e CARD. O GETSHOPDATA soma BIT e XDATA (teto
+  9999) dos jogadores com ISUSE antes do switch, o que deve servir ao banco e à X-data; falta ler.
