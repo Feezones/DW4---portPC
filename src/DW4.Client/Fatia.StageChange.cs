@@ -187,6 +187,7 @@ public partial class Fatia
 
     void NextStage(string stage)
     {
+        if (StartEnding(stage)) return;
         if (IsMenuStage(stage)) { MenuStageInPlace(stage); return; }
         ScriptLog($"troca de fase: {stage}, entrada {_nextEntry}");
         _choice = -1;

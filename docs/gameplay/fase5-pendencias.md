@@ -11,13 +11,13 @@ janela.
    dng4, os chefes stagbs01..06 e o fim (FLG 86 no último chefe). Mapa das flags: fase5-enredo.md.
 2. **36 fases nunca abertas no cliente.** São as que vêm depois de stag0302 na varredura (fase5-varredura.md). Todas
    exportam, mas não se sabe se carregam, se têm chão e se os scripts rodam. Abrir uma janela por fase precisa de autorização.
-3. **Morte e recomeço do jogo.** Hoje cair dá "F5 reinicia" (DECISÃO DA FATIA).
+3. **Morte e recomeço do jogo.** Feito como DECISÃO DO PORT (904a338): perde os BITS no campo, HP/MP cheios, volta ao lobby. O destino original continua desconhecido.
    - FATO: o DEADRESTART da GAMERAM (0x80371B3C) enche HP e MP.
    - Os textos dizem que os BITS carregados se perdem ao cair no campo; onde isso acontece no código não foi lido.
    - Falta o fluxo do jogo: tela de queda, volta ao lobby ou ao ponto, perda dos BITS.
 4. **Chefes 02..06 não vistos.** Os scripts rodam sem erro e o movimento (MOVE/MOVEEX/MOVERL) é o do jogo. A escala da
    unidade (30 Hz, unidade do jogo = do mundo) é HIPÓTESE, e as peças presas (f_luce "ball") nunca foram vistas.
-5. **Final do jogo.** Que fase ou filme vem depois do stagbs06, os créditos e a volta ao título não foram levantados.
+5. **Final do jogo.** Levantado: stagbs06 → stagIS20 (créditos) → lobby, entrada 0. No port, tela de fim com a música dos créditos; a arte dos créditos (j_endroll) não foi exportada.
 
 ## 2. Bloqueiam partes do jogo
 

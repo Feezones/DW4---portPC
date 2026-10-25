@@ -274,6 +274,7 @@ public partial class Fatia : Node3D
 
     public override void _UnhandledInput(InputEvent e)
     {
+        if (_ending != null) { GetViewport().SetInputAsHandled(); return; } // créditos: Fatia.Ending.cs lê as teclas
         if (ChatInput(e)) { GetViewport().SetInputAsHandled(); return; } // chat aberto: nada chega ao jogo
         if (MenuInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (e is InputEventKey { Pressed: true, Echo: false } k)
@@ -295,6 +296,7 @@ public partial class Fatia : Node3D
         float dt = (float)delta;
         TickChat(dt);
         TickDeath(dt);
+        TickEnding(dt);
         if (_leaving || !IsInsideTree()) return;
         if (_snapToFloor) SnapToFloor();
         if (TickMenu(dt)) { _jumpHeld = true; return; } // o botão que fechou o menu não vira pulo

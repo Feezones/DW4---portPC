@@ -222,3 +222,16 @@ Até 6 lugares por flag, sem stag0000.
 - Flags ligadas com valor calculado (GETLOCAL) ou por laço ficam de fora (o gameStart.lua usa laços).
 - Os significados das flags vêm do contexto dos scripts; o nome de cada uma não existe no jogo.
 - Não foi conferido na janela se o primeiro caminho (lobby → stagML02 → Ofanimon → stag0001) roda inteiro no port.
+
+## Final do jogo (FATO, 2026-10-25)
+
+- O hit_f_devl3.lua (último chefe, stagbs06) liga as FLG 70, 86 e 610.
+- A saída matz01 da stagbs06 leva à stagIS20.
+- A stagIS20 é a tela de créditos:
+  - o first.lua toca "STAFFROL" (ndmw #63, ~2,7 min) e abre j_endback e j_endroll (créditos rolando, actors 2D não
+    exportados);
+  - espera o j_endroll fechar e manda NEXTSTAGE "stagML11" com SETGENERATEPOS I<0>;
+  - o jogo continua no lobby depois do final.
+- No port: tela de fim com a música dos créditos (pula com Enter depois de 5 s) e volta ao lobby, entrada 0
+  (`Fatia.Ending.cs`).
+- A queda do jogador segue a decisão em `Fatia.Death.cs` (destino original desconhecido).
