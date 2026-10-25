@@ -28,7 +28,7 @@ public partial class MainMenu : Control
     const int NameMax = 12; // DECISÃO DO PORT: o limite do jogo não foi lido
 
     VBoxContainer _root = null!;
-    List<(string Name, string Model)> _shinka = [];
+    List<(string Name, string Model, int[] Weapons)> _shinka = [];
 
     public override void _Ready()
     {
@@ -52,7 +52,7 @@ public partial class MainMenu : Control
     void GoStraight() => GetTree().ChangeSceneToFile(Session.GameScene);
 
     // Nomes das formas (NAME e MODEL_NAME da shinka), lidos da pasta de trabalho: nada do jogo fica no repositório.
-    static List<(string, string)> LoadShinka()
+    static List<(string, string, int[])> LoadShinka()
     {
         var stages = OS.GetEnvironment("DW4_FASES") is { Length: > 0 } s ? s : @"D:\dw4-work\fases";
         var csv = Path.Combine(stages, Session.NewGameStage, "db", "db_shinka.csv");
@@ -61,7 +61,10 @@ public partial class MainMenu : Control
         var head = lines[0].TrimStart('\uFEFF').Split(';');
         int name = Array.IndexOf(head, "NAME"), model = Array.IndexOf(head, "MODEL_NAME");
         if (name < 0 || model < 0) return [];
-        return lines.Skip(1).Select(l => l.Split(';')).Where(c => c.Length > Math.Max(name, model)).Select(c => (c[name], c[model])).ToList();
+        // FATO (GAMEDATAINIT): INI_WEAPON1..3 são as armas iniciais; a primeira fica equipada.
+        var weapons = new[] { "INI_WEAPON1", "INI_WEAPON2", "INI_WEAPON3" }.Select(w => Array.IndexOf(head, w)).ToArray();
+        return lines.Skip(1).Select(l => l.Split(';')).Where(c => c.Length > Math.Max(name, model))
+            .Select(c => (c[name], c[model], weapons.Select(i => i >= 0 && i < c.Length && int.TryParse(c[i], out var r) ? r : -1).ToArray())).ToList();
     }
 
     string FormName(int d) => d >= 0 && d < _shinka.Count ? _shinka[d].Name : $"Digimon {d}";
@@ -218,7 +221,7 @@ public partial class MainMenu : Control
             var n = name.Text.Trim();
             if (n.Length == 0) { status.Text = "Dê um nome ao Digimon."; name.GrabFocus(); return; }
             if (chosen < 0) { status.Text = "Escolha um Digimon."; return; }
-            var save = CharacterSave.New(n, chosen, FormModel(chosen), diff.Selected, Session.NewGameStage, Session.NewGameEntry);
+            var save = CharacterSave.New(n, chosen, FormModel(chosen), diff.Selected, Session.NewGameStage, Session.NewGameEntry, chosen < _shinka.Count ? _shinka[chosen].Weapons : null);
             Session.Store.Save(Session.Account, slot, save);
             ShowSlots();
         });

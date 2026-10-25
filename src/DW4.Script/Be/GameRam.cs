@@ -63,6 +63,8 @@ public sealed class BePlayer
     public Inventory Items { get; set; } = new();
     /// <summary>CARDLIST: 1 = carta obtida (SYSctlCardFolder "SET"/"CLR"/"KAZU").</summary>
     public byte[] Cards { get; } = new byte[CardCount];
+    /// <summary>Equipamento em uso (POWERSOCKET[0] = arma, armaduras e chips). null = ainda não definido (o cliente escolhe).</summary>
+    public Equipment? Equipment { get; set; }
     /// <summary>HIPÓTESE: SYSctlDeviceFolder "ISEQUIP" pergunta se o item está equipado; o cliente responde.</summary>
     public Func<ItemRef, bool> IsEquipped { get; set; } = _ => false;
 }

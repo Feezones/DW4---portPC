@@ -499,7 +499,7 @@ public partial class Fatia
                 string? reaction = EnemyStrikes(h.Type, e.Kind.Stats, e.Kind.Name);
                 if (reaction == null) break; // errou ou bloqueou: sem reação
                 // Reação do Guilmon pela faixa do dano (bloco do estilo da arma, ou "common"), virado para quem bateu (HIPÓTESE).
-                if (_runner != null && (_runner.Start(reaction, WeaponStyle) || _runner.Start(reaction, "common")))
+                if (_runner != null && (_runner.Start(reaction, StyleOf(reaction)) || _runner.Start(reaction, "common")))
                 {
                     _wazaPending = null; // interrompida: o MP já foi gasto no painel
                     var to = e.Body.GlobalPosition - g;

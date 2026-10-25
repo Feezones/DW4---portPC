@@ -319,7 +319,7 @@ public partial class Fatia
             o.HitSerial = o.Seq.BoxSerial;
             _hitsTaken++;
             string? reaction = EnemyStrikes(h.Type, o.Owner?.Kind.Stats, o.Name); // f_bit: os atributos do chefe dono
-            if (reaction != null && _runner != null && (_runner.Start(reaction, WeaponStyle) || _runner.Start(reaction, "common")))
+            if (reaction != null && _runner != null && (_runner.Start(reaction, StyleOf(reaction)) || _runner.Start(reaction, "common")))
             {
                 _wazaPending = null;
                 _move.Stop();

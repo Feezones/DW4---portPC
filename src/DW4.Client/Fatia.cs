@@ -38,7 +38,6 @@ public partial class Fatia : Node3D
     AnimationPlayer? _anim;
     string? _animWait, _animRun;
     // Ataque: sequência SQ_ATCK1 do Guilmon no bloco do estilo da arma (w_sword01 = "slash", FATO pelo beWeaponSeqData).
-    const string WeaponStyle = "slash";
     // HIPÓTESE: osso da mão direita para prender a arma (beWeaponAttachData só existe no executável).
     const string WeaponBone = "RArm04";
     SequenceRunner? _runner;
@@ -205,34 +204,12 @@ public partial class Fatia : Node3D
                 var sequences = SeqCommand.LoadAll(json);
                 _runner = new SequenceRunner(sequences, AnimFrames);
                 SetupJump(_runner);
-                // Parado e andando conforme o estilo da arma: SQ_WAIT / SQ_WALK → primeira ACTION do bloco → MOTIONSET.
-                // (Antes era "waitG"/"runG": o G é o estilo gun, por isso os braços erguidos.)
-                if (ActionAnimations.FirstAction(sequences, "SQ_WAIT", WeaponStyle) is { } wa) _animWait = AnimName(wa);
-                // SQ_WALK (bloco slash) → RUNNS1, cujos MOTIONSET são "waitS" e depois "runS": o andar é o último.
-                // HIPÓTESE: o primeiro é a transição de parado para andando.
-                _animRun = ActionAnimations.BlockActions(sequences, "SQ_WALK", WeaponStyle)
-                    .SelectMany(a => ActionAnimations.Motions(_actions, a)).LastOrDefault() is { } rm && _anim != null && _anim.HasAnimation(rm) ? rm : null;
-            }
-            if (_anim != null)
-            {
-                var names = _anim.GetAnimationList();
-                _animWait ??= Pick(names, "waitS", "wait");
-                _animRun ??= Pick(names, "runS", "run");
-                foreach (var n in new[] { _animWait, _animRun })
-                    if (n != null) _anim.GetAnimation(n).LoopMode = Animation.LoopModeEnum.Linear;
-                if (_animWait != null) _anim.Play(_animWait);
-            }
-            var skeleton = FindAll<Skeleton3D>(_model).FirstOrDefault();
-            if (Load("arma", "cena.gltf") is { } weapon && skeleton != null)
-            {
-                if (skeleton.FindBone(WeaponBone) < 0) _problems.Add($"osso {WeaponBone} não existe para a arma");
-                var attach = new BoneAttachment3D { BoneName = WeaponBone };
-                skeleton.AddChild(attach);
-                attach.AddChild(weapon);
+                // Parado e andando: pelo bloco da arma equipada (Fatia.Weapon.cs, depois do LoadCombat).
             }
         }
 
         LoadCombat();
+        RefreshWeapon(); // modelo na mão e blocos de sequência pela arma equipada
         LoadStageData();
         // Sem geradores: o Numemon fixo do GENE-05 que renasce (fatia anterior).
         // Só na fatia antiga (sem fase exportada): uma fase exportada sem geradores (dngq5b1*, stag0000) simplesmente não tem.
@@ -352,7 +329,7 @@ public partial class Fatia : Node3D
         bool wasWaza = _wazaPending != null;
         if (_runner != null && !attacking && (attackPressed || _techKey >= 0))
         {
-            attacking = _techKey >= 0 ? StartTechnique(_techKey) && _runner.Running : _runner.Start("SQ_ATCK1", WeaponStyle);
+            attacking = _techKey >= 0 ? StartTechnique(_techKey) && _runner.Running : _runner.Start("SQ_ATCK1", StyleOf("SQ_ATCK1"));
             _techKey = -1;
             if (attacking && !_demo && !Input.IsJoyButtonPressed(0, JoyButton.X) && MouseGround() is { } aim)
             {
@@ -363,7 +340,7 @@ public partial class Fatia : Node3D
         }
         else if (attacking) _runner!.Tick(dt, attackPressed && !wasWaza, attackDown && !wasWaza);
         // O golpe carregado: o SQ_ATCK1 termina em JUMP "SQ_ATCKTM" quando o ataque é solto depois de carregar.
-        if (attacking && _runner is { Running: false, Next: SequenceRunner.ChargedSequence }) _runner.Start(SequenceRunner.ChargedSequence, WeaponStyle);
+        if (attacking && _runner is { Running: false, Next: SequenceRunner.ChargedSequence }) _runner.Start(SequenceRunner.ChargedSequence, StyleOf(SequenceRunner.ChargedSequence));
         if (!attacking && TryStartAir(jumpPressed)) attacking = true;
         _techKey = -1;
         _panel.Tick(dt);
@@ -515,6 +492,7 @@ public partial class Fatia : Node3D
         // FATO (GAMEDATAINIT 0x8036CFEC..D0B8): jogador novo com nível 1, EXP 0, as 9 skills em 1 e sem armaduras.
         Array.Fill(_skill, 1);
         LoadProgress();
+        _equip = Ram.Players[0].Equipment; // equipamento da vaga (sem vaga: a w_sword01 da fatia, no Recalc)
         Recalc();
         _hp = _pf!.MaxHp;
         _mp = _pf.MaxMp;
@@ -736,6 +714,7 @@ public partial class Fatia : Node3D
             _ => _equip with { Armor2Row = item.Row },
         };
         Recalc();
+        RefreshWeapon();
         _hp = Math.Min(_hp, _pf!.MaxHp);
         _mp = Math.Min(_mp, _pf.MaxMp);
         _lastEvent = $"equipou {name}";

@@ -122,6 +122,7 @@ public sealed class SequenceRunner
     public const string ChargedSequence = "SQ_ATCKTM";
 
     readonly IReadOnlyDictionary<string, List<SeqCommand>> _seqs;
+    public IReadOnlyDictionary<string, List<SeqCommand>> Sequences => _seqs;
     readonly Func<string, float?> _animFrames;
     List<SeqCommand> _cmds = [];
     int _pc, _end;

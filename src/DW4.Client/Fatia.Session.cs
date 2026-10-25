@@ -32,6 +32,7 @@ public partial class Fatia
         f.Level = _level;
         f.Exp = _exp;
         Array.Copy(_skill, f.Skill, Math.Min(f.Skill.Length, _skill.Length));
+        if (_equip != null) Ram.Players[0].Equipment = _equip;
     }
 
     /// <summary>Grava na vaga com o lugar onde o personagem vai voltar (sem vaga, só guarda na GAMERAM).</summary>

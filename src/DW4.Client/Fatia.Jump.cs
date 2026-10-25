@@ -48,7 +48,7 @@ public partial class Fatia
             : !_player.IsOnFloor() && _airTime >= FallDelay && _player.Velocity.Y < 0 ? "SQ_FALL" : null;
         if (seq == null) return false;
         _airControl = 1;
-        return _runner.Start(seq, WeaponStyle);
+        return _runner.Start(seq, StyleOf(seq));
     }
 
     // Velocidade vertical do quadro: MOVE "Jump"/"Fall" da sequência no ar, senão a gravidade da fatia.

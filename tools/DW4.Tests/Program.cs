@@ -169,6 +169,20 @@ Test("Port: chat (\"nome: mensagem - HH:MM\", histórico, some sem uso, canal lo
     log.Tick(7);
     True(log.Visible, "ainda visível logo depois de fechar");
 });
+
+Test("Port: personagem novo com as armas iniciais (INI_WEAPON1..3), a primeira equipada, e o equipamento no save", () =>
+{
+    var s = DW4.Script.Save.CharacterSave.New("Gui", 2, "p_girumon", 0, "stagml11", 3, [268, 275, 274]);
+    var ram = new GameRam();
+    DW4.Script.Save.CharacterSave.FromJson(s.ToJson())!.Apply(ram, 0);
+    var p = ram.Players[0];
+    True(p.Items.Has(new ItemRef("weapon", 268)) && p.Items.Has(new ItemRef("weapon", 275)) && p.Items.Has(new ItemRef("weapon", 274)), "as 3 na pasta");
+    Equal(268, p.Equipment?.WeaponRow, "a primeira equipada");
+    p.Equipment = new Equipment(275, 3) { WeaponChips = [7] };
+    var back = new GameRam();
+    DW4.Script.Save.CharacterSave.FromJson(DW4.Script.Save.CharacterSave.Capture(ram, 0, "Gui", "s", 0).ToJson())!.Apply(back, 0);
+    Equal((275, 3, 7), (back.Players[0].Equipment!.WeaponRow, back.Players[0].Equipment!.Armor1Row, back.Players[0].Equipment!.WeaponChips[0]), "arma, armadura e chip gravados");
+});
 Test("Port: configurações em texto do ConfigFile (ida e volta, padrão e faixa)", () =>
 {
     var c = new PortConfig { CameraMode = 1, Vibration = false, Width = 1920, Height = 1080, Fullscreen = true, VSync = false, UiScale = 1.25f, MusicVolume = 0.5f, Account = "eu" };
@@ -1905,6 +1919,20 @@ if (args.Length == 1)
         brain.Release();
         brain.Tick(1 / 30f, new Vector3(0, 0, 0), new Vector3(2, 0, 0), 0);
         True(!brain.Walking && (brain.External == "SQ_NEXT" || brain.Current?.Sequence == "SQ_WAIT"), $"perto: SQ_NEXT ou SQ_WAIT ({brain.External ?? brain.Current?.Sequence})");
+    });
+
+    Test("Jogo: estilo por arma (beWeaponSeqData): w_sword01 tudo slash; w_axe01 axe só no SQ_ATCK1/2", () =>
+    {
+        var armas = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fatia", "armas");
+        True(Directory.Exists(armas), $"exportadas: {armas}");
+        var sword = WeaponStyles.FromJson(File.ReadAllText(Path.Combine(armas, "w_sword01", "estilos.json")));
+        Equal(21, sword.Map.Count, "21 sequências");
+        True(sword.Map.Values.All(v => v == "slash"), "espada: slash");
+        var axe = WeaponStyles.FromJson(File.ReadAllText(Path.Combine(armas, "w_axe01", "estilos.json")));
+        Equal(("axe", "axe", "slash", "slash"), (axe.Of("SQ_ATCK1"), axe.Of("SQ_ATCK2"), axe.Of("SQ_ATCKTM"), axe.Of("SQ_WAIT")), "machado");
+        Equal("slash", axe.Of("SQ_QUALQUER"), "fora da lista: o bloco do SQ_WAIT");
+        var styles = Directory.GetDirectories(armas).Select(d => WeaponStyles.FromJson(File.ReadAllText(Path.Combine(d, "estilos.json"))).Of("SQ_ATCK1")).Distinct().OrderBy(x => x).ToList();
+        Equal("arm,axe,dagger,dual,gun,maul,saber,slash", string.Join(",", styles), "estilos das 74 armas");
     });
 
     Test("Jogo: MDLgetBulletName pela tabela 0x804DD2A0 (código / 10000 − 1)", () =>

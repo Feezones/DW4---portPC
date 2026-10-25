@@ -59,8 +59,12 @@ public partial class Fatia
         var forms = Ram.Players[0].Forms;
         if (!forms.Switch(digimonNo)) { CloseSaveWindow(); return; }
         PlayerModel = model;
-        // Tira armaduras e chips (FATO); a arma da fatia fica. A forma nova traz nível, EXP e skills dela (LoadProgress na recarga).
-        _equip = null;
+        // FATO (0x8039CA4C): tira armaduras e chips e re-escolhe a arma (WEAPONEQUIPSTRONG: a de maior TSUYOSA que a forma nova pode
+        // usar). A forma nova traz nível, EXP e skills dela (LoadProgress na recarga). Sem arma usável, fica a da fatia (Recalc).
+        var weapons = _inventory.Devices.Where(d => d.Table == "weapon").Select(d => d.Row);
+        int best = _db != null ? Evolution.StrongestWeapon(_db, weapons, digimonNo, forms[digimonNo].Skill) : -1;
+        _equip = best >= 0 ? new Equipment(best) : null;
+        Ram.Players[0].Equipment = _equip;
         ScriptLog($"digievolução: {model} (DIGIMONNO {digimonNo})");
         var p = _player.GlobalPosition;
         int entry = int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var e) ? e : 0;

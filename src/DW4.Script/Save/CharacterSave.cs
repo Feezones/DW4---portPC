@@ -34,6 +34,12 @@ public sealed class CharacterSave
     public int BankBit { get; set; }
     public List<ItemSave> BankDevices { get; set; } = [];
     public int XData { get; set; }
+    /// <summary>Equipamento: linhas da weapon/armor1/armor2 (−1 = nada) e dos chips da arma e da armadura.</summary>
+    public int WeaponRow { get; set; } = -1;
+    public int Armor1Row { get; set; } = -1;
+    public int Armor2Row { get; set; } = -1;
+    public List<int> WeaponChips { get; set; } = [];
+    public List<int> ArmorChips { get; set; } = [];
     public Dictionary<int, int> Disks { get; set; } = [];
     public List<int> ImportantItems { get; set; } = [];
     /// <summary>FLAG (1024 bytes) e CARDLIST (50 bytes) em base64; COUNTER (16 inteiros).</summary>
@@ -57,11 +63,17 @@ public sealed class CharacterSave
 
     public sealed record ItemSave(string Table, int Row);
 
-    /// <summary>Personagem novo: forma inicial liberada no nível 1 (GAMEDATAINIT), na <paramref name="stage"/>.</summary>
-    public static CharacterSave New(string name, int starter, string model, int difficulty, string stage, int entry)
+    /// <summary>
+    /// Personagem novo: forma inicial liberada no nível 1 (GAMEDATAINIT), na <paramref name="stage"/>. FATO (shinka INI_WEAPON1..3, GAMEDATAINIT
+    /// 0x8036CFEC..): as armas iniciais vão para o DEVICEFOLDER e a primeira fica equipada.
+    /// </summary>
+    public static CharacterSave New(string name, int starter, string model, int difficulty, string stage, int entry, IReadOnlyList<int>? initialWeapons = null)
     {
         var ram = new GameRam { Difficulty = difficulty };
         ram.Players[0].Forms.Start(starter);
+        var weapons = (initialWeapons ?? []).Where(w => w >= 0).ToList();
+        foreach (var w in weapons) ram.Players[0].Items.Add(new ItemRef("weapon", w));
+        if (weapons.Count > 0) ram.Players[0].Equipment = new Equipment(weapons[0]);
         var s = Capture(ram, 0, name, stage, entry);
         s.Starter = starter;
         s.Model = model;
@@ -76,6 +88,8 @@ public sealed class CharacterSave
         {
             Name = name, CurrentForm = p.Forms.Current, Difficulty = ram.Difficulty, CameraMode = ram.CameraMode, LightMode = ram.LightMode,
             Stage = stage, Entry = entry, SavedAt = DateTime.UtcNow, Bit = p.Items.Bit,
+            WeaponRow = p.Equipment?.WeaponRow ?? -1, Armor1Row = p.Equipment?.Armor1Row ?? -1, Armor2Row = p.Equipment?.Armor2Row ?? -1,
+            WeaponChips = p.Equipment?.WeaponChips.ToList() ?? [], ArmorChips = p.Equipment?.ArmorChips.ToList() ?? [],
             XData = p.Items.XData, BankBit = p.Items.BankBit, BankDevices = p.Items.BankDevices.Select(d => new ItemSave(d.Table, d.Row)).ToList(),
             Devices = p.Items.Devices.Select(d => new ItemSave(d.Table, d.Row)).ToList(),
             Disks = p.Items.DiskCounts.Where(kv => kv.Value > 0).ToDictionary(kv => kv.Key, kv => kv.Value),
@@ -112,6 +126,7 @@ public sealed class CharacterSave
         foreach (var row in ImportantItems) inv.Add(new ItemRef("impItem", row));
         inv.RestoreBank(BankBit, BankDevices.Select(d => new ItemRef(d.Table, d.Row)));
         p.Items = inv;
+        p.Equipment = WeaponRow >= 0 ? new Equipment(WeaponRow, Armor1Row, Armor2Row) { WeaponChips = WeaponChips.ToList(), ArmorChips = ArmorChips.ToList() } : null;
         CopyBase64(Cards, p.Cards);
         CopyBase64(Flags, ram.Flags);
         Array.Clear(ram.Counters);

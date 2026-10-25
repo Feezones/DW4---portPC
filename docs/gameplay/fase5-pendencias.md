@@ -21,9 +21,9 @@ janela.
 
 ## 2. Bloqueiam partes do jogo
 
-6. **Armas e estilos.** A fatia usa sempre a w_sword01 (estilo slash) na mão (DECISÃO DA FATIA). Equipar outra arma muda
-   só os números: não muda o modelo na mão nem o bloco de sequências (blunt, stab, bash, shot, crush). As 16 formas têm os
-   blocos; falta ligar.
+6. **Armas e estilos.** Feito: modelo na mão e blocos de sequência pela arma equipada (beWeaponSeqData das 74 armas). Armas
+   iniciais INI_WEAPON1..3 e o equipamento no save. A evolução equipa a arma mais forte usável. Falta ver na tela e o osso
+   das armas duplas (HIPÓTESE: tudo na mão direita).
 7. **Painel de técnicas.** As teclas 1..6 usam a técnica n da WAZALIST (DECISÃO DA FATIA); o painel do jogo (wazaPanel) não
    foi portado.
 8. **Missões (quest01..06 e treasure01..08).** Rodam pelos scripts, mas nunca foram jogadas; a recompensa libera as formas.
