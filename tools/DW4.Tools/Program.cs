@@ -57,6 +57,7 @@ try
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
+        "lua-extrair" when args.Length == 4 => LuaExtrair(args[1], int.Parse(args[2], CultureInfo.InvariantCulture), args[3]),
         "lua-trace" when args.Length >= 3 => LuaTrace(args[1], int.Parse(args[2], CultureInfo.InvariantCulture), args[3..]),
         "dol-info" when args.Length == 2 => DolInfo(args[1]),
         "dol-desmontar" when args.Length == 4 => DolDesmontar(args[1], args[2], args[3]),
@@ -108,6 +109,7 @@ static int Usage()
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
+          dw4 lua-extrair  <ndmw.afs> <entrada> <pasta-de-trabalho>   (scripts da fase para o cliente; fora do repositório)
           dw4 lua-trace    <ndmw.afs> <entrada> [x.lua ...] [Metodo=valor ...]
                            (executa os scripts da fase na VM própria, na ordem do motor, e mostra cada chamada be:*)
           dw4 dol-info     <main.dol>   (seções, entrada e bases r13/r2; leitura estática, nada é executado)
@@ -1808,6 +1810,23 @@ int IgbLua(string path)
     return 0;
 }
 
+// Grava os chunks Lua de uma fase (um arquivo por nome de beLuaData) para o cliente executar; nunca dentro de um repositório.
+int LuaExtrair(string afsPath, int entry, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    Directory.CreateDirectory(full);
+    using var afs = AfsArchive.Open(afsPath);
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[entry], ms);
+    var data = ms.ToArray();
+    var chunks = IgbLua.Chunks(IgbFile.Read(data), data);
+    foreach (var (name, chunk) in chunks)
+        File.WriteAllBytes(Path.Combine(full, string.Concat(name.Select(c => char.IsLetterOrDigit(c) || c is '_' or '.' ? c : '_'))), chunk);
+    Console.WriteLine($"{chunks.Count} scripts gravados em {full}");
+    return 0;
+}
+
 // Executa os scripts de uma fase na VM Lua própria (ADR 0002), na ordem fixa do motor (func.lua, boot.lua, start.lua,
 // first.lua; máquina de estados em 0x802F8A64) ou nos nomes passados, e imprime cada chamada be:* com os argumentos.
 // A API ainda é simulada: cada método devolve nil, salvo os valores passados como Metodo=valor (número, texto ou nil)
@@ -1830,23 +1849,7 @@ int LuaTrace(string afsPath, int entry, string[] rest)
         afs.CopyEntry(afs.Entries[entry], ms);
         data = ms.ToArray();
     }
-    var f = IgbFile.Read(data);
-    bool le = f.Header.LittleEndian;
-    var chunks = new Dictionary<string, byte[]>(StringComparer.Ordinal);
-    foreach (var o in f.Slots.OfType<IgbObject>().Where(o => o.TypeName == "beLuaData"))
-    {
-        var nm = o.Fields.FirstOrDefault(v => v.Text != null)?.Text;
-        var rf = o.Fields.FirstOrDefault(v => v.Desc.ShortName == "ObjectRef");
-        if (nm == null || rf == null) continue;
-        int t = rf.AsInt32(le);
-        if (t < 0 || t >= f.Slots.Count || f.Slots[t] is not IgbObject lo) continue;
-        foreach (var v in lo.Fields.Where(v => v.Desc.ShortName == "MemoryRef"))
-        {
-            int r = v.AsInt32(le);
-            if (r >= 0 && r < f.Slots.Count && f.Slots[r] is IgbMemoryBlock mb && mb.Size > 0 && Lua40Chunk.LooksLikeChunk(MemoryOf(data, mb)))
-                chunks[nm] = MemoryOf(data, mb);
-        }
-    }
+    var chunks = IgbLua.Chunks(IgbFile.Read(data), data);
     Console.WriteLine($"-- entrada #{entry}: {chunks.Count} scripts ({string.Join(", ", chunks.Keys.Order(StringComparer.Ordinal))})");
 
     var vm = new LuaVM { InstructionLimit = 5_000_000, Print = s => Console.WriteLine($"   print: {s}") };

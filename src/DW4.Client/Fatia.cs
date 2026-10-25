@@ -218,11 +218,15 @@ public partial class Fatia : Node3D
         // cabeçalho ADX. Gerado por: dw4 adx-wav ndmw.afs <fatia>\audio 6 35. Volume do beSoundData (S8): unidade
         // desconhecida, por isso os dois tocam a 0 dB.
         _sfx = new SoundEffects(System.IO.Path.Combine(_dir, "sons"), this, LoadWav, _problems);
-        foreach (var idx in new[] { 6, 35 })
+        // Com os scripts (Fatia.Scripts.cs), as músicas vêm do first.lua; sem eles, tocam fixas.
+        if (!StartScripts())
         {
-            var wav = System.IO.Path.Combine(_dir, "audio", $"ndmw_{idx:D4}.wav");
-            if (!System.IO.File.Exists(wav)) { _problems.Add($"falta {wav} (dw4 adx-wav ndmw.afs <fatia>\\audio 6 35)"); continue; }
-            if (LoadWav(wav) is { } stream) { var p = new AudioStreamPlayer { Stream = stream }; AddChild(p); p.Play(); }
+            foreach (var idx in new[] { 6, 35 })
+            {
+                var wav = System.IO.Path.Combine(_dir, "audio", $"ndmw_{idx:D4}.wav");
+                if (!System.IO.File.Exists(wav)) { _problems.Add($"falta {wav} (dw4 adx-wav ndmw.afs <fatia>\\audio 6 35)"); continue; }
+                if (LoadWav(wav) is { } stream) { var p = new AudioStreamPlayer { Stream = stream }; AddChild(p); p.Play(); }
+            }
         }
 
         _cameraSets = new[] { "ndmw_0180_camera.json", "ndmw_0181_camera.json" }
@@ -255,6 +259,7 @@ public partial class Fatia : Node3D
     public override void _PhysicsProcess(double delta)
     {
         float dt = (float)delta;
+        _stage?.Tick();
         var input = Input.GetVector("ui_left", "ui_right", "ui_up", "ui_down");
         if (Input.IsKeyPressed(Key.A)) input.X -= 1;
         if (Input.IsKeyPressed(Key.D)) input.X += 1;
@@ -277,6 +282,7 @@ public partial class Fatia : Node3D
             if (_tick < 3) input = new Vector2(0, 0);
         }
         if (_pf != null && _hp <= 0) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; } // caído: F5 reinicia
+        if (!_padEnabled) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; _techKey = -1; } // STAGECTL PADINPUT DISABLE do script
         bool attackPressed = attackDown && !_attackHeld;
         _attackHeld = attackDown;
         bool techDown = Input.IsMouseButtonPressed(MouseButton.Right) || Input.IsJoyButtonPressed(0, JoyButton.Y);
@@ -381,6 +387,7 @@ public partial class Fatia : Node3D
                 $"arma {_db!["weapon"].Text(_equip!.WeaponRow, "NAME")}  armaduras {(_equip.Armor1Row >= 0 ? _db["armor1"].Text(_equip.Armor1Row, "NAME") : "-")} / {(_equip.Armor2Row >= 0 ? _db["armor2"].Text(_equip.Armor2Row, "NAME") : "-")}  [E equipa o último pego]  " +
                 $"BIT {_inventory.Bit}  Xデータ {_xdata}  equipamentos {_inventory.Devices.Count}/{Inventory.DeviceMax}{(_inventory.Devices.Count > 0 ? ": " + string.Join(", ", _inventory.Devices.TakeLast(3).Select(d => _db![d.Table].Text(d.Row, "NAME"))) : "")}\n") +
             "movimento, gravidade, ponto inicial e IA PROVISÓRIOS (não medidos no jogo)" +
+            (_stage != null ? $"\nscripts{(_padEnabled ? "" : " (controle travado pelo script)")}:\n  " + string.Join("\n  ", _scriptLog.TakeLast(6)) : "") +
             (_problems.Count > 0 ? "\n" + string.Join("\n", _problems) : "");
     }
 

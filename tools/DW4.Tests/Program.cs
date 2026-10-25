@@ -11,6 +11,7 @@ using DW4.Formats.Lua;
 using DW4.Formats.Sofdec;
 using DW4.Gameplay;
 using DW4.Script;
+using DW4.Script.Be;
 
 // Verificador dos leitores de formato, sem pacotes externos.
 // Sem argumentos: só testes sintéticos (dados montados aqui, nada do jogo).
@@ -660,6 +661,44 @@ Test("Tabela Lua 4.0: ordem de iteração do ltable.c (hash_s, colisão, rehash)
     Equal("0.1", (string)vm.Call(vm.Globals.RawGet("tostring"), 0.1)[0]!, "tostring %.16g");
 });
 
+Test("API be:*: sd com atraso em quadros, diretor de demo com espera por condição, flags e argumentos tipados", () =>
+{
+    var engine = new RecordingEngine();
+    var host = new BeHost(engine, new GameRam(), new BeSystem());
+    var vm = new LuaVM();
+    vm.Globals["be"] = host.Table;
+    object?[] Be(string name, params object?[] args) => vm.Call(host.Table.Get(name), [host.Table, .. args]);
+    Be("sd", "SOUND", null, -1.0, "PLAY", "AM_DUNGE");
+    Be("sd", "PLAYER", null, -1.0, "SQ_DEMOWALK", 2.0);
+    Equal("SOUND - -1 PLAY \"AM_DUNGE\"", engine.Log.Single(), "sd sem atraso sai na hora");
+    host.Tick();
+    Equal(1, engine.Log.Count, "atraso de 2 quadros ainda não venceu");
+    host.Tick();
+    Equal("PLAYER - -1 SQ_DEMOWALK", engine.Log[1], "entregue no 2º quadro");
+    Be("DMsetSD", "MODELCTRL", "i_stpnl00", 0.0, "SQ_OPEN");
+    Be("DMchkSD", "MODELCTRL", "i_stpnl00", 0.0, "ISSEQNAME", "SQ_OPEN", "!=0");
+    Be("DMsetSD", "SOUND", null, -1.0, "BGMSTOP");
+    Equal(2, engine.Log.Count, "DMsetSD só enfileira");
+    Equal(3.0, (double)Be("DMgetCount")[0]!, "DMgetCount");
+    Be("DMrun");
+    engine.Answer = 0;
+    host.Tick();
+    Equal("MODELCTRL i_stpnl00 0 SQ_OPEN", engine.Log[2], "set do DM entregue");
+    Equal(3, engine.Log.Count, "chk segura a fila enquanto vale 0");
+    engine.Answer = 1;
+    host.Tick();
+    Equal("SOUND - -1 BGMSTOP", engine.Log[3], "fila segue quando a condição vale");
+    Be("FLGset", 107.0, 1.0);
+    Equal(1.0, (double)Be("FLGisOn", 107.0)[0]!, "FLGisOn devolve 1");
+    Equal(0.0, (double)Be("FLGisOn", 108.0)[0]!, "FLGisOn devolve 0, não nil");
+    Be("COUNTERset", 2.0, 101.0);
+    Equal(101.0, (double)Be("COUNTERget", 2.0)[0]!, "COUNTER");
+    var args = BeArg.Parse("V<220,40,-200>/V<0,-90,0>/ALL");
+    Equal('V', args[1].Kind, "token tipado");
+    Equal(-90.0, args[1].Numbers[1], "rotação");
+    True(args[2].IsText && args[2].Text == "ALL", "texto");
+});
+
 // ---------- dados do jogo (opcional) ----------
 
 if (args.Length == 1)
@@ -755,6 +794,35 @@ if (args.Length == 1)
         foreach (var (msg, n) in errors.OrderByDescending(x => x.Value).Take(8)) Console.WriteLine($"       erro {n}×: {msg}");
         Console.WriteLine($"       globais lidas sem definição: {string.Join(", ", missing.OrderByDescending(x => x.Value).Take(15).Select(x => $"{x.Key} ({x.Value})"))}");
         Equal(2902, run, "chunks distintos");
+    });
+
+    Test("Jogo: scripts da dng1 (#179) na ordem do motor: lista de arquivos, área 101, objetos gerados e músicas da entrada", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[179], ms);
+        var data = ms.ToArray();
+        var engine = new RecordingEngine();
+        var sys = new BeSystem { FolderName = "dng101b1" };
+        sys.Players[0] = ("p_girumon", new[] { "w_sword01", "w_sword01", "w_sword01" });
+        var host = new BeHost(engine, new GameRam(), sys);
+        var unimpl = new List<string>();
+        host.Unimplemented = (n, _) => unimpl.Add(n);
+        var stage = new StageScripts(IgbLua.Chunks(IgbFile.Read(data), data), host);
+        var errors = new List<string>();
+        stage.Error = (n, m) => errors.Add($"{n}: {m}");
+        var files = stage.Boot();
+        True(files.Contains("dng101b1/separate/generatorN.igb"), "generatorN na lista");
+        True(files.Contains("_common/p_girumon.igb"), "modelo do jogador na lista");
+        stage.Start();
+        for (int i = 0; i < 600; i++) stage.Tick();
+        Equal(0, errors.Count, $"erros ({string.Join("; ", errors)})");
+        Equal(101, host.Ram.Counter(2), "COUNTER 2 = área 101");
+        True(engine.Log.Contains("PLAYER p_girumon 0 GENERATE"), "jogador gerado");
+        Equal(3, engine.Log.Count(l => l.StartsWith("MODELCTRL g_d1door ", StringComparison.Ordinal) && l.Contains("GENERATE")), "3 portas");
+        True(engine.Log.Any(l => l.StartsWith("SOUND ", StringComparison.Ordinal) && l.Contains("PLAY \"AM_DUNGE\"")), "AM_DUNGE");
+        True(engine.Log.Any(l => l.Contains("PLAY \"DG_CAVE1\"")), "DG_CAVE1");
+        Console.WriteLine($"       {engine.Log.Count} comandos; métodos ainda não implementados: {string.Join(", ", unimpl.Distinct())}");
     });
 
     IgbScene Scene(int index)
@@ -1071,4 +1139,12 @@ sealed class SeqRandom(params uint[] values) : IGameRandom
 {
     public int Calls { get; private set; }
     public uint Next() => values[Calls++ % values.Length];
+}
+
+sealed class RecordingEngine : IBeEngine
+{
+    public List<string> Log { get; } = [];
+    public double? Answer { get; set; }
+    public void Deliver(BeMessage message) => Log.Add(message.ToString());
+    public double? Query(BeMessage message) => message.Command == "GETGENERATEPOS" ? 0 : Answer;
 }
