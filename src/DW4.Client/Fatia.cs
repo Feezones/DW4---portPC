@@ -97,6 +97,22 @@ public partial class Fatia : Node3D
     DamageNumbers? _damageNumbers;
     readonly List<string> _problems = [];
 
+    (Vector3 Position, float RotYDeg)? EntryPoint(int group)
+    {
+        var file = System.IO.Path.Combine(_dir, "pontos_entrada.json");
+        if (!System.IO.File.Exists(file)) { _problems.Add($"falta {file} (dw4 igb-entradas ndmw.afs 179 <fatia>): início no ponto fixo"); return null; }
+        using var doc = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(file));
+        foreach (var pt in doc.RootElement.GetProperty("points").EnumerateArray())
+        {
+            if (pt.GetProperty("index").GetInt32() != group) continue;
+            var slot = pt.GetProperty("slots").EnumerateArray().First();
+            var p = slot.GetProperty("position");
+            return (new Vector3(p[0].GetSingle(), p[1].GetSingle(), p[2].GetSingle()), slot.GetProperty("rotYDeg").GetSingle());
+        }
+        _problems.Add($"pontos_entrada.json sem o grupo {group}");
+        return null;
+    }
+
     public override void _Ready()
     {
         _dir = OS.GetEnvironment("DW4_FATIA") is { Length: > 0 } d ? d : @"D:\dw4-work\fatia";
@@ -109,6 +125,13 @@ public partial class Fatia : Node3D
         _demo = OS.GetEnvironment("DW4_DEMO") == "1";
         _showBoxes = _demo;
         var start = _demo ? EnemyAt + new Vector3(-16, 0, 0) : Start;
+        // Ponto de entrada do jogo (bePoint01Info do #179, pontos_entrada.json de dw4 igb-entradas): grupo DW4_ENTRADA (0 = do
+        // campo/lobby), vaga do jogador 0, virado como a matriz do ponto. Sem o arquivo, o ponto fixo antigo.
+        if (!_demo && EntryPoint(int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var entry) ? entry : 0) is { } ep)
+        {
+            start = ep.Position;
+            _move.Face(Mathf.DegToRad(ep.RotYDeg));
+        }
         // DW4_INICIO="x,y,z": ponto inicial para capturas (ex.: conferir a câmera de um volume).
         if (OS.GetEnvironment("DW4_INICIO").Split(',') is { Length: 3 } xyz
             && xyz.Select(t => float.TryParse(t, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var f) ? f : float.NaN).ToArray() is var v3

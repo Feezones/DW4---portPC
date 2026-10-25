@@ -87,8 +87,12 @@ geradores, doorwall separado na colisão, dano do piso e o gravador.
 - No port: `src/DW4.Gameplay/CameraDemo.cs` lê os quadros e interpola; a fatia toca a demo no SETDEMOCAMERA e volta às câmeras
   por volume no SETBOXCAMERA. **HIPÓTESES**: ISDEMOCAMERA = 0 enquanto toca e 1 no fim; interpolação linear entre quadros
   (o recuo do original usa Bézier, diferença de poucas unidades); fov horizontal mantido em tela 16:9 (largura fixa).
-- **DESCONHECIDO**: a posição de entrada do jogador (HIPÓTESE: o fim do pivô, (−300, 40, 410)); o SQ_DEMOWALK do jogador
-  ainda não anda.
+- **FATO** pontos de entrada: bePoint01Info #115 → beGroupKeepList #114 → 2 beGroupKeep, cada um com igAABox e 4 igTransform
+  (uma vaga por jogador). Grupo 0 (junto do matz01): (−300, 40, 431..452), olhando para −Z; grupo 1 (junto do matz02):
+  (324..345, 24..16, −440), olhando para −X. PLAYERPOINT é a classe de mensagem desse objeto (GETGENERATEPOS/SETGENERATEPOS).
+  **HIPÓTESE forte**: o n do funcStageChange vira SETGENERATEPOS n (grupo n, vaga k = jogador k); 0 = do campo/lobby.
+  A fatia começa no grupo `DW4_ENTRADA` (padrão 0) lido de `pontos_entrada.json` (`dw4 igb-entradas`).
+- **Pendente**: o SQ_DEMOWALK do jogador ainda não anda.
 
 ## Gravador e minimapa (2026-10-25)
 
