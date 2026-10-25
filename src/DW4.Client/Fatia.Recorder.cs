@@ -94,7 +94,8 @@ public partial class Fatia
         {
             // HIPÓTESE: ISEND = tecla de confirmar apertada (o script espera "!=0" e depois "==0": apertar e soltar).
             // O script pergunta "SELECTCTRL i_messky n ISEND" (func.lua, funcOneMessage).
-            case "ISEND" when m.Class is "TEXTCTL" or "SELECTCTRL": return _confirmDown ? 1 : 0;
+            // A trava confere-se na hora da pergunta: o SELECTCTRL GENERATE desarma no mesmo quadro em que o ISEND é lido.
+            case "ISEND" when m.Class is "TEXTCTL" or "SELECTCTRL": return _confirmDown && _confirmArmed ? 1 : 0;
             // HIPÓTESE: 0 quando o modelo está na sequência pedida (os scripts esperam "==0" depois de mandar a sequência).
             case "ISSEQNAME" when m.Text(0) is { } seq:
                 if (m.Class == "PLAYER" || m.Name == PlayerModel) return (_runner?.Running == true ? _runner.Sequence : "SQ_WAIT") == seq ? 0 : 1;
