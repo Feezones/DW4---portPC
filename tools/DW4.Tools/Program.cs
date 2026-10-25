@@ -1820,7 +1820,7 @@ int LuaExtrair(string afsPath, int entry, string outDir)
     using var ms = new MemoryStream();
     afs.CopyEntry(afs.Entries[entry], ms);
     var data = ms.ToArray();
-    var chunks = IgbLua.Chunks(IgbFile.Read(data), data);
+    var chunks = DW4.Formats.Igb.IgbLua.Chunks(IgbFile.Read(data), data);
     foreach (var (name, chunk) in chunks)
         File.WriteAllBytes(Path.Combine(full, string.Concat(name.Select(c => char.IsLetterOrDigit(c) || c is '_' or '.' ? c : '_'))), chunk);
     Console.WriteLine($"{chunks.Count} scripts gravados em {full}");
@@ -1849,7 +1849,7 @@ int LuaTrace(string afsPath, int entry, string[] rest)
         afs.CopyEntry(afs.Entries[entry], ms);
         data = ms.ToArray();
     }
-    var chunks = IgbLua.Chunks(IgbFile.Read(data), data);
+    var chunks = DW4.Formats.Igb.IgbLua.Chunks(IgbFile.Read(data), data);
     Console.WriteLine($"-- entrada #{entry}: {chunks.Count} scripts ({string.Join(", ", chunks.Keys.Order(StringComparer.Ordinal))})");
 
     var vm = new LuaVM { InstructionLimit = 5_000_000, Print = s => Console.WriteLine($"   print: {s}") };
