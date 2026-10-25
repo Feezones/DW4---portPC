@@ -14,7 +14,10 @@ namespace DW4.Client;
 /// </summary>
 public partial class Fatia
 {
-    static readonly Regex FadeSeq = new(@"^SQ_B(HLF)?(IN|OUT)(\d+)$", RegexOptions.Compiled);
+    // FATO (nomes dos scripts): SQ_BLIN30, SQ_BLOUT30, SQ_BLIN60, SQ_BLOUT00 (preto inteiro, "L") e SQ_BHLFIN30/SQ_BHLFOUT30 (meio preto,
+    // "HLF"). O padrão antigo exigia "SQ_B" + IN/OUT direto: SQ_BLOUT30 não começava, o ISRUN ficava 0 e o DMchkSD ISRUN "==0" da
+    // demo do stag0101 segurava a fila para sempre.
+    static readonly Regex FadeSeq = new(@"^SQ_B(L|HLF)(IN|OUT)(\d+)$", RegexOptions.Compiled);
 
     ColorRect? _fade;
     float _fadeFrom, _fadeTo, _fadeLen, _fadeT;
@@ -111,11 +114,12 @@ public partial class Fatia
         var match = FadeSeq.Match(seq);
         if (match.Success)
         {
-            float dark = match.Groups[1].Success ? 0.5f : 1f;
+            bool half = match.Groups[1].Value == "HLF";
+            float dark = half ? 0.5f : 1f;
             bool fadeIn = match.Groups[2].Value == "IN";
             float len = float.Parse(match.Groups[3].Value);
             // BLIN: do preto para a cena; BHLFIN: do meio preto para a cena; OUT: da cena para o preto (ou meio).
-            (_fadeFrom, _fadeTo) = fadeIn ? (match.Groups[1].Success ? alpha : 1f, 0f) : (alpha, dark);
+            (_fadeFrom, _fadeTo) = fadeIn ? (half ? alpha : 1f, 0f) : (alpha, dark);
             _fadeLen = Math.Max(1, len);
         }
         else if (seq == "SQ_STCHANGE01") (_fadeFrom, _fadeTo, _fadeLen) = (alpha, 1f, 30);
