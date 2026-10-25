@@ -1048,24 +1048,46 @@ int IgbColisao(string path, string which, string rootArg, string outDir)
     var scene = IgbScene.Read(IgbFile.Read(data), data);
     var parts = scene.Parts.Where(p => p.SceneRoot == rootIndex && p.Positions.Count > 0 && p.Triangles.Count > 0).ToList();
     if (parts.Count == 0) { Console.Error.WriteLine($"nenhuma geometria na raiz {rootIndex}; raízes: {string.Join(", ", scene.Parts.Select(p => p.SceneRoot).Distinct())}"); return 1; }
-    var pos = new List<float>();
-    var tris = new List<int>();
-    foreach (var part in parts)
+    // Partes com nome (FATO no #179): beHitLandModelInfo = [@8 igSwitch com as geometrias, @9 igNamedObjectList com os nomes,
+    // na mesma ordem] → doorwall01..03, que o "HITLANDMODEL doorwallNN OFFHIT" desliga. Cada uma vai num nó próprio.
+    var file = IgbFile.Read(data);
+    bool le = file.Header.LittleEndian;
+    IgbObject? Ref(IgbObject o, int slot) { var v = o.Fields.FirstOrDefault(x => x.Desc.Slot == slot && x.Desc.ShortName == "ObjectRef"); int i = v?.AsInt32(le) ?? -1; return i >= 0 && i < file.Slots.Count ? file.Slots[i] as IgbObject : null; }
+    var nameOfGeometry = new Dictionary<int, string>();
+    foreach (var hl in file.Slots.OfType<IgbObject>().Where(o => o.TypeName == "beHitLandModelInfo"))
     {
-        int b = pos.Count / 3;
-        foreach (var (x, y, z) in part.Positions) pos.AddRange([x, y, z]);
-        tris.AddRange(part.Triangles.Select(t => t + b));
+        if (Ref(hl, 8) is not { } sw || Ref(sw, 7) is not { } kids || Ref(hl, 9) is not { } names) continue;
+        var geoms = scene.ObjectList(kids);
+        var labels = scene.ObjectList(names).Select(n => n.Fields.FirstOrDefault(v => v.Desc.ShortName == "String")?.Text ?? "").ToList();
+        for (int k = 0; k < geoms.Count && k < labels.Count; k++)
+            foreach (var ga in scene.AttrList(geoms[k]).Where(a => file.Is(a, "igGeometryAttr"))) nameOfGeometry[ga.Index] = labels[k];
     }
     var dir = Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_colisao_{rootIndex}");
     Directory.CreateDirectory(dir);
     var g = new GltfBuilder();
-    var prim = new JsonObject { ["attributes"] = new JsonObject { ["POSITION"] = g.AddFloats(pos, 3, "VEC3", true, minMax: true) }, ["indices"] = g.AddIndices(tris), ["mode"] = 4 };
-    int mesh = g.AddMesh(new JsonObject { ["name"] = "colisao", ["primitives"] = new JsonArray(prim) });
-    g.AddRootNode(g.AddNode(new JsonObject { ["name"] = "colisao-colonly", ["mesh"] = mesh }));
+    var pos = new List<float>();
+    int tri = 0;
+    foreach (var grp in parts.GroupBy(pt => nameOfGeometry.GetValueOrDefault(pt.GeometryIndex, "colisao")).OrderBy(x => x.Key == "colisao" ? 0 : 1).ThenBy(x => x.Key, StringComparer.Ordinal))
+    {
+        var gp = new List<float>();
+        var gt = new List<int>();
+        foreach (var part in grp)
+        {
+            int b = gp.Count / 3;
+            foreach (var (x, y, z) in part.Positions) gp.AddRange([x, y, z]);
+            gt.AddRange(part.Triangles.Select(t => t + b));
+        }
+        pos.AddRange(gp);
+        tri += gt.Count / 3;
+        var prim = new JsonObject { ["attributes"] = new JsonObject { ["POSITION"] = g.AddFloats(gp, 3, "VEC3", true, minMax: true) }, ["indices"] = g.AddIndices(gt), ["mode"] = 4 };
+        int mesh = g.AddMesh(new JsonObject { ["name"] = grp.Key, ["primitives"] = new JsonArray(prim) });
+        g.AddRootNode(g.AddNode(new JsonObject { ["name"] = $"{grp.Key}-colonly", ["mesh"] = mesh }));
+        if (grp.Key != "colisao") Console.WriteLine($"parte {grp.Key}: {grp.Count()} geometria(s), {gt.Count / 3} triângulos");
+    }
     g.Save(dir, "colisao");
     float minY = float.MaxValue, maxY = float.MinValue;
     for (int i = 1; i < pos.Count; i += 3) { minY = Math.Min(minY, pos[i]); maxY = Math.Max(maxY, pos[i]); }
-    Console.WriteLine($"{parts.Count} geometrias, {pos.Count / 3} vértices, {tris.Count / 3} triângulos, y de {minY:0.##} a {maxY:0.##} -> {dir}");
+    Console.WriteLine($"{parts.Count} geometrias, {pos.Count / 3} vértices, {tri} triângulos, y de {minY:0.##} a {maxY:0.##} -> {dir}");
     return 0;
 }
 
