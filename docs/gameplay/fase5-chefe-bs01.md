@@ -120,3 +120,12 @@ Entrada pela dng103f2: o matz02 chama `funcStageChange("stagBS01", 0)`. Exportar
   - O f_bit acompanha o chefe.
   - HP inicial 50 (cai num golpe, e o próximo LUACALL gera outro).
   - Não gira para o alvo.
+
+## Chefes 02..06: scripts reais no teste (2026-10-25)
+
+- Teste novo: boot/start/first de stagbs02..06, hit_<chefe>.lua (golpe e morte) e todos os `*_<chefe>.lua` rodam sem erro
+  de Lua. 39 a 53 comandos por fase.
+- **FATO:** MDLgetRecNo (0x802EE01C) devolve a palavra +0x14 do contexto de modelo. O de4_f_devl22.lua usa esse valor
+  para gerar o f_devl21.
+- **HIPÓTESE:** o valor é a linha do modelo na tabela enemy. O cliente devolve Kind.Row.
+- **DESCONHECIDO:** MDLgetBulletName e BLTisHitCheck ficam sem resposta (neutros), e MOVEEX/MOVERL não foram lidos.

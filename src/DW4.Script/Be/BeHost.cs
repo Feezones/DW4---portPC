@@ -46,6 +46,8 @@ public interface IBeModel
     double Yaw => 0;
     /// <summary>Sequência atual (MDLisSeqName); null se não se sabe.</summary>
     string? SequenceName => null;
+    /// <summary>MDLgetRecNo: FATO 0x802EE01C lê +0x14 do contexto; HIPÓTESE: a linha do modelo na tabela enemy.</summary>
+    int RecNo => 0;
 }
 
 /// <summary>
@@ -265,6 +267,7 @@ public sealed class BeHost
                 return Bool(_engine.Query(new BeMessage("MODELCTRL", S(a, 1), I(a, 2), "ISLIVE", [], null)) is > 0);
             case "MDLisLive": return Bool(Model is { Hp: > 0 });
             case "MDLgetRamNo": return N(Model?.Index ?? 0);
+            case "MDLgetRecNo": return N(Model?.RecNo ?? 0);
             // HIPÓTESE: jogador que acertou o golpe; a fatia tem só o jogador 0.
             case "BLTgetShootRamNo": return N(0);
             // HIPÓTESE pelo nome: turno de dano (reação); sem efeito na fatia.

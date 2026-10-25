@@ -45,6 +45,7 @@ public partial class Fatia
         public string ModelName => Kind.Model;
         (double X, double Y, double Z) IBeModel.Position => (Body.GlobalPosition.X, Body.GlobalPosition.Y, Body.GlobalPosition.Z);
         double IBeModel.Yaw => Yaw;
+        int IBeModel.RecNo => Kind.Row;
         string? IBeModel.SequenceName => Started && Runner?.Running == true ? Runner.Sequence : "SQ_WAIT";
         /// <summary>Rótulo guardado por sequência (SETLABEL "SQ_SDMG/common", LABELCTRL "FLOAT" "SQ_WAIT").</summary>
         public Dictionary<string, string> Labels { get; } = [];

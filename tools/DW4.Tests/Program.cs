@@ -1565,6 +1565,46 @@ if (args.Length == 1)
         Equal(ShopTrade.BitMax, inv.Bit, "teto de 9 999 999");
     });
 
+    Test("Jogo: scripts reais dos chefes 02..06 (boot/start/first, hit_<chefe>.lua com golpe, LUACALLs) rodam sem erro de Lua", () =>
+    {
+        var bosses = new (int Entry, string Folder, string[] Models)[]
+        {
+            (737, "stagbs02", ["f_belvam"]), (744, "stagbs03", ["f_luce", "f_luce2"]), (751, "stagbs04", ["f_devl1", "f_devl1b"]),
+            (758, "stagbs05", ["f_devl22"]), (765, "stagbs06", ["f_devl3"]),
+        };
+        var report = new List<string>();
+        foreach (var (entry, folder, models) in bosses)
+        {
+            using var afs = AfsArchive.Open(ndmwPath);
+            using var ms = new MemoryStream();
+            afs.CopyEntry(afs.Entries[entry], ms);
+            var data = ms.ToArray();
+            var engine = new RecordingEngine();
+            var sys = new BeSystem { FolderName = folder };
+            sys.Players[0] = ("p_girumon", new[] { "w_sword01", "w_sword01", "w_sword01" });
+            var host = new BeHost(engine, new GameRam(), sys);
+            var unimpl = new List<string>();
+            host.Unimplemented = (n, _) => unimpl.Add(n);
+            var chunks = IgbLua.Chunks(IgbFile.Read(data), data);
+            var stage = new StageScripts(chunks, host);
+            var errors = new List<string>();
+            stage.Error = (n, m) => errors.Add($"{n}: {m}");
+            stage.Boot();
+            stage.Start();
+            for (int i = 0; i < 600; i++) stage.Tick();
+            foreach (var m in models)
+            {
+                var boss = new TestModel { Hp = 5000, BulletKind = 10000, Name = m };
+                if (stage.Has($"hit_{m}.lua")) { stage.RunAs($"hit_{m}.lua", boss); boss.Hp = 0; stage.RunAs($"hit_{m}.lua", boss); }
+                foreach (var lua in chunks.Keys.Where(k => k.EndsWith($"_{m}.lua", StringComparison.Ordinal) && !k.StartsWith("hit_", StringComparison.Ordinal))) stage.RunAs(lua, boss);
+            }
+            for (int i = 0; i < 600; i++) stage.Tick();
+            report.Add($"{folder}: {engine.Log.Count} comandos, erros {errors.Count}{(errors.Count > 0 ? " (" + string.Join("; ", errors.Distinct().Take(3)) + ")" : "")}, sem resposta: {string.Join(",", unimpl.Distinct())}");
+            True(errors.Count == 0, $"{folder}: {string.Join("; ", errors.Distinct().Take(5))}");
+        }
+        Console.WriteLine("       " + string.Join(Environment.NewLine + "       ", report));
+    });
+
     Test("Jogo: IA do Numemon (#179, e_nume) tem MAP00 e MAP01 com 4 listas e faixas 36²/45²/150² e 22²/40²/150²", () =>
     {
         using var afs = AfsArchive.Open(ndmwPath);
@@ -1662,7 +1702,9 @@ sealed class TestModel : IBeModel
 {
     public int Index => 0;
     public int Hp { get; set; }
-    public int BulletKind => 0;
+    public int BulletKind { get; init; }
+    public string Name { get; init; } = "";
+    string IBeModel.ModelName => Name;
     public void SetSequence(string name) { }
     public (double X, double Y, double Z) Position { get; init; }
     public double Yaw { get; init; }
