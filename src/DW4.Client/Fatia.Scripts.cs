@@ -123,7 +123,7 @@ public partial class Fatia : IBeEngine
     {
         if (!_music.TryGetValue(name, out var player))
         {
-            if (!_music.TryGetValue(name, out int idx)) { ScriptLog($"música {name} sem entrada conhecida"); return; }
+            if (!_musicIndex.TryGetValue(name, out int idx)) { ScriptLog($"música {name} sem entrada conhecida"); return; }
             var wav = Path.Combine(_dir, "audio", $"ndmw_{idx:D4}.wav");
             if (LoadWav(wav) is not { } stream) { _problems.Add($"falta {wav} (dw4 adx-wav ndmw.afs <fatia>\\audio 6 35)"); return; }
             AddChild(player = new AudioStreamPlayer { Stream = stream });

@@ -19,7 +19,7 @@ public partial class Fatia
     string[] _cameraFiles = ["ndmw_0180_camera.json", "ndmw_0181_camera.json"];
     string _demoPattern = "camera-demo/ndmw_0182_<nome>.json";
     string _mapBase = "j_map101b1", _mapCursor = "j_mapcur";
-    Dictionary<string, int> _music = new() { ["AM_DUNGE"] = 6, ["DG_CAVE1"] = 35 };
+    Dictionary<string, int> _musicIndex = new() { ["AM_DUNGE"] = 6, ["DG_CAVE1"] = 35 };
 
     void ChooseStage()
     {
@@ -49,8 +49,8 @@ public partial class Fatia
         else (_mapBase, _mapCursor) = ("", "");
         if (r.TryGetProperty("musicas", out var mus) && mus.ValueKind == JsonValueKind.Object)
         {
-            _music = [];
-            foreach (var m in mus.EnumerateObject()) _music[m.Name] = m.Value.GetInt32();
+            _musicIndex = [];
+            foreach (var m in mus.EnumerateObject()) _musicIndex[m.Name] = m.Value.GetInt32();
         }
     }
 
