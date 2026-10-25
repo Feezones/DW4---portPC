@@ -1814,6 +1814,65 @@ if (args.Length == 1)
         True(seq.Motion[2].Active, "MOVE \"Move\" 0,14 no canal Z");
     });
 
+    Test("Jogo: conversa com NPC da Central Area (stagml12 n_digilfm 1): SQ_TALK durante a fala, SQ_WAIT no fim, fila sem travar", () =>
+    {
+        var dirLua = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fases", "stagml12", "lua");
+        True(Directory.Exists(dirLua), $"exportada: {dirLua}");
+        var chunks = Directory.GetFiles(dirLua, "*.lua").ToDictionary(f => Path.GetFileName(f), File.ReadAllBytes);
+        var engine = new RecordingEngine();
+        var npcSeq = new Dictionary<string, string>();
+        bool ended = false;
+        int tick = 0, confirmAt = -1;
+        engine.Responder = m => (m.Class, m.Command) switch
+        {
+            ("MODELCTRL", "ISSEQNAME") when m.Name is { } nm && nm.StartsWith("i_", StringComparison.Ordinal) => null, // janelas: o cliente não responde
+            ("MODELCTRL", "ISSEQNAME") when m.Name != null => npcSeq.GetValueOrDefault($"{m.Name}/{m.Index}", "SQ_WAIT") == m.Text(0) ? 1 : 0,
+            ("MODELCTRL", "ISRUN") => null, // como o cliente: janelas sem resposta
+            ("SELECTCTRL", "ISEND") => ended ? 1 : 0, // como o cliente: zera em cada GENERATE e liga quando o jogador confirma
+            ("SELECTCTRL", "ISSELECTNOW") => 0,
+            ("SELECTCTRL", "GETSELECT") => 0,
+            _ => null,
+        };
+        var ram = new GameRam();
+        var host = new BeHost(engine, ram, new BeSystem { FolderName = "stagml12" });
+        var stage = new StageScripts(chunks, host);
+        var errors = new List<string>();
+        stage.Error = (n, e) => errors.Add($"{n}: {e}");
+        stage.Boot();
+        stage.Start();
+        // O cliente aplica os MODELCTRL: guarda a sequência pedida de cada modelo (é o que o ISSEQNAME pergunta).
+        int seen = 0;
+        void Track()
+        {
+            for (; seen < engine.Log.Count; seen++)
+            {
+                var p = engine.Log[seen].Split(' ');
+                if (p.Length >= 4 && p[0] == "SELECTCTRL" && p[3] == "GENERATE") { ended = false; confirmAt = tick + 5; }
+                if (p.Length >= 4 && p[0] == "MODELCTRL" && p[3].StartsWith("SQ_", StringComparison.Ordinal)) npcSeq[$"{p[1]}/{p[2]}"] = p[3];
+                else if (p.Length >= 5 && p[0] == "MODELCTRL" && p[3] == "GENERATE" && p[4].Trim('"').StartsWith("SQ_", StringComparison.Ordinal)) npcSeq[$"{p[1]}/{p[2]}"] = p[4].Trim('"');
+            }
+        }
+        for (int i = 0; i < 300; i++) { stage.Tick(); Track(); }
+        True(host.Demo.Idle, $"fila livre antes de falar (count {host.Demo.Count}, parada em {host.Demo.Blocking?.Message}) | " + string.Join(" | ", engine.Log.TakeLast(12)));
+        var npc = new TestModel { Name = "n_digilfm", RamNo = 1, OnSequence = s => npcSeq["n_digilfm/1"] = s };
+        engine.Log.Clear();
+        seen = 0;
+        True(stage.RunAs("hit_n_digilfm.lua", npc), "hit_n_digilfm.lua rodou");
+        bool talkedBeforeWait = false;
+        for (int i = 0; i < 3000; i++)
+        {
+            tick++;
+            if (confirmAt >= 0 && tick >= confirmAt) { ended = true; confirmAt = -1; }
+            stage.Tick();
+            if (engine.Log.Any(l => l.Contains("TALKFONT02")) && npcSeq.GetValueOrDefault("n_digilfm/1") == "SQ_TALK") talkedBeforeWait = true;
+            Track();
+        }
+        True(errors.Count == 0, "sem erro de Lua: " + string.Join("; ", errors));
+        True(talkedBeforeWait, $"a fala apareceu com a NPC em SQ_TALK (parada em {host.Demo.Blocking?.Kind} {host.Demo.Blocking?.Message}, NPC {npcSeq.GetValueOrDefault("n_digilfm/1")}): " + string.Join(" | ", engine.Log.Take(40)));
+        Equal("SQ_WAIT", npcSeq.GetValueOrDefault("n_digilfm/1"), $"a conversa devolve a NPC ao SQ_WAIT (parada em {host.Demo.Blocking?.Kind} {host.Demo.Blocking?.Message}) " + string.Join(" | ", engine.Log.TakeLast(14)));
+        True(host.Demo.Idle, "a fila do diretor de demo terminou: " + host.Demo.Blocking?.Message);
+    });
+
     Test("Jogo: MDLgetBulletName pela tabela 0x804DD2A0 (código / 10000 − 1)", () =>
     {
         Equal("PCWA", BeHost.BulletName(10000), "10000 físico");
@@ -1959,12 +2018,14 @@ sealed class RecordingEngine : IBeEngine
 
 sealed class TestModel : IBeModel
 {
-    public int Index => 0;
+    public int RamNo { get; init; }
+    public int Index => RamNo;
+    public Action<string>? OnSequence { get; init; }
     public int Hp { get; set; }
     public int BulletKind { get; init; }
     public string Name { get; init; } = "";
     string IBeModel.ModelName => Name;
-    public void SetSequence(string name) { }
+    public void SetSequence(string name) => OnSequence?.Invoke(name);
     public (double X, double Y, double Z) Position { get; init; }
     public double Yaw { get; init; }
 }

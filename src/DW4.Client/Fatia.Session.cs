@@ -38,8 +38,6 @@ public partial class Fatia
     void SaveProgress(string stage, int entry)
     {
         StoreProgress();
-        // Entrando na stagIS13 (a tela de gravar), o personagem fica no lobby: é onde ele volta por ela (gatedisc, entrada 3).
-        if (string.Equals(stage, "stagIS13", StringComparison.OrdinalIgnoreCase)) (stage, entry) = (LobbyStage, LobbyEntry);
         try { Session.SaveProgress(Ram, stage, entry); }
         catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException) { GD.PrintErr($"[save] não gravou: {e.Message}"); }
     }

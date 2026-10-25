@@ -138,6 +138,9 @@ public partial class Fatia
     bool DeliverToObjects(BeMessage m)
     {
         if (m.Class != "MODELCTRL" || m.Name == null) return false;
+        // DECISÃO DO PORT: o Save Keeper da Central Area (stagml12 n_digilfm 0, conversa n_digilfm_00.lua → saveshop.lua → stagIS12)
+        // não aparece: o port grava sozinho (docs/decisoes-port-pc.md).
+        if (m.Command == "GENERATE" && m.Name == "n_digilfm" && m.Index == 0 && _stageName.Equals("stagml12", StringComparison.OrdinalIgnoreCase)) return true;
         if (m.Command == "GENERATE")
         {
             if (m.Arg(0) is { Kind: 'V', Numbers.Length: 3 } p)

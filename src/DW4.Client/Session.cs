@@ -80,8 +80,10 @@ public static class Session
         Fatia.UseRam(ram);
         PendingGameStart = true;
         Fatia.PlayerModel = character.Model.Length > 0 ? character.Model : "p_girumon";
-        OS.SetEnvironment("DW4_FASE", character.Stage.Length > 0 ? character.Stage : NewGameStage);
-        OS.SetEnvironment("DW4_ENTRADA", (character.Stage.Length > 0 ? character.Entry : NewGameEntry).ToString());
+        // Vaga gravada numa fase de menu (stagIS*, sem cenário no port) ou sem fase: volta ao lobby, entrada 3.
+        bool lobby = character.Stage.Length == 0 || Fatia.IsMenuStage(character.Stage);
+        OS.SetEnvironment("DW4_FASE", lobby ? NewGameStage : character.Stage);
+        OS.SetEnvironment("DW4_ENTRADA", (lobby ? NewGameEntry : character.Entry).ToString());
         OS.SetEnvironment("DW4_INICIO", "");
         tree.ChangeSceneToFile(GameScene);
         return true;
@@ -91,6 +93,7 @@ public static class Session
     public static void SaveProgress(GameRam ram, string stage, int entry)
     {
         if (Character is not { } c) return;
+        if (Fatia.IsMenuStage(stage)) (stage, entry) = (NewGameStage, NewGameEntry); // nunca grava numa fase de menu
         var s = CharacterSave.Capture(ram, 0, c.Name, stage, entry);
         s.Starter = c.Starter;
         s.Model = Fatia.PlayerModel; // muda na evolução

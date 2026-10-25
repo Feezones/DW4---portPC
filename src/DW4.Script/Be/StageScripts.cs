@@ -19,6 +19,7 @@ public sealed class StageScripts
         _chunks = chunks;
         Host = host;
         Vm.Globals["be"] = host.Table;
+        host.RunNow ??= name => Has(name) && Run(name); // o primeiro conjunto de scripts da fase (o gameStart.lua reusa o host)
     }
 
     public bool Has(string name) => _chunks.ContainsKey(name);

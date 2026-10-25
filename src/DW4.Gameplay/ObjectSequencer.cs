@@ -151,9 +151,14 @@ public sealed class ObjectSequencer
             }
             if (_pc >= _end)
             {
-                // HIPÓTESE (NPCs): sequência que acaba sem JUMP volta ao SQ_WAIT. É a leitura em que fecha a espera dos scripts de conversa
-                // (hit_n_digilfm.lua: MDLsetSeq "SQ_TALK", sem JUMP no fim, e DMchkSD ISSEQNAME "SQ_WAIT" "==0" logo depois).
-                if (ReturnToWaitAtEnd && Sequence != "SQ_WAIT" && _seqs.ContainsKey("SQ_WAIT") && ++_jumps <= 16) { Begin("SQ_WAIT"); return; }
+                // HIPÓTESE (NPCs): sequência que acaba sem JUMP fica no último movimento enquanto ele está em laço (SQ_TALK → talk01 até a
+                // conversa mandar SQ_WAIT pelo funcCloseMessage, FATO do func.lua); com um movimento de uma vez só, volta ao SQ_WAIT
+                // quando ele acaba.
+                if (ReturnToWaitAtEnd && Sequence != "SQ_WAIT" && _seqs.ContainsKey("SQ_WAIT") && !(CurrentMotion != null && MotionLoop))
+                {
+                    if (CurrentMotion != null && !MotionEnded) return; // espera o movimento (confere de novo no próximo quadro)
+                    if (++_jumps <= 16) { Begin("SQ_WAIT"); return; }
+                }
                 Running = false;
                 return;
             }

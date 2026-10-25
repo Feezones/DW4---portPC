@@ -124,6 +124,14 @@ public sealed class BeHost
         Table.Missing = (_, key) => key is string name ? Method(name) : null;
     }
 
+    /// <summary>
+    /// Roda um script na hora (be:DMsetLua). HIPÓTESE (pela conversa das NPCs): o hit_n_*.lua faz MDLsetSeq SQ_TALK, DMsetLua da fala e
+    /// DMchkSD ISSEQNAME SQ_WAIT "==0"; a fala põe as mensagens e, no funcCloseMessage, MODELCTRL npc SQ_WAIT na fila. Rodando a fala
+    /// dentro do DMsetLua, os passos dela entram na fila antes da espera, e a NPC fala até a conversa fechar. Sem quem rode (null), o
+    /// script vai para a fila e roda quando o diretor fica livre.
+    /// </summary>
+    public Func<string, bool>? RunNow { get; set; }
+
     /// <summary>Próximo script agendado por be:DMsetLua, liberado quando o diretor de demo fica livre (HIPÓTESE).</summary>
     public string? NextLua() => Demo.Idle && _luaQueue.Count > 0 ? _luaQueue.Dequeue() : null;
 
@@ -209,7 +217,7 @@ public sealed class BeHost
             case "DMgetCount":
                 return N(Demo.Count);
             case "DMsetLua":
-                if (S(a, 1) is { } lua) _luaQueue.Enqueue(lua);
+                if (S(a, 1) is { } lua && RunNow?.Invoke(lua) != true) _luaQueue.Enqueue(lua);
                 return Nothing;
 
             // Estado comum

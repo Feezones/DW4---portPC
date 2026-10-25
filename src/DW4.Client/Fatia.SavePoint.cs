@@ -47,6 +47,33 @@ public partial class Fatia
         return _textByKey.TryGetValue(key, out var s) && s.Trim().Length > 0 ? s.Trim() : fallback;
     }
 
+    /// <summary>
+    /// Fases de menu do original, sem cenário no port: stagIS11 (cartas, cardshop.lua), stagIS12 (gravar, saveshop.lua) e stagIS13
+    /// (chamar Digimon, callshop.lua). DECISÃO DO PORT (docs/decisoes-port-pc.md): o NEXTSTAGE para elas não troca de fase; a janela
+    /// do port abre ali mesmo e o controle volta (sem isso o jogador caía para sempre numa fase sem chão).
+    /// </summary>
+    public static bool IsMenuStage(string stage) => stage.StartsWith("stagIS", StringComparison.OrdinalIgnoreCase)
+        || stage.Equals("stagML14", StringComparison.OrdinalIgnoreCase);
+
+    void MenuStageInPlace(string stage)
+    {
+        ScriptLog($"{stage}: fase de menu, janela do port no lugar da troca de fase");
+        // Desfaz o que o script de saída preparou para a troca (controle travado, SQ_EXIT, tela escura).
+        _padEnabled = true;
+        _playerCtrl = true;
+        _runner?.Stop();
+        ClearFade();
+        if (stage.Equals("stagIS11", StringComparison.OrdinalIgnoreCase))
+            SaveWindow("Loja de cartas: ainda não portada (as regras não foram lidas).", [("OK", CloseSaveWindow)]);
+        else
+            SaveWindow(TextKey("mswkMem0200", "Do you want to save?") + "\n(o port também grava sozinho ao trocar de fase)",
+            [
+                (TextKey("mswkMem0201", "Save."), () => { SaveProgress(_stageName, int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var e) ? e : 0); SaveWindow(TextKey("mswkMem0216", "Digimon was saved."), [("OK", CloseSaveWindow)]); }),
+                ("Trocar de Digimon (voltar ao menu)", () => { CloseSaveWindow(); LeaveGame(); }),
+                ("Continuar", CloseSaveWindow),
+            ]);
+    }
+
     void AskSave() => SaveWindow(TextKey("mswkMem0200", "Do you want to save?"),
     [
         (TextKey("mswkMem0201", "Save."), () =>

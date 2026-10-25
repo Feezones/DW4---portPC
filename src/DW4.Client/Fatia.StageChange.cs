@@ -109,6 +109,13 @@ public partial class Fatia
         return null;
     }
 
+    void ClearFade()
+    {
+        _fadeSeq = "";
+        _fadeT = _fadeLen = 0;
+        if (_fade != null) _fade.Color = new Color(0, 0, 0, 0);
+    }
+
     // Sequências do i_fadewn01 pelo nome (HIPÓTESE): SQ_B[HLF](IN|OUT)n = preto (ou meio preto) entrando/saindo em n quadros;
     // SQ_STCHANGE01 escurece em 30 quadros e fica em SQ_STCHANGELP.
     void StartFade(string seq)
@@ -180,6 +187,7 @@ public partial class Fatia
 
     void NextStage(string stage)
     {
+        if (IsMenuStage(stage)) { MenuStageInPlace(stage); return; }
         ScriptLog($"troca de fase: {stage}, entrada {_nextEntry}");
         _choice = -1;
         if (_choicePanel != null) _choicePanel.Visible = false;
