@@ -50,6 +50,7 @@ try
         "dolphin-gdb" when args.Length >= 4 => DolphinGdb(args[1], args[2], args[3..]),
         "igb-camera" when args.Length == 4 => IgbCamera(args[1], args[2], args[3]),
         "igb-camera-demo" when args.Length == 4 => IgbCameraDemoCmd(args[1], args[2], args[3]),
+        "igb-textos" when args.Length == 4 => IgbTextos(args[1], args[2], args[3]),
         "igb-db" when args.Length == 4 => IgbDb(args[1], args[2], args[3]),
         "igb-drops" when args.Length == 4 => IgbDropsCmd(args[1], args[2], args[3]),
         "igb-geradores" when args.Length == 4 => IgbGeradores(args[1], args[2], args[3]),
@@ -106,6 +107,7 @@ static int Usage()
           dw4 dolphin-gdb  <porta> <pasta> <quadro>... [--contador=0x814541D8] [--amostra=ENDERECO,TAM]   (MEM1 nos quadros pedidos, via servidor GDB do Dolphin)
           dw4 igb-camera   <arquivo.afs> <indice> <pasta-de-trabalho>   (volumes de câmera da fase em JSON, fora do repositório)
           dw4 igb-camera-demo <arquivo.afs> <indice> <pasta-de-trabalho>   (câmeras de demo do acmr_pack, amostradas a 60 Hz, em JSON, fora do repositório)
+          dw4 igb-textos   <arquivo.afs> <indice> <pasta-de-trabalho>   (textos de um *_pack: índice na lista, chave e texto, em textos.json, fora do repositório)
           dw4 igb-db       <arquivo.afs> <indice> <pasta-de-trabalho>   (as 12 tabelas beDataBase em CSV e JSON, fora do repositório)
           dw4 igb-drops    <arquivo.afs> <indice> <pasta-de-trabalho>   (listas de drop dos geradores em JSON, fora do repositório)
           dw4 igb-geradores <arquivo.afs> <indice> <pasta-de-trabalho>   (geradores de onda em geradores.json: posições absolutas por vaga, contagem por nº de jogadores)
@@ -1791,6 +1793,33 @@ int IgbCamera(string path, string which, string outDir)
     var root = new JsonObject { ["source"] = $"{Path.GetFileName(path)} #{idx}", ["common"] = Arr(cam.Common), ["boxes"] = boxes };
     File.WriteAllText(file, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
     Console.WriteLine($"{cam.Boxes.Count} volumes -> {file}");
+    return 0;
+}
+
+// Textos de um *_pack (beFontInfo → beUnicodeObjList): textos.json com índice (o k de "I<k>" nos scripts), chave e texto.
+int IgbTextos(string path, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    var texts = IgbTexts.Read(IgbFile.Read(data), data);
+    if (texts.Count == 0) { Console.Error.WriteLine("nenhum beUnicodeObj"); return 1; }
+    Directory.CreateDirectory(full);
+    var root = new JsonObject
+    {
+        ["source"] = $"{Path.GetFileName(path)} #{idx}",
+        ["texts"] = new JsonArray(texts.Select(t => (JsonNode?)new JsonObject { ["index"] = t.Index, ["key"] = t.Key, ["text"] = t.Text }).ToArray()),
+    };
+    var file = Path.Combine(full, "textos.json");
+    File.WriteAllText(file, root.ToJsonString(new System.Text.Json.JsonSerializerOptions
+    {
+        WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    }));
+    Console.WriteLine($"{texts.Count} textos -> {file}");
     return 0;
 }
 

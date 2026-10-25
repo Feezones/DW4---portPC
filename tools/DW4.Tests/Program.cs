@@ -1082,6 +1082,19 @@ if (args.Length == 1)
         Equal(((-235f, 39f, -15f), (-125f, 140f, 135f)), (R(m3.Min), R(m3.Max)), "caixa do matg03");
     });
 
+    Test("Jogo: textos do usa_pack da dng1 (area #9): I<9> = mswk65000 \"Open Map\"", () =>
+    {
+        using var afs = AfsArchive.Open(areaPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[9], ms);
+        var data = ms.ToArray();
+        var texts = IgbTexts.Read(IgbFile.Read(data), data);
+        Equal(113, texts.Count, "beUnicodeObj na lista");
+        Equal("mswk65000", texts[9].Key, "chave do item 9");
+        Equal("Open Map\r\nHumid Cave B1", texts[9].Text, "texto do item 9");
+        Equal("mswk62009", texts[0].Key, "item 0");
+    });
+
     Test("Jogo: câmera de demo \"entry\" da dng1 (#182): órbita de 181 quadros em volta do pivô", () =>
     {
         using var afs = AfsArchive.Open(ndmwPath);
