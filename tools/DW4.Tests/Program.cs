@@ -757,11 +757,11 @@ if (args.Length == 1)
         }
     });
 
-    Test("Jogo: banco e_nume.sfp no #179 tem 7 cues no grupo 3A, cue → voz → amostra 6 − CC", () =>
+    Test("Jogo: bancos .sfp: e_nume (#178) com 7 cues e amostra 6 − CC; allse (#898) com 4 grupos", () =>
     {
         using var afs = AfsArchive.Open(ndmwPath);
         using var ms = new MemoryStream();
-        afs.CopyEntry(afs.Entries[179], ms);
+        afs.CopyEntry(afs.Entries[178], ms);
         var data = ms.ToArray();
         var banks = DW4.Formats.Audio.Sfp.Find(data).Select(b => DW4.Formats.Audio.Sfp.Read(data.AsSpan(b.Offset, b.Size).ToArray())).ToList();
         var nume = banks.FirstOrDefault(b => b.Cues.Any(c => c.Group == 0x3A)) ?? throw new InvalidOperationException("sem banco com o grupo 3A");
@@ -770,6 +770,11 @@ if (args.Length == 1)
         Equal(0x20, nume.Samples[0].DataOffset, "primeira amostra em PCMD + 0x20");
         var pcm = nume.Decode(nume.Samples[5], out _, out _);
         True(pcm.Length > 1000 && pcm.Max(v => Math.Abs((int)v)) > 1000, "nuDEAD01 decodifica com sinal");
+        using var ms2 = new MemoryStream();
+        afs.CopyEntry(afs.Entries[898], ms2);
+        var d2 = ms2.ToArray();
+        var allse = DW4.Formats.Audio.Sfp.Find(d2).Select(b => DW4.Formats.Audio.Sfp.Read(d2.AsSpan(b.Offset, b.Size).ToArray())).First(b => b.Cues.Any(c => c.Group == 0));
+        Equal("19,20,12,13", string.Join(",", Enumerable.Range(0, 4).Select(g => allse.Cues.Count(c => c.Group == g))), "allse: cues por grupo A900..A903");
     });
 
     Test("Jogo: 12 tabelas beDataBase na dng1 (area #3); w_sword01 com TSUYOSA 60..199; Guilmon e Numemon nas tabelas", () =>

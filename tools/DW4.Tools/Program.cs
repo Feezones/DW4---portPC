@@ -1393,7 +1393,7 @@ int IgbSons(string path, string which, string outDir)
         Console.WriteLine($"banco em 0x{at:X}: {sfp.Samples.Count} amostras, {sfp.Cues.Count} cues (grupos {string.Join(",", sfp.Cues.Select(c => c.Group.ToString("X2")).Distinct())})");
     }
     var file2 = IgbFile.Read(data);
-    var (sounds, banks, se) = IgbSounds.Read(file2, data);
+    var (sounds, banks, se, soundInfo) = IgbSounds.Read(file2, data);
     JsonNode? V(object v) => v switch { string t => JsonValue.Create(t), float x => JsonValue.Create(x), int x => JsonValue.Create(x), bool x => JsonValue.Create(x), float[] a => new JsonArray(a.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray()), _ => null };
     JsonObject O(IgbSoundObject o) => new() { ["index"] = o.Index, ["values"] = new JsonArray(o.Values.Select(V).ToArray()) };
     var root = new JsonObject
@@ -1402,6 +1402,7 @@ int IgbSons(string path, string which, string outDir)
         ["sfpData"] = new JsonArray(banks.Select(o => (JsonNode?)O(o)).ToArray()),
         ["se"] = new JsonArray(se.Select(s => (JsonNode?)new JsonObject { ["name"] = s.Name, ["entries"] = new JsonArray(s.Entries.Select(e => (JsonNode?)O(e)).ToArray()) }).ToArray()),
         ["banks"] = bankList,
+        ["soundInfo"] = new JsonArray(soundInfo.Select(i => (JsonNode?)new JsonObject { ["index"] = i.Index, ["strings"] = new JsonArray(i.Strings.Select(t => (JsonNode?)JsonValue.Create(t)).ToArray()) }).ToArray()),
     };
     File.WriteAllText(Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_sons.json"),
         root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));

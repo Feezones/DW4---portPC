@@ -74,10 +74,10 @@ public sealed class Sfp
             voiceSample[d[r]] = d[r + 3];
         }
 
-        // Cues: u32 nº de grupos − 1; por grupo {u16 0xA9GG, u16 offset}; no grupo, u8 maior cue + 3 bytes e u32 offsets
+        // Cues: u8 nº de grupos − 1 (+3 bytes; allse = 3); por grupo {u16 0xA9GG, u16 offset}; no grupo, u8 maior cue + 3 bytes e u32 offsets
         // dos registros de 6 bytes "c0 df VV vol pan ?" (offsets relativos à tabela de cues).
         var cues = new List<SfpCue>();
-        int groups = (int)U(cuesAt) + 1;
+        int groups = d[cuesAt] + 1;
         for (int g = 0; g < groups; g++)
         {
             int id = H(cuesAt + 4 + g * 4);
