@@ -2020,7 +2020,8 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
                 ["linha"] = row, ["modelo"] = model, ["no_principal"] = inMain,
                 ["geradores"] = new JsonArray(gens.Where(g => g.EnemyRow == row).Select(g => (JsonNode?)g.Name).ToArray()),
             });
-            if (inMain && model.StartsWith("e_") && exported.Add(model))
+            // e_ = inimigo comum, f_ = chefe (FATO: f_apocaly na linha 106 da enemy, stagbs01).
+            if (inMain && (model.StartsWith("e_") || model.StartsWith("f_")) && exported.Add(model))
             {
                 var dir = Path.Combine(outDir, "inimigos", model);
                 Step($"inimigos/{model}", () => IgbGltf(ndmwPath, M, dir, ["--ator=" + model]));
