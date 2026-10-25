@@ -292,7 +292,8 @@ public partial class Fatia
 
     void TickVolumes()
     {
-        if (_stage == null) return;
+        if (_stage == null || _leaving) return;
+        if (_snapToFloor || _volumeGrace > 0) { if (!_snapToFloor) _volumeGrace--; return; }
         var p = _player.GlobalPosition;
         foreach (var v in _volumes)
         {

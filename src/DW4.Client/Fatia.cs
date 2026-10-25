@@ -97,6 +97,10 @@ public partial class Fatia : Node3D
     // dentro dela derruba o Guilmon pelo chão. HIPÓTESE: o jogo assenta o jogador no chão acima do ponto. No primeiro quadro
     // de física, um raio de y + 60 para baixo põe o jogador no primeiro chão.
     bool _snapToFloor;
+    // Troca de fase pedida: a cena vai ser recarregada, a física para de rodar (evita !is_inside_tree).
+    bool _leaving;
+    // Gatilhos de área só depois do assentamento no chão e de um quadro inteiro na fase (posição velha disparava matt01).
+    int _volumeGrace = 2;
 
     void SnapToFloor()
     {
@@ -254,10 +258,13 @@ public partial class Fatia : Node3D
     public override void _PhysicsProcess(double delta)
     {
         float dt = (float)delta;
+        if (_leaving || !IsInsideTree()) return;
         if (_snapToFloor) SnapToFloor();
         if (TickMenu(dt)) return;
         _stage?.Tick();
+        if (_leaving) return;
         TickStageChange(dt);
+        if (_leaving) return;
         TickObjects(dt);
         var input = Input.GetVector("ui_left", "ui_right", "ui_up", "ui_down");
         if (Input.IsKeyPressed(Key.A)) input.X -= 1;
@@ -280,6 +287,8 @@ public partial class Fatia : Node3D
             attackDown = _tick % 15 < 2 && _tick > 30; // um toque a cada 0,25 s depois de 0,5 s
             if (_tick < 3) input = new Vector2(0, 0);
         }
+        // Decisão do port PC: sem foco na janela, nada do controle/teclado move o jogador (controle pareado dava entrada fantasma).
+        if (!_demo && !DisplayServer.WindowIsFocused()) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; }
         if (_pf != null && _hp <= 0) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; } // caído: F5 reinicia
         // Só vale um toque que começou depois de abrir a mensagem (o ataque que abriu a conversa ainda pode estar apertado).
         if (!attackDown) _confirmArmed = true;

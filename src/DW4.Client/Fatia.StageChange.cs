@@ -169,6 +169,7 @@ public partial class Fatia
             OS.SetEnvironment("DW4_FASE", stage);
             OS.SetEnvironment("DW4_ENTRADA", _nextEntry.ToString());
             OS.SetEnvironment("DW4_INICIO", "");
+            _leaving = true; // o resto deste quadro e os próximos não tocam mais na árvore
             GetTree().ReloadCurrentScene();
             return;
         }

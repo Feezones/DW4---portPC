@@ -178,6 +178,15 @@ public sealed class BeHost
                 return N(_engine.Query(new BeMessage("SYSCTL", S(a, 1), I(a, 3), S(a, 2) ?? "", [], null)) ?? 0);
             case "SYSgetDifficulty": return N(Ram.Difficulty);
             case "SYSgetCountry": return N(Sys.Country);
+            // HIPÓTESE (stag0101 first.lua compara o retorno com número): SYSgetRandom(n) → inteiro em [0, n);
+            // SYSgetRandom(a, b) → inteiro em [a, b]. Sem argumento: [0, 32768). Conferir a aridade no descritor be (0x804242AC).
+            case "SYSgetRandom":
+                {
+                    int lo = 0, hi = 32767;
+                    if (a.Length > 2) { lo = I(a, 1); hi = I(a, 2); }
+                    else if (a.Length > 1) hi = I(a, 1) - 1;
+                    return N(hi <= lo ? lo : Random.Shared.Next(lo, hi + 1));
+                }
             case "SYSgetCameraMode": return N(Ram.CameraMode);
             case "SYSgetLightMode": return N(Ram.LightMode);
             case "SYSgetIsPackOnly": return N(Sys.IsPackOnly);
