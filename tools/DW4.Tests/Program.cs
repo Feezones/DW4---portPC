@@ -889,6 +889,28 @@ if (args.Length == 1)
         Equal(2902, run, "chunks distintos");
     });
 
+    Test("Jogo: voltar à dng1 com a onda GENE-03 vencida (FLG 102) reabre a porta 0 sem animação e tira a parede", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[179], ms);
+        var data = ms.ToArray();
+        var engine = new RecordingEngine();
+        var ram = new GameRam();
+        ram.SetFlag(102, true); // o gene03.lua faz FLGset(102, 1) ao vencer; a GameRam sobrevive à troca de fase no cliente
+        // FATO (start.lua #179): se COUNTER 2 != 101, a área mudou: COUNTERset(2, 101) e FLGset(100..299, 0). A dng101b2 não mexe
+        // no COUNTER 2, então na volta ele ainda é 101 (da primeira entrada) e as FLGs da área ficam.
+        ram.SetCounter(2, 101);
+        var host = new BeHost(engine, ram, new BeSystem { FolderName = "dng101b1" });
+        var stage = new StageScripts(IgbLua.Chunks(IgbFile.Read(data), data), host);
+        stage.Boot();
+        stage.Start();
+        for (int i = 0; i < 300; i++) stage.Tick();
+        True(engine.Log.Contains("MODELCTRL g_d1door 0 SQ_SILENTON"), "porta 0 aberta sem animação: " + string.Join(" | ", engine.Log.Where(l => l.Contains("g_d1door") || l.Contains("doorwall"))));
+        True(engine.Log.Contains("HITLANDMODEL doorwall01 0 OFFHIT"), "parede da porta 0 sem colisão");
+        True(!engine.Log.Contains("MODELCTRL g_d1door 1 SQ_SILENTON"), "porta 1 continua fechada (FLG 106 desligada)");
+    });
+
     Test("Jogo: txt_status.lua dá os índices de texto do menu de status por fase (dng1 = 11..28; stag0101 diferente)", () =>
     {
         List<int> Indices(int entry, int callNo)
