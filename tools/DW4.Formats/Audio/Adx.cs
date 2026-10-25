@@ -69,34 +69,42 @@ public static class Adx
     }
 
     /// <summary>WAV PCM 16 bits; com loop, um chunk "smpl" (início e fim inclusivo em amostras), como o vgmstream grava.</summary>
-    public static byte[] ToWav(short[] pcm, AdxHeader h)
+    public static byte[] ToWav(short[] pcm, AdxHeader h) =>
+        Wav.Write(pcm, h.Channels, h.SampleRate, h.Loop ? h.LoopStart : null, h.Loop ? h.LoopEnd : null);
+}
+
+public static class Wav
+{
+    /// <summary>WAV PCM 16 bits intercalado; com loop, chunk "smpl" com um laço (fim inclusivo = <paramref name="loopEnd"/> − 1).</summary>
+    public static byte[] Write(short[] pcm, int channels, int rate, int? loopStart, int? loopEnd)
     {
+        bool loop = loopStart != null && loopEnd != null;
         using var ms = new MemoryStream();
         using var w = new BinaryWriter(ms);
         int dataBytes = pcm.Length * 2;
-        int smplBytes = h.Loop ? 60 : 0;
+        const int smplBytes = 60;
         w.Write("RIFF"u8);
-        w.Write(4 + 8 + 16 + 8 + dataBytes + (h.Loop ? 8 + smplBytes : 0));
+        w.Write(4 + 8 + 16 + 8 + dataBytes + (loop ? 8 + smplBytes : 0));
         w.Write("WAVE"u8);
         w.Write("fmt "u8);
         w.Write(16);
         w.Write((short)1);
-        w.Write((short)h.Channels);
-        w.Write(h.SampleRate);
-        w.Write(h.SampleRate * h.Channels * 2);
-        w.Write((short)(h.Channels * 2));
+        w.Write((short)channels);
+        w.Write(rate);
+        w.Write(rate * channels * 2);
+        w.Write((short)(channels * 2));
         w.Write((short)16);
-        if (h.Loop)
+        if (loop)
         {
             w.Write("smpl"u8);
             w.Write(smplBytes);
-            w.Write(0); w.Write(0); w.Write(1_000_000_000 / h.SampleRate); w.Write(60); w.Write(0); w.Write(0); w.Write(0);
+            w.Write(0); w.Write(0); w.Write(1_000_000_000 / rate); w.Write(60); w.Write(0); w.Write(0); w.Write(0);
             w.Write(1); w.Write(0); // um loop, sem dados extras
-            w.Write(0); w.Write(0); w.Write(h.LoopStart); w.Write(h.LoopEnd - 1); w.Write(0); w.Write(0);
+            w.Write(0); w.Write(0); w.Write(loopStart!.Value); w.Write(loopEnd!.Value - 1); w.Write(0); w.Write(0);
         }
         w.Write("data"u8);
         w.Write(dataBytes);
-        foreach (var s in pcm) w.Write(s);
+        foreach (var x in pcm) w.Write(x);
         return ms.ToArray();
     }
 }

@@ -51,6 +51,7 @@ try
         "igb-db" when args.Length == 4 => IgbDb(args[1], args[2], args[3]),
         "igb-drops" when args.Length == 4 => IgbDropsCmd(args[1], args[2], args[3]),
         "adx-wav" when args.Length >= 4 => AdxWav(args[1], args[2], args[3..]),
+        "igb-sons" when args.Length == 4 => IgbSons(args[1], args[2], args[3]),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
@@ -99,6 +100,7 @@ static int Usage()
           dw4 igb-db       <arquivo.afs> <indice> <pasta-de-trabalho>   (as 12 tabelas beDataBase em CSV e JSON, fora do repositório)
           dw4 igb-drops    <arquivo.afs> <indice> <pasta-de-trabalho>   (listas de drop dos geradores em JSON, fora do repositório)
           dw4 adx-wav      <arquivo.afs> <pasta-de-trabalho> <indice> [indice...]   (ADX → WAV com o loop num chunk smpl, fora do repositório)
+          dw4 igb-sons     <arquivo.afs> <indice> <pasta-de-trabalho>   (bancos .sfp do IGB → WAV por cue A9GG_CC, e tabela de sons em JSON)
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
@@ -1357,6 +1359,53 @@ int AdxWav(string path, string outDir, string[] which)
         Console.WriteLine($"#{idx}: {h.Channels} canais, {h.SampleRate} Hz, {h.Samples} amostras ({h.Samples / (double)h.SampleRate:0.0} s)" +
             (h.Loop ? $", loop {h.LoopStart}..{h.LoopEnd}" : ", sem loop") + $" -> {file}");
     }
+    return 0;
+}
+
+int IgbSons(string path, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    Directory.CreateDirectory(full);
+    var bankList = new JsonArray();
+    foreach (var (at, size) in DW4.Formats.Audio.Sfp.Find(data))
+    {
+        var bytes = data.AsSpan(at, size).ToArray();
+        var sfp = DW4.Formats.Audio.Sfp.Read(bytes);
+        var cues = new JsonArray();
+        foreach (var c in sfp.Cues)
+        {
+            var file = $"A9{c.Group:X2}_{c.Cue:X2}.wav";
+            if (c.Sample >= 0 && c.Sample < sfp.Samples.Count)
+            {
+                var smp = sfp.Samples[c.Sample];
+                var pcm = sfp.Decode(smp, out var ls, out var le);
+                File.WriteAllBytes(Path.Combine(full, file), DW4.Formats.Audio.Wav.Write(pcm, 1, smp.Rate, ls, le));
+            }
+            cues.Add(new JsonObject { ["id"] = $"0xA9{c.Group:X2}{c.Cue:X2}00", ["voice"] = c.Voice, ["sample"] = c.Sample, ["volume"] = c.Volume, ["pan"] = c.Pan, ["file"] = file });
+        }
+        bankList.Add(new JsonObject { ["offset"] = at, ["size"] = size, ["samples"] = sfp.Samples.Count, ["cues"] = cues });
+        Console.WriteLine($"banco em 0x{at:X}: {sfp.Samples.Count} amostras, {sfp.Cues.Count} cues (grupos {string.Join(",", sfp.Cues.Select(c => c.Group.ToString("X2")).Distinct())})");
+    }
+    var file2 = IgbFile.Read(data);
+    var (sounds, banks, se) = IgbSounds.Read(file2, data);
+    JsonNode? V(object v) => v switch { string t => JsonValue.Create(t), float x => JsonValue.Create(x), int x => JsonValue.Create(x), bool x => JsonValue.Create(x), float[] a => new JsonArray(a.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray()), _ => null };
+    JsonObject O(IgbSoundObject o) => new() { ["index"] = o.Index, ["values"] = new JsonArray(o.Values.Select(V).ToArray()) };
+    var root = new JsonObject
+    {
+        ["sounds"] = new JsonArray(sounds.Select(o => (JsonNode?)O(o)).ToArray()),
+        ["sfpData"] = new JsonArray(banks.Select(o => (JsonNode?)O(o)).ToArray()),
+        ["se"] = new JsonArray(se.Select(s => (JsonNode?)new JsonObject { ["name"] = s.Name, ["entries"] = new JsonArray(s.Entries.Select(e => (JsonNode?)O(e)).ToArray()) }).ToArray()),
+        ["banks"] = bankList,
+    };
+    File.WriteAllText(Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_sons.json"),
+        root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
+    Console.WriteLine($"{sounds.Count} beSoundData, {banks.Count} beCriSfpData, {se.Count} beSeInfoData");
     return 0;
 }
 

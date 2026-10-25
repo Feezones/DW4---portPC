@@ -757,6 +757,21 @@ if (args.Length == 1)
         }
     });
 
+    Test("Jogo: banco e_nume.sfp no #179 tem 7 cues no grupo 3A, cue → voz → amostra 6 − CC", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[179], ms);
+        var data = ms.ToArray();
+        var banks = DW4.Formats.Audio.Sfp.Find(data).Select(b => DW4.Formats.Audio.Sfp.Read(data.AsSpan(b.Offset, b.Size).ToArray())).ToList();
+        var nume = banks.FirstOrDefault(b => b.Cues.Any(c => c.Group == 0x3A)) ?? throw new InvalidOperationException("sem banco com o grupo 3A");
+        Equal(7, nume.Cues.Count, "cues");
+        Equal("6,5,4,3,2,1,0", string.Join(",", nume.Cues.Select(c => c.Sample)), "amostras por cue");
+        Equal(0x20, nume.Samples[0].DataOffset, "primeira amostra em PCMD + 0x20");
+        var pcm = nume.Decode(nume.Samples[5], out _, out _);
+        True(pcm.Length > 1000 && pcm.Max(v => Math.Abs((int)v)) > 1000, "nuDEAD01 decodifica com sinal");
+    });
+
     Test("Jogo: 12 tabelas beDataBase na dng1 (area #3); w_sword01 com TSUYOSA 60..199; Guilmon e Numemon nas tabelas", () =>
     {
         using var afs = AfsArchive.Open(areaPath);
