@@ -1956,6 +1956,12 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
     if (cam >= 0) Step("camera", () => IgbCamera(ndmwPath, cam.ToString(inv), outDir));
     if (camFar >= 0) Step("camera afastada", () => IgbCamera(ndmwPath, camFar.ToString(inv), outDir));
     if (acmr >= 0) Step("camera-demo", () => IgbCameraDemoCmd(ndmwPath, acmr.ToString(inv), Path.Combine(outDir, "camera-demo")));
+    // FATO no stag0101: sem aaacamera e sem acmr_pack, as câmeras ficam no principal (#614): beCameraCtrlInfo "Scene Graph"
+    // (beCameraBoxData) e 8 beCameraDemoData (Sdc0101a/b/c, camsp0401..0404, campoint00).
+    bool mainBox = mainFile.Slots.OfType<IgbObject>().Any(o => o.TypeName == "beCameraBoxData");
+    bool mainDemo = mainFile.Slots.OfType<IgbObject>().Any(o => o.TypeName == "beCameraDemoData");
+    if (cam < 0 && mainBox) Step("camera (principal)", () => IgbCamera(ndmwPath, M, outDir));
+    if (mainDemo) Step("camera-demo (principal)", () => IgbCameraDemoCmd(ndmwPath, M, Path.Combine(outDir, "camera-demo")));
     if (genN >= 0) Step("geradores", () => IgbGeradores(ndmwPath, genN.ToString(inv), outDir));
     if (genN >= 0) Step("drops", () => IgbDropsCmd(ndmwPath, genN.ToString(inv), Path.Combine(outDir, "drops")));
     Step("gatilhos", () => IgbGatilhos(ndmwPath, M, outDir));
@@ -2041,8 +2047,10 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
             ["todas"] = new JsonArray(roots.Select(r => (JsonNode?)new JsonObject { ["indice"] = r.Index, ["nome"] = r.Name }).ToArray()) },
         ["arquivos_camera"] = new JsonObject
         {
-            ["camera"] = cam >= 0 ? $"ndmw_{cam:D4}_camera.json" : null, ["camera_afastada"] = camFar >= 0 ? $"ndmw_{camFar:D4}_camera.json" : null,
-            ["demo"] = acmr >= 0 ? $"camera-demo/ndmw_{acmr:D4}_<nome>.json" : null,
+            ["camera"] = cam >= 0 ? $"ndmw_{cam:D4}_camera.json" : mainBox ? $"ndmw_{main:D4}_camera.json" : null,
+            ["camera_afastada"] = camFar >= 0 ? $"ndmw_{camFar:D4}_camera.json" : null,
+            ["demo"] = new JsonArray(new[] { acmr >= 0 ? $"camera-demo/ndmw_{acmr:D4}_<nome>.json" : null, mainDemo ? $"camera-demo/ndmw_{main:D4}_<nome>.json" : null }
+                .Where(s => s != null).Select(s => (JsonNode?)s).ToArray()),
         },
         ["mapa"] = new JsonObject
         {

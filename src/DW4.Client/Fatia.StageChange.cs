@@ -26,7 +26,7 @@ public partial class Fatia
     bool _choiceMoveHeld;
     Vector2 _menuInput;
     int _nextEntry;
-    bool _choiceWindowOpen;
+    bool _choiceWindowOpen, _infoWindowOpen;
 
     bool DeliverToStageChange(BeMessage m)
     {
@@ -43,6 +43,10 @@ public partial class Fatia
                 _choiceMoveHeld = true; // só vale um movimento que começou depois de abrir (o que levou ao tapete ainda pode estar apertado)
                 UpdateChoice();
                 return true;
+            // Janela de info do Digimon (funcOpenDigimonInfoWin): o first.lua dos campos espera ISRUN "==0" e "!=0" (abrir e fechar)
+            // antes do fade; sem resposta a espera passava direto e as esperas do fade travavam a fila (stag0101).
+            case ("MODELCTRL", "i_dminfown", "GENERATE"): _infoWindowOpen = true; return true;
+            case ("MODELCTRL", "i_dminfown", "SQ_CLOSE"): _infoWindowOpen = false; return true;
             case ("MODELCTRL", "i_zzstchgwb", "GENERATE"):
                 _choiceWindowOpen = true; // gerada com atraso de 10 quadros: o script espera ISRUN antes de ler a escolha
                 return true;
@@ -83,6 +87,7 @@ public partial class Fatia
             case ("MODELCTRL", "i_fadewn01", "ISSEQNAME"): return _fadeSeq == m.Text(0) ? 1 : 0;
             // ISEND (comum, Fatia.Recorder.cs) = 1 depois do confirmar; ISSELECTNOW = 1 enquanto escolhe; GETSELECT = a opção.
             case ("MODELCTRL", "i_zzstchgwb", "ISRUN"): return _choiceWindowOpen ? 1 : 0;
+            case ("MODELCTRL", "i_dminfown", "ISRUN"): return _infoWindowOpen ? 1 : 0;
             case ("SELECTCTRL", "i_zzstchgwn", "ISSELECTNOW"): return _choice >= 0 && !_selectEnded ? 1 : 0;
             case ("SELECTCTRL", "i_zzstchgwn", "GETSELECT"): return _choice;
             case ("SYSCTL", "HP", "GETHP"): return _pf != null ? _hp : 1;

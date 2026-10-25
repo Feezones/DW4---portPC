@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using Godot;
 
@@ -17,7 +18,7 @@ public partial class Fatia
     string _stageName = "dng101b1";
     string _common = "";
     string[] _cameraFiles = ["ndmw_0180_camera.json", "ndmw_0181_camera.json"];
-    string _demoPattern = "camera-demo/ndmw_0182_<nome>.json";
+    string[] _demoPatterns = ["camera-demo/ndmw_0182_<nome>.json"];
     string _mapBase = "j_map101b1", _mapCursor = "j_mapcur";
     Dictionary<string, int> _musicIndex = new() { ["AM_DUNGE"] = 6, ["DG_CAVE1"] = 35 };
 
@@ -39,7 +40,13 @@ public partial class Fatia
             foreach (var key in new[] { "camera", "camera_afastada" })
                 if (cams.TryGetProperty(key, out var c) && c.ValueKind == JsonValueKind.String) list.Add(c.GetString()!);
             _cameraFiles = [.. list];
-            _demoPattern = cams.TryGetProperty("demo", out var dm) && dm.ValueKind == JsonValueKind.String ? dm.GetString()! : "";
+            // "demo": texto (um padrão) ou lista (acmr_pack e/ou principal: os campos guardam as demos no principal, ex. stag0101 #614).
+            _demoPatterns = cams.TryGetProperty("demo", out var dm) ? dm.ValueKind switch
+            {
+                JsonValueKind.String => [dm.GetString()!],
+                JsonValueKind.Array => dm.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!).ToArray(),
+                _ => [],
+            } : [];
         }
         if (r.TryGetProperty("mapa", out var map) && map.ValueKind == JsonValueKind.Object)
         {

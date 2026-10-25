@@ -101,7 +101,8 @@ public partial class Fatia : IBeEngine
 
     void StartCameraDemo(string name)
     {
-        var file = Path.Combine(_dir, _demoPattern.Replace("<nome>", name));
+        var files = _demoPatterns.Select(p => Path.Combine(_dir, p.Replace("<nome>", name))).ToList();
+        var file = files.FirstOrDefault(File.Exists) ?? files.FirstOrDefault() ?? Path.Combine(_dir, "camera-demo", name);
         if (!File.Exists(file)) { _problems.Add($"falta {file} (dw4 igb-camera-demo ndmw.afs 182 <fatia>\\camera-demo): sem a demo {name}"); return; }
         _cameraDemo = CameraDemo.FromJson(File.ReadAllText(file));
         _cameraDemoT = 0;
