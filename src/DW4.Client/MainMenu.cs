@@ -138,6 +138,25 @@ public partial class MainMenu : Control
     void Play(int slot, CharacterSave c)
     {
         if (!Playable(c.Model)) { Message($"{FormName(c.CurrentForm)} ainda não tem modelo no cliente.", ShowSlots); return; }
+        // FATO (hostLoad.lua): a dificuldade é escolhida a cada começo, até o máximo liberado pelas flags da vaga.
+        var ram = new DW4.Script.Be.GameRam();
+        c.Apply(ram, 0);
+        if (ram.DifficultyMax == 0) { c.Difficulty = 0; Enter(slot, c); return; }
+        Clear();
+        Title("Select Difficulty", 30);
+        Button? first = null;
+        for (int d = 0; d <= ram.DifficultyMax; d++)
+        {
+            int diff = d;
+            var b = Btn(_root, Difficulties[d], () => { c.Difficulty = diff; Enter(slot, c); });
+            if (d == Math.Min(c.Difficulty, ram.DifficultyMax)) first = b;
+        }
+        Btn(_root, "Voltar", ShowSlots);
+        first?.CallDeferred(Control.MethodName.GrabFocus);
+    }
+
+    void Enter(int slot, CharacterSave c)
+    {
         if (!Session.Begin(GetTree(), slot, c, out var error)) Message(error ?? "Não deu para entrar.", ShowSlots);
     }
 
@@ -186,7 +205,11 @@ public partial class MainMenu : Control
         Title("Dificuldade", 18);
         var diff = new OptionButton { CustomMinimumSize = new Vector2(0, 44) };
         foreach (var t in Difficulties) diff.AddItem(t);
+        // FATO (hostLoad.lua): sem as flags 711/77, só Normal. Personagem novo não tem flags.
+        diff.SetItemDisabled(1, true);
+        diff.SetItemDisabled(2, true);
         _root.AddChild(diff);
+        Title("Hard e Very Hard são liberadas pelo progresso do personagem.", 14);
         var status = Title("", 16);
         var buttons = new HBoxContainer();
         _root.AddChild(buttons);

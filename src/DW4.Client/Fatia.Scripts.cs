@@ -47,9 +47,21 @@ public partial class Fatia : IBeEngine
         if (Ram.Players[0].Forms.Current < 0 && _shinkaRow is >= 0 and < Evolution.Forms) Ram.Players[0].Forms.Start(_shinkaRow);
         var host = new BeHost(this, Ram, sys) { Unimplemented = (n, _) => ScriptLog($"be:{n} ainda não implementado") };
         _stage = new StageScripts(chunks, host) { Error = (n, m) => ScriptLog($"ERRO {n}: {m}") };
+        if (Session.PendingGameStart) RunGameStart(host);
         _stage.Boot();
         _stage.Start();
         return true;
+    }
+
+    // gameStart.lua da stagIS10 (ver Session.PendingGameStart), na mesma GAMERAM, antes do boot da primeira fase.
+    void RunGameStart(BeHost host)
+    {
+        Session.PendingGameStart = false;
+        var stages = OS.GetEnvironment("DW4_FASES") is { Length: > 0 } s ? s : @"D:\dw4-work\fases";
+        var file = Path.Combine(stages, "stagis10", "lua", "gameStart.lua");
+        if (!File.Exists(file)) { _problems.Add($"falta {file} (dw4 fase-exportar … stagIS10): flags do começo de jogo não refeitas"); return; }
+        var gs = new StageScripts(new Dictionary<string, byte[]> { ["gameStart.lua"] = File.ReadAllBytes(file) }, host) { Error = (n, m) => ScriptLog($"ERRO {n}: {m}") };
+        ScriptLog(gs.Run("gameStart.lua") ? "gameStart.lua da stagIS10 rodou" : "gameStart.lua não rodou");
     }
 
     // Diagnóstico: um chk do diretor de demo segurando a fila por 10 s vai para o log (uma vez por entrada).

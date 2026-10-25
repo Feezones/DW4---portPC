@@ -36,6 +36,12 @@ public sealed class GameRam
 
     public int Counter(int n) => n >= 0 && n < Counters.Length ? Counters[n] : 0;
 
+    /// <summary>
+    /// Dificuldade máxima que dá para escolher ao começar. FATO (hostLoad.lua da stagIS10, LISsetDifficultMax): FLG 77 → 2 (Very
+    /// Hard), senão FLG 711 → 1 (Hard), senão 0 (só Normal).
+    /// </summary>
+    public int DifficultyMax => FlagOn(77) == 1 ? 2 : FlagOn(711) == 1 ? 1 : 0;
+
     public void SetCounter(int n, int v)
     {
         if (n >= 0 && n < Counters.Length) Counters[n] = v;

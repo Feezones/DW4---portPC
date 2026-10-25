@@ -1693,6 +1693,29 @@ if (args.Length == 1)
         Equal(ShopTrade.BitMax, inv.Bit, "teto de 9 999 999");
     });
 
+    Test("Jogo: gameStart.lua da stagIS10 zera as flags de trabalho e copia as permanentes; hostLoad dá a dificuldade máxima", () =>
+    {
+        var file = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fases", "stagis10", "lua", "gameStart.lua");
+        True(File.Exists(file), $"exportada: {file}");
+        var ram = new GameRam();
+        for (int f = 700; f < 900; f++) ram.SetFlag(f, true); // todo o progresso permanente ligado
+        ram.SetFlag(409, true); ram.SetCounter(2, 5);
+        var host = new BeHost(new RecordingEngine(), ram, new BeSystem { FolderName = "stagis10" });
+        var errors = new List<string>();
+        var gs = new StageScripts(new Dictionary<string, byte[]> { ["gameStart.lua"] = File.ReadAllBytes(file) }, host) { Error = (n, m) => errors.Add($"{n}: {m}") };
+        True(gs.Run("gameStart.lua") && errors.Count == 0, "roda sem erro: " + string.Join("; ", errors));
+        Equal(0, ram.Counter(2), "COUNTER 2 (missão ativa) zerado");
+        int copied = Enumerable.Range(1, 600).Count(f => ram.FlagOn(f) == 1);
+        True(copied > 10, $"flags de trabalho copiadas das permanentes: {copied}");
+        Equal(1, ram.FlagOn(49), "FLG 49 ← FLG 803");
+        var fresh = new GameRam();
+        True(new StageScripts(new Dictionary<string, byte[]> { ["gameStart.lua"] = File.ReadAllBytes(file) }, new BeHost(new RecordingEngine(), fresh, new BeSystem())).Run("gameStart.lua"), "personagem novo");
+        Equal(0, Enumerable.Range(1, 1000).Count(f => fresh.FlagOn(f) == 1 && f != 1000), "personagem novo: nenhuma flag");
+        Equal(0, fresh.DifficultyMax, "novo: só Normal");
+        fresh.SetFlag(711, true); Equal(1, fresh.DifficultyMax, "FLG 711: até Hard");
+        fresh.SetFlag(77, true); Equal(2, fresh.DifficultyMax, "FLG 77: até Very Hard");
+    });
+
     Test("Jogo: MDLgetBulletName pela tabela 0x804DD2A0 (código / 10000 − 1)", () =>
     {
         Equal("PCWA", BeHost.BulletName(10000), "10000 físico");

@@ -46,6 +46,11 @@ public static class Session
     public static int Slot { get; private set; } = -1;
     public static CharacterSave? Character { get; private set; }
     public static bool Active => Character != null;
+    /// <summary>
+    /// FATO: a gameStart.lua da stagIS10 roda a cada começo de jogo (zera as flags de trabalho e copia as permanentes da
+    /// dificuldade, 700+/741+/771+, para elas). O port roda ela uma vez na primeira fase depois de escolher a vaga.
+    /// </summary>
+    public static bool PendingGameStart { get; set; }
 
     /// <summary>Entra com o personagem da vaga: GAMERAM nova com o save e a fase gravada.</summary>
     public static bool Begin(SceneTree tree, int slot, CharacterSave character, out string? error)
@@ -59,6 +64,7 @@ public static class Session
         ram.CameraMode = PortSettings.Current.CameraMode;
         ram.LightMode = PortSettings.Current.LightMode;
         Fatia.UseRam(ram);
+        PendingGameStart = true;
         Fatia.PlayerModel = character.Model.Length > 0 ? character.Model : "p_girumon";
         OS.SetEnvironment("DW4_FASE", character.Stage.Length > 0 ? character.Stage : NewGameStage);
         OS.SetEnvironment("DW4_ENTRADA", (character.Stage.Length > 0 ? character.Entry : NewGameEntry).ToString());
