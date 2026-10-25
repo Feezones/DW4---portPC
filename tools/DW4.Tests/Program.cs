@@ -423,6 +423,16 @@ Test("Evolução: cada forma guarda nível, EXP e skills; só troca para forma l
     Equal(5000L, ev.ExpOf(2), "GETEXP");
 });
 
+Test("Grupo: chip de backup na morte (BIT inteiro e 20% da faixa anterior) e EXP por NINZU", () =>
+{
+    Equal((new BackupChip(120, 0), 0L), Party.Die(1, 0, 120), "nível 1: só o BIT");
+    Equal((new BackupChip(50, 68), 432L), Party.Die(2, 500, 50), "nível 2: perde (341 − 0)/5 = 68");
+    Equal((new BackupChip(0, 9), 341L), Party.Die(2, 350, 0), "não desce abaixo de NE(1) = 341");
+    Equal(14, DamageFormula.ExpShare(14, 0, 1, true), "sozinho");
+    Equal((11, 5), (DamageFormula.ExpShare(14, 0, 4, true), DamageFormula.ExpShare(14, 0, 4, false)), "4 jogadores");
+    Equal(3, Party.PlayerDataIndex(4), "PlayerData de 4 jogadores");
+});
+
 Test("Combate (FIGHTCALC): dano do jogador e do inimigo, acerto, crítico, experiência e MT19937", () =>
 {
     var a = new Fighter { Tsuyosa = 100, Kashikosa = 40, Chimeiritsu = 4, Skill = [500, 1500], WeaponSkillNo = 0, AttackElement = 0, HpDrain = 10 };
