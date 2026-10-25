@@ -104,7 +104,9 @@ public sealed class LuaTable
     {
         if (key == null) throw new LuaException("table index is nil");
         if (key is double d && double.IsNaN(d)) throw new LuaException("table index is NaN");
-        _vals[Slot(key)] = value;
+        // O índice antes da escrita: Slot pode fazer rehash e trocar _vals (em C# a referência do vetor seria lida antes).
+        int n = Slot(key);
+        _vals[n] = value;
     }
 
     int Slot(object key)
@@ -157,7 +159,7 @@ public sealed class LuaTable
         else if (used <= oldSize / 4 && oldSize > MinPower2) SetNodeVector(oldSize / 2);
         else SetNodeVector(oldSize);
         for (int i = 0; i < oldSize; i++)
-            if (oldVals[i] != null) _vals[Slot(oldKeys[i]!)] = oldVals[i];
+            if (oldVals[i] != null) { int n = Slot(oldKeys[i]!); _vals[n] = oldVals[i]; }
     }
 
     /// <summary>luaH_next: o próximo par depois de <paramref name="key"/> (nil = o primeiro), na ordem dos nós.</summary>
