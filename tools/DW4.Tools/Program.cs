@@ -1068,6 +1068,23 @@ int IgbColisao(string path, string which, string rootArg, string outDir)
         for (int k = 0; k < geoms.Count && k < labels.Count; k++)
             foreach (var ga in scene.AttrList(geoms[k]).Where(a => file.Is(a, "igGeometryAttr"))) nameOfGeometry[ga.Index] = labels[k];
     }
+    // FATO no #179: os marcadores dos pontos de entrada (bePoint01Info @7 igSwitch → beGroupKeep → igTransform → igGeometry,
+    // pirâmides de y 40 a 50 em cada vaga) ficam sob a mesma raiz da colisão. Não são chão: o jogador nascia dentro deles e
+    // afundava. Ficam de fora.
+    var markers = new HashSet<int>();
+    void Collect(IgbObject n, int depth)
+    {
+        if (depth > 16) return;
+        if (file.Is(n, "igGeometry"))
+            foreach (var ga in scene.AttrList(n).Where(a => file.Is(a, "igGeometryAttr"))) markers.Add(ga.Index);
+        if (Ref(n, 7) is { } kids && file.Is(kids, "igNodeList"))
+            foreach (var c in scene.ObjectList(kids)) Collect(c, depth + 1);
+    }
+    foreach (var pi in file.Slots.OfType<IgbObject>().Where(o => o.TypeName == "bePoint01Info"))
+        if (Ref(pi, 7) is { } sw) Collect(sw, 0);
+    int before = parts.Count;
+    parts = parts.Where(p => !markers.Contains(p.GeometryIndex)).ToList();
+    if (parts.Count != before) Console.WriteLine($"{before - parts.Count} geometria(s) de marcador de entrada (bePoint01Info) fora da colisão");
     var dir = Path.Combine(full, $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}_colisao_{rootIndex}");
     Directory.CreateDirectory(dir);
     var g = new GltfBuilder();
