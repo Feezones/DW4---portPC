@@ -877,6 +877,24 @@ if (args.Length == 1)
         Equal(2902, run, "chunks distintos");
     });
 
+    Test("Jogo: txt_status.lua dá os índices de texto do menu de status por fase (dng1 = 11..28; stag0101 diferente)", () =>
+    {
+        List<int> Indices(int entry, int callNo)
+        {
+            using var afs = AfsArchive.Open(ndmwPath);
+            using var ms = new MemoryStream();
+            afs.CopyEntry(afs.Entries[entry], ms);
+            var data = ms.ToArray();
+            var stage = new StageScripts(IgbLua.Chunks(IgbFile.Read(data), data), new BeHost(new RecordingEngine(), new GameRam(), new BeSystem()));
+            return stage.RunText("txt_status.lua", callNo)
+                .Select(m => m.Args.LastOrDefault() is { Kind: 'I', Numbers.Length: > 0 } k ? (int)k.Numbers[0] : -1).ToList();
+        }
+        Equal("11,12,13", string.Join(",", Indices(179, 0)), "dng1 ajuda (callNo 0)");
+        Equal(string.Join(",", Enumerable.Range(14, 12)), string.Join(",", Indices(179, 3)), "dng1 atributos (callNo 3)");
+        Equal("26,27,28", string.Join(",", Indices(179, 15)), "dng1 menu (callNo 15)");
+        True(string.Join(",", Indices(614, 3)) != string.Join(",", Indices(179, 3)), "stag0101 tem outra ordem");
+    });
+
     Test("Jogo: scripts da dng1 (#179) na ordem do motor: lista de arquivos, área 101, objetos gerados e músicas da entrada", () =>
     {
         using var afs = AfsArchive.Open(ndmwPath);

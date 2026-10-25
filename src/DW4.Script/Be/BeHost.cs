@@ -73,6 +73,12 @@ public sealed class BeHost
     /// <summary>Método be:* ainda não implementado (nome e argumentos), avisado uma vez por nome.</summary>
     public Action<string, object?[]>? Unimplemented { get; set; }
 
+    /// <summary>Valor de be:TXTgetCallNo(): qual tela de texto o motor pediu ao txt_status.lua (0 = ajuda, 3 = atributos, 15 = menu…).</summary>
+    public int TextCallNo { get; set; }
+
+    /// <summary>Se definido, as mensagens be:sd vão para cá em vez do motor (para ler os textos do txt_status.lua sem efeito na fase).</summary>
+    public Action<BeMessage>? Capture { get; set; }
+
     public BeHost(IBeEngine engine, GameRam ram, BeSystem system)
     {
         _engine = engine;
@@ -119,7 +125,8 @@ public sealed class BeHost
                 bool hasArgs = n >= 5 && a[5] is string;
                 var m = Msg(a, 4, hasArgs ? 5 : -1);
                 long delay = n >= 6 ? L(a, 6) : n == 5 && !hasArgs ? L(a, 5) : 0;
-                Messenger.Send(m, delay);
+                if (Capture != null) Capture(m);
+                else Messenger.Send(m, delay);
                 return Nothing;
             }
             case "DMsetSD":
@@ -187,6 +194,8 @@ public sealed class BeHost
                     else if (a.Length > 1) hi = I(a, 1) - 1;
                     return N(hi <= lo ? lo : Random.Shared.Next(lo, hi + 1));
                 }
+            // FATO (txt_status.lua): "if be:TXTgetCallNo() == n then … TEXTCTL TEXTSET \"FONTE/nó/I<k>\" …"; o motor escolhe o n.
+            case "TXTgetCallNo": return N(TextCallNo);
             case "SYSgetCameraMode": return N(Ram.CameraMode);
             case "SYSgetLightMode": return N(Ram.LightMode);
             case "SYSgetIsPackOnly": return N(Sys.IsPackOnly);
