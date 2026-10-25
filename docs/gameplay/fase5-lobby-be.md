@@ -91,7 +91,17 @@ conversa de entrada das Digimon (n_digilff/n_digilfm, textos 36..48) rodou.
 - **mlBEEP01.** Não é música: é efeito do banco da fase (stagml12 #824, beSoundData cue 0xA9250900 → A925_09.wav, já
   exportado). O SOUND PLAY do cliente agora toca efeitos do banco quando o nome não é música.
 
+## Conferido na janela (2026-10-25, depois do teste do usuário)
+
+- Cones: continuam branco-azulados. **Não eram** as peças aditivas: são 8 peças de 105 vértices (15 × 38 × 15) com o atlas
+  ML01GR00_n, e os UV caem na faixa de degradê branco→azul do atlas (x ≈ 128..143, y 65..127). **HIPÓTESE**: são cristais
+  assim no original, não erro do conversor. A mistura aditiva das outras peças (faixas, brilhos) ficou certa na janela.
+- Teleporte: com DW4_FLG=4, entrando no mate00 abre a lista "Death Valley / Dry Land" (textos do jogo); confirmar a
+  primeira leva ao stag0101 (`NEXTSTAGE "stag0101"`). Sem as flags do enredo (jogo novo) o teleporte não oferece nada,
+  como manda o script.
+- mlBEEP01: toca no fim da conversa de entrada do lobby (banco #820, A925_09.wav), sem aviso no log.
+- Portão (mate02): só pelo teste; na janela precisaria de um portão gravado numa dungeon.
+
 ## Pendente
 
-- Conferir na janela: cones, teleporte, portão e o bipe da Central Area.
 - O tratador do GAMERAM CTRLITEM (efeito exato de BIT/DEVICE/FLAG) não foi lido.

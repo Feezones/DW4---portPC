@@ -38,6 +38,9 @@ public partial class Fatia : IBeEngine
         sys.Players[0] = ("p_girumon", new[] { "w_sword01", "w_sword01", "w_sword01" });
         // A GAMERAM sobrevive à troca de fase (recarga da cena): flags e contadores são do jogo, não da cena.
         // LEVEL e as formas do registro do jogador 0 (SYSgetPlayerLevel, SYSisGetShinkaDigimon, SYSctlShinka).
+        // DEPURAÇÃO (só no build Debug, não é do jogo): DW4_FLG=4,409 liga essas flags da GAMERAM ao abrir a fase (estado do enredo).
+        if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_FLG") is { Length: > 0 } flags)
+            foreach (var f in flags.Split(',', StringSplitOptions.RemoveEmptyEntries)) if (int.TryParse(f, out int n)) Ram.SetFlag(n, true);
         Ram.Players[0].Level = () => _level;
         if (Ram.Players[0].Forms.Current < 0 && _shinkaRow is >= 0 and < Evolution.Forms) Ram.Players[0].Forms.Start(_shinkaRow);
         var host = new BeHost(this, Ram, sys) { Unimplemented = (n, _) => ScriptLog($"be:{n} ainda não implementado") };
