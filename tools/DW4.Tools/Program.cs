@@ -2058,6 +2058,9 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
         {
             Step("janelas", () => IgbHudCmd(["igb-hud", ndmwPath, M, areaPath, usa.ToString(inv), Path.Combine(outDir, "janelas")], Specs(windowNames)));
             foreach (var n in windowNames) Step($"janelas/{n} seq", () => IgbSeq(ndmwPath, M, Path.Combine(outDir, "janelas", n), "--ator=" + n));
+            // Fonte do jogo (ndmw #79, comum a todas as fases): uma vez, ao lado das fases.
+            var fontDir = Path.Combine(outRoot, "fonte");
+            if (!File.Exists(Path.Combine(fontDir, "fonte.json"))) Step("fonte", () => FonteExportar(ndmwPath, "79", fontDir));
         }
     }
     else problems.Add("usa_pack: não encontrado no índice (textos, db, hud e menu sem exportar)");
