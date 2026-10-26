@@ -2031,6 +2031,16 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
         Step("hud", () => IgbHudCmd(["igb-hud", ndmwPath, M, areaPath, usa.ToString(inv), Path.Combine(outDir, "hud")], null));
         if (menuNames.Length > 0)
             Step("menu", () => IgbHudCmd(["igb-hud", ndmwPath, M, areaPath, usa.ToString(inv), Path.Combine(outDir, "menu")], Specs(menuNames)));
+        // Janelas 2D dos scripts (fala i_talkwn/i_messwn, teclas i_talkky/i_messky, escolha i_messcr, troca de área i_zzstchg*,
+        // fade, rostos *ic…), com as sequências de cada uma (SQ_OPENL → OPENL → JOINTSET 10..26, FATO no #821).
+        var windowNames = actors.Select(a => a.Name)
+            .Where(n => (n.StartsWith("i_") && !n.StartsWith("i_st") && !n.StartsWith("i_dmgnum") && !n.StartsWith("i_pcdmgnum")) || (n.StartsWith("n_") && n.EndsWith("ic")))
+            .Distinct().OrderBy(n => n, StringComparer.Ordinal).ToArray();
+        if (windowNames.Length > 0)
+        {
+            Step("janelas", () => IgbHudCmd(["igb-hud", ndmwPath, M, areaPath, usa.ToString(inv), Path.Combine(outDir, "janelas")], Specs(windowNames)));
+            foreach (var n in windowNames) Step($"janelas/{n} seq", () => IgbSeq(ndmwPath, M, Path.Combine(outDir, "janelas", n), "--ator=" + n));
+        }
     }
     else problems.Add("usa_pack: não encontrado no índice (textos, db, hud e menu sem exportar)");
     if (objectNames.Length > 0) Step("objetos", () => IgbObjetos(ndmwPath, M, Path.Combine(outDir, "objetos"), Specs(objectNames), TexturePack()));
