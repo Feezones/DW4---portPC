@@ -16,7 +16,7 @@ namespace DW4.Client;
 /// TEXTCTL TEXTSET "&lt;FONTE&gt;/fontNN/I&lt;k&gt;" e SWITCH ".../SET|CLR".
 /// HIPÓTESES: ISRUN = 1 enquanto a janela existe (até o SQ_ERAS); a posição do texto dentro da janela (o beTextCtrl com as caixas
 /// das fontes não foi lido): o nome (…FONT03) no alto, a fala (…FONT02/font00) embaixo dele, alinhados à esquerda.
-/// DECISÃO DA FATIA: a fonte do jogo não foi exportada (fonte da Godot). O i_fadewn01 continua no ColorRect do Fatia.StageChange.
+/// DECISÃO DA FATIA: o texto sai com a fonte do jogo (BitmapFont, fatia/fonte) no lugar medido acima; sem ela, Label3D da Godot. O i_fadewn01 continua no ColorRect do Fatia.StageChange.
 /// Sem a pasta janelas (fase antiga), fica a caixa da Godot de antes.
 /// </summary>
 public partial class Fatia
@@ -35,6 +35,19 @@ public partial class Fatia
     readonly Dictionary<(string, int), WindowActor> _windows = [];
     readonly Dictionary<string, (string Text, bool On, Color Color)> _winTexts = [];
     readonly Dictionary<string, Label3D> _winLabels = [];
+    readonly Dictionary<string, (MeshInstance3D Node, string Text, Color Color, float Width)> _winGlyphs = [];
+    BitmapFont? _font;
+    bool _fontTried;
+
+    // Fonte do jogo (fatia/fonte); sem ela, o texto sai no Label3D da Godot.
+    BitmapFont? GameFont()
+    {
+        if (_fontTried) return _font;
+        _fontTried = true;
+        _font = BitmapFont.Load(Path.Combine(_dir, "..", "fonte"));
+        if (_font == null) _problems.Add("fonte do jogo ausente (dw4 fonte-exportar ndmw.afs 79 → fatia/fonte): texto na fonte da Godot");
+        return _font;
+    }
 
     bool WindowsReady()
     {
@@ -163,6 +176,7 @@ public partial class Fatia
         bool hasName = _winTexts.Any(x => x.Key.Contains("FONT03", StringComparison.Ordinal) && x.Value.On);
         foreach (var (key, t) in _winTexts)
         {
+            if (GameFont() is { } font) { GameFontText(font, key, t, box, face, hasName); continue; }
             if (!_winLabels.TryGetValue(key, out var label))
             {
                 label = new Label3D { PixelSize = 1, FontSize = 18, OutlineSize = 4, NoDepthTest = true, RenderPriority = 120, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, AutowrapMode = TextServer.AutowrapMode.WordSmart, Width = 520 };
@@ -184,6 +198,37 @@ public partial class Fatia
             label.Width = Math.Max(120, right - left);
             label.Position = new Vector3(left, name ? top : top - (hasName ? 26 : 0), 50);
         }
+    }
+
+    // Mesmo lugar do Label3D, desenhado com a fonte do jogo: nome (…FONT03) em MINIMUM com linha de 20 px, fala em NORMAL com 28 px.
+    void GameFontText(BitmapFont font, string key, (string Text, bool On, Color Color) t, Aabb? box, Aabb? face, bool hasName)
+    {
+        bool name = key.Contains("FONT03", StringComparison.Ordinal);
+        bool main = key.EndsWith("/font00", StringComparison.Ordinal) && (key.StartsWith("TALKFONT02", StringComparison.Ordinal) || key.StartsWith("MESSFONT", StringComparison.Ordinal));
+        _winGlyphs.TryGetValue(key, out var g);
+        bool visible = t.On && box.HasValue && (name || main);
+        if (!visible) { if (g.Node != null) g.Node.Visible = false; return; }
+        var b = box!.Value;
+        float left = face is { } f ? f.End.X + 14 : Math.Max(-300, b.Position.X + 24);
+        float right = Math.Min(300, b.End.X - 16);
+        float top = face is { } f2 ? f2.End.Y : Math.Min(220, b.End.Y - 12);
+        left = Math.Clamp(left, -300, 200);
+        float width = Math.Max(120, right - left);
+        string text = t.Text.Replace("\r\n", "\n");
+        if (g.Node == null)
+        {
+            g.Node = new MeshInstance3D();
+            _winRoot!.AddChild(g.Node);
+        }
+        if (g.Text != text || g.Color != t.Color || g.Width != width)
+        {
+            g.Node.Mesh = font.Build(name ? "MINIMUM" : "NORMAL", text, name ? 20 : 28, width, out _);
+            g.Node.MaterialOverride = font.Material(t.Color, 120);
+            (g.Text, g.Color, g.Width) = (text, t.Color, width);
+        }
+        g.Node.Visible = true;
+        g.Node.Position = new Vector3(left, name ? top : top - (hasName ? 22 : 0), 50);
+        _winGlyphs[key] = g;
     }
 
     static Aabb? Bounds(Node3D root, float minWidth = 60)
