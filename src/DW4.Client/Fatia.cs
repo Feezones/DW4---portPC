@@ -594,7 +594,7 @@ public partial class Fatia : Node3D
         if (_pf == null || e.Kind.Stats is not { } ef) return;
         int code = 40000 + t.Row;
         bool crit = DamageFormula.TechniqueCritical(t.Stats, ef, _mt);
-        var r = DamageFormula.Technique(_pf, ef, t.Stats, crit, _mt);
+        var r = DamageFormula.Technique(Pf!, ef, t.Stats, crit, _mt);
         RaiseSkill(t.Stats.SkillIndex, technique: true);
         e.Hp = Math.Max(0, e.Hp - r.Damage);
         _hits++;
@@ -613,15 +613,15 @@ public partial class Fatia : Node3D
     string PlayerStrikes(Enemy e, int code)
     {
         if (_db == null || _pf == null || e.Kind.Stats is not { } ef) return "SQ_SDMG";
-        if (!DamageFormula.PlayerHits(_pf, ef, technique: false, new StatusMods(), _mt))
+        if (!DamageFormula.PlayerHits(Pf!, ef, technique: false, new StatusMods(), _mt))
         {
             SkillUp();
             Float(e.Body, "MISS", Colors.LightGray);
             _lastEvent = $"Guilmon errou ({e.Kind.Name} defendeu)";
             return "SQ_GUARD";
         }
-        bool crit = DamageFormula.PlayerCritical(_pf, _mt);
-        var r = DamageFormula.Physical(_pf, ef, crit, new StatusMods(), _mt);
+        bool crit = DamageFormula.PlayerCritical(Pf!, _mt);
+        var r = DamageFormula.Physical(Pf!, ef, crit, new StatusMods(), _mt);
         SkillUp();
         e.Hp = Math.Max(0, e.Hp - r.Damage);
         int rank = DamageFormula.Rank(r.Damage, e.Hp, ef.MaxHp);
@@ -755,8 +755,8 @@ public partial class Fatia : Node3D
         if (_db == null || _pf == null) return "SQ_SDMG";
         var ef = attacker ?? _pf;
         var atk = _db.EnemyAttackRow(code);
-        if (!DamageFormula.EnemyHits(ef, atk, _pf, _mt)) { Float(_player, "MISS", Colors.LightGray); return null; }
-        var r = DamageFormula.EnemyDamage(ef, atk, _pf, new StatusMods(), _mt);
+        if (!DamageFormula.EnemyHits(ef, atk, Pf!, _mt)) { Float(_player, "MISS", Colors.LightGray); return null; }
+        var r = DamageFormula.EnemyDamage(ef, atk, Pf!, new StatusMods(), _mt);
         _hp = Math.Max(0, _hp - r.Damage);
         Damage(_player, r.Damage, onPlayer: true, r.Damage.ToString(), Colors.Red);
         _lastEvent = $"{who}: {r.Damage} (eneatk {code % 10000})";

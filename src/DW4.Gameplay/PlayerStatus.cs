@@ -34,6 +34,18 @@ public sealed class PlayerStatus
     public bool AttackDown => AttackDownFrames > 0;
     public bool PowerDown => PowerDownFrames > 0;
 
+    /// <summary>
+    /// Jogador com as quedas de atributo em vigor (RECALCPLAYER: UPDATA − DOWNDATA, total entre 1 e 9999). HIPÓTESE: os valores do
+    /// SETATTACKDOWN/SETPOWERDOWN são o DOWNDATA de SUBAYASA/MEICHURITSU e TSUYOSA/MAMORI.
+    /// </summary>
+    public Fighter Lowered(Fighter f) => SpeedDown == 0 && AccuracyDown == 0 && StrengthDown == 0 && DefenseDown == 0 ? f : f with
+    {
+        Subayasa = Math.Max(1, f.Subayasa - SpeedDown),
+        Meichuritsu = Math.Max(0, f.Meichuritsu - AccuracyDown),
+        Tsuyosa = Math.Max(1, f.Tsuyosa - StrengthDown),
+        Mamori = Math.Max(1, f.Mamori - DefenseDown),
+    };
+
     /// <summary>Comando do MDLsetSD com os inteiros dos argumentos. false se não é um estado.</summary>
     public bool Apply(string command, IReadOnlyList<int> a)
     {

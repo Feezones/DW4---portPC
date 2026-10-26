@@ -30,6 +30,8 @@ public partial class Fatia
     }
 
     readonly PlayerStatus _status = new();
+    // Jogador para as contas de luta, com as quedas de lentidão/enfraquecer (PlayerStatus.Lowered).
+    Fighter? Pf => _pf == null ? null : _status.Lowered(_pf);
     // Golpe que o hit_p_*.lua está resolvendo: código, atacante e o dano já sorteado (BLPgetDamageValue).
     int _playerHitCode;
     Fighter? _playerHitBy;
@@ -91,18 +93,18 @@ public partial class Fatia
         switch (method)
         {
             case "BLPisHitCheck":
-                bool hit = DamageFormula.EnemyHits(ef, atk, _pf, _mt);
+                bool hit = DamageFormula.EnemyHits(ef, atk, Pf!, _mt);
                 if (!hit) Float(_player, "MISS", Colors.LightGray);
                 return hit ? 1 : 0;
             case "BLPgetDamageValue":
-                return _playerHitDamage = DamageFormula.EnemyDamage(ef, atk, _pf, new StatusMods(), _mt).Damage;
+                return _playerHitDamage = DamageFormula.EnemyDamage(ef, atk, Pf!, new StatusMods(), _mt).Damage;
             // FATO (hit_p_*.lua): BLPgetDamageRank(MDLgetHp(), dano).
             case "BLPgetDamageRank":
                 return DamageFormula.Rank((int)args.ElementAtOrDefault(1), (int)args.ElementAtOrDefault(0), _pf.MaxHp);
             case "BLPgetStunTime":
-                return StatusFormula.EnemyStun(ef, eff, _pf, _pf.Mahiteikou, (int)args.ElementAtOrDefault(0), (int)args.ElementAtOrDefault(1), new StatusMods(), _mt) ?? 0;
-            case "BLPgetSleepTime": return StatusFormula.EnemyDisable(ef, eff, _pf, "sleep", _mt) ?? 0;
-            case "BLPgetBindTime": return StatusFormula.EnemyDisable(ef, eff, _pf, "ashidome", _mt) ?? 0;
+                return StatusFormula.EnemyStun(ef, eff, Pf!, _pf.Mahiteikou, (int)args.ElementAtOrDefault(0), (int)args.ElementAtOrDefault(1), new StatusMods(), _mt) ?? 0;
+            case "BLPgetSleepTime": return StatusFormula.EnemyDisable(ef, eff, Pf!, "sleep", _mt) ?? 0;
+            case "BLPgetBindTime": return StatusFormula.EnemyDisable(ef, eff, Pf!, "ashidome", _mt) ?? 0;
             case "BLPcalcKoukaMagic": return 0; // magia de apoio 80000..89999: não lida
             case "MDLdspDamageP":
                 int dmg = (int)args.ElementAtOrDefault(0);
@@ -124,10 +126,10 @@ public partial class Fatia
             ("BLPgetPoisonTime", "TIME") => StatusFormula.EnemyPoison(eff, _pf.Dokuteikou, _mt) ?? 0,
             ("BLPgetPoisonTime", "DAMAGE") => StatusFormula.EnemyPoisonTick(eff, _pf),
             ("BLPgetPoisonTime", "GEDOKU") => eff.Gedoku,
-            ("BLPgetAttackDownTime", "TIME") => StatusFormula.EnemyDisable(ef, eff, _pf, "freeze", _mt) ?? 0,
+            ("BLPgetAttackDownTime", "TIME") => StatusFormula.EnemyDisable(ef, eff, Pf!, "freeze", _mt) ?? 0,
             ("BLPgetAttackDownTime", "SUBAYASA") => StatusFormula.EnemyStatDown(ef, eff, _pf, _pf.Subayasa),
             ("BLPgetAttackDownTime", "MEICHURITSU") => StatusFormula.EnemyStatDown(ef, eff, _pf, _pf.Meichuritsu),
-            ("BLPgetPowerDownTime", "TIME") => StatusFormula.EnemyDisable(ef, eff, _pf, "powerdown", _mt) ?? 0,
+            ("BLPgetPowerDownTime", "TIME") => StatusFormula.EnemyDisable(ef, eff, Pf!, "powerdown", _mt) ?? 0,
             ("BLPgetPowerDownTime", "TSUYOSA") => StatusFormula.EnemyStatDown(ef, eff, _pf, _pf.Tsuyosa),
             ("BLPgetPowerDownTime", "MAMORI") => StatusFormula.EnemyStatDown(ef, eff, _pf, _pf.Mamori),
             _ => null,

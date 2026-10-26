@@ -44,11 +44,11 @@ public partial class Fatia
         switch (method)
         {
             case "BLTisHitCheck" when _pf != null && ef != null:
-                return DamageFormula.PlayerHits(_pf, ef, technique: false, new StatusMods(), _mt) ? 1 : 0;
+                return DamageFormula.PlayerHits(Pf!, ef, technique: false, new StatusMods(), _mt) ? 1 : 0;
             case "BLTisCritical" when _pf != null:
-                return (_fightCrit = DamageFormula.PlayerCritical(_pf, _mt)) ? 1 : 0;
+                return (_fightCrit = DamageFormula.PlayerCritical(Pf!, _mt)) ? 1 : 0;
             case "BLTgetDamageValue" when _pf != null && ef != null:
-                return _fightDamage = DamageFormula.Physical(_pf, ef, args.Length > 0 ? args[0] != 0 : _fightCrit, new StatusMods(), _mt).Damage;
+                return _fightDamage = DamageFormula.Physical(Pf!, ef, args.Length > 0 ? args[0] != 0 : _fightCrit, new StatusMods(), _mt).Damage;
             // FATO (hit_f_apocaly.lua): BLTgetDamageRank(MDLgetHp(), crítico): o 1º argumento é o HP que sobrou, não o dano;
             // o dano é o do BLTgetDamageValue deste mesmo golpe.
             case "BLTgetDamageRank" when ef != null:

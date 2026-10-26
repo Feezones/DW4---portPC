@@ -1885,6 +1885,11 @@ if (args.Length == 1)
         True(st.Apply("SETSTUN", [30]) && !st.CanAct, "atordoado não age");
         st.Tick(30);
         True(st.CanAct, "passou");
+        st.Apply("SETPOWERDOWN", [120, 30, 500]);
+        var low = st.Lowered(new Fighter { Tsuyosa = 100, Mamori = 200 });
+        Equal((70, 1), (low.Tsuyosa, low.Mamori), "enfraquecer: TSUYOSA − 30, MAMORI no mínimo 1");
+        st.Tick(120);
+        Equal(100, st.Lowered(new Fighter { Tsuyosa = 100 }).Tsuyosa, "acabou: volta");
     });
     Test("Jogo: conversa com NPC da Central Area (stagml12 n_digilfm 1): SQ_TALK durante a fala, SQ_WAIT no fim, fila sem travar", () =>
     {
