@@ -200,6 +200,39 @@ public partial class Fatia
         }
     }
 
+    // Janela com a arte do jogo e a fonte do jogo (sem uma das duas, quem chama fica com a caixa da Godot).
+    bool WindowArt(string name) => WindowsReady() && _winData!.Actors.ContainsKey(name) && GameFont() != null;
+
+    Node3D? WindowRoot(string name) => _windows.TryGetValue((name, 0), out var w) ? w.Actor.Root : null;
+
+    void WindowSeq(string name, string seq)
+    {
+        if (!_windows.TryGetValue((name, 0), out var w)) return;
+        if (seq == "SQ_ERAS") RemoveWindow((name, 0)); else w.Seq?.Start(seq);
+    }
+
+    readonly Dictionary<string, (MeshInstance3D Node, string Text, Color Color)> _artTexts = [];
+
+    /// <summary>Texto centrado em <paramref name="center"/> (tela 640 × 480) com a fonte do jogo; nulo apaga.</summary>
+    void ArtText(string key, string? text, Vector3 center, string family, float lineHeight, Color color)
+    {
+        _artTexts.TryGetValue(key, out var a);
+        if (text == null || _winRoot == null || GameFont() is not { } font) { if (a.Node != null) a.Node.Visible = false; return; }
+        text = text.Replace("\r\n", " ");
+        if (a.Node == null) { a.Node = new MeshInstance3D(); _winRoot.AddChild(a.Node); }
+        if (a.Text != text || a.Color != color)
+        {
+            a.Node.Mesh = font.Build(family, text, lineHeight, 600, out var size);
+            a.Node.MaterialOverride = font.Material(color, 120);
+            a.Node.SetMeta("size", size);
+            (a.Text, a.Color) = (text, color);
+        }
+        var s = a.Node.GetMeta("size").AsVector2();
+        a.Node.Position = center + new Vector3(-s.X / 2, s.Y / 2, 0);
+        a.Node.Visible = true;
+        _artTexts[key] = a;
+    }
+
     // Mesmo lugar do Label3D, desenhado com a fonte do jogo: nome (…FONT03) em MINIMUM com linha de 20 px, fala em NORMAL com 28 px.
     void GameFontText(BitmapFont font, string key, (string Text, bool On, Color Color) t, Aabb? box, Aabb? face, bool hasName)
     {

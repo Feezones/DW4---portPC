@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text.RegularExpressions;
 using Godot;
 using DW4.Script.Be;
@@ -8,8 +9,9 @@ namespace DW4.Client;
 /// <summary>
 /// Troca de área pelas saídas (matz01/matz02 → funcStageChange do func.lua, tudo nos scripts originais) e o fade de tela
 /// i_fadewn01. Levantamento: docs/gameplay/fase4-objetos-dng1.md ("Saídas e troca de fase").
-/// DECISÃO DA FATIA: a janela i_zzstchgwb/i_zzstchgwn e o i_fadewn01 ainda não foram exportados; a janela é uma caixa da
-/// Godot com "Sim / Não" e o fade um retângulo preto. Carregar outra fase é a Fase 5: NEXTSTAGE para a própria dng101b1
+/// Janelas: i_zzstchgwb (quadro, nome da área com a fonte do jogo) e i_zzstchgwn (as duas opções estão na arte, pack_stcngmoji)
+/// com a arte do jogo quando a fase tem a pasta janelas e a fonte existe; senão, caixa da Godot com "Sim / Não". O fade é um
+/// retângulo preto. Carregar outra fase é a Fase 5: NEXTSTAGE para a própria dng101b1
 /// recarrega a fatia na entrada pedida; para outra fase, a tela fica preta com o aviso.
 /// </summary>
 public partial class Fatia
@@ -30,6 +32,8 @@ public partial class Fatia
     Vector2 _menuInput;
     int _nextEntry;
     bool _choiceWindowOpen, _infoWindowOpen;
+    bool _choiceTextOn = true, _wnClosing;
+    Color _choiceColor = new(0.9f, 0.9f, 0.9f);
 
     bool DeliverToStageChange(BeMessage m)
     {
@@ -49,6 +53,8 @@ public partial class Fatia
                 ScriptLog($"{m.Command}: HP {_hp}/{_pf.MaxHp} MP {_mp}/{_pf.MaxMp}");
                 return true;
             case ("SELECTCTRL", "i_zzstchgwn", "GENERATE"):
+                DeliverToWindows(m); // arte: SQ_OPEN e a posição V<0,-16,0> do func.lua
+                _wnClosing = false;
                 _choice = 0;
                 _choiceMoveHeld = true; // só vale um movimento que começou depois de abrir (o que levou ao tapete ainda pode estar apertado)
                 UpdateChoice();
@@ -58,21 +64,31 @@ public partial class Fatia
             case ("MODELCTRL", "i_dminfown", "GENERATE"): _infoWindowOpen = true; return true;
             case ("MODELCTRL", "i_dminfown", "SQ_CLOSE"): _infoWindowOpen = false; return true;
             case ("MODELCTRL", "i_zzstchgwb", "GENERATE"):
+                DeliverToWindows(m); // SQ_STOPEN (com o nome da área) ou SQ_OPEN
                 _choiceWindowOpen = true; // gerada com atraso de 10 quadros: o script espera ISRUN antes de ler a escolha
                 return true;
             case ("MODELCTRL", "i_zzstchgwb", "SQ_CLOSE"):
+                DeliverToWindows(m);
                 _choiceText = null;
                 _choiceWindowOpen = false;
                 if (_choicePanel != null) _choicePanel.Visible = false;
                 return true;
             case ("MODELCTRL", "i_zzstchgwb", _):
+                DeliverToWindows(m);
                 return true;
             // FATO: matz01 manda "STCHGFONT00/font00/I<10>" ("Goblin Pass") na janela de troca.
             case ("TEXTCTL", _, "TEXTSET") when m.RawArgs?.StartsWith("STCHGFONT", StringComparison.Ordinal) == true:
                 _choiceText = m.Args.Count > 2 && m.Args[2] is { Kind: 'I', Numbers.Length: > 0 } k ? Text((int)k.Numbers[0]) : null;
                 UpdateChoice();
                 return true;
-            case ("TEXTCTL", _, "SWITCH" or "ALIGN" or "COLOR") when m.RawArgs?.StartsWith("STCHGFONT", StringComparison.Ordinal) == true:
+            // FATO (func.lua): COLOR pelo tipo da área (V<0.9,0.47,0.47> …), SWITCH SET/CLR, ALIGN CENTER.
+            case ("TEXTCTL", _, "COLOR") when m.RawArgs?.StartsWith("STCHGFONT", StringComparison.Ordinal) == true && m.Args.FirstOrDefault(a => a.Kind == 'V') is { Numbers.Length: 3 } c:
+                _choiceColor = new Color((float)c.Numbers[0], (float)c.Numbers[1], (float)c.Numbers[2]);
+                return true;
+            case ("TEXTCTL", _, "SWITCH") when m.RawArgs?.StartsWith("STCHGFONT", StringComparison.Ordinal) == true:
+                _choiceTextOn = m.RawArgs.EndsWith("/SET", StringComparison.Ordinal);
+                return true;
+            case ("TEXTCTL", _, "ALIGN" or "COLOR") when m.RawArgs?.StartsWith("STCHGFONT", StringComparison.Ordinal) == true:
                 return true;
             case ("PLAYERPOINT", _, "SETGENERATEPOS"):
                 _nextEntry = m.Args.Count > 0 && m.Args[0] is { Kind: 'I', Numbers.Length: > 0 } e ? (int)e.Numbers[0] : 0;
@@ -157,11 +173,31 @@ public partial class Fatia
             // espera enquanto a sequência ainda é SQ_BHLFIN30).
             if (_fadeT >= _fadeLen) _fadeSeq = _fadeSeq == "SQ_STCHANGE01" ? "SQ_STCHANGELP" : "SQ_WAIT";
         }
-        if (_choice >= 0 && _choicePanel?.Visible == true)
+        TickStageChangeArt();
+        if (_choice >= 0 && (_choicePanel?.Visible == true || WindowRoot("i_zzstchgwn") != null))
         {
             bool move = Math.Abs(_menuInput.X) > 0.5f || Math.Abs(_menuInput.Y) > 0.5f;
-            if (move && !_choiceMoveHeld) { _choice = 1 - _choice; UpdateChoice(); }
+            if (move && !_choiceMoveHeld)
+            {
+                _choice = 1 - _choice;
+                // FATO (i_zzstchgwn): SQ_LINEDW01 desce o cursor para a linha 1, SQ_LINEUP00 sobe para a 0.
+                WindowSeq("i_zzstchgwn", _choice == 1 ? "SQ_LINEDW01" : "SQ_LINEUP00");
+                UpdateChoice();
+            }
             _choiceMoveHeld = move;
+        }
+    }
+
+    // Arte da troca de área: nome da área no quadro satgnamewaku do i_zzstchgwb (FATO: centro em y = 36, 280 × 28; a caixa
+    // STCHGFONT00 é MINIMUM com 280 de largura e linha de 20) e o fechamento do i_zzstchgwn no confirmar (HIPÓTESE: SQ_CLOSE).
+    void TickStageChangeArt()
+    {
+        var wb = WindowRoot("i_zzstchgwb");
+        ArtText("stchg", wb != null && _choiceTextOn ? _choiceText : null, (wb?.Position ?? default) + new Vector3(0, 36, 60), "MINIMUM", 20, _choiceColor);
+        if (_selectEnded && _choice >= 0 && !_wnClosing && WindowRoot("i_zzstchgwn") != null)
+        {
+            WindowSeq("i_zzstchgwn", "SQ_CLOSE");
+            _wnClosing = true;
         }
     }
 
@@ -180,7 +216,7 @@ public partial class Fatia
             layer.AddChild(_choicePanel);
             AddChild(layer);
         }
-        _choicePanel.Visible = _choice >= 0;
+        _choicePanel.Visible = _choice >= 0 && !WindowArt("i_zzstchgwn");
         string options = _choice == 0 ? "▶ Sim      Não" : "  Sim    ▶ Não";
         _choiceLabel!.Text = (_choiceText != null ? _choiceText.Replace("\r\n", "\n") + "\n\n" : "") + options;
     }

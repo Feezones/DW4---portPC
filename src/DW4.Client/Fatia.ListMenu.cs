@@ -8,7 +8,8 @@ namespace DW4.Client;
 /// Menu de destinos do teleporte do lobby (mate00.lua → função local com trios fase/entrada/texto). FATO pelo script:
 /// TEXTCTL TEXTSET "STCHGFONT01/font0k/I&lt;t&gt;" para cada opção k = 1..n, SELECTCTRL i_zzstchgcur GENERATE "I&lt;n&gt;", espera
 /// ISEND/ISSELECTNOW, e DMswtSD GETSELECT com DMcase 0..n−1 = NEXTSTAGE da opção e DMcase 4 = desistir (volta o fade e o
-/// controle). HIPÓTESE: desistir devolve 4. DECISÃO DA FATIA: o i_zzstchgcur ainda não foi exportado; é uma caixa da Godot.
+/// controle). HIPÓTESE: desistir devolve 4. Com a pasta janelas e a fonte do jogo, o menu usa a arte do
+/// i_zzstchgcur (ListArt); senão, caixa da Godot.
 /// </summary>
 public partial class Fatia
 {
@@ -45,6 +46,7 @@ public partial class Fatia
                 UpdateList();
                 return true;
             case ("SELECTCTRL", "i_zzstchgcur", "GENERATE"):
+                DeliverToWindows(m); // arte (SQ_OPEN → cursor na linha 0)
                 _listOwner = "i_zzstchgcur";
                 _listCancellable = true;
                 _listCount = Math.Clamp(m.Arg(0) is { Numbers.Length: > 0 } n ? (int)n.Numbers[0] : 1, 1, _listTexts.Length - 1);
@@ -82,6 +84,7 @@ public partial class Fatia
         if (_selectEnded)
         {
             if (_listResult != ListCancel) _listResult = _listChoice;
+            if (_listOwner == "i_zzstchgcur") WindowSeq("i_zzstchgcur", _listResult == ListCancel ? "SQ_CANCEL" : "SQ_CLOSE");
             _listChoice = -1;
             Array.Clear(_listTexts);
             UpdateList();
@@ -90,10 +93,24 @@ public partial class Fatia
         bool move = Math.Abs(_menuInput.Y) > 0.5f;
         if (move && !_listMoveHeld)
         {
+            int from = _listChoice;
             _listChoice = (_listChoice + (_menuInput.Y > 0 ? 1 : _listCount - 1)) % _listCount;
+            ListCursor(from, _listChoice);
             UpdateList();
         }
         _listMoveHeld = move;
+    }
+
+    // Arte do i_zzstchgcur (FATO pela animação do selcur): linhas com centro em y = 52 − 36·k, k = 0..3; SQ_LINEDW0k desce para
+    // a linha k, SQ_LINEUP0k sobe para ela, SQ_LINESL0k fica nela (usado na volta do fim para o começo). HIPÓTESE: texto centrado
+    // na linha, fonte NORMAL de 28 px.
+    bool ListArt => _listOwner == "i_zzstchgcur" && _listCount <= 4 && WindowArt("i_zzstchgcur") && WindowRoot("i_zzstchgcur") != null;
+
+    void ListCursor(int from, int to)
+    {
+        if (_listOwner != "i_zzstchgcur") return;
+        string seq = to == from + 1 ? $"SQ_LINEDW0{to}" : to == from - 1 ? $"SQ_LINEUP0{to}" : $"SQ_LINESL0{to}";
+        WindowSeq("i_zzstchgcur", seq);
     }
 
     void UpdateList()
@@ -111,8 +128,12 @@ public partial class Fatia
             layer.AddChild(_listPanel);
             AddChild(layer);
         }
-        _listPanel.Visible = _listChoice >= 0;
-        if (_listChoice < 0) return;
+        bool art = ListArt;
+        _listPanel.Visible = _listChoice >= 0 && !art;
+        var cur = WindowRoot("i_zzstchgcur");
+        for (int i = 0; i < 4; i++)
+            ArtText($"lista{i}", art && _listChoice >= 0 && i < _listCount ? _listTexts[i + 1] ?? "?" : null, (cur?.Position ?? default) + new Vector3(0, 52 - 36 * i, 60), "NORMAL", 28, new Color(0.9f, 0.9f, 0.9f));
+        if (_listChoice < 0 || art) return;
         var lines = new System.Text.StringBuilder();
         for (int i = 0; i < _listCount; i++)
             lines.AppendLine($"{(i == _listChoice ? "▶ " : "   ")}{(_listTexts[i + 1] ?? "?").Replace("\r\n", " ")}");
