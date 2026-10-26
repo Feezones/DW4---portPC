@@ -168,7 +168,13 @@ public sealed class HudActor
         var here = parent;
         if (n.Type == "igTransform")
         {
-            if (texSpace) texChain = [.. texChain, n];
+            // Sob a matriz de textura, a transformação com translação em pixels inteiros (cursor selcur do i_zzstchgwn: 54 → 18;
+            // i_stcursor01: −6, −25, …) é de posição; as de UV andam em frações (0..0,75, pivô 0,5) ou rolam a textura com valores
+            // quebrados (fundo i_stback: −280,58…). HIPÓTESE tirada dos dados; a regra do Alchemy não foi lida.
+            static bool Whole(float v) => Math.Abs(v - MathF.Round(v)) < 1e-3f;
+            bool positional = texSpace && n.Sequence is { } sq && sq.T.Any(v => Math.Abs(v.X) > 1.5f || Math.Abs(v.Y) > 1.5f)
+                && sq.T.All(v => Whole(v.X) && Whole(v.Y));
+            if (texSpace && !positional) texChain = [.. texChain, n];
             else
             {
                 var node = new Node3D { Name = n.Name.Length > 0 ? n.Name : $"n{n.Id}", Transform = n.Matrix ?? Transform3D.Identity };
