@@ -57,6 +57,8 @@ public partial class Fatia
         return true;
     }
 
+    bool TalkWindowOpen => _windows.Keys.Any(k => k.Item1 is "i_talkwn" or "i_messwn");
+
     static bool IsWindowName(string name) => name != "i_fadewn01" && (name.StartsWith("i_", StringComparison.Ordinal) || name.EndsWith("ic", StringComparison.Ordinal));
 
     bool DeliverToWindows(BeMessage m)
@@ -156,6 +158,9 @@ public partial class Fatia
     {
         if (_winRoot == null) return;
         var box = _windows.Values.Where(w => w.Name is "i_talkwn" or "i_messwn").Select(w => Bounds(w.Actor.Root)).FirstOrDefault(b => b.HasValue);
+        // O rosto (n_*ic) fica à esquerda da fala: o texto começa à direita dele e o nome fica na altura do alto do rosto.
+        var face = _windows.Values.Where(w => w.Name.EndsWith("ic", StringComparison.Ordinal)).Select(w => Bounds(w.Actor.Root, 20)).FirstOrDefault(b => b.HasValue);
+        bool hasName = _winTexts.Any(x => x.Key.Contains("FONT03", StringComparison.Ordinal) && x.Value.On);
         foreach (var (key, t) in _winTexts)
         {
             if (!_winLabels.TryGetValue(key, out var label))
@@ -171,19 +176,24 @@ public partial class Fatia
             var b = box!.Value;
             label.Text = t.Text.Replace("\r\n", "\n");
             label.Modulate = t.Color;
-            label.Width = Math.Max(100, b.Size.X - 40);
-            label.Position = name ? new Vector3(b.Position.X + 20, b.End.Y - 10, 50) : new Vector3(b.Position.X + 24, b.End.Y - (box.HasValue && _winTexts.Any(x => x.Key.Contains("FONT03") && x.Value.On) ? 38 : 16), 50);
+            // Dentro da tela 640 × 480 (−320..320, −240..240): a caixa medida passa da tela pelas bordas da moldura.
+            float left = face is { } f ? f.End.X + 14 : Math.Max(-300, b.Position.X + 24);
+            float right = Math.Min(300, b.End.X - 16);
+            float top = face is { } f2 ? f2.End.Y : Math.Min(220, b.End.Y - 12);
+            left = Math.Clamp(left, -300, 200);
+            label.Width = Math.Max(120, right - left);
+            label.Position = new Vector3(left, name ? top : top - (hasName ? 26 : 0), 50);
         }
     }
 
-    static Aabb? Bounds(Node3D root)
+    static Aabb? Bounds(Node3D root, float minWidth = 60)
     {
         Aabb? total = null;
         foreach (var mi in root.FindChildren("*", nameof(MeshInstance3D), true, false).OfType<MeshInstance3D>())
         {
             if (!mi.IsVisibleInTree() || mi.Mesh == null) continue;
             var a = mi.GlobalTransform * mi.Mesh.GetAabb();
-            if (a.Size.X < 60) continue; // cursores e bordas pequenas não contam como a caixa
+            if (a.Size.X < minWidth) continue; // cursores e bordas pequenas não contam como a caixa
             total = total is { } t ? t.Merge(a) : a;
         }
         return total;

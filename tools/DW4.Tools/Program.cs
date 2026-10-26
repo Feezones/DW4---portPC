@@ -1215,6 +1215,17 @@ int IgbCena(string path, string which, string rootArg, string outDir, string? pa
         else report.AppendLine($"imagem #{image}: {(image < 0 ? "sem textura" : "não decodificada")}");
         return materialOfImage[(image, add)] = g.AddMaterial(uri ?? "sem_textura", uri, alpha, add);
     }
+    // Geometria sem textura sob um igColorAttr (FATO: o plano da stagbs06, 0,4 0,4 0,4): material da cor, em vez do branco.
+    var materialOfColor = new Dictionary<string, int>();
+    int ColorMaterial(float[] c)
+    {
+        string key = string.Join(",", c.Select(v => v.ToString("0.###", CultureInfo.InvariantCulture)));
+        if (materialOfColor.TryGetValue(key, out int cm)) return cm;
+        cm = g.AddMaterial("cor_" + key, null, false);
+        g.SetBaseColor(cm, c);
+        report.AppendLine($"sem textura com igColorAttr ({key})");
+        return materialOfColor[key] = cm;
+    }
     var prims = new JsonArray();
     foreach (var part in parts)
     {
@@ -1231,7 +1242,10 @@ int IgbCena(string path, string which, string rootArg, string outDir, string? pa
             var uv = new List<float>(); foreach (var (u, v) in part.TexCoords) uv.AddRange([u, 1 - v]); // glTF: origem no topo
             attrs["TEXCOORD_0"] = g.AddFloats(uv, 2, "VEC2", true);
         }
-        prims.Add(new JsonObject { ["attributes"] = attrs, ["indices"] = g.AddIndices(part.Triangles), ["mode"] = 4, ["material"] = part.ImageIndex < 0 && part.TextureName != null ? NamedMaterial(part.TextureName, part.BlendDst == 1) : Material(part.ImageIndex, part.BlendDst == 1) });
+        if (part.Colors.Count == nv && nv > 0 && part.ImageIndex < 0 && part.TextureName == null)
+            report.AppendLine($"geometria #{part.GeometryIndex} sem textura com cor de vértice: primeira 0x{part.Colors[0]:X8}");
+        prims.Add(new JsonObject { ["attributes"] = attrs, ["indices"] = g.AddIndices(part.Triangles), ["mode"] = 4, ["material"] = part.ImageIndex < 0 && part.TextureName != null ? NamedMaterial(part.TextureName, part.BlendDst == 1)
+            : part.ImageIndex < 0 && part.Color != null ? ColorMaterial(part.Color) : Material(part.ImageIndex, part.BlendDst == 1) });
     }
     // A Godot aceita no máximo 256 superfícies por malha (RenderingServer MAX_MESH_SURFACES; o campo stag0101 tem 331
     // geometrias): acima disso, mais malhas "cena_2", "cena_3"… num nó cada.

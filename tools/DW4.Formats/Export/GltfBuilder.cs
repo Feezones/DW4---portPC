@@ -51,6 +51,13 @@ public sealed class GltfBuilder
     /// <paramref name="additive"/>: mistura aditiva do jogo (igBlendFunctionAttr destino ONE). O glTF não tem esse modo: o
     /// material sai como BLEND com o nome terminando em "_add", e o cliente troca para mistura aditiva pelo nome.
     /// </summary>
+    /// <summary>Cor base do material (RGBA 0..1), multiplicada pela textura; sem textura, é a cor do material.</summary>
+    public void SetBaseColor(int material, float[] rgba)
+    {
+        var pbr = (JsonObject)_materials[material]!["pbrMetallicRoughness"]!;
+        pbr["baseColorFactor"] = new JsonArray(rgba.Select(v => (JsonNode?)Math.Clamp(v, 0, 1)).ToArray());
+    }
+
     public int AddMaterial(string name, string? pngUri, bool alphaMask, bool additive)
     {
         int m = AddMaterial(additive ? name + "_add" : name, pngUri, alphaMask && !additive);

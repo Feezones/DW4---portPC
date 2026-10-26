@@ -57,7 +57,8 @@ public partial class Fatia
     void UpdateTechBar()
     {
         if (_techBar == null) return;
-        _techBar.Visible = _techs.Count > 0 && !_menuOpen;
+        // Some com a janela de fala aberta (a barra cobria a moldura de baixo).
+        _techBar.Visible = _techs.Count > 0 && !_menuOpen && !TalkWindowOpen;
         if (_techSelected >= _techs.Count) _techSelected = 0;
         for (int i = 0; i < 6; i++)
         {

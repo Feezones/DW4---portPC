@@ -44,8 +44,10 @@ janela.
 
 ## 3. Aparência e conforto (não bloqueiam, mas o jogo fica diferente)
 
-11. **Janelas do jogo.** A fala (i_messwn), a troca de área, o menu de status, as lojas, o banco e o X-data são caixas da
-    Godot com os textos do jogo. As janelas j_* e i_* e a fonte do jogo não foram exportadas.
+11. **Janelas do jogo.** Falas com a arte original: i_talkwn, i_messwn, rostos n_*ic e a tecla i_talkky, exportados com as
+    sequências (pasta janelas). Conferido numa janela autorizada (stagml11): moldura, rosto e tecla aparecem. A posição do
+    texto foi ajustada depois disso, sem rever. A fonte do jogo não foi exportada (fonte da Godot). Troca de área, menu de status,
+    lojas, banco e X-data continuam como caixas da Godot.
 12. **Formas novas não vistas.** Pose, escala, animações e o osso da arma das 15 formas além do Guilmon.
 13. **NPCs.** Andam, falam e passeiam pela IA do jogo (2d48253), mas não foram vistas. Falta conferir se viram para o jogador
     ao falar e as escalas.

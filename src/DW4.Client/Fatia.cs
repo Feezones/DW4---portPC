@@ -163,7 +163,7 @@ public partial class Fatia : Node3D
         AddChild(new WorldEnvironment { Environment = env });
         AddChild(new DirectionalLight3D { RotationDegrees = new Vector3(-60, 30, 0) });
 
-        if (Load("cenario", "cena.gltf") is { } scenery) { ApplyAdditive(scenery); AddChild(scenery); }
+        if (Load("cenario", "cena.gltf") is { } scenery) { ApplyAdditive(scenery); PaintUntextured(scenery, _fog?.Color ?? Colors.Black); AddChild(scenery); }
         if (Load("colisao", "colisao.gltf") is { } collision) AddChild(MakeStaticBody(collision));
 
         _demo = OS.GetEnvironment("DW4_DEMO") == "1";
@@ -860,6 +860,17 @@ public partial class Fatia : Node3D
                     m.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
                     m.DepthDrawMode = BaseMaterial3D.DepthDrawModeEnum.Disabled;
                 }
+    }
+
+    // DECISÃO DO PORT: geometria do cenário sem textura (material "sem_textura": o plano de 3200 × 3200 em y 10 da stagbs06 e da
+    // stagbs04, sem igColorAttr nem cor de vértice no IGB) saía branca. Ela fica na cor da neblina, a mesma do fundo; o que o jogo
+    // desenha ali não foi achado.
+    static void PaintUntextured(Node root, Color color)
+    {
+        foreach (var mi in FindAll<MeshInstance3D>(root))
+            for (int s = 0; s < mi.Mesh.GetSurfaceCount(); s++)
+                if (mi.Mesh.SurfaceGetMaterial(s) is StandardMaterial3D m && m.AlbedoTexture == null && m.ResourceName.StartsWith("sem_textura", StringComparison.Ordinal))
+                    m.AlbedoColor = color;
     }
 
     // Cada malha vira uma forma; o caminho de nomes fica guardado para o HITLANDMODEL dos scripts ligar e desligar partes
