@@ -163,7 +163,11 @@ public partial class Fatia : Node3D
         AddChild(new WorldEnvironment { Environment = env });
         AddChild(new DirectionalLight3D { RotationDegrees = new Vector3(-60, 30, 0) });
 
-        if (Load("cenario", "cena.gltf") is { } scenery) { ApplyAdditive(scenery); PaintUntextured(scenery, _fog?.Color ?? Colors.Black); AddChild(scenery); }
+        // Luz (FATO, boot.lua): SYSgetLightMode() == 0 ("Suave") carrega o LS_pack, senão o LH_pack; o fase-exportar grava o LS como
+        // cena_ls.gltf (texturas em cenario/<cena>/ls). Sem ele, fica o LH.
+        bool soft = Ram.LightMode == 0 && System.IO.Directory.Exists(StagePath("cenario"))
+            && System.IO.Directory.EnumerateFiles(StagePath("cenario"), "cena_ls.gltf", System.IO.SearchOption.AllDirectories).Any();
+        if (Load("cenario", soft ? "cena_ls.gltf" : "cena.gltf") is { } scenery) { ApplyAdditive(scenery); PaintUntextured(scenery, _fog?.Color ?? Colors.Black); AddChild(scenery); }
         if (Load("colisao", "colisao.gltf") is { } collision) AddChild(MakeStaticBody(collision));
 
         _demo = OS.GetEnvironment("DW4_DEMO") == "1";
@@ -242,6 +246,8 @@ public partial class Fatia : Node3D
             .Select(f => System.IO.Path.Combine(_dir, f))
             .Where(p => { bool ok = System.IO.File.Exists(p); if (!ok) _problems.Add($"falta {p}"); return ok; })
             .Select(p => CameraZones.FromJson(System.IO.File.ReadAllText(p))).ToArray();
+        // FATO (boot.lua): SYSgetCameraMode() == 0 carrega o aaaCamera.igb, senão o aaaCameraL.igb (a "camera_afastada" da fase.json).
+        if (Ram.CameraMode != 0 && _cameraSets.Length > 1) _cameraSet = 1;
         _camera = new Camera3D { Fov = 45, Far = 4000, Current = true };
         AddChild(_camera);
 

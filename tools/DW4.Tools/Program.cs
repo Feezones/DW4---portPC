@@ -2011,6 +2011,30 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
     Step("lua", () => LuaExtrair(ndmwPath, main, Path.Combine(outDir, "lua")));
     if (bg02 >= 0) Step("cenario", () => IgbCena(ndmwPath, M, bg02.ToString(inv), Path.Combine(outDir, "cenario"), lh >= 0 ? $"{ndmwPath}:{lh}" : null));
     else problems.Add("cenario: sem raiz BG02");
+    // Luz "Suave" (FATO, boot.lua: SYSgetLightMode() == 0 → LS_pack.igb, senão LH_pack.igb): as mesmas texturas do ls_pack em
+    // cenario/<cena>/ls e um cena_ls.gltf que aponta para elas; o cliente escolhe pela opção de luz.
+    int ls = Sep("ls_pack.igb");
+    if (bg02 >= 0 && ls >= 0) Step("cenario luz suave", () =>
+    {
+        var tmp = Path.Combine(outDir, "cenario_ls_tmp");
+        int rc = IgbCena(ndmwPath, M, bg02.ToString(inv), tmp, $"{ndmwPath}:{ls}");
+        if (rc != 0 || !Directory.Exists(tmp)) return rc;
+        foreach (var dir in Directory.GetDirectories(tmp))
+        {
+            var target = Path.Combine(outDir, "cenario", Path.GetFileName(dir));
+            var gltf = Path.Combine(target, "cena.gltf");
+            if (!File.Exists(gltf)) continue;
+            var lsDir = Path.Combine(target, "ls");
+            Directory.CreateDirectory(lsDir);
+            var names = new HashSet<string>();
+            foreach (var png in Directory.GetFiles(dir, "pack_*.png")) { File.Copy(png, Path.Combine(lsDir, Path.GetFileName(png)), true); names.Add(Path.GetFileName(png)); }
+            var text = File.ReadAllText(gltf);
+            foreach (var n in names) text = text.Replace($"\"uri\": \"{n}\"", $"\"uri\": \"ls/{n}\"");
+            File.WriteAllText(Path.Combine(target, "cena_ls.gltf"), text);
+        }
+        Directory.Delete(tmp, true);
+        return 0;
+    });
     // Sem triângulo de colisão (ex.: #766 da stagml14 só tem marcadores de entrada), tenta as outras raízes "BG01".
     if (bg01 >= 0) Step("colisao", () =>
     {
