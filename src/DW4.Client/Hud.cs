@@ -282,6 +282,20 @@ public sealed class HudOverlay
     readonly HudData.NumberRam? _hpNum, _mpNum, _lvNum;
     float _ringTime;
 
+    // FATO (i_stpnl02, SQ_WAIT01): LABEL do Digimon → WAITk = JOINTSET 2 + 10k; a ordem segue o atlas charaicon.
+    static readonly Dictionary<string, int> FaceWait = new()
+    {
+        ["agumon"] = 1, ["vmon"] = 2, ["girumon"] = 3, ["dorumon"] = 4, ["angelr"] = 5, ["alpha"] = 6, ["beelzeb"] = 7, ["hekabut"] = 8,
+        ["weregaru"] = 9, ["wargrey"] = 10, ["impdrafm"] = 11, ["impdrapm"] = 12, ["dukecrim"] = 13, ["susanoo"] = 14, ["metalgaru"] = 15,
+        ["bwargrey"] = 16,
+    };
+
+    /// <summary>Rosto do painel pela forma atual (nome do modelo sem "p_", o LABEL do jogo).</summary>
+    public string Face
+    {
+        set { if (_icon != null && FaceWait.TryGetValue(value, out int k)) _icon.Time = (2 + 10 * k) / 60f; }
+    }
+
     public HudOverlay(HudData h, Node owner)
     {
         _h = h;
@@ -302,8 +316,7 @@ public sealed class HudOverlay
             if (name == "i_stpnl03") _meters = a;
             if (name == "i_stpnl04") _numbers = a;
         }
-        // i_stpnl02: LABEL "girumon" → WAIT03 → JOINTSET 32 (FATO): o rosto do Guilmon.
-        if (_icon != null) _icon.Time = 32 / 60f;
+        Face = "girumon"; // até o Fatia passar a forma (Face)
         _hp = h.Meters.GetValueOrDefault("hpmt")?.FirstOrDefault();
         _mp = h.Meters.GetValueOrDefault("mpmt")?.FirstOrDefault();
         _hpNum = h.Numbers.GetValueOrDefault("hpnm")?.FirstOrDefault();

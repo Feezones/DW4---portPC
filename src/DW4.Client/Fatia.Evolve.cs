@@ -24,6 +24,8 @@ public partial class Fatia
         ? "guilmon" : System.IO.Path.Combine("formas", PlayerModel);
 
     string FormName => _db != null && _shinkaRow >= 0 ? _db["shinka"].Text(_shinkaRow, "NAME") : PlayerModel;
+    // Nome do modelo sem "p_": o LABEL/SQ_<nome>OPEN dos rostos do HUD e do menu de status (girumon, agumon, vmon…).
+    string FaceKey => PlayerModel.StartsWith("p_", System.StringComparison.Ordinal) ? PlayerModel[2..] : PlayerModel;
 
     /// <summary>A pasta do modelo da forma existe na pasta comum? (o menu inicial só deixa criar o que o cliente desenha).</summary>
     public static bool HasPlayerModel(string commonDir, string model) =>

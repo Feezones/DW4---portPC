@@ -36,7 +36,7 @@ public partial class Fatia
     static readonly (string Actor, string Open)[] MenuBase =
     [
         ("i_stback", "SQ_OPEN"), ("i_stbase", "SQ_LOPEN"), ("i_sttitle", "SQ_OPEN"), ("i_staccount", "SQ_OPEN"),
-        ("i_stdigiface", "SQ_girumonOPEN"), ("i_stmenu01", "SQ_3LINEUPOPEN"),
+        ("i_stdigiface", "SQ_girumonOPEN") /* trocado pela forma atual em OpenMenu */, ("i_stmenu01", "SQ_3LINEUPOPEN"),
     ];
 
     bool MenuInput(InputEvent e)
@@ -126,6 +126,8 @@ public partial class Fatia
             foreach (var (name, open) in MenuBase)
             {
                 if (!_menuData.Actors.TryGetValue(name, out int root)) continue;
+                // O rosto da aba segue a forma atual (FATO: SQ_agumonOPEN, SQ_vmonOPEN… para as 16 formas).
+                string openSeq = name == "i_stdigiface" ? $"SQ_{FaceKey}OPEN" : open;
                 // Ordem de desenho pela ordem de geração (fundo primeiro) e, dentro do ator, pela ordem do grafo.
                 var actor = new HudActor(_menuData, root, slot: 0, drawOrder: _menuActors.Count * 20);
                 var seqDir = Path.Combine(_dir, "menu", name);
@@ -135,7 +137,7 @@ public partial class Fatia
                 {
                     var json = File.ReadAllText(seqFile);
                     seq = new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json));
-                    seq.Start(open);
+                    seq.Start(openSeq);
                 }
                 _menuVp.AddChild(actor.Root);
                 // HIPÓTESE: o fundo (i_stback, esfera com projeção própria) é desenhado antes e por trás das janelas; aqui
@@ -212,7 +214,7 @@ public partial class Fatia
         // Nível: "Lv." do mojiL em x −244..−222, y 189..207; linha do número em x −228..−176, y 185..189.
         MenuLabel(_level.ToString(), -220, 207, 14, HorizontalAlignment.Right, 44);
         // Nome: moldura em x −306..−152, y 133..151.
-        MenuLabel("Guilmon", -296, 151, 12);
+        MenuLabel(FormName, -296, 151, 12);
         // HP/MP: "HP" do mojiL em y 105..118 e "MP" em 87..100 (x −300..−282); linhas em y 105..109 e 87..91, atual em
         // x −282..−234, "/" em −221..−214, máximo em −213..−165.
         MenuLabel(_hp.ToString(), -282, 124, 12, HorizontalAlignment.Right, 48);
@@ -234,7 +236,7 @@ public partial class Fatia
         for (int i = 0; i < 3; i++)
             MenuLabel((i == _menuCursor ? (GameFont() != null ? "> " : "▶ ") : "    ") + Text(StatusText(15, i, 26)), -100, rows[i], 13);
         // i_staccount (win01: x 128..312, y 156..216): nome.
-        MenuLabel("Guilmon", 140, 200, 13);
+        MenuLabel(FormName, 140, 200, 13);
         MenuLabel(string.Join("    ", Enumerable.Range(0, 3).Select(i => Text(StatusText(0, i, 11))?.Replace("\r\n", " "))), -320, -212, 13, HorizontalAlignment.Center, 640);
     }
 

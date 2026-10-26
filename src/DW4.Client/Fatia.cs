@@ -410,6 +410,7 @@ public partial class Fatia : Node3D
         _minimap?.Update(dt, _player.GlobalPosition, GetViewport().GetVisibleRect().Size);
         UpdateFloaters(dt);
         _damageNumbers?.Update(dt);
+        if (_overlay != null) _overlay.Face = FaceKey;
         if (_pf != null) _overlay?.Update(dt, _hp, _pf.MaxHp, _mp, _pf.MaxMp, _level);
         UpdateShots(dt);
         UpdateGround();
