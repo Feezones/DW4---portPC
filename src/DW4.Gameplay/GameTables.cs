@@ -121,7 +121,7 @@ public sealed class GameTables
             Luckritsu = A2("LUCKRITSU"),
             AttackDelay = Math.Min(70, Weapon("DELAY")),
             MaxHp = Max(PlayerGrowth.MaxHpMp(level, s.Int(shinkaRow, "MHP_INI"), s.Int(shinkaRow, "MHP_GROW"), Up(0)) + A1("MAXHP") + A2("MAXHP")),
-            // HIPÓTESE: UPCNT[1] é o do MMP (o [0] é o do MHP e os atributos começam no [2]).
+            // FATO (X-data, 0x803948E4..0x803949F0): UPCNT[0] = MHP, [1] = MMP, [2..6] = STR, AC, INT, MND, DEX.
             MaxMp = Max(PlayerGrowth.MaxHpMp(level, s.Int(shinkaRow, "MMP_INI"), s.Int(shinkaRow, "MMP_GROW"), Up(1)) + A1("MAXMP") + A2("MAXMP")),
             Skill = skill,
             WeaponSkillNo = Weapon("SKILL"),

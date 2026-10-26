@@ -140,3 +140,13 @@
     (pasta ↔ banco).
 - **HIPÓTESES:** teto do BANKBIT igual ao do BIT; só armas, armaduras e chips entram no banco de itens; item equipado não entra.
 - **Pendente:** perder os BITS carregados ao cair no campo (regra dita nos textos; o momento exato não foi lido).
+
+## X-data nos atributos do Digimon (2026-10-26)
+
+- **FATO** (0x803947B8..0x803949F0):
+  - "Raise Digimon parameter." deixa escolher TSUYOSA, MAMORI, KASHIKOSA, SEISHIN, SUBAYASA, MHP ou MMP.
+  - O custo é ⌈(valor atual − 45) / 5⌉, no máximo 400 (abaixo de 0, vira 1).
+  - XDATA −= custo e UPCNT[2, 3, 4, 5, 6, 0, 1] += 1. O UPCNT soma no RECALCPLAYER. Isso confirma o mapa do UPCNT que antes
+    era HIPÓTESE no GameTables.
+- No port: `XDataStatus` (Gameplay) e a primeira tela da janela XDATA com as três escolhas do jogo (atributos, chips, voltar).
+- **HIPÓTESES:** o valor atual é o do RECALC (com equipamento); a condição de "já está no máximo" não foi lida.

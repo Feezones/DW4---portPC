@@ -183,6 +183,17 @@ Test("Port: personagem novo com as armas iniciais (INI_WEAPON1..3), a primeira e
     DW4.Script.Save.CharacterSave.FromJson(DW4.Script.Save.CharacterSave.Capture(ram, 0, "Gui", "s", 0).ToJson())!.Apply(back, 0);
     Equal((275, 3, 7), (back.Players[0].Equipment!.WeaponRow, back.Players[0].Equipment!.Armor1Row, back.Players[0].Equipment!.WeaponChips[0]), "arma, armadura e chip gravados");
 });
+
+Test("Port: X-data nos atributos (custo ⌈(valor − 45)/5⌉, teto 400, mínimo 1; UPCNT 2..6, 0, 1)", () =>
+{
+    Equal((0, 1, 1, 2, 11, 400, 1), (XDataStatus.Cost(45), XDataStatus.Cost(46), XDataStatus.Cost(50), XDataStatus.Cost(51), XDataStatus.Cost(100), XDataStatus.Cost(9999), XDataStatus.Cost(10)), "custos");
+    Equal((2, 3, 4, 5, 6, 0, 1), (XDataStatus.UpCountSlot(0), XDataStatus.UpCountSlot(1), XDataStatus.UpCountSlot(2), XDataStatus.UpCountSlot(3), XDataStatus.UpCountSlot(4), XDataStatus.UpCountSlot(5), XDataStatus.UpCountSlot(6)), "UPCNT");
+    var inv = new Inventory { XData = 20 };
+    var up = new int[11];
+    True(XDataStatus.Raise(inv, up, 0, 100) && inv.XData == 9 && up[2] == 1, "força 100: custa 11, UPCNT[2] + 1");
+    True(!XDataStatus.Raise(inv, up, 5, 200), "MHP 200 custa 31: falta X-data");
+    True(XDataStatus.Raise(inv, up, 6, 50) && up[1] == 1 && inv.XData == 8, "MMP 50: custa 1, UPCNT[1]");
+});
 Test("Port: configurações em texto do ConfigFile (ida e volta, padrão e faixa)", () =>
 {
     var c = new PortConfig { CameraMode = 1, Vibration = false, Width = 1920, Height = 1080, Fullscreen = true, VSync = false, UiScale = 1.25f, MusicVolume = 0.5f, Account = "eu" };

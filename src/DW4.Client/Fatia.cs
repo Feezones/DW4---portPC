@@ -522,7 +522,9 @@ public partial class Fatia : Node3D
     void Recalc()
     {
         _equip ??= new Equipment(_weaponRow);
-        _pf = _db!.Player(_shinkaRow, _level, _equip, _skill);
+        // UPCNT da forma atual (X-data e outros aumentos somam no RECALC).
+        var up = Ram.Players[0].Forms.Current == _shinkaRow && _shinkaRow >= 0 ? Ram.Players[0].Forms[_shinkaRow].UpCount : null;
+        _pf = _db!.Player(_shinkaRow, _level, _equip, _skill, up);
         if (_db.Contains("pcTech")) _techs = Techniques.List(_db, _shinkaRow, _level, _skill);
     }
 
