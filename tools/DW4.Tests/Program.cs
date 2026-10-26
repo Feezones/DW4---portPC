@@ -1851,6 +1851,41 @@ if (args.Length == 1)
         True(seq.Motion[2].Active, "MOVE \"Move\" 0,14 no canal Z");
     });
 
+    Test("Jogo: golpe no jogador pelo hit_p_girumon.lua (dano → MDLaddHp, faixa → SETLABEL/SQ_MDMG, atordoar; dano 0 → só o sono)", () =>
+    {
+        var dirLua = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fases", "dng101b1", "lua");
+        True(File.Exists(Path.Combine(dirLua, "hit_p_girumon.lua")), $"exportado: {dirLua}");
+        var chunks = Directory.GetFiles(dirLua, "*.lua").ToDictionary(f => Path.GetFileName(f), File.ReadAllBytes);
+        var engine = new FightEngine();
+        var host = new BeHost(engine, new GameRam(), new BeSystem { FolderName = "dng101b1" });
+        var stage = new StageScripts(chunks, host);
+        var errors = new List<string>();
+        stage.Error = (n, e) => errors.Add($"{n}: {e}");
+        string? seq = null;
+        engine.Answers["BLPisHitCheck"] = 1; engine.Answers["BLPgetDamageValue"] = 30; engine.Answers["BLPgetDamageRank"] = 1;
+        engine.Answers["BLPgetStunTime"] = 20;
+        var p = new TestModel { Name = "p_girumon", RamNo = 0, Hp = 100, BulletKind = 70004, OnSequence = s => seq = s };
+        True(stage.RunAs("hit_p_girumon.lua", p), "rodou");
+        True(errors.Count == 0, string.Join(" | ", errors));
+        Equal(70, p.Hp, "HP − 30");
+        Equal("SQ_MDMG", seq, "faixa 1 → SQ_MDMG");
+        True(engine.Log.Any(l => l.Contains("SETLABEL") && l.Contains("SQ_MDMG/common")), "SETLABEL: " + string.Join(" | ", engine.Log));
+        True(engine.Log.Any(l => l.Contains("SETSTUN") && l.Contains("I<20>")), "atordoou 20 quadros");
+        True(engine.Calls.Contains("BLPgetPoisonTime:TIME"), "pergunta o veneno pelo campo TIME");
+        // Dano 0: só estados, na ordem atordoar (0, 0), sono…; o sono pega.
+        engine.Log.Clear(); engine.Calls.Clear(); seq = null;
+        engine.Answers["BLPgetDamageValue"] = 0; engine.Answers["BLPgetStunTime"] = 0; engine.Answers["BLPgetSleepTime"] = 90;
+        var q = new TestModel { Name = "p_girumon", RamNo = 0, Hp = 100, BulletKind = 70004, OnSequence = s => seq = s };
+        True(stage.RunAs("hit_p_girumon.lua", q), "rodou (dano 0)");
+        Equal(100, q.Hp, "sem dano");
+        True(engine.Log.Any(l => l.Contains("SETSLEEP") && l.Contains("I<90>")), "dormiu: " + string.Join(" | ", engine.Log));
+        var st = new PlayerStatus();
+        True(st.Apply("SETPOISON", [600, 7, 3]) && st.PoisonSeconds == 11 && st.Gedoku == 3, "veneno: 600/60 + 1 = 11 s");
+        Equal(7, st.Tick(60), "1 tique por segundo");
+        True(st.Apply("SETSTUN", [30]) && !st.CanAct, "atordoado não age");
+        st.Tick(30);
+        True(st.CanAct, "passou");
+    });
     Test("Jogo: conversa com NPC da Central Area (stagml12 n_digilfm 1): SQ_TALK durante a fala, SQ_WAIT no fim, fila sem travar", () =>
     {
         var dirLua = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fases", "stagml12", "lua");
@@ -2211,4 +2246,16 @@ sealed class TestModel : IBeModel
     public void SetSequence(string name) => OnSequence?.Invoke(name);
     public (double X, double Y, double Z) Position { get; init; }
     public double Yaw { get; init; }
+}
+
+sealed class FightEngine : IBeEngine
+{
+    public List<string> Log { get; } = [];
+    public List<string> Calls { get; } = [];
+    public Dictionary<string, double> Answers { get; } = [];
+    public void Deliver(BeMessage message) => Log.Add(message.ToString());
+    public double? Query(BeMessage message) => null;
+    public double? Fight(string method, double[] args) { Calls.Add(method); return Answers.TryGetValue(method, out var v) ? v : 0; }
+    public string? FightText(string method, double[] args) => "common";
+    public double? FightField(string method, string field) { Calls.Add($"{method}:{field}"); return 0; }
 }

@@ -20,6 +20,9 @@ public interface IBeEngine
     /// <summary>Versão texto (BLTgetAttributeStr, BLPgetAttackZokusei). null = sem resposta.</summary>
     string? FightText(string method, double[] args) => null;
 
+    /// <summary>BLP* com o nome de um campo no lugar do número (BLPgetPoisonTime("TIME"), BLPgetPowerDownTime("TSUYOSA")…).</summary>
+    double? FightField(string method, string field) => null;
+
     /// <summary>Posição e direção (radianos, atan2(frente.x, frente.z)) do jogador p (PLAYERgetPosStr). null = sem jogador.</summary>
     (double X, double Y, double Z, double Yaw)? PlayerPose(int player) => null;
 
@@ -273,6 +276,7 @@ public sealed class BeHost
             case "BLTgetAttributeStr" or "BLPgetAttackZokusei":
                 return [_engine.FightText(name, Numbers(a)) ?? Warn(name, "common")];
             case var f when (f.StartsWith("BLT", StringComparison.Ordinal) || f.StartsWith("BLP", StringComparison.Ordinal)) && f is not ("BLTgetShootRamNo") || f is "MDLdspDamage" or "MDLdspDamageP":
+                if (n >= 1 && a[1] is string field) return N(_engine.FightField(name, field) ?? Warn(name, 0.0));
                 return N(_engine.Fight(name, Numbers(a)) ?? Warn(name, 0.0));
             case "MDLaddHp": if (Model != null) Model.Hp += I(a, 1); return Nothing;
             case "MDLsetSeq": if (Model != null && S(a, 1) is { } seq) Model.SetSequence(seq); return Nothing;

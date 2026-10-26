@@ -316,6 +316,9 @@ public partial class Fatia : Node3D
         // Decisão do port PC: sem foco na janela, nada do controle/teclado move o jogador (controle pareado dava entrada fantasma).
         if (!_demo && (!_hasFocus || ChatOpen)) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; }
         if (_pf != null && _hp <= 0) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; } // caído: Fatia.Death.cs volta ao lobby
+        // Estados do hit_p (PlayerStatus, HIPÓTESE): atordoado ou dormindo não age; preso não anda nem pula.
+        if (!_status.CanAct) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; }
+        else if (!_status.CanMove) { input = Vector2.Zero; dir = Vector3.Zero; jumpDown = false; }
         // Só vale um toque que começou depois de abrir a mensagem (o ataque que abriu a conversa ainda pode estar apertado).
         if (!attackDown) _confirmArmed = true;
         _confirmDown = attackDown && _confirmArmed;
@@ -410,6 +413,7 @@ public partial class Fatia : Node3D
         _minimap?.Update(dt, _player.GlobalPosition, GetViewport().GetVisibleRect().Size);
         UpdateFloaters(dt);
         _damageNumbers?.Update(dt);
+        TickPlayerStatus(dt);
         if (_overlay != null) _overlay.Face = FaceKey;
         if (_pf != null) _overlay?.Update(dt, _hp, _pf.MaxHp, _mp, _pf.MaxMp, _level);
         UpdateShots(dt);

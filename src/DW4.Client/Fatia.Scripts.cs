@@ -86,7 +86,7 @@ public partial class Fatia : IBeEngine
         ScriptLog(m.ToString());
         // A trava do ISEND zera em todo SELECTCTRL GENERATE, antes de quem trata a janela (troca de área, mensagem) consumir a mensagem.
         if (m.Class == "SELECTCTRL" && m.Command == "GENERATE") { _confirmArmed = false; _selectEnded = false; }
-        if (DeliverToSavePoint(m) || DeliverToQuestTimer(m) || DeliverToEvolve(m) || DeliverToBank(m) || DeliverToXData(m) || DeliverToShop(m) || DeliverToListMenu(m) || DeliverToStageChange(m) || DeliverToWindows(m) || DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToBossBar(m) || DeliverToEnemies(m) || DeliverToObjects(m)) return;
+        if (DeliverToPlayerStatus(m) || DeliverToSavePoint(m) || DeliverToQuestTimer(m) || DeliverToEvolve(m) || DeliverToBank(m) || DeliverToXData(m) || DeliverToShop(m) || DeliverToListMenu(m) || DeliverToStageChange(m) || DeliverToWindows(m) || DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToBossBar(m) || DeliverToEnemies(m) || DeliverToObjects(m)) return;
         switch (m.Class, m.Command)
         {
             // FATO: "HITLANDMODEL doorwallNN OFFHIT" desliga a parede de colisão da porta (filho do igSwitch da colisão #1862).

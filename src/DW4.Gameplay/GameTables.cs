@@ -60,6 +60,15 @@ public sealed class GameTables
         return new EnemyAttack(t.Int(row, "TYPE"), t.Int(row, "TSUYOSA"), t.Int(row, "MEICHURITSU"), t.Int(row, "CHIMEIRITSU"), element);
     }
 
+    /// <summary>Campos de estado do golpe inimigo (eneatk: TYPE, KOUKA, KOUKARANK, KOUKATIME, MAHIRITSU, GEDOKU).</summary>
+    public EnemyEffect EnemyEffectRow(int code)
+    {
+        var t = this["eneatk"];
+        int row = code % 10000;
+        return new EnemyEffect(t.Int(row, "TYPE"), t.Text(row, "KOUKA"), t.Int(row, "KOUKARANK"), t.Int(row, "KOUKATIME"),
+            t.Int(row, "MAHIRITSU"), t.Int(row, "GEDOKU"));
+    }
+
     /// <summary>Inimigo pela linha da tabela enemy (Int@7 do gerador, HIPÓTESE forte).</summary>
     public Fighter Enemy(int row)
     {

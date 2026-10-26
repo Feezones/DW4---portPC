@@ -502,6 +502,8 @@ public partial class Fatia
             {
                 e.HitThisAction.UnionWith(e.Runner.ActionHitBoxes.Select(HitKey));
                 _hitsTaken++;
+                // Com o hit_p_<forma>.lua da fase, o próprio script decide dano, reação e estados (Fatia.PlayerHit.cs).
+                if (PlayerHitScript(h.Type, e.Kind.Stats, e.Kind.Name, e.Body.GlobalPosition)) break;
                 string? reaction = EnemyStrikes(h.Type, e.Kind.Stats, e.Kind.Name);
                 if (reaction == null) break; // errou ou bloqueou: sem reação
                 // Reação do Guilmon pela faixa do dano (bloco do estilo da arma, ou "common"), virado para quem bateu (HIPÓTESE).

@@ -34,8 +34,11 @@ public partial class Fatia
         finally { _fightTarget = null; }
     }
 
+    public double? FightField(string method, string field) => PlayerFightField(method, field);
+
     public double? Fight(string method, double[] args)
     {
+        if (PlayerFight(method, args) is { } onPlayer) return onPlayer;
         var e = _fightTarget;
         var ef = e?.Kind.Stats;
         switch (method)
