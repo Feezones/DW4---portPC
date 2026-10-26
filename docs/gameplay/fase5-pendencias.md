@@ -37,8 +37,11 @@ janela.
      (50);
    - os scripts só contam (SYSctlCardFolder "KAZU" ≥ 25/35/45 dão recompensas na conversa n_digilfm_04);
    - o álbum fica no menu de status (DATABASE "card": CARDINFO, SQALBUM).
-   DESCONHECIDO: quantas cartas vêm por pacote e o sorteio (código perto de 0x8039A5xx, j_shbooster, não lido). Hoje o NPC
-   mostra "ainda não portada".
+   - sorteio (0x8039ACC4..0x8039AFB0, lido): gasta 1 B. Pack, 3 cartas por pacote, cada uma com r = MT % 1000 contra a soma
+     do KAKURITSU na ordem da tabela (a soma dá 1000: comum 64,5 %, incomum 28 %, rara 7,5 % por carta); repetida não conta de
+     novo; nome colorido pela raridade (2 verde, 1 amarelo, 0 branco). Feito no port (CardPack, teste) e na stagIS11, numa
+     janela da Godot.
+   DESCONHECIDO: o valor 0x7DA/0x7DB/0x7DC pela maior raridade (som ou texto); a arte j_shbooster/j_shcardNN e o álbum.
 10. **Efeitos de estado no jogador** (atordoar, sono, prender, veneno, ataque/defesa baixos). O jogo faz pelos hit_p_*.lua; o
     port calcula o dano por conta própria e não roda esses scripts.
 

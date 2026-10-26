@@ -2061,6 +2061,9 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
             // Fonte do jogo (ndmw #79, comum a todas as fases): uma vez, ao lado das fases.
             var fontDir = Path.Combine(outRoot, "fonte");
             if (!File.Exists(Path.Combine(fontDir, "fonte.json"))) Step("fonte", () => FonteExportar(ndmwPath, "79", fontDir));
+            // Tabela das cartas (area.afs #621: RARE, KAKURITSU, NAME…; o sorteio do B. Pack usa), uma vez ao lado das fases.
+            var cardDir = Path.Combine(outRoot, "cartas");
+            if (!Directory.Exists(cardDir)) Step("cartas", () => IgbDb(areaPath, "621", cardDir));
         }
         // Janelas das lojas da Central Area (j_shback, j_shbase, j_shwin com as variantes SQ_AWINOPEN…SQ_JUNKOPEN; FATO: só no #825,
         // stagml12). As cartas j_shcardNN ficam de fora.

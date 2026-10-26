@@ -64,7 +64,7 @@ public partial class Fatia
         _runner?.Stop();
         ClearFade();
         if (stage.Equals("stagIS11", StringComparison.OrdinalIgnoreCase))
-            SaveWindow("Loja de cartas: ainda não portada (as regras não foram lidas).", [("OK", CloseSaveWindow)]);
+            OpenCardShop();
         else
             SaveWindow(TextKey("mswkMem0200", "Do you want to save?") + "\n(o port também grava sozinho ao trocar de fase)",
             [

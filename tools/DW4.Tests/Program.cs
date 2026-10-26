@@ -194,6 +194,18 @@ Test("Port: X-data nos atributos (custo ⌈(valor − 45)/5⌉, teto 400, mínim
     True(!XDataStatus.Raise(inv, up, 5, 200), "MHP 200 custa 31: falta X-data");
     True(XDataStatus.Raise(inv, up, 6, 50) && up[1] == 1 && inv.XData == 8, "MMP 50: custa 1, UPCNT[1]");
 });
+Test("Port: B. Pack (gasta o conItem 10, 3 cartas por MT % 1000 contra a soma do KAKURITSU, marca a CARDLIST)", () =>
+{
+    var card = new GameTables.Table(3, new() { ["KAKURITSU"] = [600, 300, 99], ["RARE"] = [0, 1, 2] });
+    var inv = new Inventory();
+    inv.Add(new ItemRef("conItem", CardPack.PackRow));
+    var list = new byte[50];
+    // r = 599 → 0; 600 → 1; 999 → soma 999 não passa → última
+    var rows = CardPack.Open(inv, card, list, new SeqRandom(1599, 2600, 999));
+    Equal((0, 1, 2), (rows[0], rows[1], rows[2]), "linhas sorteadas");
+    Equal(0, inv.Disks(CardPack.PackRow), "pacote gasto");
+    True(list[0] == 1 && list[1] == 1 && list[2] == 1 && list[3] == 0, "coleção marcada");
+});
 Test("Port: configurações em texto do ConfigFile (ida e volta, padrão e faixa)", () =>
 {
     var c = new PortConfig { CameraMode = 1, Vibration = false, Width = 1920, Height = 1080, Fullscreen = true, VSync = false, UiScale = 1.25f, MusicVolume = 0.5f, Account = "eu" };
