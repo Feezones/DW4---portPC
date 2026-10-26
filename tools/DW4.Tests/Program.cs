@@ -1891,6 +1891,23 @@ if (args.Length == 1)
         st.Tick(120);
         Equal(100, st.Lowered(new Fighter { Tsuyosa = 100 }).Tsuyosa, "acabou: volta");
     });
+    Test("Jogo: NPC do lobby (stagml11 n_digilfm) chega a um MOTIONSET pela SQ_WAIT (animação de espera)", () =>
+    {
+        var file = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fases", "stagml11", "objetos", "n_digilfm", "ndmw_0821_n_digilfm_seq.json");
+        True(File.Exists(file), file);
+        var json = File.ReadAllText(file);
+        var seq = new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json));
+        foreach (var lbl in new[] { "DEF", "WLK", "STP" })
+        {
+            seq.Start("SQ_WAIT");
+            seq.SetLabel("SQ_WAIT", lbl);
+            for (int i = 0; i < 30; i++) seq.Tick(1 / 60f);
+            Console.WriteLine($"   rótulo {lbl}: sequência {seq.Sequence}, movimento {seq.CurrentMotion ?? "(nenhum)"}");
+        }
+        seq.Start("SQ_WAIT");
+        for (int i = 0; i < 30; i++) seq.Tick(1 / 60f);
+        True(seq.CurrentMotion != null, $"SQ_WAIT sem rótulo: movimento {seq.CurrentMotion ?? "(nenhum)"}, sequência {seq.Sequence}");
+    });
     Test("Jogo: conversa com NPC da Central Area (stagml12 n_digilfm 1): SQ_TALK durante a fala, SQ_WAIT no fim, fila sem travar", () =>
     {
         var dirLua = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fases", "stagml12", "lua");

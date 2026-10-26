@@ -20,7 +20,7 @@ public partial class Fatia
     void SetupTechBar()
     {
         var layer = new CanvasLayer { Layer = 6 };
-        _techBar = new HBoxContainer { AnchorLeft = 0.5f, AnchorRight = 0.5f, AnchorTop = 1, AnchorBottom = 1, OffsetLeft = -330, OffsetRight = 330, OffsetTop = -74, OffsetBottom = -14, MouseFilter = Control.MouseFilterEnum.Ignore };
+        _techBar = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.End, AnchorLeft = 1, AnchorRight = 1, AnchorTop = 1, AnchorBottom = 1, OffsetLeft = -680, OffsetRight = -20, OffsetTop = -74, OffsetBottom = -14, MouseFilter = Control.MouseFilterEnum.Ignore };
         _techBar.AddThemeConstantOverride("separation", 6);
         for (int i = 0; i < 6; i++)
         {

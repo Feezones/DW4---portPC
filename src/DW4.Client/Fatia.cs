@@ -167,7 +167,17 @@ public partial class Fatia : Node3D
         // cena_ls.gltf (texturas em cenario/<cena>/ls). Sem ele, fica o LH.
         bool soft = Ram.LightMode == 0 && System.IO.Directory.Exists(StagePath("cenario"))
             && System.IO.Directory.EnumerateFiles(StagePath("cenario"), "cena_ls.gltf", System.IO.SearchOption.AllDirectories).Any();
-        if (Load("cenario", soft ? "cena_ls.gltf" : "cena.gltf") is { } scenery) { ApplyAdditive(scenery); PaintUntextured(scenery, _fog?.Color ?? Colors.Black); AddChild(scenery); }
+        // O LS (texturas em ls/) ainda não foi visto na tela e o mapa do tutorial (stag0001) apareceu preto: se ele não carrega, não
+        // tem malha ou perde as texturas que o LH tem, fica o cena.gltf.
+        var scenery = soft ? Load("cenario", "cena_ls.gltf") : null;
+        if (soft && (scenery == null || !FindAll<MeshInstance3D>(scenery).Any() || TexturedCount(scenery) == 0))
+        {
+            _problems.Add("cena_ls.gltf sem malha ou sem textura: usando o cena.gltf (luz Forte)");
+            scenery?.QueueFree();
+            scenery = null;
+        }
+        scenery ??= Load("cenario", "cena.gltf");
+        if (scenery != null) { ApplyAdditive(scenery); PaintUntextured(scenery, _fog?.Color ?? Colors.Black); AddChild(scenery); }
         if (Load("colisao", "colisao.gltf") is { } collision) AddChild(MakeStaticBody(collision));
 
         _demo = OS.GetEnvironment("DW4_DEMO") == "1";
@@ -876,6 +886,9 @@ public partial class Fatia : Node3D
     // DECISÃO DO PORT: geometria do cenário sem textura (material "sem_textura": o plano de 3200 × 3200 em y 10 da stagbs06 e da
     // stagbs04, sem igColorAttr nem cor de vértice no IGB) saía branca. Ela fica na cor da neblina, a mesma do fundo; o que o jogo
     // desenha ali não foi achado.
+    static int TexturedCount(Node root) => FindAll<MeshInstance3D>(root)
+        .Sum(mi => Enumerable.Range(0, mi.Mesh.GetSurfaceCount()).Count(s => mi.Mesh.SurfaceGetMaterial(s) is StandardMaterial3D { AlbedoTexture: not null }));
+
     static void PaintUntextured(Node root, Color color)
     {
         foreach (var mi in FindAll<MeshInstance3D>(root))

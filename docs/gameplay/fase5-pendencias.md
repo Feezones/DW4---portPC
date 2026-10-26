@@ -22,6 +22,22 @@ conferido na janela. O estado vem do repositório, dos testes (79 ok) e das jane
    regra de uso do TechniquePanel. A barra do port faz o mesmo; faltam a terceira lista e o mapa dos botões.
 6. **Desempenho.** Não medido: fases grandes, número de NPCs e inimigos, memória numa sessão longa.
 
+## A2. Defeitos vistos pelo usuário em 2026-10-26 (sessão de jogo)
+
+- **Mapa do tutorial (stag0001) preto.** Os arquivos estão íntegros (cena.gltf e cena_ls.gltf com 12 geometrias e 7 texturas de
+  grama/pedra, nada faltando; nenhum erro no log). DESCONHECIDO: por que o cenário não apareceu. HIPÓTESE principal: o
+  cena_ls.gltf (texturas na subpasta ls/, luz Suave, que é a padrão) carregado em tempo de execução. Feito: o cliente cai no
+  cena.gltf se o LS não carrega, não tem malha ou perde as texturas. Falta ver na tela; a reexportação das 32 fases com LS parou
+  na stag0401 (as outras ficam só com LH).
+- **Goburimon (e_goburi) retorcido.** FATO (relatório do exportador): a pele dele é "rígida por osso, 1 geometria em 1 osso"
+  com 29 matrizes de pele: o formato da pele (igSkin sem igBlendMatrixSelect, posições num igObjectDirEntry externo) não foi
+  lido, e o corpo inteiro vai para um osso. O modelo é de antes de hoje (15:28), não é regressão desta sessão.
+- **NPCs em T-pose no lobby.** FATO: os modelos dos NPCs não mudaram desde 13:14 (o .bin da Digi-Elf é idêntico) e têm as
+  animações (wait01, walk01, talk01); a sequência chega ao MOTIONSET wait01 (teste novo). O n_leomon tem "pele não
+  reconhecida" (pesos 8 B e índices 2 B por vértice: HIPÓTESE 2 pesos float + 2 índices de 1 byte). DESCONHECIDO: por que a
+  animação não toca na Digi-Elf; precisa de uma janela de conferência com o registro do AnimationPlayer.
+- **Barra de técnicas por cima do MP do painel.** Feito: a barra foi para o canto inferior direito.
+
 ## B. Partes do jogo feitas, mas não vistas
 
 7. **Varredura:** as 98 fases carregam no cliente. Ainda não foi visto se todas têm chão e se os scripts rodam por inteiro.
