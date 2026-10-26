@@ -35,8 +35,17 @@ public partial class Fatia
         int packs = _inventory.Disks(CardPack.PackRow);
         string head = $"B. Pack: {packs}    Cartas: {list.Count(b => b != 0)}/{card.Rows}" + (result.Length > 0 ? $"\n\n{result}" : "");
         SaveWindow(head, packs > 0
-            ? [("Abrir um B. Pack", OpenPack), ("Sair", CloseSaveWindow)]
-            : [("Sem B. Pack.", CloseSaveWindow)]);
+            ? [("Abrir um B. Pack", OpenPack), ("Sair", LeaveCardShop)]
+            : [("Sem B. Pack.", LeaveCardShop)]);
+    }
+
+    // FATO (beNDMWStatus, 0x8034FA10): ao fechar a janela SUBWND tipo 10 (CARD), se não é STAGECTL ISRESETSTART, o jogo põe
+    // PLAYERPOINT SETGENERATEPOS 4 e manda NEXTSTAGE "stagML12": volta à Central Area pela entrada 4.
+    void LeaveCardShop()
+    {
+        CloseSaveWindow();
+        _nextEntry = 4;
+        NextStage("stagML12");
     }
 
     void OpenPack()

@@ -11,11 +11,15 @@ conferido na janela. O estado vem do repositório, dos testes (79 ok) e das jane
 2. **Chefes 02..06 não vistos em luta.** Carregam (varredura) e os scripts rodam sem erro. O movimento é o do jogo, mas a escala
    da unidade (30 Hz, unidade do jogo = do mundo) é HIPÓTESE, as peças presas (f_luce "ball") nunca foram vistas e a correção
    da IA (valor 0 segura a decisão) não foi vista.
-3. **Morte.** DECISÃO DO PORT (904a338): perde os BITS no campo, HP/MP cheios e volta ao lobby. O fluxo original (tela de queda,
-   destino) não foi lido.
-4. **Efeitos de estado no jogador** (atordoar, sono, prender, veneno, ataque/defesa baixos). O jogo faz pelos hit_p_*.lua; o port
-   calcula o dano por conta própria e não roda esses scripts. Muda o combate dos chefes.
-5. **Painel de técnicas.** Barra do port (1..6, K/botão direito/Y). Como o jogo escolhe a técnica no painel não foi lido.
+3. **Morte.** DECISÃO DO PORT (904a338): perde os BITS no campo, HP/MP cheios e volta ao lobby. FATO lido: o SQ_DEAD do
+   jogador toca DEADD1 e vai a SQ_ERAS (some); o veneno leva ao SQ_DEAD (0x803AD1E4); o cronômetro das missões põe SQ_DEAD em
+   todos. DESCONHECIDO: quem age quando o jogador some (volta, tela, perda dos BITS); não há "GAMEOVER" no executável. O
+   DEADRESTART da GAMERAM (HP/MP cheios) existe, mas quem o manda não foi achado.
+4. **Efeitos de estado no jogador.** Feito (63796e8): o golpe no jogador roda o hit_p_<forma>.lua do jogo, com os estados do
+   MsgAction (PlayerStatus). HIPÓTESES: tique do veneno por segundo, efeito de cada estado no controle, queda de atributos ainda
+   fora do dano.
+5. **Painel de técnicas.** Lido (fase4-levantamento-combate.md): 3 listas pelo estado, anterior/próxima com repetição e a
+   regra de uso do TechniquePanel. A barra do port faz o mesmo; faltam a terceira lista e o mapa dos botões.
 6. **Desempenho.** Não medido: fases grandes, número de NPCs e inimigos, memória numa sessão longa.
 
 ## B. Partes do jogo feitas, mas não vistas
