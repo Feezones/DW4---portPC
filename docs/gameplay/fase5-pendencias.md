@@ -46,8 +46,13 @@ janela.
 
 11. **Janelas do jogo.** Falas com a arte original: i_talkwn, i_messwn, rostos n_*ic e a tecla i_talkky, exportados com as
     sequências (pasta janelas). Conferido numa janela autorizada (stagml11): moldura, rosto e tecla aparecem. A posição do
-    texto foi ajustada depois disso, sem rever. A fonte do jogo não foi exportada (fonte da Godot). Troca de área, menu de status,
-    lojas, banco e X-data continuam como caixas da Godot.
+    texto foi ajustada depois disso, sem rever. Fonte do jogo exportada (fonte-exportar, ndmw #79) e usada nas falas, no menu de
+    status (ícones de elemento e ¶ inclusos) e nas caixas da Godot que restam. Troca de área (i_zzstchgwb/wn) e teleporte
+    (i_zzstchgcur) com a arte do jogo, sem rever na tela. Lojas: a arte j_shback/j_shbase/j_shwin está no #825 (stagml12, pasta
+    loja); FATO: o j_shwin tem as variantes SQ_AWINOPEN…EWINOPEN, JUNKOPEN, BITPUTIN/BITDRAWOUT (banco), SINKAON/OFF (LABO) e
+    XDATAITEM/XDATASTATUS, abertas pelo código nativo da loja (0x80396B0C..0x803A2A0C). DESCONHECIDO: que estado abre cada
+    variante e onde ficam as linhas de itens; até ler isso, loja, banco e X-data seguem como caixas da Godot (com a fonte do jogo).
+    O rosto do i_stdigiface na aba do status (deslocado/cortado) não foi revisto.
 12. **Formas novas não vistas.** Pose, escala, animações e o osso da arma das 15 formas além do Guilmon.
 13. **NPCs.** Andam, falam e passeiam pela IA do jogo (2d48253), mas não foram vistas. Falta conferir se viram para o jogador
     ao falar e as escalas.

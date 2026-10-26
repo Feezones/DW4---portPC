@@ -2062,6 +2062,14 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
             var fontDir = Path.Combine(outRoot, "fonte");
             if (!File.Exists(Path.Combine(fontDir, "fonte.json"))) Step("fonte", () => FonteExportar(ndmwPath, "79", fontDir));
         }
+        // Janelas das lojas da Central Area (j_shback, j_shbase, j_shwin com as variantes SQ_AWINOPEN…SQ_JUNKOPEN; FATO: só no #825,
+        // stagml12). As cartas j_shcardNN ficam de fora.
+        var shopNames = actors.Select(a => a.Name).Where(n => n.StartsWith("j_sh") && !n.StartsWith("j_shcard")).Distinct().OrderBy(n => n, StringComparer.Ordinal).ToArray();
+        if (shopNames.Length > 0)
+        {
+            Step("loja", () => IgbHudCmd(["igb-hud", ndmwPath, M, areaPath, usa.ToString(inv), Path.Combine(outDir, "loja")], Specs(shopNames)));
+            foreach (var n in shopNames) Step($"loja/{n} seq", () => IgbSeq(ndmwPath, M, Path.Combine(outDir, "loja", n), "--ator=" + n));
+        }
     }
     else problems.Add("usa_pack: não encontrado no índice (textos, db, hud e menu sem exportar)");
     if (objectNames.Length > 0) Step("objetos", () => IgbObjetos(ndmwPath, M, Path.Combine(outDir, "objetos"), Specs(objectNames), TexturePack()));
