@@ -54,6 +54,8 @@ try
         "igb-entradas" when args.Length == 4 => IgbEntradas(args[1], args[2], args[3]),
         "fase-exportar" when args.Length == 5 => FaseExportar(args[1], args[2], args[3], args[4]),
         "igb-db" when args.Length == 4 => IgbDb(args[1], args[2], args[3]),
+        "fonte-exportar" when args.Length == 4 => FonteExportar(args[1], args[2], args[3]),
+        "fonte-caixas" when args.Length == 4 => FonteCaixas(args[1], args[2], args[3]),
         "igb-drops" when args.Length == 4 => IgbDropsCmd(args[1], args[2], args[3]),
         "igb-geradores" when args.Length == 4 => IgbGeradores(args[1], args[2], args[3]),
         "igb-gatilhos" when args.Length == 4 => IgbGatilhos(args[1], args[2], args[3]),
@@ -114,6 +116,8 @@ static int Usage()
           dw4 igb-entradas <arquivo.afs> <indice> <pasta-de-trabalho>   (pontos de entrada do jogador, bePoint01Info, em pontos_entrada.json, fora do repositório)
           dw4 fase-exportar <ndmw.afs> <area.afs> <fase> <pasta-saída>   (uma fase inteira no layout da fatia + fase.json, pelo índice do ndmw.igb; fora do repositório)
           dw4 igb-db       <arquivo.afs> <indice> <pasta-de-trabalho>   (as 12 tabelas beDataBase em CSV e JSON, fora do repositório)
+          dw4 fonte-exportar <ndmw.afs> <indice> <pasta-de-trabalho>   (fontes beFontImage: textura PNG e métricas dos caracteres em fonte.json; a do jogo é o #79)
+          dw4 fonte-caixas <area.afs> <indice> <pasta>   (caixas de texto do usa_pack: categoria TALKFONT…, família, retângulo 640×480, cor e posição em caixas.json)
           dw4 igb-drops    <arquivo.afs> <indice> <pasta-de-trabalho>   (listas de drop dos geradores em JSON, fora do repositório)
           dw4 igb-geradores <arquivo.afs> <indice> <pasta-de-trabalho>   (geradores de onda em geradores.json: posições absolutas por vaga, contagem por nº de jogadores)
           dw4 igb-gatilhos <arquivo.afs> <indice> <pasta-de-trabalho>   (volumes de gatilho de área beMatCtrlData em gatilhos.json)
@@ -2650,4 +2654,117 @@ static JsonNode? Fog(IgbFile f)
         ["modo"] = F(4)?.AsInt32(le) ?? 0, ["inicio"] = Fl(5), ["fim"] = Fl(6), ["densidade"] = Fl(7),
         ["cor"] = new JsonArray(C(0), C(1), C(2), C(3)), ["ligada"] = on,
     };
+}
+
+// Fontes do jogo (FATO no ndmw #79 "BecT": dois beFontImage, "MINIMUM" e "NORMAL"; @3 = altura da linha, @7 → igCharMetricsList
+// com 484 caracteres de 40 bytes: código u16 + 2 de enchimento, avanço, deslocamento x e y, largura, altura, u0, v0, u1, v1 em f32; @8 → textura).
+int FonteExportar(string path, string which, string outDir)
+{
+    var root = Path.GetFullPath(outDir);
+    if (InsideGitRepo(root)) { Console.Error.WriteLine($"recusado: {root} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[int.Parse(which, inv)], ms);
+    var data = ms.ToArray();
+    var f = IgbFile.Read(data);
+    bool le = f.Header.LittleEndian;
+    var scene = IgbScene.Read(f, data);
+    Directory.CreateDirectory(root);
+    var pngOf = new Dictionary<int, string>();
+    foreach (var img in scene.Images.Values)
+    {
+        var rgba = IgbScene.IndexedToRgba(img);
+        if (rgba == null) continue;
+        var file = $"fonte_img{img.Index:D4}.png";
+        using (var fs = File.Create(Path.Combine(root, file))) Png.WriteRgba(fs, img.Width, img.Height, rgba);
+        pngOf[img.Index] = file;
+    }
+    // Primeira igImage alcançável a partir de um objeto (a textura do igTextureBindAttr).
+    int ImageUnder(int start)
+    {
+        var seen = new HashSet<int>();
+        var todo = new Stack<int>([start]);
+        while (todo.Count > 0)
+        {
+            int i = todo.Pop();
+            if (i < 0 || i >= f.Slots.Count || !seen.Add(i) || f.Slots[i] is not IgbObject o) continue;
+            if (o.TypeName == "igImage") return i;
+            foreach (var v in o.Fields.Where(v => v.Desc.ShortName == "ObjectRef")) todo.Push(v.AsInt32(le));
+        }
+        return -1;
+    }
+    float F(byte[] m, int o) => le ? BitConverter.ToSingle(m, o) : BitConverter.ToSingle([m[o + 3], m[o + 2], m[o + 1], m[o]], 0);
+    uint U(byte[] m, int o) => le ? BitConverter.ToUInt32(m, o) : (uint)(m[o] << 24 | m[o + 1] << 16 | m[o + 2] << 8 | m[o + 3]);
+    var fonts = new JsonArray();
+    foreach (var o in f.Slots.OfType<IgbObject>().Where(o => o.TypeName == "beFontImage"))
+    {
+        string name = o.Fields.FirstOrDefault(v => v.Desc.Slot == 2)?.Text ?? "";
+        float line = o.Fields.FirstOrDefault(v => v.Desc.Slot == 3 && v.Raw.Length >= 4) is { } lf ? F(lf.Raw, 0) : 0;
+        int metrics = o.Fields.FirstOrDefault(v => v.Desc.Slot == 7)?.AsInt32(le) ?? -1;
+        int bind = o.Fields.FirstOrDefault(v => v.Desc.Slot == 8)?.AsInt32(le) ?? -1;
+        int img = ImageUnder(bind);
+        if (img < 0 || !pngOf.ContainsKey(img)) img = pngOf.Keys.DefaultIfEmpty(-1).First();
+        var glyphs = new JsonArray();
+        if (metrics >= 0 && f.Slots[metrics] is IgbObject ml
+            && ml.Fields.FirstOrDefault(v => v.Desc.ShortName == "MemoryRef")?.AsInt32(le) is int mr && mr >= 0 && f.Slots[mr] is IgbMemoryBlock mb)
+        {
+            var mem = MemoryOf(data, mb);
+            for (int at = 0; at + 40 <= mem.Length; at += 40)
+                glyphs.Add(new JsonArray((JsonNode?)(U(mem, at) & 0xFFFF), // código em 16 bits; os outros 2 bytes são enchimento (CC CC no MINIMUM)
+                     F(mem, at + 4), F(mem, at + 8), F(mem, at + 12), F(mem, at + 16), F(mem, at + 20),
+                    F(mem, at + 24), F(mem, at + 28), F(mem, at + 32), F(mem, at + 36)));
+        }
+        fonts.Add(new JsonObject { ["nome"] = name, ["linha"] = line, ["textura"] = img >= 0 ? pngOf[img] : null, ["caracteres"] = glyphs });
+        Console.WriteLine($"fonte {name}: linha {line}, {glyphs.Count} caracteres, textura {(img >= 0 ? pngOf[img] : "-")}");
+    }
+    File.WriteAllText(Path.Combine(root, "fonte.json"), new JsonObject { ["origem"] = $"{path} #{which}", ["campos"] = "código, avanço, x, y, largura, altura, u0, v0, u1, v1", ["fontes"] = fonts }.ToJsonString());
+    return 0;
+}
+
+// Caixas de texto do pacote de idioma (FATO no area.afs #9: cena "FONT" → categoria TALKFONT02… → família NORMAL/MINIMUM → fontNN, um
+// igAttrSet com a cor e um retângulo de geometria na tela 640 × 480; os beFontInfoData ligam categoria, fontNN (@4), família (@10) e
+// os parâmetros @3, @5, @6, @7, @8). Grava caixas.json: categoria, fonte, família, retângulo, cor e parâmetros.
+int FonteCaixas(string areaPath, string which, string outDir)
+{
+    var root = Path.GetFullPath(outDir);
+    if (InsideGitRepo(root)) { Console.Error.WriteLine($"recusado: {root} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(areaPath);
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[int.Parse(which, inv)], ms);
+    var data = ms.ToArray();
+    var f = IgbFile.Read(data);
+    bool le = f.Header.LittleEndian;
+    var scene = IgbScene.Read(f, data);
+    float F(byte[] m, int o) => le ? BitConverter.ToSingle(m, o) : BitConverter.ToSingle([m[o + 3], m[o + 2], m[o + 1], m[o]], 0);
+    var boxes = new JsonArray();
+    foreach (var o in f.Slots.OfType<IgbObject>().Where(o => o.TypeName == "beFontInfoData"))
+    {
+        string Txt(int slot) => o.Fields.FirstOrDefault(v => v.Desc.Slot == slot)?.Text ?? "";
+        int Int(int slot) => o.Fields.FirstOrDefault(v => v.Desc.Slot == slot)?.AsInt32(le) ?? 0;
+        float Flt(int slot) => o.Fields.FirstOrDefault(v => v.Desc.Slot == slot && v.Raw.Length >= 4) is { } v ? F(v.Raw, 0) : 0;
+        int set = Int(4);
+        if (set < 0 || set >= f.Slots.Count || f.Slots[set] is not IgbObject attrSet) continue;
+        string slotName = attrSet.Fields.FirstOrDefault(v => v.Desc.Slot == 2 && v.Desc.ShortName == "String")?.Text ?? "";
+        var reach = scene.Reachable(attrSet);
+        var pts = scene.Parts.Where(p => reach.Contains(p.GeometryIndex)).SelectMany(p => p.Positions).ToList();
+        float[]? color = null;
+        foreach (var a in scene.AttrList(attrSet).Where(a => a.TypeName == "igColorAttr"))
+            if (a.Fields.FirstOrDefault(v => v.Desc.Slot == 4 && v.Raw.Length >= 16) is { } c) color = [F(c.Raw, 0), F(c.Raw, 4), F(c.Raw, 8), F(c.Raw, 12)];
+        var box = new JsonObject
+        {
+            ["categoria"] = Txt(2), ["fonte"] = slotName, ["familia"] = Txt(10),
+            ["p3"] = Int(3), ["p5"] = Int(5), ["p6"] = Int(6), ["p7"] = Flt(7), ["p8"] = Flt(8),
+        };
+        if (pts.Count > 0) box["retangulo"] = new JsonArray(pts.Min(p => p.X), pts.Min(p => p.Y), pts.Max(p => p.X), pts.Max(p => p.Y));
+        // Posição: translação do igTransform do fontNN (a geometria está no espaço dele).
+        var tr = reach.Select(i => f.Slots[i]).OfType<IgbObject>().FirstOrDefault(x => x.TypeName == "igTransform");
+        if (tr?.Fields.FirstOrDefault(v => v.Desc.ShortName == "Matrix44f" && v.Raw.Length >= 64) is { } mtx)
+            box["posicao"] = new JsonArray(F(mtx.Raw, 48), F(mtx.Raw, 52), F(mtx.Raw, 56));
+        if (color != null) box["cor"] = new JsonArray(color.Select(v => (JsonNode?)v).ToArray());
+        boxes.Add(box);
+    }
+    Directory.CreateDirectory(root);
+    File.WriteAllText(Path.Combine(root, "caixas.json"), new JsonObject { ["origem"] = $"{areaPath} #{which}", ["caixas"] = boxes }.ToJsonString());
+    Console.WriteLine($"{boxes.Count} caixas de texto");
+    return 0;
 }
