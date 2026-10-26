@@ -150,3 +150,22 @@
     era HIPÓTESE no GameTables.
 - No port: `XDataStatus` (Gameplay) e a primeira tela da janela XDATA com as três escolhas do jogo (atributos, chips, voltar).
 - **HIPÓTESES:** o valor atual é o do RECALC (com equipamento); a condição de "já está no máximo" não foi lida.
+
+## Janelas das lojas (código nativo, levantamento)
+
+- Arte: j_shback, j_shbase e j_shwin no #825 (stagml12), exportados por `dw4 fase-exportar` na pasta `loja`. FATO: o j_shwin tem as
+  variantes SQ_AWINOPEN, BWINOPEN, CWINOPEN, DWINOPEN, EWINOPEN, JUNKOPEN, BITPUTINOPEN/BITDRAWOUTOPEN, SINKAON/OFFOPEN e
+  XDATAITEMOPEN/XDATASTATUSOPEN (JOINTSET por faixa de quadros; CLOSE = FADESET OUT 1).
+- Classes (strings do main.dol): beNDMWShopCtrl00/10/30/40/50, A0/A1/A2, Sales, Sell, DeviceSell, DiskSell, EditBit, Digilabo,
+  Evolve, XdataChip, além de ShopSelect*, ShopTitle*, ShopDevice e ShopJunk.
+- Tabela virtual → classe: no main.dol a tabela virtual de cada classe vem logo antes do registro do nome. HIPÓTESE (a ordem bate
+  com o conteúdo do código): Sales 0x804ECB2C (atualização 0x803A2920: GETSHOPDATA → j_shwin SQ_AWINOPEN, cursores
+  i_stcursorleft/right em x −146 e 236, y 25), DiskSell 0x804ECBBC (0x803A15B0: DISKFOLDER, SQ_EWINOPEN/SQ_BWINOPEN),
+  DeviceSell 0x804ECC48 (0x803A01F0: SQ_AWINOPEN), Sell 0x804ECCD8, EditBit 0x804ECD5C, Digilabo 0x804ECDE0 e Ctrl50
+  0x804ED10C (0x803967A8: conItem, HANBAI, DISKFOLDER, SQ_CWINOPEN/SQ_DWINOPEN). A numeração ShopCtrl00/10/30/40/50 parece ser
+  o tipo de SUBWND × 10 (50 = DISK, com o código da loja de discos).
+- Caixas de texto no usa_pack da Central Area (area.afs #681, `dw4 fonte-caixas`), todas na fonte MINIMUM com 16 px por linha:
+  STWINFONT14 (12 linhas de 168 px: os nomes), STWINFONT15 (12 × 14 px: o ícone), STWINFONT17 (12 × 98 px: o preço),
+  STWINFONT13 (título, 224 px), STWINFONT29 font000..002 (351 px) e font100 (577 px, a ajuda do rodapé).
+- DESCONHECIDO: onde o código põe cada caixa na tela (as posições vêm do código nativo, não do usa_pack) e qual variante cada
+  estado abre além das listadas acima. Até isso ser lido, a loja segue numa caixa da Godot com a fonte do jogo.
