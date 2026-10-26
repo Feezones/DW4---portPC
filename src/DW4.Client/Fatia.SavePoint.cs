@@ -121,6 +121,7 @@ public partial class Fatia
         }
         panel.AddChild(box);
         center.AddChild(panel);
+        UseGameFont(center);
         _saveLayer.AddChild(center);
         AddChild(_saveLayer);
         first?.CallDeferred(Control.MethodName.GrabFocus);

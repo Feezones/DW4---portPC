@@ -104,6 +104,41 @@ public sealed class BitmapFont
         return mesh;
     }
 
+    readonly Dictionary<string, FontFile> _fontFiles = [];
+
+    /// <summary>
+    /// A família como FontFile de bitmap da Godot (o código do caractere é o índice do glifo, como no BMFont), para Label e
+    /// RichTextLabel: tamanho fixo = a linha da caixa do jogo (28 px NORMAL, 20 px MINIMUM) e escala livre para outros tamanhos.
+    /// A base fica no pé da linha (ascent = linha, descent = 0), onde o caractere do jogo pousa (y do caractere, em geral 0).
+    /// Os ícones (⊂ ⊃ ∪ ∩ elementos, ¶ Data, ≪ ≫ botões) são caracteres da própria fonte e saem coloridos.
+    /// </summary>
+    public FontFile? ToFontFile(string family)
+    {
+        if (_fontFiles.TryGetValue(family, out var cached)) return cached;
+        if (!Families.TryGetValue(family, out var fam)) return null;
+        int size = family == "MINIMUM" ? 20 : 28;
+        float scale = size / fam.Line;
+        var img = Texture.GetImage();
+        var px = new Vector2(img.GetWidth(), img.GetHeight());
+        var key = new Vector2I(size, 0);
+        var ff = new FontFile { FixedSize = size, FixedSizeScaleMode = TextServer.FixedSizeScaleMode.Enabled, AllowSystemFallback = false, Antialiasing = TextServer.FontAntialiasing.Gray };
+        ff.SetTextureImage(0, key, 0, img);
+        ff.SetCacheAscent(0, size, size);
+        ff.SetCacheDescent(0, size, 0);
+        foreach (var (code, g) in fam.Glyphs)
+        {
+            ff.SetGlyphAdvance(0, size, code, new Vector2(g.Advance * scale, 0));
+            ff.SetGlyphOffset(0, key, code, new Vector2(g.X * scale, -(g.Y + g.H) * scale));
+            ff.SetGlyphSize(0, key, code, new Vector2(g.W * scale, g.H * scale));
+            ff.SetGlyphUVRect(0, key, code, new Rect2(g.Uv0 * px, (g.Uv1 - g.Uv0) * px));
+            ff.SetGlyphTextureIdx(0, key, code, 0);
+        }
+        // Caracteres que a fonte do jogo não tem (/, %, =, #, ▶…) saem na fonte padrão da Godot.
+        ff.Fallbacks = [ThemeDB.FallbackFont];
+        _fontFiles[family] = ff;
+        return ff;
+    }
+
     /// <summary>Material da fonte: sem luz, transparente, por cima de tudo; a cor do texto entra no albedo.</summary>
     public StandardMaterial3D Material(Color color, int priority) => new()
     {

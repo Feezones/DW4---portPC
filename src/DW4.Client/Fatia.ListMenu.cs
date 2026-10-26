@@ -125,6 +125,7 @@ public partial class Fatia
             _listLabel = new Label { VerticalAlignment = VerticalAlignment.Center };
             _listLabel.AddThemeFontSizeOverride("font_size", 26);
             _listPanel.AddChild(_listLabel);
+            UseGameFont(_listPanel);
             layer.AddChild(_listPanel);
             AddChild(layer);
         }

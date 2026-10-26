@@ -200,6 +200,19 @@ public partial class Fatia
         }
     }
 
+    /// <summary>
+    /// Caixas da Godot que ainda substituem janelas do jogo (loja, banco, X-data, LABO, menus de reserva) com a fonte do jogo:
+    /// tema com a NORMAL em <paramref name="root"/> e os tamanhos já pedidos × 1,3 (a linha da fonte do jogo é a altura toda).
+    /// </summary>
+    void UseGameFont(Control root)
+    {
+        if (GameFont()?.ToFontFile("NORMAL") is not { } gf) return;
+        root.Theme = new Theme { DefaultFont = gf, DefaultFontSize = 30 };
+        foreach (var c in root.FindChildren("*", nameof(Control), true, false).OfType<Control>().Prepend(root))
+            if (c.HasThemeFontSizeOverride("font_size"))
+                c.AddThemeFontSizeOverride("font_size", (int)Math.Round(c.GetThemeFontSize("font_size") * 1.3f));
+    }
+
     // Janela com a arte do jogo e a fonte do jogo (sem uma das duas, quem chama fica com a caixa da Godot).
     bool WindowArt(string name) => WindowsReady() && _winData!.Actors.ContainsKey(name) && GameFont() != null;
 

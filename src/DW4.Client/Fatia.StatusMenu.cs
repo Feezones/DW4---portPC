@@ -14,7 +14,8 @@ namespace DW4.Client;
 /// FATO: atores e sequências de abertura/fecho; textos I&lt;11..13&gt; (ajuda), I&lt;14..25&gt; (atributos), I&lt;26..28&gt; (menu).
 /// HIPÓTESES: Tab/Start abre, Tab/Esc/B fecha, a fase fica pausada; atores na origem da tela 640 × 480 (os GENERATE nativos
 /// não foram lidos); i_stmenu01 abre com SQ_3LINEUPOPEN.
-/// DECISÃO DA FATIA: textos com a fonte da Godot em posições aproximadas; cursor como "▶"; submenus ainda não portados.
+/// DECISÃO DA FATIA: textos com a fonte do jogo (MINIMUM, ícones de elemento e ¶ inclusos) em posições aproximadas; cursor como
+/// "▶"; submenus ainda não portados.
 /// </summary>
 public partial class Fatia
 {
@@ -181,6 +182,8 @@ public partial class Fatia
     void MenuLabel(string text, float x, float y, int size = 13, HorizontalAlignment align = HorizontalAlignment.Left, float width = 0)
     {
         var l = new Label { Text = text, Position = MenuPx(x, y), HorizontalAlignment = align };
+        // Fonte do jogo (MINIMUM): a linha dela é a altura toda do texto, ~1,45 × o tamanho em pontos da fonte da Godot.
+        if (GameFont()?.ToFontFile("MINIMUM") is { } gf) { l.AddThemeFontOverride("font", gf); size = (int)Math.Round(size * 1.45f); }
         if (width > 0) l.Size = new Vector2(width, 0);
         l.AddThemeFontSizeOverride("font_size", size);
         l.AddThemeColorOverride("font_outline_color", Colors.Black);

@@ -11,7 +11,7 @@ namespace DW4.Client;
 /// <summary>
 /// Lojas de equipamento da Central Area (SUBWND GENERATE "WPU/I&lt;p&gt;", "APU", "CHIP", "JUNK"). O estoque e a compra/venda
 /// seguem o executável (ShopStock, ShopTrade; docs/gameplay/fase5-lojas.md). DECISÃO DA FATIA: as janelas do jogo (j_shwin…)
-/// ainda não foram exportadas; a loja é uma caixa da Godot com 12 linhas por página, como a do jogo.
+/// ainda não foram exportadas; a loja é uma caixa da Godot (com a fonte do jogo) com 12 linhas por página, como a do jogo.
 /// Controles: cima/baixo escolhe, esquerda/direita troca a página, ataque compra/vende, V ou Y alterna comprar/vender,
 /// K/Backspace/B fecha.
 /// </summary>
@@ -146,6 +146,7 @@ public partial class Fatia
             _shopLabel.AddThemeFontSizeOverride("font_size", 15);
             _shopLabel.AddThemeConstantOverride("line_spacing", -2);
             _shopPanel.AddChild(_shopLabel);
+            UseGameFont(_shopPanel);
             layer.AddChild(_shopPanel);
             AddChild(layer);
         }

@@ -213,6 +213,7 @@ public partial class Fatia
             _choiceLabel = new Label { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             _choiceLabel.AddThemeFontSizeOverride("font_size", 28);
             _choicePanel.AddChild(_choiceLabel);
+            UseGameFont(_choicePanel);
             layer.AddChild(_choicePanel);
             AddChild(layer);
         }
