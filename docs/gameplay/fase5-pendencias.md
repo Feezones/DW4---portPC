@@ -1,78 +1,50 @@
-# Fase 5: o que ainda impede jogar do começo ao fim (2026-10-25)
+# Fase 5: o que ainda impede jogar do começo ao fim (2026-10-26)
 
-Critério da Fase 5 (roadmap): o jogo inteiro no Windows, jogável do início ao fim, com desempenho estável. A lista vai do que
-mais bloqueia ao que menos bloqueia. O estado vem do que está no repositório e dos testes. "Não visto" = nunca conferido na
-janela.
+Critério da Fase 5 (roadmap): o jogo inteiro no Windows, jogável do início ao fim, com desempenho estável. "Não visto" = nunca
+conferido na janela. O estado vem do repositório, dos testes (79 ok) e das janelas autorizadas.
 
-## 1. Bloqueiam o caminho principal
+## A. Impedem o critério (jogável do início ao fim)
 
-1. **Caminho do enredo sem conferir na janela.** O primeiro trecho é lobby → base da Ofanimon (stagML02) → stag0001. Ele
-   travou no SQ_SHOK da stagML02, já corrigido (66ebbfa), mas ainda não foi jogado inteiro. Depois vêm as masmorras da dng1 a
-   dng4, os chefes stagbs01..06 e o fim (FLG 86 no último chefe). Mapa das flags: fase5-enredo.md.
-2. **36 fases nunca abertas no cliente.** São as que vêm depois de stag0302 na varredura (fase5-varredura.md). Todas
-   exportam, mas não se sabe se carregam, se têm chão e se os scripts rodam. Abrir uma janela por fase precisa de autorização.
-3. **Morte e recomeço do jogo.** Feito como DECISÃO DO PORT (904a338): perde os BITS no campo, HP/MP cheios, volta ao lobby. O destino original continua desconhecido.
-   - FATO: o DEADRESTART da GAMERAM (0x80371B3C) enche HP e MP.
-   - Os textos dizem que os BITS carregados se perdem ao cair no campo; onde isso acontece no código não foi lido.
-   - Falta o fluxo do jogo: tela de queda, volta ao lobby ou ao ponto, perda dos BITS.
-4. **Chefes 02..06 não vistos.** Os scripts rodam sem erro e o movimento (MOVE/MOVEEX/MOVERL) é o do jogo. A escala da
-   unidade (30 Hz, unidade do jogo = do mundo) é HIPÓTESE, e as peças presas (f_luce "ball") nunca foram vistas.
-5. **Final do jogo.** Levantado: stagbs06 → stagIS20 (créditos) → lobby, entrada 0. No port, tela de fim com a música dos créditos; a arte dos créditos (j_endroll) não foi exportada.
+1. **Caminho do enredo nunca jogado inteiro.** Lobby → stagML02 → stag0001 → masmorras dng1..dng4 → chefes stagbs01..06 → fim
+   (FLG 86). O SQ_SHOK da stagML02 foi corrigido (66ebbfa). A troca de área já foi usada pelo usuário (escolha e NEXTSTAGE
+   funcionam). Falta alguém jogar o caminho inteiro. Mapa das flags: fase5-enredo.md.
+2. **Chefes 02..06 não vistos em luta.** Carregam (varredura) e os scripts rodam sem erro. O movimento é o do jogo, mas a escala
+   da unidade (30 Hz, unidade do jogo = do mundo) é HIPÓTESE, as peças presas (f_luce "ball") nunca foram vistas e a correção
+   da IA (valor 0 segura a decisão) não foi vista.
+3. **Morte.** DECISÃO DO PORT (904a338): perde os BITS no campo, HP/MP cheios e volta ao lobby. O fluxo original (tela de queda,
+   destino) não foi lido.
+4. **Efeitos de estado no jogador** (atordoar, sono, prender, veneno, ataque/defesa baixos). O jogo faz pelos hit_p_*.lua; o port
+   calcula o dano por conta própria e não roda esses scripts. Muda o combate dos chefes.
+5. **Painel de técnicas.** Barra do port (1..6, K/botão direito/Y). Como o jogo escolhe a técnica no painel não foi lido.
+6. **Desempenho.** Não medido: fases grandes, número de NPCs e inimigos, memória numa sessão longa.
 
-## 2. Bloqueiam partes do jogo
+## B. Partes do jogo feitas, mas não vistas
 
-6. **Armas e estilos.** Feito: modelo na mão e blocos de sequência pela arma equipada (beWeaponSeqData das 74 armas). Armas
-   iniciais INI_WEAPON1..3 e o equipamento no save. A evolução equipa a arma mais forte usável. Falta ver na tela e o osso
-   das armas duplas (HIPÓTESE: tudo na mão direita).
-7. **Painel de técnicas.** Barra do port (custo, recarga, selecionada; 1..6, K/botão direito/Y, roda/LB-RB). O painel do jogo
-   (como ele escolhe a técnica) não foi lido.
-8. **Missões (quest01..06 e treasure01..08).** Teste com os scripts reais: quest01 → cápsula (end_g_000bcaps) → treasure01, sem
-   erro e sem be: faltando. FATO: a recompensa vai pela COUNTER 0 (≥ 900 → +100 BIT para cada jogador, depois 600…). Falta jogar na
-   janela. FATO: a COUNTER 0 é o tempo da missão (1800/2400/3000 s no first.lua das dngq*), contado pelo chk_i_timenm0.lua;
-   o cliente agora roda o cronômetro (1 chamada por segundo, HIPÓTESE).
-9. **Loja de cartas (stagIS11) e as cartas.** FATO:
-   - tabela "card" (area.afs #621): 50 cartas com RARE (0 comum, 1 incomum, 2 rara), KAKURITSU (peso), NAME e a imagem
-     do álbum (j_shcardNN);
-   - a carta vem do conItem 10 "B. Pack" ("Card Keeper will exchange this with trading cards"), e a coleção é a CARDLIST
-     (50);
-   - os scripts só contam (SYSctlCardFolder "KAZU" ≥ 25/35/45 dão recompensas na conversa n_digilfm_04);
-   - o álbum fica no menu de status (DATABASE "card": CARDINFO, SQALBUM).
-   - sorteio (0x8039ACC4..0x8039AFB0, lido): gasta 1 B. Pack, 3 cartas por pacote, cada uma com r = MT % 1000 contra a soma
-     do KAKURITSU na ordem da tabela (a soma dá 1000: comum 64,5 %, incomum 28 %, rara 7,5 % por carta); repetida não conta de
-     novo; nome colorido pela raridade (2 verde, 1 amarelo, 0 branco). Feito no port (CardPack, teste) e na stagIS11, numa
-     janela da Godot.
-   DESCONHECIDO: o valor 0x7DA/0x7DB/0x7DC pela maior raridade (som ou texto); a arte j_shbooster/j_shcardNN e o álbum.
-10. **Efeitos de estado no jogador** (atordoar, sono, prender, veneno, ataque/defesa baixos). O jogo faz pelos hit_p_*.lua; o
-    port calcula o dano por conta própria e não roda esses scripts.
+7. **Varredura:** as 98 fases carregam no cliente. Ainda não foi visto se todas têm chão e se os scripts rodam por inteiro.
+8. **Missões (quest01..06, treasure01..08):** teste com os scripts reais e cronômetro (chk_i_timenm0.lua) no cliente; recompensa
+   pela COUNTER 0. Falta jogar uma na janela.
+9. **Armas e estilos:** modelo na mão e blocos de sequência pela arma (74 armas). Osso das armas duplas é HIPÓTESE.
+10. **Formas:** as 15 além do Guilmon (pose, escala, animações, arma). Rosto do HUD, aba do status e nome seguem a forma (4f63c96).
+11. **Loja de cartas:** sorteio do B. Pack lido no executável (3 cartas, MT % 1000 contra o KAKURITSU) e feito na stagIS11.
+12. **Final:** stagbs06 → stagIS20 (créditos) → lobby. Tela de fim com a música; a arte j_endroll não foi exportada.
 
-## 3. Aparência e conforto (não bloqueiam, mas o jogo fica diferente)
+## C. Só refinamento (o jogo fica diferente, mas jogável)
 
-11. **Janelas do jogo.** Falas com a arte original: i_talkwn, i_messwn, rostos n_*ic e a tecla i_talkky, exportados com as
-    sequências (pasta janelas). Conferido numa janela autorizada (stagml11): moldura, rosto e tecla aparecem. A posição do
-    texto foi ajustada depois disso, sem rever. Fonte do jogo exportada (fonte-exportar, ndmw #79) e usada nas falas, no menu de
-    status (ícones de elemento e ¶ inclusos) e nas caixas da Godot que restam. Troca de área (i_zzstchgwb/wn) e teleporte
-    (i_zzstchgcur) com a arte do jogo, sem rever na tela. Lojas: a arte j_shback/j_shbase/j_shwin está no #825 (stagml12, pasta
-    loja); FATO: o j_shwin tem as variantes SQ_AWINOPEN…EWINOPEN, JUNKOPEN, BITPUTIN/BITDRAWOUT (banco), SINKAON/OFF (LABO) e
-    XDATAITEM/XDATASTATUS, abertas pelo código nativo da loja (0x80396B0C..0x803A2A0C). DESCONHECIDO: que estado abre cada
-    variante e onde ficam as linhas de itens; até ler isso, loja, banco e X-data seguem como caixas da Godot (com a fonte do jogo).
-    O rosto do i_stdigiface na aba do status (deslocado/cortado) não foi revisto.
-12. **Formas novas não vistas.** Pose, escala, animações e o osso da arma das 15 formas além do Guilmon.
-13. **NPCs.** Andam, falam e passeiam pela IA do jogo (2d48253), mas não foram vistas. Falta conferir se viram para o jogador
-    ao falar e as escalas.
-14. **Filmes** (abertura AJP/AUS/AEU_opening.sfd e o final): o leitor Sofdec existe nas ferramentas, mas não no cliente.
-15. **Câmera.** "Dungeon camera" Perto/Longe e "Light" Suave/Forte vão para a GAMERAM, mas o efeito delas no cliente não foi
-    ligado.
+13. **Janelas:**
+    - falas: arte, rosto e fonte do jogo, vistas na tela (stagml11);
+    - menu de status: fonte do jogo com os ícones, visto; os cursores passam a andar (f0dada6), sem rever;
+    - troca de área (i_zzstchgwb/wn) e teleporte (i_zzstchgcur): arte do jogo, cursor corrigido (f0dada6), sem rever;
+    - lojas, banco, X-data e LABO: caixas da Godot com a fonte do jogo. A arte (j_shwin) e as caixas STWINFONT estão levantadas
+      (fase5-lojas.md), mas a posição das caixas na tela não está nos dados (o usa_pack só tem categoria, linha, largura e
+      altura da linha; o código nativo passa só ALIGN/TEXTSET). DESCONHECIDO até ler o beTextCtrl.
+14. **Cartas:** arte do pacote (j_shbooster/j_shcardNN), o álbum e o valor 0x7DA/0x7DB/0x7DC pela raridade.
+15. **NPCs:** andam, falam e passeiam pela IA do jogo; não foi visto se viram para o jogador e as escalas.
+16. **Filmes** (abertura e final, Sofdec): o leitor existe nas ferramentas, não no cliente.
+17. **Câmera:** "Dungeon camera" e "Light" vão para a GAMERAM, sem efeito no cliente.
 
-## 4. Desempenho e estabilidade
+## Já resolvido (referência)
 
-16. Não medido: carga das fases grandes, número de NPCs e inimigos, uso de memória numa sessão longa.
-
-## Já resolvido nesta etapa (para referência)
-
-- Menu inicial com as 4 vagas por conta, configurações, save por vaga e começo de jogo pelo gameStart.lua.
-- Dificuldade pelo hostLoad.
-- Evolução (16 formas).
-- Lojas de equipamento, discos, banco e X-data.
-- Chat e placa com nome e nível.
-- NPCs: animação, conversa e passeio.
-- Save Keeper removido, com o save automático.
+- Menu inicial com 4 vagas por conta, configurações, save automático por vaga, dificuldade pelo hostLoad.
+- Evolução (16 formas), lojas de equipamento e discos, banco, X-data (atributos e chips), loja de cartas.
+- Chat e placa com nome e nível; NPCs com animação, conversa e passeio; Save Keeper removido.
+- Fonte do jogo (fonte-exportar) nas falas, no status e nas caixas; troca de área e teleporte com a arte do jogo.
