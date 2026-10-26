@@ -169,3 +169,7 @@
   STWINFONT13 (título, 224 px), STWINFONT29 font000..002 (351 px) e font100 (577 px, a ajuda do rodapé).
 - DESCONHECIDO: onde o código põe cada caixa na tela (as posições vêm do código nativo, não do usa_pack) e qual variante cada
   estado abre além das listadas acima. Até isso ser lido, a loja segue numa caixa da Godot com a fonte do jogo.
+- Posição das caixas (lido depois): o beFontInfoData só traz categoria (@5), linha (@6), largura (@7, 1,68 = 168 px) e altura da
+  linha (@8, 0,16 = 16 px); as transformações do usa_pack deslocam cada linha por frações de pixel; o código da Sales chama
+  0x8036B278, que manda só TEXTCTL ALIGN e TEXTSET vazio. O j_shwin não tem nós de âncora para o texto. DESCONHECIDO: quem põe
+  as caixas na tela (provavelmente o beTextCtrl nativo). Por isso a loja não foi montada com a arte.
