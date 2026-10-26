@@ -15,7 +15,7 @@ namespace DW4.Client;
 /// HIPÓTESES: Tab/Start abre, Tab/Esc/B fecha, a fase fica pausada; atores na origem da tela 640 × 480 (os GENERATE nativos
 /// não foram lidos); i_stmenu01 abre com SQ_3LINEUPOPEN.
 /// DECISÃO DA FATIA: textos com a fonte do jogo (MINIMUM, ícones de elemento e ¶ inclusos) em posições aproximadas; cursor como
-/// "▶"; submenus ainda não portados.
+/// "&gt;" (a fonte do jogo não tem "▶"); submenus ainda não portados.
 /// </summary>
 public partial class Fatia
 {
@@ -232,7 +232,7 @@ public partial class Fatia
         // Linhas: topo 212, 189 e 167.
         float[] rows = MenuRows;
         for (int i = 0; i < 3; i++)
-            MenuLabel((i == _menuCursor ? "▶ " : "    ") + Text(StatusText(15, i, 26)), -100, rows[i], 13);
+            MenuLabel((i == _menuCursor ? (GameFont() != null ? "> " : "▶ ") : "    ") + Text(StatusText(15, i, 26)), -100, rows[i], 13);
         // i_staccount (win01: x 128..312, y 156..216): nome.
         MenuLabel("Guilmon", 140, 200, 13);
         MenuLabel(string.Join("    ", Enumerable.Range(0, 3).Select(i => Text(StatusText(0, i, 11))?.Replace("\r\n", " "))), -320, -212, 13, HorizontalAlignment.Center, 640);
