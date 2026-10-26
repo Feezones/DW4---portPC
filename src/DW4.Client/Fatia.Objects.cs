@@ -200,6 +200,12 @@ public partial class Fatia
             // O analisador separa os argumentos por "/": "SQ_WAIT/ON" chega como dois; SETLABEL usa o texto inteiro.
             if (m.Command == "SETLABEL" && m.RawArgs is { Length: > 0 } label) o.SetSequence(label);
             else if (m.Command.StartsWith("SQ_", StringComparison.Ordinal)) o.SetSequence(m.Command);
+            // MOVETRANS "V<pos>/V<rot em graus>": põe o objeto no lugar e na direção (fim da conversa: volta à direção de antes).
+            else if (m.Command == "MOVETRANS" && m.Arg(0) is { Kind: 'V', Numbers.Length: 3 } mp)
+            {
+                o.Actor.Root.GlobalPosition = new Vector3((float)mp.Numbers[0], (float)mp.Numbers[1], (float)mp.Numbers[2]);
+                if (m.Arg(1) is { Kind: 'V', Numbers.Length: 3 } mr) o.Actor.Root.RotationDegrees = new Vector3((float)mr.Numbers[0], (float)mr.Numbers[1], (float)mr.Numbers[2]);
+            }
         }
         return false;
     }

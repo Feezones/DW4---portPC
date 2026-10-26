@@ -54,6 +54,10 @@ public partial class Fatia
                 if (!_stage.Has(script)) continue;
                 o.BulletKind = TalkProbe;
                 _stage.RunAs(script, o);
+                // O script guardou a direção (MDLgetRotStr) antes; no fim ele devolve com MOVETRANS "pos/rot" (FATO, hit_n_digilfm.lua).
+                // HIPÓTESE: entre os dois o motor vira o NPC para quem falou.
+                var to = _player.GlobalPosition - p;
+                if (to.X * to.X + to.Z * to.Z > 1e-4f) o.Actor.Root.Rotation = new Vector3(o.Actor.Root.Rotation.X, MathF.Atan2(to.X, to.Z), o.Actor.Root.Rotation.Z);
                 return;
             }
         }
