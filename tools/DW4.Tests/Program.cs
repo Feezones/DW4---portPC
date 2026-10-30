@@ -384,6 +384,21 @@ Test("Port: gráfico (anti-aliasing, sombras, campo de visão, resolução inter
     Equal((5, 75, 2f), (x.AntiAliasing, x.Fov, x.RenderScale), "fora da faixa é corrigido");
 });
 
+Test("Port: ícones de botão conforme o aparelho (família pelo nome do joypad, nomes por família, ícones do GameCube nos textos)", () =>
+{
+    Equal(ButtonNames.Kind.Xbox, ButtonNames.FromJoyName("Xbox Series Controller"), "Xbox");
+    Equal(ButtonNames.Kind.PlayStation, ButtonNames.FromJoyName("PS5 Controller"), "PlayStation");
+    Equal(ButtonNames.Kind.Nintendo, ButtonNames.FromJoyName("Nintendo Switch Pro Controller"), "Nintendo");
+    Equal(ButtonNames.Kind.Generic, ButtonNames.FromJoyName("USB Gamepad"), "outro");
+    Equal(("A", "×", "B"), (ButtonNames.Name("botao:0", ButtonNames.Kind.Xbox), ButtonNames.Name("botao:0", ButtonNames.Kind.PlayStation), ButtonNames.Name("botao:0", ButtonNames.Kind.Nintendo)), "botão de baixo por família");
+    Equal(("LT", "L2", "ZL"), (ButtonNames.Name("eixo:4+", ButtonNames.Kind.Xbox), ButtonNames.Name("eixo:4+", ButtonNames.Kind.PlayStation), ButtonNames.Name("eixo:4+", ButtonNames.Kind.Nintendo)), "gatilho esquerdo por família");
+    Equal("J", ButtonNames.Name("tecla:J", ButtonNames.Kind.Xbox), "tecla não depende da família");
+    string Of(string a) => a switch { "ataque" => "J", "pulo" => "Space", "guarda" => "L", "status" => "Tab", _ => "?" };
+    Equal("Press the (J) to use Weapon Attacks, press the (Space) to Jump, and press the (L) to Guard.", ButtonNames.GameText("Press the ≪ to use Weapon Attacks, press the ≒ to Jump, and press the ∠ to Guard.", Of, true), "tutorial com as teclas");
+    Equal("Press (Tab) when finished.", ButtonNames.GameText("Press ＳＴＡＲＴ when finished.", Of, true), "START vira a tecla do status");
+    Equal("sem ícone", ButtonNames.GameText("sem ícone", Of, true), "texto sem ícone não muda");
+});
+
 Test("Port: mapa de controles (padrão, salvar e carregar no config, conflito, restaurar padrão, configurações novas)", () =>
 {
     var c = new PortConfig { WindowMode = 2, FpsLimit = 144, VoiceVolume = 0.5f };

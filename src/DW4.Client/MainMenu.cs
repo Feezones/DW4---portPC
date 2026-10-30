@@ -556,6 +556,8 @@ public partial class MainMenu : Control
         _root.AddChild(new SettingsPanel(ShowTitle));
     }
 
+    public override void _Input(InputEvent e) => DeviceIcons.Seen(e);
+
     public override void _UnhandledInput(InputEvent e)
     {
         if (TitleInput(e) || SlotsInput(e) || CreateInput(e)) { GetViewport().SetInputAsHandled(); return; }

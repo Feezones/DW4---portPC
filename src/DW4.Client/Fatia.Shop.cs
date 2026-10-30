@@ -169,7 +169,7 @@ public partial class Fatia
             }
             string variant = _shopKind == Array.IndexOf(SubWndNames, "JUNK") ? "SQ_JUNKOPEN" : _shopSelling ? "SQ_BWINOPEN" : "SQ_AWINOPEN";
             UpdateShopArt(variant, rows, $"{(_shopSelling ? "Vender" : "Comprar")}   BIT {_inventory.Bit}   {_shopPageNo + 1}/{pages}",
-                _shopMessage.Length > 0 ? _shopMessage : "cima/baixo escolhe, esq./dir. página, ataque confirma, V/Y troca, K/B sai", _shopCursor);
+                _shopMessage.Length > 0 ? _shopMessage : $"cima/baixo escolhe, esq./dir. página, {DeviceIcons.Of("confirmar")} confirma, {(DeviceIcons.Current == ButtonNames.Kind.Keyboard ? "V" : DeviceIcons.Name("botao:3", DeviceIcons.Current))} troca, {DeviceIcons.Of("cancelar")} sai", _shopCursor);
             return;
         }
         var sb = new System.Text.StringBuilder();

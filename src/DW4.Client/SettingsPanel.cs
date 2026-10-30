@@ -103,6 +103,10 @@ public partial class SettingsPanel : VBoxContainer
             {
                 var row = new HBoxContainer();
                 row.AddChild(new Label { Text = a.Label, CustomMinimumSize = new Vector2(300, 0) });
+                var chips = new HBoxContainer { CustomMinimumSize = new Vector2(220, 0) };
+                chips.AddThemeConstantOverride("separation", 6);
+                row.AddChild(chips);
+                _bindChips[(dev, a.Id)] = chips;
                 var b = new Button { SizeFlagsHorizontal = SizeFlags.ExpandFill };
                 var action = a;
                 b.Pressed += () =>
@@ -130,6 +134,8 @@ public partial class SettingsPanel : VBoxContainer
     // Troca de controles: a ação esperando a nova tecla/botão, os botões de cada ligação e a linha de aviso.
     (string Device, string Action, string Label)? _capture;
     readonly Dictionary<(string, string), Button> _bindButtons = [];
+    readonly Dictionary<(string, string), HBoxContainer> _bindChips = [];
+    ButtonNames.Kind _shownPad = ButtonNames.Kind.Xbox;
     Label? _bindStatus;
 
     void RefreshBindings()
@@ -139,13 +145,22 @@ public partial class SettingsPanel : VBoxContainer
         {
             if (!IsInstanceValid(button)) continue;
             var list = b.Get(device, action);
-            button.Text = list.Count == 0 ? "(nenhuma)" : string.Join(", ", list.Select(InputBindings.Describe));
+            var kind = device == InputBindings.Pad ? DeviceIcons.PadKind : ButtonNames.Kind.Keyboard;
+            button.Text = list.Count == 0 ? "(nenhuma)  trocar" : "trocar";
+            // Ícones desenhados pelo port, com os nomes do aparelho (Xbox, PlayStation, Nintendo…) para o controle.
+            if (_bindChips.TryGetValue((device, action), out var chips) && IsInstanceValid(chips))
+            {
+                foreach (var old in chips.GetChildren()) old.QueueFree();
+                foreach (var binding in list) chips.AddChild(DeviceIcons.Chip(binding, kind));
+            }
         }
     }
 
     // Antes da interface: com uma ação esperando, a próxima tecla/botão vira a ligação dela (avisando de quem foi tirada).
     public override void _Input(InputEvent e)
     {
+        DeviceIcons.Seen(e);
+        if (DeviceIcons.PadKind != _shownPad) { _shownPad = DeviceIcons.PadKind; RefreshBindings(); } // outro controle: troca os ícones
         if (_capture is not { } cap) return;
         if (e is InputEventKey { Pressed: true, Keycode: Key.Escape })
         {

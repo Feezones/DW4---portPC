@@ -231,7 +231,7 @@ public partial class Fatia
     {
         _artTexts.TryGetValue(key, out var a);
         if (text == null || _winRoot == null || GameFont() is not { } font) { if (a.Node != null) a.Node.Visible = false; return; }
-        text = text.Replace("\r\n", " ");
+        text = DeviceIcons.GameText(text.Replace("\r\n", " "));
         if (a.Node == null) { a.Node = new MeshInstance3D(); _winRoot.AddChild(a.Node); }
         if (a.Text != text || a.Color != color)
         {
@@ -260,7 +260,7 @@ public partial class Fatia
         float top = face is { } f2 ? f2.End.Y : Math.Min(220, b.End.Y - 12);
         left = Math.Clamp(left, -300, 200);
         float width = Math.Max(120, right - left);
-        string text = t.Text.Replace("\r\n", "\n");
+        string text = DeviceIcons.GameText(t.Text.Replace("\r\n", "\n")); // ícones do GameCube → botões do aparelho atual
         if (g.Node == null)
         {
             g.Node = new MeshInstance3D();

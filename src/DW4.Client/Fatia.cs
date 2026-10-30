@@ -297,6 +297,7 @@ public partial class Fatia : Node3D
     // Último aparelho usado: com o controle, o golpe não vira para o cursor do mouse.
     public override void _Input(InputEvent e)
     {
+        DeviceIcons.Seen(e);
         if (e is InputEventJoypadButton { Pressed: true } || e is InputEventJoypadMotion { AxisValue: > 0.5f or < -0.5f }) _usingPad = true;
         else if (e is InputEventKey { Pressed: true } || e is InputEventMouseButton { Pressed: true }) _usingPad = false;
     }
