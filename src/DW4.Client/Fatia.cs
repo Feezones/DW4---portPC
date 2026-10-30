@@ -427,7 +427,7 @@ public partial class Fatia : Node3D
         }
         TickVolumes();
         if (!_generatorsFrozen) TickGenerators();
-        if (!_enemiesFrozen) UpdateEnemies(dt);
+        if (!_enemiesFrozen) { UpdateEnemies(dt); TickShots(dt); }
         _minimap?.Update(dt, _player.GlobalPosition, GetViewport().GetVisibleRect().Size);
         UpdateFloaters(dt);
         _damageNumbers?.Update(dt);

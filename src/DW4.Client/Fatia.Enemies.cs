@@ -26,6 +26,9 @@ public partial class Fatia
         public AnimationPlayer? Anim { get; init; }
         /// <summary>Meia largura e altura do corpo para o golpe do jogador, pela caixa da malha (mínimo 4 × 14, o do Numemon).</summary>
         public float HitHalf { get; set; } = 4;
+        /// <summary>Ação e quadro já vistos pelos disparadores (Fatia.Shots).</summary>
+        public string? ShotAction { get; set; }
+        public float ShotFrame { get; set; }
         public float HitHeight { get; set; } = 14;
         public EnemyBrain? Brain { get; set; }
         public SequenceRunner? Runner { get; set; }

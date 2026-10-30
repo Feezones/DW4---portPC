@@ -39,7 +39,7 @@ public partial class Fatia
         _botFrames++;
         _botWorst = System.Math.Max(_botWorst, dt);
         if (_botClock < 5) return;
-        GD.Print($"[bot] {_stageName}: {_botFrames / _botClock:0} FPS, quadro mais lento {_botWorst * 1000:0} ms, HP {_hp}/{_pf?.MaxHp ?? 0}, inimigos {_enemies.Count(e => !e.Dead)}, objetos {_objects.Count}, EXP {_exp}, nível {_level}");
+        GD.Print($"[bot] {_stageName}: {_botFrames / _botClock:0} FPS, quadro mais lento {_botWorst * 1000:0} ms, HP {_hp}/{_pf?.MaxHp ?? 0}, inimigos {_enemies.Count(e => !e.Dead)}, objetos {_objects.Count}, projéteis {_enemyShots.Count} [{string.Join(",", _enemyShots.GroupBy(s => s.Name).Select(g => $"{g.Key}×{g.Count()}"))}], golpes {_hitsTaken}, EXP {_exp}, nível {_level}");
         var near = _enemies.Where(e => !e.Dead).OrderBy(e => e.Body.GlobalPosition.DistanceSquaredTo(_player.GlobalPosition)).FirstOrDefault();
         if (near != null)
             GD.Print($"[bot]   alvo {near.Kind.Model} HP {near.Hp}/{near.MaxHp} em {near.Body.GlobalPosition.Round()} (jogador {_player.GlobalPosition.Round()}), sequência {near.Runner?.Sequence ?? "-"}, ação {near.Runner?.Action ?? "-"} {near.Runner?.ActionFrame ?? 0:0}/{near.Runner?.ActionLength ?? 0:0}, anim {(near.Anim?.CurrentAnimation ?? "-")}, corpo {near.HitHalf:0.#}×{near.HitHeight:0.#}, iniciado {near.Started}, invencível {near.Runner?.Invincible == true}");

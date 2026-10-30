@@ -57,6 +57,7 @@ try
         "fonte-exportar" when args.Length == 4 => FonteExportar(args[1], args[2], args[3]),
         "fonte-caixas" when args.Length == 4 => FonteCaixas(args[1], args[2], args[3]),
         "igb-drops" when args.Length == 4 => IgbDropsCmd(args[1], args[2], args[3]),
+        "igb-disparos" when args.Length == 4 => IgbDisparos(args[1], args[2], args[3]),
         "igb-geradores" when args.Length == 4 => IgbGeradores(args[1], args[2], args[3]),
         "igb-gatilhos" when args.Length == 4 => IgbGatilhos(args[1], args[2], args[3]),
         "adx-wav" when args.Length >= 4 => AdxWav(args[1], args[2], args[3..]),
@@ -1681,6 +1682,56 @@ int IgbGeradores(string path, string which, string outDir)
 }
 
 // Volumes de gatilho de área (beMatCtrlData) do IGB principal da fase em gatilhos.json.
+// Disparadores de ação (beActionStarterInfo): o modelo X (efeito, projétil x_*/y_*) nasce quando o modelo alvo toca uma ação.
+// FATO (#744, stagbs03): beActionStarterInfo [@2 nome de X, @7 → beAsTargetModelDataList] → beAsTargetModelData [@2 modelo alvo,
+// @3 → beActionStarterDataList] → beActionStarterData [@2 ação do alvo, @3 sequência de X, @4 quadro, @5 deslocamento, @6, @7].
+// HIPÓTESES: X nasce no quadro @4 da ação, no alvo + deslocamento (no espaço do alvo); @6/@7 não lidos.
+int IgbDisparos(string path, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    var data = AfsEntryBytes(path, which);
+    var f = IgbFile.Read(data);
+    var scene = IgbScene.Read(f, data);
+    bool le = f.Header.LittleEndian;
+    float F(byte[] m, int o) => le ? BitConverter.ToSingle(m, o) : BitConverter.ToSingle([m[o + 3], m[o + 2], m[o + 1], m[o]], 0);
+    IgbFieldValue? Field(IgbObject o, string type, int slot) => o.Fields.FirstOrDefault(v => v.Desc.ShortName == type && v.Desc.Slot == slot);
+    IgbObject? Ref(IgbObject o, int slot) => Field(o, "ObjectRef", slot) is { } v && v.AsInt32(le) is int i && i >= 0 && i < f.Slots.Count ? f.Slots[i] as IgbObject : null;
+    var list = new JsonArray();
+    int entries = 0;
+    foreach (var info in f.Slots.OfType<IgbObject>().Where(o => o.TypeName == "beActionStarterInfo"))
+    {
+        var targets = new JsonArray();
+        if (Ref(info, 7) is { } tl)
+            foreach (var t in scene.ObjectList(tl).Where(o => o.TypeName == "beAsTargetModelData"))
+            {
+                var acts = new JsonArray();
+                if (Ref(t, 3) is { } dl)
+                    foreach (var d in scene.ObjectList(dl).Where(o => o.TypeName == "beActionStarterData"))
+                    {
+                        var off = Field(d, "Vec3f", 5)?.Raw is { Length: >= 12 } r ? new JsonArray(F(r, 0), F(r, 4), F(r, 8)) : new JsonArray(0, 0, 0);
+                        acts.Add(new JsonObject
+                        {
+                            ["acao"] = Field(d, "String", 2)?.Text ?? "", ["sequencia"] = Field(d, "String", 3)?.Text ?? "",
+                            ["quadro"] = Field(d, "Int", 4)?.AsInt32(le) ?? 0, ["deslocamento"] = off,
+                            ["b6"] = Field(d, "Bool", 6)?.Raw is { Length: > 0 } b6 && b6[0] != 0, ["b7"] = Field(d, "Bool", 7)?.Raw is { Length: > 0 } b7 && b7[0] != 0,
+                        });
+                        entries++;
+                    }
+                targets.Add(new JsonObject { ["modelo"] = Field(t, "String", 2)?.Text ?? "", ["acoes"] = acts });
+            }
+        list.Add(new JsonObject { ["nome"] = Field(info, "String", 2)?.Text ?? "", ["alvos"] = targets });
+    }
+    Directory.CreateDirectory(full);
+    var file = Path.Combine(full, "disparos.json");
+    File.WriteAllText(file, new JsonObject { ["source"] = $"{Path.GetFileName(path)} #{which}", ["disparos"] = list }.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    // Sequências dos projéteis x_* (os y_* são só efeito visual): MOVE, HITBOX 7xxxx e LUACALL "bht" (cada um em disparos/<nome>).
+    foreach (var name in list.Select(n => n!["nome"]!.GetValue<string>()).Where(n => n.StartsWith("x_", StringComparison.Ordinal)).Distinct())
+        IgbSeq(path, which, Path.Combine(full, "disparos", name), "--ator=" + name);
+    Console.WriteLine($"{list.Count} disparadores, {entries} entradas -> {file}");
+    return 0;
+}
+
 int IgbGatilhos(string path, string which, string outDir)
 {
     var full = Path.GetFullPath(outDir);
@@ -2076,6 +2127,7 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
     if (genN >= 0) Step("geradores", () => IgbGeradores(ndmwPath, genN.ToString(inv), outDir));
     if (genN >= 0) Step("drops", () => IgbDropsCmd(ndmwPath, genN.ToString(inv), Path.Combine(outDir, "drops")));
     Step("gatilhos", () => IgbGatilhos(ndmwPath, M, outDir));
+    Step("disparos", () => IgbDisparos(ndmwPath, M, outDir));
     Step("pontos de entrada", () => IgbEntradas(ndmwPath, M, outDir));
     if (usa >= 0)
     {

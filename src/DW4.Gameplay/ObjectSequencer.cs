@@ -44,6 +44,8 @@ public sealed class ObjectSequencer
     public string? Action { get; private set; }
     /// <summary>Quadro do JOINTSET (60 Hz) para o tempo das igTransformSequence do objeto.</summary>
     public float Frame { get; private set; }
+    /// <summary>Quadros (60 Hz) desde o começo da ação atual (disparadores de ação: o quadro do beActionStarterData).</summary>
+    public float ActionTime { get; private set; }
     public float Alpha { get; private set; } = 1;
     public bool Running { get; private set; }
     /// <summary>SQ_ERAS: o objeto deve sumir.</summary>
@@ -117,6 +119,7 @@ public sealed class ObjectSequencer
         float frames = dt * FramesPerSecond;
         if (Action != null)
         {
+            ActionTime += frames;
             Frame += frames;
             if (Frame >= _to)
                 Frame = _loop && _to > _from ? _from + (Frame - _to) % (_to - _from) : _to;
@@ -216,6 +219,7 @@ public sealed class ObjectSequencer
     void PlayAction(string name)
     {
         Action = name;
+        ActionTime = 0;
         _loop = false;
         _act = _actions.TryGetValue(name, out var cmds) ? cmds : [];
         _apc = 0;
