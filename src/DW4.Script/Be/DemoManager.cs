@@ -20,6 +20,8 @@ public sealed class DemoManager(BeMessenger messenger, Func<BeMessage, double?> 
     readonly Queue<Entry> _running = new();
     double _switch;
     bool _skipping, _matched;
+    // Quadros até uma SETDEMOCAMERA com atraso chegar (ver Tick).
+    long _demoPending;
 
     /// <summary>Chamado quando uma condição não pôde ser avaliada (consulta sem resposta) e foi considerada satisfeita.</summary>
     public Action<BeMessage>? Unanswered { get; set; }
@@ -43,6 +45,7 @@ public sealed class DemoManager(BeMessenger messenger, Func<BeMessage, double?> 
     /// <summary>Executa o que der neste quadro; para no primeiro chk que ainda não vale.</summary>
     public void Tick()
     {
+        if (_demoPending > 0) _demoPending--;
         while (_running.Count > 0)
         {
             var e = _running.Peek();
@@ -65,6 +68,11 @@ public sealed class DemoManager(BeMessenger messenger, Func<BeMessage, double?> 
             {
                 case Kind.Set:
                     messenger.Send(e.Message!, e.Delay);
+                    // FATO (gene00.lua do tutorial): DMsetSD CAMERA SETDEMOCAMERA "stageend" com atraso 220 e logo depois DMchkSD
+                    // ISDEMOCAMERA "==0" e "!=0". HIPÓTESE: o chk espera a demo que ainda vai começar; sem isso a fila passava antes
+                    // dela, o SETBOXCAMERA vinha antes da demo (câmera presa nela) e o PLAYER OFCTRL atrasado chegava depois do
+                    // ONCTRL (jogador travado).
+                    if (e.Message is { Class: "CAMERA", Command: "SETDEMOCAMERA" } && e.Delay > 0) _demoPending = Math.Max(_demoPending, e.Delay + 1);
                     break;
                 case Kind.Switch:
                     _switch = query(e.Message!) ?? 0;
@@ -72,6 +80,7 @@ public sealed class DemoManager(BeMessenger messenger, Func<BeMessage, double?> 
                     break;
                 case Kind.CheckNonZero or Kind.CheckZero:
                     var v = query(e.Message!);
+                    if (_demoPending > 0 && e.Message is { Class: "CAMERA", Command: "ISDEMOCAMERA" }) v = 0;
                     if (v == null) Unanswered?.Invoke(e.Message!);
                     else if ((v != 0) == (e.Kind == Kind.CheckNonZero)) { Blocking = e; return; }
                     break;

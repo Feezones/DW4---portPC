@@ -26,6 +26,9 @@ public interface IBeEngine
     /// <summary>Posição e direção (radianos, atan2(frente.x, frente.z)) do jogador p (PLAYERgetPosStr). null = sem jogador.</summary>
     (double X, double Y, double Z, double Yaw)? PlayerPose(int player) => null;
 
+    /// <summary>Ponto de entrada <paramref name="entry"/>, vaga <paramref name="slot"/> (PLAYERPOINT GETMATRIXDIRECT): posição e giro em graus.</summary>
+    (double X, double Y, double Z, double YawDeg)? EntryPose(int entry, int slot) => null;
+
 }
 
 /// <summary>
@@ -454,6 +457,12 @@ public sealed class BeHost
                 _engine.Deliver(new BeMessage("MODELCTRL", Model?.ModelName, Model?.Index ?? 0, "DSPEXP", [], I(a, 1).ToString(System.Globalization.CultureInfo.InvariantCulture)));
                 return Nothing;
             // FATO (0x802EE36C): posição do jogador p levada pelo deslocamento → "V<%f,%f,%f>". O motor dá a pose do jogador.
+            // FATO (0x802EB4F8 → 0x802EE240): PLAYERPOINT <entrada> <vaga> GETMATRIXDIRECT e "V<%f,%f,%f>/V<0,%f,0>" com o giro da
+            // matriz em graus + o 3º argumento. O tutorial (gene00.lua) põe o jogador de volta no ponto com MOVETRANS.
+            case "PLAYERgetDataStr":
+                return _engine.EntryPose(I(a, 1), I(a, 2)) is { } ep
+                    ? [$"{Vec(ep.X, ep.Y, ep.Z)}/{Vec(0, ep.YawDeg + D(a, 3), 0)}"]
+                    : [Warn(name, "V<0,0,0>/V<0,0,0>")];
             case "PLAYERgetPosStr":
             {
                 var (px, py, pz, yaw) = _engine.PlayerPose(I(a, 1)) ?? default;

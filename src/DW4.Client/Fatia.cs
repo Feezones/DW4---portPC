@@ -129,7 +129,7 @@ public partial class Fatia : Node3D
         _player.Velocity = Vector3.Zero;
     }
 
-    (Vector3 Position, float RotYDeg)? EntryPoint(int group)
+    (Vector3 Position, float RotYDeg)? EntryPoint(int group, int slotIndex = 0)
     {
         var file = System.IO.Path.Combine(_dir, "pontos_entrada.json");
         if (!System.IO.File.Exists(file)) { _problems.Add($"falta {file} (dw4 igb-entradas ndmw.afs 179 <fatia>): início no ponto fixo"); return null; }
@@ -137,7 +137,8 @@ public partial class Fatia : Node3D
         foreach (var pt in doc.RootElement.GetProperty("points").EnumerateArray())
         {
             if (pt.GetProperty("index").GetInt32() != group) continue;
-            var slot = pt.GetProperty("slots").EnumerateArray().First();
+            var slots = pt.GetProperty("slots").EnumerateArray().ToList();
+            var slot = slots[Math.Clamp(slotIndex, 0, slots.Count - 1)];
             var p = slot.GetProperty("position");
             return (new Vector3(p[0].GetSingle(), p[1].GetSingle(), p[2].GetSingle()), slot.GetProperty("rotYDeg").GetSingle());
         }
@@ -878,16 +879,41 @@ public partial class Fatia : Node3D
 
     // Materiais "_add" do exportador = igBlendFunctionAttr SRC_ALPHA/ONE do jogo (luzes, brilhos): mistura aditiva, sem luz e
     // sem gravar profundidade (os atores com essa mistura também têm igDepthWriteStateAttr).
+    // FATO (stag0001, tutorial): o chão é um plano opaco preto (0001ground03 com UV constante) e, na MESMA altura (y 10), a grade
+    // aditiva 0001ground02_add. Com o teste de profundidade comum a camada aditiva coplanar perdia para o chão e o tutorial ficava
+    // preto liso. DECISÃO DO PORT: as camadas aditivas (_add) vão num shader com um pequeno avanço de profundidade (o jogo desenha
+    // depois, com LEQUAL; aqui o empate não é garantido). Z invertido da Godot 4: z maior = mais perto.
+    static readonly Shader AdditiveShader = new()
+    {
+        Code = """
+            shader_type spatial;
+            render_mode blend_add, unshaded, depth_draw_never, cull_disabled;
+            uniform sampler2D tex : source_color, filter_linear_mipmap, repeat_enable;
+            uniform vec4 tint : source_color = vec4(1.0);
+            uniform bool has_tex = true;
+            void vertex() {
+                POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
+                POSITION.z += 0.0004 * POSITION.w;
+            }
+            void fragment() {
+                vec4 c = (has_tex ? texture(tex, UV) : vec4(1.0)) * tint;
+                ALBEDO = c.rgb;
+                ALPHA = c.a;
+            }
+            """,
+    };
+
     static void ApplyAdditive(Node root)
     {
         foreach (var mi in FindAll<MeshInstance3D>(root))
             for (int s = 0; s < mi.Mesh.GetSurfaceCount(); s++)
                 if (mi.Mesh.SurfaceGetMaterial(s) is StandardMaterial3D m && m.ResourceName.EndsWith("_add", StringComparison.Ordinal))
                 {
-                    m.BlendMode = BaseMaterial3D.BlendModeEnum.Add;
-                    m.Transparency = BaseMaterial3D.TransparencyEnum.Alpha;
-                    m.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
-                    m.DepthDrawMode = BaseMaterial3D.DepthDrawModeEnum.Disabled;
+                    var add = new ShaderMaterial { Shader = AdditiveShader, ResourceName = m.ResourceName };
+                    add.SetShaderParameter("tex", m.AlbedoTexture);
+                    add.SetShaderParameter("has_tex", m.AlbedoTexture != null);
+                    add.SetShaderParameter("tint", m.AlbedoColor);
+                    mi.SetSurfaceOverrideMaterial(s, add);
                 }
     }
 

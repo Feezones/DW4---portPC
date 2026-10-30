@@ -118,6 +118,10 @@ public partial class Fatia : IBeEngine
 
     // PLAYERgetPos: ponto de entrada na fase. DW4_ENTRADA escolhe (0 = porta inicial, com a demo de entrada; FATO pelo first.lua).
     // PLAYERgetPosStr: só o jogador 0 existe na fatia.
+    // PLAYERgetDataStr: ponto de entrada e vaga da pontos_entrada.json (posição e giro em graus).
+    public (double X, double Y, double Z, double YawDeg)? EntryPose(int entry, int slot) =>
+        EntryPoint(entry, slot) is { } ep ? (ep.Position.X, ep.Position.Y, ep.Position.Z, ep.RotYDeg) : null;
+
     public (double X, double Y, double Z, double Yaw)? PlayerPose(int player) =>
         player == 0 ? (_player.GlobalPosition.X, _player.GlobalPosition.Y, _player.GlobalPosition.Z, _move.Facing) : null;
 

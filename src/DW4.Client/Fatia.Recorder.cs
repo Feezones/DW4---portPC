@@ -78,6 +78,14 @@ public partial class Fatia
                 return true;
             case ("PLAYER", "OFCTRL"): _playerCtrl = false; return true;
             case ("PLAYER", "ONCTRL"): _playerCtrl = true; return true;
+            // FATO (gene00.lua): MOVETRANS "V<pos>/V<0,giro,0>" põe o jogador no ponto (o 2º vetor em graus). Só o jogador 0 na fatia.
+            case ("PLAYER", "MOVETRANS") when m.Index <= 0 && m.Arg(0) is { Kind: 'V', Numbers.Length: 3 } mp:
+                _player.GlobalPosition = new Vector3((float)mp.Numbers[0], (float)mp.Numbers[1], (float)mp.Numbers[2]);
+                _player.Velocity = Vector3.Zero;
+                _move.Stop();
+                if (m.Arg(1) is { Kind: 'V', Numbers.Length: 3 } mr) _move.Face(Mathf.DegToRad((float)mr.Numbers[1]));
+                _snapToFloor = true;
+                return true;
             case ("ENEMY", "OFCTRL"): _enemiesFrozen = true; return true;
             case ("ENEMY", "ONCTRL"): _enemiesFrozen = false; return true;
             case ("GENERATER", "ONFREEZE"): _generatorsFrozen = true; return true;

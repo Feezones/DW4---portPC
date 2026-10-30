@@ -1022,6 +1022,22 @@ Test("be: DMswtSD/DMcase com padrão (−1) e DMswtEnd", () =>
     }
 });
 
+Test("be: DMsetSD SETDEMOCAMERA com atraso segura o chk ISDEMOCAMERA até a demo chegar (tutorial, gene00.lua)", () =>
+{
+    var log = new List<string>();
+    var messenger = new BeMessenger(m => log.Add(m.Command));
+    var dm = new DemoManager(messenger, _ => null); // sem demo exportada: a consulta não responde
+    BeMessage C(string c, string? arg = null) => new("CAMERA", null, -1, c, [], arg);
+    dm.Add(new(DemoManager.Kind.Set, C("SETDEMOCAMERA", "stageend"), 220));
+    dm.Add(new(DemoManager.Kind.CheckZero, C("ISDEMOCAMERA", "==0"), 0));
+    dm.Add(new(DemoManager.Kind.Set, C("SETBOXCAMERA"), 0));
+    dm.Run();
+    for (int i = 0; i < 100; i++) { dm.Tick(); messenger.Tick(); }
+    True(!log.Contains("SETBOXCAMERA"), "a fila espera a demo: " + string.Join(",", log));
+    for (int i = 0; i < 200; i++) { dm.Tick(); messenger.Tick(); }
+    Equal("SETDEMOCAMERA,SETBOXCAMERA", string.Join(",", log), "a demo chega antes do SETBOXCAMERA");
+});
+
 // ---------- dados do jogo (opcional) ----------
 
 if (args.Length == 1)
