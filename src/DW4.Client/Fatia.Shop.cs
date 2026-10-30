@@ -150,10 +150,26 @@ public partial class Fatia
             layer.AddChild(_shopPanel);
             AddChild(layer);
         }
-        _shopPanel.Visible = ShopOpen;
-        if (!ShopOpen || _db == null) return;
+        bool art = ShopArtReady();
+        _shopPanel.Visible = ShopOpen && !art;
+        if (!ShopOpen || _db == null) { if (art) UpdateShopArt([], "", ""); return; }
         var list = ShopList();
         int pages = Math.Max(1, (list.Count + ShopPage - 1) / ShopPage);
+        if (art)
+        {
+            var rows = new List<string>();
+            for (int r = 0; r < ShopPage; r++)
+            {
+                int i = _shopPageNo * ShopPage + r;
+                if (i >= list.Count) { rows.Add(""); continue; }
+                if (list[i] is not { } it) { rows.Add("----"); continue; }
+                var tt = _db[it.Table];
+                rows.Add($"{tt.Text(it.Row, "NAME")}{(_shopSelling && Equipped(it) ? " (E)" : "")}\t{tt.Int(it.Row, _shopSelling ? "KAITORI" : "HANBAI")}");
+            }
+            UpdateShopArt(rows, $"{(_shopSelling ? "Vender" : "Comprar")}   BIT {_inventory.Bit}   {_shopPageNo + 1}/{pages}",
+                _shopMessage.Length > 0 ? _shopMessage : "cima/baixo escolhe, esq./dir. página, ataque confirma, V/Y troca, K/B sai");
+            return;
+        }
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"{SubWndNames[_shopKind]} — {(_shopSelling ? "Vender" : "Comprar")}   BIT {_inventory.Bit}   página {_shopPageNo + 1}/{pages}");
         sb.AppendLine("[cima/baixo escolhe, esq./dir. página, ataque confirma, V/Y troca, K/B sai]");

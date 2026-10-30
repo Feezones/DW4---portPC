@@ -62,9 +62,10 @@ conferido na janela. O estado vem do repositório, dos testes (81 ok) e das jane
     - falas: arte, rosto e fonte do jogo, vistas na tela (stagml11);
     - menu de status: fonte do jogo com os ícones, visto; os cursores passam a andar (f0dada6), sem rever;
     - troca de área (i_zzstchgwb/wn) e teleporte (i_zzstchgcur): arte do jogo, cursor corrigido (f0dada6), sem rever;
-    - lojas, banco, X-data e LABO: caixas da Godot com a fonte do jogo. A arte (j_shwin) e as caixas STWINFONT estão levantadas
-      (fase5-lojas.md), mas a posição das caixas na tela não está nos dados (o usa_pack só tem categoria, linha, largura e
-      altura da linha; o código nativo passa só ALIGN/TEXTSET). DESCONHECIDO até ler o beTextCtrl.
+    - lojas: arte do jogo (j_shback, j_shbase, j_shwin; variante AWIN comprando, BWIN vendendo, JUNK no ferro-velho) com a fonte
+      do jogo (2026-10-30, sem rever na tela). FATO: o código nativo não manda posição de texto (o TEXTCTL SETPOSITION só serve aos
+      nomes de item no chão). HIPÓTESE pela geometria: cabeçalho de 28 px, 12 linhas de 16 px (y 127 a −65) e a ajuda de 3 linhas
+      embaixo. Banco, X-data e LABO seguem em caixas da Godot com a fonte do jogo (variantes BITPUTIN/XDATAITEM/SINKA levantadas).
 14. **Cartas:** álbum feito na loja de cartas (lista das 50); faltam a arte do pacote (j_shbooster/j_shcardNN) e o valor 0x7DA/0x7DB/0x7DC pela raridade.
 15. **NPCs:** andam, falam e passeiam pela IA do jogo; não foi visto se viram para o jogador e as escalas.
 16. **Filmes** (abertura e final, Sofdec): o leitor existe nas ferramentas, não no cliente.
