@@ -29,6 +29,8 @@ public partial class Fatia
         public required ObjectSequencer Seq { get; init; }
         public Fighter? Owner { get; init; }
         public string OwnerName { get; init; } = "";
+        /// <summary>Índice da instância (MDLisLive "x_…", I): o menor livre entre os vivos com o mesmo nome (HIPÓTESE).</summary>
+        public int Index { get; init; }
         public bool Hit { get; set; }
         public string? LastAction { get; set; }
         public float LastFrame { get; set; }
@@ -106,7 +108,9 @@ public partial class Fatia
                 Mesh = new SphereMesh { Radius = 1.5f, Height = 3 },
                 MaterialOverride = new StandardMaterial3D { ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded, AlbedoColor = new Color(1f, 0.55f, 0.25f), EmissionEnabled = true, Emission = new Color(1f, 0.4f, 0.1f) },
             });
-        _enemyShots.Add(new Shot { Name = s.Effect, Root = root, Seq = seq, Owner = owner, OwnerName = ownerName });
+        int index = 0;
+        while (_enemyShots.Any(o => o.Name == s.Effect && o.Index == index)) index++;
+        _enemyShots.Add(new Shot { Name = s.Effect, Root = root, Seq = seq, Owner = owner, OwnerName = ownerName, Index = index });
     }
 
     void TickShots(float dt)

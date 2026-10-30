@@ -127,7 +127,9 @@ public partial class Fatia : IBeEngine
         // ISDEMOCAMERA = 1 enquanto a demo toca (o first.lua espera enquanto "==0", até começar, e enquanto "!=0", até acabar).
         // Sem a demo exportada: sem resposta (a espera passa).
         "ISDEMOCAMERA" => _cameraDemo is { } d ? (_cameraDemoT < d.Duration ? 1 : 0) : (double?)null,
-        "ISLIVE" => (m.Name == "i_bosshp01" && _bossBarOpen) || _minimap?.Has(m.Name ?? "", m.Index) == true || _objects.Any(o => o.Name == m.Name && o.Index == m.Index && !o.Dead && !o.Erased) ? 1 : 0,
+        // Projéteis x_* (gl2_f_luce.lua espera os 4 mísseis sumirem) e inimigos pelo modelo (o índice dos inimigos é 0 na fatia).
+        "ISLIVE" => (m.Name == "i_bosshp01" && _bossBarOpen) || _minimap?.Has(m.Name ?? "", m.Index) == true || _objects.Any(o => o.Name == m.Name && o.Index == m.Index && !o.Dead && !o.Erased)
+            || _enemyShots.Any(s => s.Name == m.Name && s.Index == m.Index && !s.Seq.Erased) || _enemies.Any(e => e.Kind.Model == m.Name && m.Index <= 0 && !e.Dead) ? 1 : 0,
         _ => null,
     };
 
