@@ -1,4 +1,4 @@
-# Filmes Sofdec: o que falta para tocar no cliente
+# Filmes Sofdec no cliente
 
 Levantamento de 2026-10-30, feito só com leitura estática (sem abrir o jogo nem instalar nada).
 
@@ -22,7 +22,26 @@ Levantamento de 2026-10-30, feito só com leitura estática (sem abrir o jogo ne
 - O ADX já é decodificado (`tools/DW4.Formats/Audio/Adx.cs`, `dw4 adx-wav`).
 - A Godot 4.7 só toca Theora (.ogv) no VideoStreamPlayer. MPEG-1 não. Não há pacote NuGet no projeto e a regra é não instalar nada.
 
-## O que falta
+## Feito (2026-10-30, opção 1)
+
+- `src/DW4.Media/Mpeg1Video.cs`: decodificador MPEG-1 nosso, sem pacote, com crédito ao pl_mpeg (MIT) como referência de
+  leitura.
+  - Cobre imagens I, P e B, as tabelas de VLC do anexo B, as matrizes do cabeçalho, a IDCT 8 × 8 e o meio pixel.
+  - A AFS, o MPEG-PS e o ADX foram para a mesma biblioteca (net8.0), para o cliente ler.
+- FATO (dw4 sfd-quadros e teste): a AUS_ dá 1920 quadros (139 I, 524 P, 1257 B), 64,06 s, sem erro, em ~9 s numa linha de
+  execução (≈ 200 quadros/s).
+- FATO: os quadros 300, 900, 1213 e 1650 foram conferidos a olho e estão certos.
+- FATO: as faixas pretas de cima e de baixo estão dentro do próprio vídeo. O cliente mostra o 640 × 480 inteiro, em 4:3
+  centrado.
+- `src/DW4.Client/OpeningMovie.cs`: toca antes do menu inicial, uma vez por execução.
+  - Vídeo numa linha de execução própria, com fila de 6 quadros.
+  - Três texturas L8 e a conversão para RGB num shader.
+  - O som (ADX → AudioStreamWav, barramento de música) é o relógio.
+  - DW4_SEM_FILME=1 desliga; DW4_ARQUIVOS aponta a pasta files da extração.
+- Testes: tabelas sem prefixo repetido e IDCT contra a fórmula direta; fluxo montado no teste (I, P com cópia e P com meio
+  pixel); a abertura inteira, com o SHA-256 da luma do quadro 300.
+
+## O que faltava antes (referência)
 
 Só o **decodificador de vídeo MPEG-1**. Ele precisa de:
 

@@ -15,7 +15,7 @@ namespace DW4.Client;
 /// Mouse, teclado e controle (foco dos botões pelas ações ui_* da Godot). A criação usa o que se sabe da stagIS13: as 4
 /// formas iniciais (FATO: DIGIMONNO 0..3 no GAMEDATAINIT), nome e dificuldade (mswkMem0232, 0163/0167, 0168). As iniciais sem modelo
 /// exportado aparecem desligadas.
-/// Abrir com DW4_FASE definido (depuração) pula o menu e vai direto à fase, sem vaga.
+/// Abrir com DW4_FASE definido (depuração) pula o menu e vai direto à fase, sem vaga. Ao abrir, toca a abertura (OpeningMovie).
 /// </summary>
 public partial class MainMenu : Control
 {
@@ -54,7 +54,18 @@ public partial class MainMenu : Control
         _root.AddThemeConstantOverride("separation", 14);
         center.AddChild(_root);
         ShowTitle();
+        // Abertura antes do título, uma vez por execução (a stagIS09 do jogo vem entre os logos e o título; OpeningMovie.cs).
+        if (!_openingShown && OpeningMovie.CanPlay())
+        {
+            _openingShown = true;
+            _root.Visible = false;
+            var movie = new OpeningMovie();
+            movie.Finished += () => { _root.Visible = true; ShowTitle(); };
+            AddChild(movie);
+        }
     }
+
+    static bool _openingShown;
 
     void GoStraight() => GetTree().ChangeSceneToFile(Session.GameScene);
 

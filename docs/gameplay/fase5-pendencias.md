@@ -71,8 +71,9 @@ conferido na janela. O estado vem do repositório, dos testes (81 ok) e das jane
       esquerda/direita com passo de 1 a 1 000 000).
 14. **Cartas:** álbum feito na loja de cartas (lista das 50); faltam a arte do pacote (j_shbooster/j_shcardNN) e o valor 0x7DA/0x7DB/0x7DC pela raridade.
 15. **NPCs:** andam, falam e passeiam pela IA do jogo; não foi visto se viram para o jogador e as escalas.
-16. **Filmes:** um só, a abertura da stagIS09 (MOVIE PLAY AJP_/AUS_/AEU_opening.sfd pela região). Separação e ADX prontos; falta o
-    decodificador de vídeo MPEG-1 (opção recomendada: nosso, em C#, sem pacote). Ver fase5-filmes.md.
+16. **Filmes:** a abertura toca antes do menu (2026-10-30; OpeningMovie.cs, decodificador MPEG-1 nosso em src/DW4.Media). Visto só sem
+    janela (Godot --headless: carregou do area.afs, tocou com o ADX como relógio e acabou sozinho em 64,1 s). Falta ver a imagem
+    na tela e o pulo com botão. Ver fase5-filmes.md.
 17. **Câmera:** "Dungeon camera" e "Light" vão para a GAMERAM, sem efeito no cliente.
 
 ## Já resolvido (referência)
