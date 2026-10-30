@@ -1371,6 +1371,15 @@ int IgbSeq(string path, string which, string outDir, string? option)
         }
         root["aimaps"] = arr;
     }
+    // Caixas do corpo (beModelCtrlInfoDataHit), no espaço do ator: [minX, minY, minZ, maxX, maxY, maxZ].
+    notes.Clear();
+    var body = IgbSequences.ReadHitBody(IgbFile.Read(data), data, actor, notes);
+    if (body.Count > 0)
+    {
+        text.AppendLine("=== caixas do corpo (beModelCtrlInfoDataHit) ===");
+        foreach (var (mn, mx) in body) text.AppendLine($"  {Fmt(mn)} .. {Fmt(mx)}");
+        root["body"] = new JsonArray(body.Select(b => (JsonNode?)new JsonArray(b.Min.Concat(b.Max).Select(x => (JsonNode?)JsonValue.Create(x)).ToArray())).ToArray());
+    }
     Directory.CreateDirectory(full);
     var stem = $"{Path.GetFileNameWithoutExtension(path)}_{idx:D4}{(actor == null ? "" : "_" + actor)}_seq";
     File.WriteAllText(Path.Combine(full, stem + ".json"), root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));

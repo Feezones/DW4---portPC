@@ -199,7 +199,7 @@ public partial class Fatia
         foreach (var h in s.Seq.ActiveHitBoxes.Where(h => h.Type / 10000 == 7))
         {
             var c = s.Root.GlobalTransform * new Vector3(h.Position.X, h.Position.Y, h.Position.Z);
-            if (Math.Abs(c.X - g.X) > h.Size.X / 2 + 2.5f || Math.Abs(c.Z - g.Z) > h.Size.Z / 2 + 2.5f || c.Y + h.Size.Y / 2 < g.Y || c.Y - h.Size.Y / 2 > g.Y + 7) continue;
+            if (!HitsPlayer(c, h.Size, s.Root.GlobalRotation.Y)) continue;
             s.Hit = true;
             _hitsTaken++;
             if (!PlayerHitScript(h.Type, s.Owner, s.OwnerName, s.Root.GlobalPosition))

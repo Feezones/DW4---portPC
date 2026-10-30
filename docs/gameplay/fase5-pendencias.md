@@ -74,6 +74,10 @@ conferido na janela. O estado vem do repositório, dos testes (81 ok) e das jane
 16. **Filmes:** a abertura toca antes do menu (2026-10-30; OpeningMovie.cs, decodificador MPEG-1 nosso em src/DW4.Media). Visto só sem
     janela (Godot --headless: carregou do area.afs, tocou com o ADX como relógio e acabou sozinho em 64,1 s). Falta ver a imagem
     na tela e o pulo com botão. Ver fase5-filmes.md.
+20. **Caixas de golpe** (2026-10-30, HitBody): o corpo de jogador, inimigos e objetos usa as caixas do jogo (beModelCtrlInfoDataHit "HIT",
+    igAABox no espaço do ator; FATO: Guilmon 5 × 7 × 5, Numemon 8 × 14 × 8; sem osso). As caixas de golpe já vinham do HITBOX das
+    sequências (quadro de início e duração; o arco do golpe são caixas em quadros seguidos). HIPÓTESE: caixa contra caixa, com a
+    de golpe girada para os eixos do alvo. Sem caixas no json (regenerar com o igb-seq atual), fica a caixa pela malha.
 19. **Menu inicial** (2026-10-30): título do jogo conferido na prévia sem janela (dw4 hud-previa: túnel em perspectiva, logotipo, Press START);
     música AM_TITLE2 em laço; criação com o h_<forma> girando; vagas e criação sobre o j_chrselback. Falta: janelas originais das
     vagas e da criação (j_saveareawin, j_mainstatuswin, j_namewin, j_digisel*), cuja posição vem do código nativo da stagIS12/13.

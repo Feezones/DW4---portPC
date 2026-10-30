@@ -5,6 +5,7 @@ using System.Linq;
 using Godot;
 using DW4.Gameplay;
 using DW4.Script.Be;
+using NVector3 = System.Numerics.Vector3;
 
 namespace DW4.Client;
 
@@ -25,6 +26,8 @@ public partial class Fatia
         public required HudActor Actor { get; init; }
         public Dictionary<string, List<SeqCommand>> Sequences { get; init; } = [];
         public Dictionary<string, List<SeqCommand>> Actions { get; init; } = [];
+        /// <summary>Caixas do corpo (beModelCtrlInfoDataHit); vazio = a caixa da g_box (GboxSize).</summary>
+        public List<(NVector3 Min, NVector3 Max)> BodyBoxes { get; init; } = [];
         public StaticBody3D? Body { get; set; }
         public Generator? Gen { get; init; }
         public int Hp { get; set; }
@@ -133,6 +136,7 @@ public partial class Fatia
         {
             Name = name, Index = index, Actor = actor, Gen = gen,
             Actions = json != null ? SeqCommand.LoadActions(json) : [],
+            BodyBoxes = json != null ? HitBody.Load(json) : [],
             Seq = json != null ? new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)) : null,
             Grounded = name.StartsWith("n_", StringComparison.Ordinal),
         };
@@ -271,8 +275,11 @@ public partial class Fatia
             foreach (var o in _objects.Where(o => o.Body != null && !o.Dead && !_objectsHitThisAction.Contains(o)).ToList())
             {
                 var p = o.Actor.Root.GlobalPosition; // global: o f_bit fica preso ao chefe
-                if (Math.Abs(c.X - p.X) > h.Size.X / 2 + GboxSize.X / 2 || Math.Abs(c.Z - p.Z) > h.Size.Z / 2 + GboxSize.Z / 2
-                    || c.Y + h.Size.Y / 2 < p.Y || c.Y - h.Size.Y / 2 > p.Y + GboxSize.Y) continue;
+                bool touch = o.BodyBoxes.Count > 0
+                    ? HitBody.Hits(N(c), h.Size, _move.Facing, N(p), o.Actor.Root.GlobalRotation.Y, o.Actor.Root.GlobalBasis.Scale.X, o.BodyBoxes)
+                    : !(Math.Abs(c.X - p.X) > h.Size.X / 2 + GboxSize.X / 2 || Math.Abs(c.Z - p.Z) > h.Size.Z / 2 + GboxSize.Z / 2
+                        || c.Y + h.Size.Y / 2 < p.Y || c.Y - h.Size.Y / 2 > p.Y + GboxSize.Y);
+                if (!touch) continue;
                 _objectsHitThisAction.Add(o);
                 o.BulletKind = h.Type;
                 var script = $"hit_{o.Name}.lua";
@@ -325,8 +332,7 @@ public partial class Fatia
         {
             if (h.Type / 10000 != 7) continue; // 7xxxx: golpe contra o jogador (como o 70004 do Numemon)
             var c = root.GlobalPosition + new Vector3(h.Position.X, h.Position.Y, h.Position.Z).Rotated(Vector3.Up, root.GlobalRotation.Y);
-            if (!(Math.Abs(c.X - g.X) <= h.Size.X / 2 + 2.5f && Math.Abs(c.Z - g.Z) <= h.Size.Z / 2 + 2.5f
-                && c.Y + h.Size.Y / 2 >= g.Y && c.Y - h.Size.Y / 2 <= g.Y + 7)) continue;
+            if (!HitsPlayer(c, h.Size, root.GlobalRotation.Y)) continue;
             o.HitSerial = o.Seq.BoxSerial;
             _hitsTaken++;
             string? reaction = EnemyStrikes(h.Type, o.Owner?.Kind.Stats, o.Name); // f_bit: os atributos do chefe dono

@@ -117,6 +117,8 @@ public partial class Fatia
         public string? Json { get; init; }
         public Dictionary<string, List<SeqCommand>> Sequences { get; init; } = [];
         public Dictionary<string, List<SeqCommand>> Actions { get; init; } = [];
+        /// <summary>Caixas do corpo (beModelCtrlInfoDataHit, FATO); vazio = caixa pela malha (HitHalf/HitHeight).</summary>
+        public List<(NVector3 Min, NVector3 Max)> BodyBoxes { get; init; } = [];
         public string? Wait { get; set; }
         public string? Run { get; set; }
         public string? Hurt { get; set; }
@@ -183,6 +185,7 @@ public partial class Fatia
         return new EnemyKind
         {
             Model = model, Row = row, Doc = doc, State = state, Stats = _db?.Enemy(row), Json = json, Sequences = seqs, Actions = acts, Walk = walk,
+            BodyBoxes = json != null ? HitBody.Load(json) : [],
             Wait = ActionAnimations.FirstAction(seqs, "SQ_WAIT", null) is { } wa ? ActionAnimations.Motion(acts, wa) : null,
             Run = ActionAnimations.FirstAction(seqs, "SQ_WALK", null) is { } ra ? ActionAnimations.Motion(acts, ra) : null,
         };
@@ -203,6 +206,7 @@ public partial class Fatia
         {
             Model = model, Row = row, RigidRoot = root, Stats = _db?.Enemy(row), Json = json,
             Sequences = json != null ? SeqCommand.LoadAll(json) : [], Actions = json != null ? SeqCommand.LoadActions(json) : [],
+            BodyBoxes = json != null ? HitBody.Load(json) : [],
         };
     }
 
@@ -537,7 +541,22 @@ public partial class Fatia
     // A mesma caixa antes e depois de passar para a ação seguinte (o quadro inicial muda).
     static HitBox HitKey(HitBox h) => h with { StartFrame = 0 };
 
-    // Caixas 7xxxx do inimigo (ataque; 70004 no Numemon, HIPÓTESE pelo SQ_ATCK1) contra a caixa de corpo do Guilmon (5 × 7 × 5, FATO).
+    // Caixas do corpo do jogador (beModelCtrlInfoDataHit da forma atual; o Guilmon tem 5 × 7 × 5, FATO).
+    List<(NVector3 Min, NVector3 Max)> _playerBody = [];
+
+    static NVector3 N(Vector3 v) => new(v.X, v.Y, v.Z);
+
+    /// <summary>Caixa de golpe (centro no mundo, tamanho nos eixos de quem bate) contra o corpo do jogador.</summary>
+    bool HitsPlayer(Vector3 c, NVector3 size, float attackerYaw)
+    {
+        var g = _player.GlobalPosition;
+        return _playerBody.Count > 0
+            ? HitBody.Hits(N(c), size, attackerYaw, N(g), _move.Facing, 1, _playerBody)
+            : Math.Abs(c.X - g.X) <= size.X / 2 + 2.5f && Math.Abs(c.Z - g.Z) <= size.Z / 2 + 2.5f && c.Y + size.Y / 2 >= g.Y && c.Y - size.Y / 2 <= g.Y + 7;
+    }
+
+    // Caixas 7xxxx do inimigo (ataque; 70004 no Numemon, HIPÓTESE pelo SQ_ATCK1) contra as caixas do corpo do jogador; sem elas no
+    // json, a caixa do Guilmon.
     void CheckEnemyHits(Enemy e)
     {
         if (e.Runner == null || _runner?.Invincible == true) return;
@@ -546,7 +565,7 @@ public partial class Fatia
         {
             if (e.HitThisAction.Contains(HitKey(h))) continue;
             var c = EnemyBoxCenter(e, h);
-            if (Math.Abs(c.X - g.X) <= h.Size.X / 2 + 2.5f && Math.Abs(c.Z - g.Z) <= h.Size.Z / 2 + 2.5f && c.Y + h.Size.Y / 2 >= g.Y && c.Y - h.Size.Y / 2 <= g.Y + 7)
+            if (HitsPlayer(c, h.Size, e.Yaw))
             {
                 e.HitThisAction.UnionWith(e.Runner.ActionHitBoxes.Select(HitKey));
                 _hitsTaken++;
@@ -577,10 +596,13 @@ public partial class Fatia
             var p = e.Body.GlobalPosition;
             foreach (var h in _runner.ActiveHitBoxes().Where(h => h.Type == 10000))
             {
-                // Caixa de dano contra a caixa do corpo (HitHalf/HitHeight: pela malha, mínimo a do Numemon 8 × 14 × 8), em eixos do mundo:
-                // aproximação (o corpo de colisão dos chefes grandes não foi lido).
+                // Caixa de dano contra as caixas do corpo do inimigo (beModelCtrlInfoDataHit, nos eixos e na escala dele). Sem elas no
+                // json, a caixa pela malha (HitHalf/HitHeight, mínimo a do Numemon 8 × 14 × 8) em eixos do mundo.
                 var c = BoxCenter(h);
-                if (!(Math.Abs(c.X - p.X) <= h.Size.X / 2 + e.HitHalf && Math.Abs(c.Z - p.Z) <= h.Size.Z / 2 + e.HitHalf && c.Y + h.Size.Y / 2 >= p.Y && c.Y - h.Size.Y / 2 <= p.Y + e.HitHeight)) continue;
+                bool touch = e.Kind.BodyBoxes.Count > 0
+                    ? HitBody.Hits(N(c), h.Size, _move.Facing, N(p), e.Yaw, e.Model.Scale.X, e.Kind.BodyBoxes)
+                    : Math.Abs(c.X - p.X) <= h.Size.X / 2 + e.HitHalf && Math.Abs(c.Z - p.Z) <= h.Size.Z / 2 + e.HitHalf && c.Y + h.Size.Y / 2 >= p.Y && c.Y - h.Size.Y / 2 <= p.Y + e.HitHeight;
+                if (!touch) continue;
                 _enemiesHitThisAction.Add(e);
                 _hits++;
                 _lastEnemy = e;

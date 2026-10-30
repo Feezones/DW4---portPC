@@ -217,6 +217,7 @@ public partial class Fatia : Node3D
                 _actions = SeqCommand.LoadActions(json);
                 if (_actions.Count == 0) _problems.Add("o *_seq.json não tem ações: regere com o igb-seq atual");
                 var sequences = SeqCommand.LoadAll(json);
+                _playerBody = HitBody.Load(json);
                 _runner = new SequenceRunner(sequences, AnimFrames);
                 SetupJump(_runner);
                 // Parado e andando: pelo bloco da arma equipada (Fatia.Weapon.cs, depois do LoadCombat).

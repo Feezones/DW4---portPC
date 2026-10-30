@@ -373,6 +373,24 @@ Test("MPEG-PS: pacote MPEG-1, PES com PTS, fim e preenchimento de setor", () =>
     True(MpegPs.Demux(ps.ToArray()[..20]).Problems.Count > 0, "PES cortado não foi apontado");
 });
 
+Test("Combate: caixa de golpe contra as caixas do corpo (eixos e escala do alvo, giro do golpe)", () =>
+{
+    var body = HitBody.Load("{\"body\":[[-4,0,-4,4,14,4]]}");
+    Equal(1, body.Count, "caixas do Numemon");
+    var size = new System.Numerics.Vector3(8, 8, 8);
+    var at = new System.Numerics.Vector3(0, 0, 0);
+    // Golpe do arco do Guilmon (0, 4, 12) à frente de quem olha para +z, com o alvo a 20 em z: 12 + 4 = 16 ≥ 20 − 4.
+    True(HitBody.Hits(new(0, 4, 12), size, 0, new(0, 0, 20), MathF.PI, 1, body), "golpe na frente alcança o corpo");
+    True(!HitBody.Hits(new(0, 4, 12), size, 0, new(0, 0, 25), MathF.PI, 1, body), "longe demais não alcança");
+    True(HitBody.Hits(new(0, 4, 12), size, 0, new(0, 0, 22), MathF.PI, 2, body) && !HitBody.Hits(new(0, 4, 12), size, 0, new(0, 0, 22), MathF.PI, 1, body), "alvo com escala 2 tem o corpo maior");
+    // Corpo alongado em x (−10..10) girado 90°: no mundo vira alongado em z.
+    var longBody = new List<(System.Numerics.Vector3, System.Numerics.Vector3)> { (new(-10, 0, -1), new(10, 5, 1)) };
+    True(HitBody.Hits(new(0, 2, 9), new(1, 1, 1), 0, at, MathF.PI / 2, 1, longBody), "corpo girado 90° cobre z");
+    True(!HitBody.Hits(new(9, 2, 0), new(1, 1, 1), 0, at, MathF.PI / 2, 1, longBody), "e deixa de cobrir x");
+    True(!HitBody.Hits(new(0, 20, 0), size, 0, at, 0, 1, body), "acima da cabeça não acerta");
+    True(System.Numerics.Vector3.Distance(new(0, 0, -1), HitBody.RotateY(new(1, 0, 0), MathF.PI / 2)) < 1e-5f, "giro igual ao da Godot");
+});
+
 Test("Port: tela larga (escala pela altura, HUD preso às bordas, 5:4 com faixas, fov da 4:3)", () =>
 {
     var wide = ScreenLayout.Fit(1920, 1080);
