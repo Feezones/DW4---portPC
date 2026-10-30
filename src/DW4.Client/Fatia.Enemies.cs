@@ -29,6 +29,8 @@ public partial class Fatia
         /// <summary>Ação e quadro já vistos pelos disparadores (Fatia.Shots).</summary>
         public string? ShotAction { get; set; }
         public float ShotFrame { get; set; }
+        /// <summary>LUACALL de evento armado (nome de chamada terminado em "Hit", ex. "wft" "WHit"): roda quando bater na parede.</summary>
+        public (string Name, string Call)? HitLua { get; set; }
         public float HitHeight { get; set; } = 14;
         public EnemyBrain? Brain { get; set; }
         public SequenceRunner? Runner { get; set; }
@@ -501,6 +503,16 @@ public partial class Fatia
         }
         e.Body.Velocity = vel;
         e.Body.MoveAndSlide();
+        // HIPÓTESE (f_devl3 SQ_WALK: LUACALL "wft" "WHit" e MOVEEX "TZPACC" para a frente; wft_f_devl3.lua manda SQ_WALKOFF): "WHit"
+        // é o evento de bater na parede. No passeio da IA (SQ_WALK interno) o evento vem do SQ_WALK do jogo.
+        if (e.HitLua == null && e.Brain?.Walking == true && !e.Started && e.Kind.Sequences.TryGetValue("SQ_WALK", out var walk)
+            && walk.FirstOrDefault(c => c.Kind == "LUACALL" && c.S(1).EndsWith("Hit", StringComparison.Ordinal)) is { } wl)
+            e.HitLua = (wl.S(0), wl.S(1));
+        if (e.HitLua is { } hit && e.Body.IsOnWall())
+        {
+            e.HitLua = null;
+            RunLuaCall(hit.Name, e.Kind.Model, e, hit.Call);
+        }
         if (e.Model != null) e.Model.Rotation = new Vector3(0, e.Yaw, 0);
     }
 

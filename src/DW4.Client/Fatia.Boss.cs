@@ -95,7 +95,9 @@ public partial class Fatia
             case "LUACALL":
                 // FATO: SQ_ATCK2 do f_apocaly faz LUACALL "bit" e a fase tem bit_f_apocaly.lua (gera o f_bit se ele não está vivo,
                 // senão manda o chefe de volta ao SQ_WAIT): o script é "<nome>_<modelo>.lua", no contexto do modelo.
-                RunLuaCall(c.S(0), e.Kind.Model, e, c.S(1));
+                // Nome de chamada terminado em "Hit" ("WHit", "BHit"): evento de batida, roda quando acontecer (ver UpdateEnemy).
+                if (c.S(1).EndsWith("Hit", StringComparison.Ordinal)) e.HitLua = (c.S(0), c.S(1));
+                else RunLuaCall(c.S(0), e.Kind.Model, e, c.S(1));
                 break;
         }
     }
@@ -147,6 +149,7 @@ public partial class Fatia
         if (e.Runner == null) return false;
         if (DiagNpc) GD.Print($"[ini] {e.Kind.Model}: {seq} (mapa {e.Brain?.Map.Name ?? "-"})");
         e.Motion.SequenceChanged(); // 0x8030EA38: troca de sequência
+        e.HitLua = null;
         if (e.Labels.TryGetValue(seq, out var l) && e.Runner.Start(seq, l)) return true;
         if (e.Runner.Start(seq, "common") || e.Runner.Start(seq, "NORM")) return true;
         var first = e.Kind.Sequences.TryGetValue(seq, out var cmds) ? cmds.FirstOrDefault(c => c.Kind == "LABEL")?.S(0) : null;
