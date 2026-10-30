@@ -224,6 +224,10 @@ public partial class Fatia
             e.Runner.MoveStarted = m => e.Motion.Apply(m);
             var maps = AiMap.LoadAll(kind.Json);
             if (maps.Count > 0) e.Brain = new EnemyBrain(maps, kind.Sequences, () => _rng.Next(16));
+            // FATO (e_goburi, f_luce, f_belvam): o SQ_ENTR é a entrada (TRNS01, MUTEKI) e põe o AIMAP inicial (MAP00/MAP02) e os
+            // rótulos (LABELCTRL). HIPÓTESE: todo inimigo nasce por ele; sem isso o f_luce começava no 1º mapa do arquivo (MAP08,
+            // mísseis) e nunca chegava às fases de voo e pouso.
+            if (e.Brain != null && kind.Sequences.ContainsKey("SQ_ENTR")) e.Brain.Force("SQ_ENTR");
         }
         if (e.Anim != null)
         {
