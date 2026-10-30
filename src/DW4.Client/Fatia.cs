@@ -280,7 +280,7 @@ public partial class Fatia : Node3D
         {
             if (k.Keycode == Key.F1 && _cameraSets.Length > 1) _cameraSet = (_cameraSet + 1) % _cameraSets.Length;
             if (k.Keycode == Key.F2) _showBoxes = !_showBoxes;
-            if (k.Keycode == Key.F5) { _player.Position = _spawn; _snapToFloor = !_demo; _player.Velocity = Vector3.Zero; _move.Stop(); _hp = _pf?.MaxHp ?? 0; _mp = _pf?.MaxMp ?? 0; }
+            if (k.Keycode == Key.F6 && OS.IsDebugBuild()) { _player.Position = _spawn; _snapToFloor = !_demo; _player.Velocity = Vector3.Zero; _move.Stop(); _hp = _pf?.MaxHp ?? 0; _mp = _pf?.MaxMp ?? 0; }
             if (k.Keycode == Key.F9 && OS.IsDebugBuild()) DebugWeakenBoss();
             if (k.Keycode == Key.F8 && OS.IsDebugBuild()) DebugNextTarget();
         }
@@ -288,6 +288,7 @@ public partial class Fatia : Node3D
         for (int i = 0; i < 6; i++) if (PortInput.Pressed(e, $"tecnica{i + 1}")) _techKey = i;
         if (PortInput.Pressed(e, "equipar")) EquipLast();
         if (PortInput.Pressed(e, "guarda")) _guardPressed = true;
+        if (PortInput.Pressed(e, "salvar_rapido")) QuickSave();
         if (PortInput.Pressed(e, "pausa")) { if (SubWindowOpen) CloseSaveWindow(); else if (!_menuOpen && !ShopOpen) OpenPause(); }
     }
 
@@ -302,6 +303,7 @@ public partial class Fatia : Node3D
 
     public override void _PhysicsProcess(double delta)
     {
+        TickQuickSaveAndSpeed(delta);
         float dt = (float)delta;
         TickChat(dt);
         TickDeath(dt);

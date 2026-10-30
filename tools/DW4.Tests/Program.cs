@@ -391,6 +391,8 @@ Test("Port: mapa de controles (padrão, salvar e carregar no config, conflito, r
     True(b.Get(InputBindings.Keyboard, "ataque").SequenceEqual(new[] { "tecla:J", "mouse:1" }), "ataque padrão no teclado: J e clique esquerdo");
     True(b.Get(InputBindings.Pad, "pulo").SequenceEqual(new[] { "botao:10" }), "pulo no controle: Z do GameCube → RB");
     True(b.Get(InputBindings.Pad, "guarda").SequenceEqual(new[] { "eixo:4+" }), "defesa no controle: L do GameCube → LT");
+    True(b.Get(InputBindings.Keyboard, "salvar_rapido").SequenceEqual(new[] { "tecla:F5" }) && b.Get(InputBindings.Pad, "salvar_rapido").Count == 0, "salvar rápido: F5, sem padrão no controle");
+    True(b.Get(InputBindings.Pad, "acelerar").SequenceEqual(new[] { "eixo:5+" }), "acelerar no RT");
     // Conflito: K já é da técnica; pôr K no pulo tira da técnica e avisa (cancelar com K é de outra tela, não conflita).
     True(b.Conflicts(InputBindings.Keyboard, "tecla:K", "pulo").SequenceEqual(new[] { "tecnica" }), "conflito apontado: " + string.Join(",", b.Conflicts(InputBindings.Keyboard, "tecla:K", "pulo")));
     var taken = b.Set(InputBindings.Keyboard, "pulo", "tecla:K");

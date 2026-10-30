@@ -24,7 +24,8 @@ public sealed class InputBindings
         new("tecnica1", "Técnica 1"), new("tecnica2", "Técnica 2"), new("tecnica3", "Técnica 3"), new("tecnica4", "Técnica 4"),
         new("tecnica5", "Técnica 5"), new("tecnica6", "Técnica 6"),
         new("status", "Menu de status"), new("confirmar", "Confirmar"), new("cancelar", "Cancelar"), new("equipar", "Equipar o último item"),
-        new("chat", "Abrir o chat"), new("pausa", "Gravar e voltar ao menu"),
+        new("chat", "Abrir o chat"), new("pausa", "Pausa (menu)"),
+        new("salvar_rapido", "Salvar rápido"), new("acelerar", "Acelerar cenas (segurar)"),
     ];
 
     static readonly Dictionary<string, string[]> KeyboardDefaults = new()
@@ -36,6 +37,7 @@ public sealed class InputBindings
         ["tecnica5"] = ["tecla:Key5"], ["tecnica6"] = ["tecla:Key6"],
         ["status"] = ["tecla:Tab"], ["confirmar"] = ["tecla:Enter", "tecla:J"], ["cancelar"] = ["tecla:Backspace", "tecla:K"], ["equipar"] = ["tecla:E"],
         ["chat"] = ["tecla:Enter"], ["pausa"] = ["tecla:Escape"],
+        ["salvar_rapido"] = ["tecla:F5"], ["acelerar"] = ["tecla:Shift"],
     };
 
     // GameCube → controle moderno: A → A (0), B → B (1), X → X (2), Y → Y (3), Z → RB (10), L → LT (eixo 4), R → RT (eixo 5),
@@ -48,6 +50,7 @@ public sealed class InputBindings
         ["tecnica1"] = [], ["tecnica2"] = [], ["tecnica3"] = [], ["tecnica4"] = [], ["tecnica5"] = [], ["tecnica6"] = [],
         ["status"] = ["botao:6"], ["confirmar"] = ["botao:0"], ["cancelar"] = ["botao:1"], ["equipar"] = ["botao:3"],
         ["chat"] = [], ["pausa"] = ["botao:4"],
+        ["salvar_rapido"] = [], ["acelerar"] = ["eixo:5+"],
     };
 
     // Duas telas: menus (confirmar, cancelar) e jogo (o resto). Ações de telas diferentes podem dividir a mesma tecla sem conflito
