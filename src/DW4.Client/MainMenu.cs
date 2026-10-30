@@ -93,7 +93,8 @@ public partial class MainMenu : Control
         else center.AddChild(_root);
         ShowTitle();
         // Abertura antes do título, uma vez por execução (a stagIS09 do jogo vem entre os logos e o título; OpeningMovie.cs).
-        if (!_openingShown && OpeningMovie.CanPlay())
+        bool capture = OS.IsDebugBuild() && OS.GetEnvironment("DW4_TELA").Length > 0;
+        if (!_openingShown && !capture && OpeningMovie.CanPlay())
         {
             _openingShown = true;
             _root.Visible = false;
@@ -103,6 +104,26 @@ public partial class MainMenu : Control
             AddChild(movie);
         }
         else _music?.Play();
+        if (capture) CallDeferred(MethodName.CaptureScreen);
+    }
+
+    // DEPURAÇÃO (só no build Debug): DW4_TELA=titulo|vagas|criar|config abre a tela, grava a imagem da janela em
+    // D:\dw4-work\previas\menu_<tela>.png depois de 4 s e fecha o port (conferir telas sem ninguém no controle).
+    async void CaptureScreen()
+    {
+        string screen = OS.GetEnvironment("DW4_TELA");
+        await ToSignal(GetTree().CreateTimer(1.0), SceneTreeTimer.SignalName.Timeout);
+        switch (screen)
+        {
+            case "vagas": ShowSlots(); break;
+            case "criar": ShowCreate(3); break;
+            case "config": ShowSettings(); break;
+        }
+        await ToSignal(GetTree().CreateTimer(4.0), SceneTreeTimer.SignalName.Timeout);
+        var dir = OS.GetEnvironment("DW4_TELA_PASTA") is { Length: > 0 } d ? d : @"D:\dw4-work\previas";
+        System.IO.Directory.CreateDirectory(dir);
+        GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(dir, $"menu_{screen}.png"));
+        GetTree().Quit();
     }
 
     static bool _openingShown;
@@ -188,20 +209,19 @@ public partial class MainMenu : Control
         // Fora das vagas: somem as janelas e os textos delas.
         if (_slotsArt && _sel != null)
         {
-            foreach (var a in new[] { "j_saveareawin01", "j_saveareawin02", "j_saveareawin03", "j_saveareawin04", "j_saveareacursorr", "j_mainstatuswin", "j_digifacewin" }) _sel.Remove(a);
+            foreach (var a in new[] { "j_saveareawin01", "j_saveareawin02", "j_saveareawin03", "j_saveareawin04", "j_saveareacursorr", "j_mainstatuswin", "j_digifacewin", "j_chrselbase" }) _sel.Remove(a);
             _sel.ClearTexts();
         }
         _slotsArt = false;
         if (_createArt || _sel?.Has("j_namewin01") == true)
-            foreach (var a in new[] { "j_namewin01", "j_linewin01", "j_digiselcursorleft", "j_digiselcursorright" }) _sel?.Remove(a);
+            foreach (var a in new[] { "j_namewin01", "j_linewin01", "j_digiselcursorleft", "j_digiselcursorright", "j_chrselbase" }) _sel?.Remove(a);
         _createArt = false;
-        // Telas do port sobre o fundo da escolha de personagem do jogo; o Digimon girando só na criação.
+        // Telas do port sobre o túnel do título (j_startback): o fundo da escolha (j_chrselback, esfera em grade com um clarão) saía
+        // com cara de depuração na tela larga (relato de 2026-10-30) e fica de fora; a moldura j_chrselbase entra nas vagas e na criação.
         if (_sel != null)
         {
-            _art!.Visible = false;
+            _art!.Visible = true;
             _sel.Visible = true;
-            if (!_sel.Has("j_chrselback")) _sel.Play("j_chrselback", "SQ_OPEN");
-            if (!_sel.Has("j_chrselbase")) _sel.Play("j_chrselbase", "SQ_OPEN");
         }
         if (_turntable != null) _turntable.Visible = false;
         _center.AnchorLeft = 0;
@@ -254,7 +274,11 @@ public partial class MainMenu : Control
     // HIPÓTESE: a posição-base é a origem da tela; as linhas de texto (nome, forma, nível) foram postas nos campos da arte, as caixas
     // CHRSELFONT08 do pacote não trazem posição. DECISÃO DO PORT: cima/baixo/esquerda/direita andam na grade 2 × 2, confirmar entra
     // (ou cria), Delete/X apaga, Esc volta ao título.
-    static readonly Vector2[] SlotText = [new(28, -103), new(180, -103), new(28, -137), new(180, -137)];
+    // HIPÓTESE (2026-10-30, pela prévia): as janelas das vagas e da criação ocupam x 326..638 e y 225..476 da tela 640 × 480 com a
+    // base na origem, cortadas embaixo; a base em y +120 deixa o conjunto inteiro na metade direita, centrado na altura, com o
+    // Digimon da criação à esquerda. A base real vem de um objeto do controle nativo que não foi identificado.
+    static readonly Vector2 SelectBase = new(0, 120);
+    GameTables? _slotDb;
     bool _slotsArt;
     int _slotCursor;
     IReadOnlyList<CharacterSave?> _slots = [];
@@ -271,6 +295,8 @@ public partial class MainMenu : Control
         for (int i = 0; i < 4; i++)
             _sel.Play($"j_saveareawin0{i + 1}", i < _slots.Count && _slots[i] is { } c ? $"SQ_{Face(c.Model)}OPEN" : "SQ_NOOPEN");
         _slotsArt = true;
+        _sel.Offset = SelectBase;
+        if (!_sel.Has("j_chrselbase")) _sel.Play("j_chrselbase", "SQ_OPEN");
         _slotCursor = Math.Clamp(_slotCursor, 0, 3);
         DrawSlotsArt();
         return true;
@@ -284,19 +310,44 @@ public partial class MainMenu : Control
         sel.Play("j_saveareacursorr", $"SQ_LINESL0{_slotCursor}");
         sel.Play("j_mainstatuswin", c != null ? "SQ_WAIT" : "SQ_NOWAIT");
         sel.Play("j_digifacewin", c != null ? $"SQ_{Face(c.Model)}OPEN" : "SQ_nofaceOPEN");
-        for (int i = 0; i < 4; i++)
+        // Ajuda na fonte do jogo, embaixo do quadro (dentro da tela 640 × 480), com os botões do aparelho atual.
+        sel.Text("ajuda", $"Setas: escolher   {DeviceIcons.Of("confirmar")}: {(c != null ? "entrar" : "criar")}   Delete: apagar   {DeviceIcons.Of("cancelar")}/Esc: voltar", 8, -248, null, false, 14, 330);
+        if (c == null) { sel.Text("vazia", "Vaga vazia: criar um Digimon", 22, -66); return; }
+        // Campos do j_mainstatuswin (pela arte, na prévia): "Lv." e o valor, "HP atual / máximo", "MP atual / máximo" e a linha de
+        // baixo com nome e forma. HP e MP pela shinka, nível, equipamento, skill e UPCNT da vaga (o HP volta cheio ao entrar).
+        var (hp, mp) = SlotStats(c);
+        sel.Text("lv", $"{c.Level}", 44, -44, null, false, 14);
+        sel.Text("hp", hp > 0 ? $"{hp}" : "", 98, -28, null, false, 14);
+        sel.Text("hpmax", hp > 0 ? $"{hp}" : "", 172, -28, null, false, 14);
+        sel.Text("mp", mp > 0 ? $"{mp}" : "", 108, -44, null, false, 14);
+        sel.Text("mpmax", mp > 0 ? $"{mp}" : "", 172, -44, null, false, 14);
+        sel.Text("nome", c.Name, 20, -66, null, false, 14);
+        sel.Text("forma", FormName(c.CurrentForm), 132, -66, null, false, 14);
+    }
+
+    // HP e MP máximos da forma atual da vaga (GameTables.Player, o mesmo cálculo do jogo).
+    (int Hp, int Mp) SlotStats(CharacterSave c)
+    {
+        try
         {
-            var s = i < _slots.Count ? _slots[i] : null;
-            sel.Text($"vaga{i}", s != null ? s.Name : "Criar novo Digimon", SlotText[i].X, SlotText[i].Y, i == _slotCursor ? new Color(1f, 0.95f, 0.45f) : null);
+            if (_slotDb == null)
+            {
+                var dir = System.IO.Path.Combine(_stages, Session.NewGameStage, "db");
+                var file = System.IO.Directory.Exists(dir) ? System.IO.Directory.EnumerateFiles(dir, "*_db.json").FirstOrDefault() : null;
+                if (file == null) return (0, 0);
+                _slotDb = GameTables.FromJson(System.IO.File.ReadAllText(file));
+            }
+            var ram = new DW4.Script.Be.GameRam();
+            c.Apply(ram, 0);
+            var forms = ram.Players[0].Forms;
+            if (forms.Current < 0) return (0, 0);
+            var f = forms[forms.Current];
+            int weapon = c.WeaponRow >= 0 ? c.WeaponRow : (forms.Current < _shinka.Count ? _shinka[forms.Current].Weapons.FirstOrDefault(w => w >= 0, -1) : -1);
+            var eq = ram.Players[0].Equipment ?? new Equipment(Math.Max(0, weapon));
+            var p = _slotDb.Player(forms.Current, f.Level, eq, f.Skill, f.UpCount);
+            return (p.MaxHp, p.MaxMp);
         }
-        sel.Text("conta", $"conta: {Session.Account}", -300, 220);
-        sel.Text("ajuda", "setas escolhem, confirmar entra, Delete apaga, Esc volta", -300, -214);
-        if (c == null) return;
-        // Campos do j_mainstatuswin (HIPÓTESE pela arte): nível depois de "Lv.", nome e forma na linha de baixo.
-        sel.Text("lv", $"{c.Level}", 46, -47);
-        sel.Text("nome", c.Name, 22, -70);
-        sel.Text("forma", FormName(c.CurrentForm), 130, -70);
-        sel.Text("fase", c.Stage, 100, -29);
+        catch (Exception e) when (e is KeyNotFoundException or IndexOutOfRangeException or ArgumentException or InvalidOperationException) { return (0, 0); }
     }
 
     bool SlotsInput(InputEvent e)
@@ -420,6 +471,8 @@ public partial class MainMenu : Control
         _panel!.Visible = false;
         (_createArt, _createSlot, _createName) = (true, slot, "");
         _createForm = Enumerable.Range(0, 4).FirstOrDefault(d => Playable(FormModel(d)), 0);
+        _sel.Offset = SelectBase;
+        if (!_sel.Has("j_chrselbase")) _sel.Play("j_chrselbase", "SQ_OPEN");
         _sel.Play("j_namewin01", "SQ_OPEN");
         _sel.Play("j_linewin01", "SQ_LINESL00");
         _sel.Play("j_digiselcursorleft", "SQ_OPEN");
@@ -437,8 +490,8 @@ public partial class MainMenu : Control
         _turntable?.Show(FormModel(_createForm));
         sel.Text("titulo", "Criar Digimon", -300, 220);
         sel.Text("nome", _createName.Length > 0 ? _createName + "_" : "Digite o nome_", 75, -27, _createName.Length > 0 ? null : new Color(0.6f, 0.6f, 0.6f));
-        sel.Text("forma", $"< {FormName(_createForm)} >" + (ok ? "" : " (sem modelo ainda)"), 20, -97);
-        sel.Text("ajuda", "esquerda/direita: Digimon   teclado: nome   Enter: criar   Esc: voltar", -300, -214);
+        sel.Text("forma", $"< {FormName(_createForm)} >" + (ok ? "" : " (sem modelo)"), 96, -106, null, false, 16, 230);
+        sel.Text("ajuda", "Esquerda/direita: Digimon   Teclado: nome   Enter: criar   Esc: voltar", 8, -248, null, false, 14, 330);
         if (status.Length > 0) sel.Text("aviso", status, -300, -190, new Color(1f, 0.6f, 0.5f));
     }
 

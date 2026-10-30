@@ -50,7 +50,7 @@ public partial class SettingsPanel : VBoxContainer
         heading.AddThemeFontSizeOverride("font_size", 40);
         AddChild(heading);
         var c = PortSettings.Current;
-        var tabs = new TabContainer { CustomMinimumSize = new Vector2(0, 430) };
+        var tabs = new TabContainer();
         AddChild(tabs);
 
         var video = Page(tabs, "Gráfico");
@@ -78,7 +78,7 @@ public partial class SettingsPanel : VBoxContainer
         Slider(sound, "Efeitos", 0, 1, 0.05f, c.EffectsVolume, v => c.EffectsVolume = v);
         Slider(sound, "Vozes", 0, 1, 0.05f, c.VoiceVolume, v => c.VoiceVolume = v);
 
-        var controls = Page(tabs, "Controles");
+        var controls = Page(tabs, "Controles", scroll: false);
         var scroll = new ScrollContainer { CustomMinimumSize = new Vector2(0, 340), SizeFlagsVertical = SizeFlags.ExpandFill };
         controls.AddChild(scroll);
         var list = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -185,11 +185,16 @@ public partial class SettingsPanel : VBoxContainer
         GetViewport().SetInputAsHandled();
     }
 
-    static VBoxContainer Page(TabContainer tabs, string title)
+    // Aba com rolagem: as opções cabem em janelas baixas (720 linhas) sem empurrar Aplicar/Voltar para fora da tela.
+    static VBoxContainer Page(TabContainer tabs, string title, bool scroll = true)
     {
-        var page = new VBoxContainer { Name = title };
+        var page = new VBoxContainer { Name = title, SizeFlagsHorizontal = SizeFlags.ExpandFill };
         page.AddThemeConstantOverride("separation", 10);
-        tabs.AddChild(page);
+        if (!scroll) { tabs.AddChild(page); return page; }
+        var box = new ScrollContainer { Name = title, CustomMinimumSize = new Vector2(0, 380), HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        page.Name = "conteudo";
+        box.AddChild(page);
+        tabs.AddChild(box);
         return page;
     }
 

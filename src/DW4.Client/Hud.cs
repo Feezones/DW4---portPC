@@ -152,11 +152,16 @@ public sealed class HudActor
     readonly List<StandardMaterial3D> _materials = [];
     int _drawOrder = -1;
     readonly bool _billboard;
+    readonly bool _skipFlat;
 
     /// <param name="drawOrder">Se ≥ 0, os materiais ganham RenderPriority crescente a partir dele na ordem do grafo (o Alchemy desenha
     /// na ordem da árvore; a Godot ordena transparentes pela distância e a moldura do i_stdigiface, z 20..230, cobria o rosto em z 80).</param>
-    public HudActor(HudData h, int root, int slot, bool billboard = false, int drawOrder = -1)
+    /// <param name="skipFlat">Desenha primeiro (atrás de tudo) as malhas com todas as UVs no mesmo texel (planos de cor lisa). No fundo do
+    /// título (j_startback) o plano branco em z −1200, a luz do fim do túnel, ficava por cima dele: o Alchemy desenha com teste de
+    /// profundidade, e a Godot ordena os transparentes pela prioridade (HIPÓTESE).</param>
+    public HudActor(HudData h, int root, int slot, bool billboard = false, int drawOrder = -1, bool skipFlat = false)
     {
+        _skipFlat = skipFlat;
         _h = h;
         _billboard = billboard;
         _drawOrder = drawOrder;
@@ -197,6 +202,7 @@ public sealed class HudActor
             arrays[(int)Mesh.ArrayType.TexUV] = m.Uvs.ToArray();
             arrays[(int)Mesh.ArrayType.Index] = m.Triangles;
             if (m.Triangles.Length == 0) continue;
+            bool flat = _skipFlat && m.Uvs.Length > 0 && m.Uvs.All(u => u == m.Uvs[0]);
             mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
             // igBlendFunctionAttr 4/5 (SRC_ALPHA, ONE_MINUS_SRC_ALPHA) nos atores do #179: transparência normal.
             var mat = new StandardMaterial3D
@@ -208,7 +214,8 @@ public sealed class HudActor
                 BlendMode = additive ? BaseMaterial3D.BlendModeEnum.Add : BaseMaterial3D.BlendModeEnum.Mix,
             };
             if (texture == null) mat.AlbedoColor = new Color(1, 1, 1, 0.3f);
-            if (_drawOrder >= 0) mat.RenderPriority = Math.Min(127, _drawOrder++);
+            if (flat) mat.RenderPriority = -128;
+            else if (_drawOrder >= 0) mat.RenderPriority = Math.Min(127, _drawOrder++);
             _materials.Add(mat);
             here.AddChild(new MeshInstance3D { Mesh = mesh, MaterialOverride = mat });
             _geometry[n.Id] = (mesh, m);

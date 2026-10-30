@@ -28,6 +28,7 @@ public sealed class TitleArt
     readonly Node3D _root, _bgRoot;
     readonly Dictionary<string, (HudActor Actor, ObjectSequencer? Seq)> _actors = [];
     readonly string _background;
+    TextureRect? _bgRect;
     readonly CanvasLayer _canvas;
 
     TitleArt(HudData h, string dir, Node owner, int layer, string background)
@@ -52,6 +53,8 @@ public sealed class TitleArt
             rect.SetAnchorsPreset(Control.LayoutPreset.FullRect);
             canvas.AddChild(vp);
             canvas.AddChild(rect);
+            // O fundo (opaco) só aparece com o ator de fundo; sem ele, o que está atrás (o título) continua visível.
+            if (vp == _bgVp) { _bgRect = rect; rect.Visible = false; }
         }
         owner.AddChild(canvas);
     }
@@ -69,6 +72,9 @@ public sealed class TitleArt
     }
 
     public bool Visible { get => _canvas.Visible; set => _canvas.Visible = value; }
+
+    /// <summary>Deslocamento das janelas (camada ortográfica) na tela 640 × 480; os textos acompanham.</summary>
+    public Vector2 Offset { set => _root.Position = new Vector3(value.X, value.Y, 0); }
 
     readonly Dictionary<string, MeshInstance3D> _texts = [];
 
@@ -100,8 +106,9 @@ public sealed class TitleArt
         if (!_actors.TryGetValue(actor, out var a))
         {
             if (!_h.Actors.TryGetValue(actor, out int root)) return;
-            var hud = new HudActor(_h, root, slot: 0, drawOrder: _actors.Count * 20);
+            var hud = new HudActor(_h, root, slot: 0, drawOrder: _actors.Count * 20, skipFlat: actor == _background);
             (actor == _background ? _bgRoot : _root).AddChild(hud.Root);
+            if (actor == _background && _bgRect != null) _bgRect.Visible = true;
             var file = Directory.Exists(Path.Combine(_dir, actor)) ? Directory.EnumerateFiles(Path.Combine(_dir, actor), "*_seq.json").FirstOrDefault() : null;
             ObjectSequencer? seq = null;
             if (file != null) { var json = File.ReadAllText(file); seq = new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)); }
@@ -114,6 +121,7 @@ public sealed class TitleArt
     public void Remove(string actor)
     {
         if (!_actors.Remove(actor, out var a)) return;
+        if (actor == _background && _bgRect != null) _bgRect.Visible = false;
         a.Actor.Root.QueueFree();
     }
 
