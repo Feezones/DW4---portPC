@@ -16,6 +16,9 @@ namespace DW4.Client;
 /// formas iniciais (FATO: DIGIMONNO 0..3 no GAMEDATAINIT), nome e dificuldade (mswkMem0232, 0163/0167, 0168). As iniciais sem modelo
 /// exportado aparecem desligadas.
 /// Abrir com DW4_FASE definido (depuração) pula o menu e vai direto à fase, sem vaga. Ao abrir, toca a abertura (OpeningMovie).
+/// Com a arte da stagIS10 exportada (TitleArt), o título é o do jogo: fundo animado, logotipo, "Press START button" e o menu
+/// "Game Start" (→ vagas) / "Option" (→ configurações), com a troca de linha e a confirmação pelas sequências do jogo; as outras
+/// telas ficam sobre o mesmo fundo, num painel com a fonte do jogo. Esc no "Press START" fecha o port.
 /// </summary>
 public partial class MainMenu : Control
 {
@@ -28,6 +31,11 @@ public partial class MainMenu : Control
     const int NameMax = 12; // DECISÃO DO PORT: o limite do jogo não foi lido
 
     VBoxContainer _root = null!;
+    TitleArt? _art;
+    enum TitleState { None, Press, Opening, Menu, Confirm, Cancel }
+    TitleState _title;
+    int _titleLine;
+    bool _movieOn;
     List<(string Name, string Model, int[] Weapons)> _shinka = [];
 
     public override void _Ready()
@@ -47,25 +55,78 @@ public partial class MainMenu : Control
         }
         _shinka = LoadShinka();
         SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(new ColorRect { Color = new Color(0.05f, 0.06f, 0.1f), AnchorRight = 1, AnchorBottom = 1 });
+        var stages = OS.GetEnvironment("DW4_FASES") is { Length: > 0 } s ? s : @"D:\dw4-work\fases";
+        var problems = new List<string>();
+        _art = TitleArt.Create(this, stages, -1, problems);
+        foreach (var p in problems) GD.Print($"[menu] {p}");
+        if (_art == null) AddChild(new ColorRect { Color = new Color(0.05f, 0.06f, 0.1f), AnchorRight = 1, AnchorBottom = 1 });
         var center = new CenterContainer { AnchorRight = 1, AnchorBottom = 1 };
         AddChild(center);
         _root = new VBoxContainer { CustomMinimumSize = new Vector2(720, 0) };
         _root.AddThemeConstantOverride("separation", 14);
-        center.AddChild(_root);
+        if (_art != null)
+        {
+            // Sobre o fundo animado: painel escuro com a fonte do jogo (a NORMAL, a das falas).
+            _panel = new PanelContainer { SelfModulate = new Color(1, 1, 1, 0.92f) };
+            _panel.AddChild(_root);
+            center.AddChild(_panel);
+            if (BitmapFont.Load(System.IO.Path.Combine(stages, "fonte"))?.ToFontFile("NORMAL") is { } gf) center.Theme = new Theme { DefaultFont = gf, DefaultFontSize = 26 };
+        }
+        else center.AddChild(_root);
         ShowTitle();
         // Abertura antes do título, uma vez por execução (a stagIS09 do jogo vem entre os logos e o título; OpeningMovie.cs).
         if (!_openingShown && OpeningMovie.CanPlay())
         {
             _openingShown = true;
             _root.Visible = false;
+            _movieOn = true;
             var movie = new OpeningMovie();
-            movie.Finished += () => { _root.Visible = true; ShowTitle(); };
+            movie.Finished += () => { _movieOn = false; _root.Visible = true; ShowTitle(); };
             AddChild(movie);
         }
     }
 
     static bool _openingShown;
+    PanelContainer? _panel;
+
+    public override void _Process(double delta)
+    {
+        if (_art == null) return;
+        _art.Tick((float)delta);
+        // Fim das animações de confirmação: segue para a tela pedida.
+        if (_title == TitleState.Opening && !_art.Has("j_startmenu01")) { _art.Play("j_startmenu02", "SQ_OPEN"); (_title, _titleLine) = (TitleState.Menu, 0); }
+        else if (_title == TitleState.Confirm && !_art.Has("j_startmenu02")) { if (_titleLine == 0) ShowSlots(); else ShowSettings(); }
+        else if (_title == TitleState.Cancel && !_art.Has("j_startmenu02")) ShowTitle();
+    }
+
+    // Título do jogo: "Press START" → menu de duas linhas. Teclado, controle e mouse (clique confirma, roda troca a linha).
+    bool TitleInput(InputEvent e)
+    {
+        if (_art == null || _title == TitleState.None || _movieOn) return false;
+        bool up = e.IsActionPressed("ui_up") || e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp };
+        bool down = e.IsActionPressed("ui_down") || e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelDown };
+        bool ok = e.IsActionPressed("ui_accept") || e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }
+            || e is InputEventJoypadButton { Pressed: true, ButtonIndex: JoyButton.Start };
+        bool cancel = e.IsActionPressed("ui_cancel") || e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Right };
+        switch (_title)
+        {
+            case TitleState.Press:
+                if (cancel && e is InputEventKey) { GetTree().Quit(); return true; }
+                bool any = ok || e is InputEventKey { Pressed: true, Echo: false } || e is InputEventJoypadButton { Pressed: true };
+                if (!any) return false;
+                _art.Play("j_startmenu01", "SQ_LINEON00");
+                _title = TitleState.Opening;
+                return true;
+            case TitleState.Menu:
+                if (down && _titleLine == 0) { _art.Play("j_startmenu02", "SQ_LINEDW01"); _titleLine = 1; return true; }
+                if (up && _titleLine == 1) { _art.Play("j_startmenu02", "SQ_LINEUP00"); _titleLine = 0; return true; }
+                if (ok) { _art.Play("j_startmenu02", $"SQ_LINEON0{_titleLine}"); _title = TitleState.Confirm; return true; }
+                if (cancel) { _art.Play("j_startmenu02", "SQ_CANCEL"); _title = TitleState.Cancel; return true; }
+                return up || down;
+            default:
+                return true; // animação em curso: segura a entrada
+        }
+    }
 
     void GoStraight() => GetTree().ChangeSceneToFile(Session.GameScene);
 
@@ -93,6 +154,15 @@ public partial class MainMenu : Control
     void Clear()
     {
         foreach (var c in _root.GetChildren()) { _root.RemoveChild(c); c.QueueFree(); }
+        // Fora do título: some o logotipo e os menus do jogo; o fundo animado fica.
+        if (_art != null)
+        {
+            if (_art.Has("j_startlogo")) _art.Play("j_startlogo", "SQ_CLOSE");
+            _art.Remove("j_startmenu01");
+            _art.Remove("j_startmenu02");
+        }
+        _title = TitleState.None;
+        if (_panel != null) _panel.Visible = true;
     }
 
     Label Title(string text, int size = 40)
@@ -115,6 +185,15 @@ public partial class MainMenu : Control
     void ShowTitle()
     {
         Clear();
+        if (_art != null)
+        {
+            _panel!.Visible = false;
+            if (!_art.Has("j_startback")) _art.Play("j_startback", "SQ_OPEN");
+            _art.Play("j_startlogo", "SQ_OPEN");
+            _art.Play("j_startmenu01", "SQ_OPEN");
+            _title = TitleState.Press;
+            return;
+        }
         Title("Digimon World 4", 52);
         Title("port para PC", 20);
         var first = Btn(_root, "Jogar online", ShowSlots);
@@ -355,6 +434,8 @@ public partial class MainMenu : Control
 
     public override void _UnhandledInput(InputEvent e)
     {
+        if (TitleInput(e)) { GetViewport().SetInputAsHandled(); return; }
+        if (_movieOn) return;
         // Cancelar (Esc / B) volta ao título de qualquer tela.
         if (e.IsActionPressed("ui_cancel") && _root != null) { ShowTitle(); GetViewport().SetInputAsHandled(); }
     }

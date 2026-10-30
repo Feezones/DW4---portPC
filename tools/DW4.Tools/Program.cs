@@ -67,6 +67,7 @@ try
             args.FirstOrDefault(a => a.StartsWith("--pacote=", StringComparison.Ordinal))?["--pacote=".Length..]),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
+        "titulo-exportar" when args.Length == 4 => TituloExportar(args[1], args[2], args[3]),
         "sfd-quadros" when args.Length >= 4 => SfdQuadros(args[1], args[2], args[3], args[4..]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
         "lua-extrair" when args.Length == 4 => LuaExtrair(args[1], int.Parse(args[2], CultureInfo.InvariantCulture), args[3]),
@@ -128,6 +129,7 @@ static int Usage()
           dw4 igb-hud      <ndmw.afs> <indice-fase> [<area.afs> <indice-usa_pack>] <pasta-de-trabalho> [--atores=a,b,c]   (atores de interface i_* com nós, sequências, medidores e números em JSON + PNG)
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
+          dw4 titulo-exportar <area.afs> <indice-usa_pack> <pasta>   (tela de título j_start* do pacote de idioma, com sequências, para o menu inicial)
           dw4 sfd-quadros  <arquivo.afs> <indice> <pasta-de-trabalho> [quadro...]   (decodifica o vídeo MPEG-1 e grava os quadros pedidos em PNG)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
           dw4 igb-objetos  <ndmw.afs> <entrada> <pasta> <ator|ator=raiz>... [--pacote=<arquivo.afs>:<indice>]   (objetos rígidos da fase para a fatia)
@@ -2167,6 +2169,8 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
             Step("loja", () => IgbHudCmd(["igb-hud", ndmwPath, M, areaPath, usa.ToString(inv), Path.Combine(outDir, "loja")], Specs(shopNames)));
             foreach (var n in shopNames) Step($"loja/{n} seq", () => IgbSeq(ndmwPath, M, Path.Combine(outDir, "loja", n), "--ator=" + n));
         }
+        // Tela de título (j_start* no pacote de idioma; o menu inicial do port desenha com ela).
+        if (stage.Equals("stagis10", StringComparison.OrdinalIgnoreCase)) Step("titulo", () => TituloExportar(areaPath, usa.ToString(inv), Path.Combine(outDir, "titulo")));
     }
     else problems.Add("usa_pack: não encontrado no índice (textos, db, hud e menu sem exportar)");
     if (objectNames.Length > 0) Step("objetos", () => IgbObjetos(ndmwPath, M, Path.Combine(outDir, "objetos"), Specs(objectNames), TexturePack()));
@@ -2451,6 +2455,54 @@ int IgbSurvey(string path, string csvPath)
 }
 
 // Separa os fluxos de um vídeo Sofdec (MPEG-PS) de um AFS: vídeo em .m1v e áudio em .adx, numa pasta fora do repositório.
+// Tela de título da stagIS10 (FATO: o first.lua gera j_startback e o TITLE2 nativo mostra o resto; os atores j_startback,
+// j_startlogo, j_startmenu01 "Press START" e j_startmenu02 "Game Start / Option" ficam no pacote de idioma, area.afs #620 na
+// versão americana, com a textura num igAttrSet acima do igSwitch do beAction2Info). Exporta cada um pela raiz desse igAttrSet.
+int TituloExportar(string areaPath, string which, string outDir)
+{
+    var full = Path.GetFullPath(outDir);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(areaPath);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var data = ms.ToArray();
+    var f = IgbFile.Read(data);
+    bool le = f.Header.LittleEndian;
+    IgbSlot? Slot(int i) => i >= 0 && i < f.Slots.Count ? f.Slots[i] : null;
+    string Name(IgbObject o) => o.Fields.FirstOrDefault(v => v.Desc.Slot == 2 && v.Desc.ShortName == "String")?.Text ?? "";
+    // Filhos diretos de um nó (lista igNodeList do próprio nó).
+    IEnumerable<int> Kids(IgbObject n)
+    {
+        foreach (var v in n.Fields.Where(v => v.Desc.ShortName == "ObjectRef"))
+        {
+            if (Slot(v.AsInt32(le)) is not IgbObject list || !f.Is(list, "igNodeList")) continue;
+            var cnt = list.Fields.FirstOrDefault(x => x.Desc.ShortName == "Int");
+            var mr = list.Fields.FirstOrDefault(x => x.Desc.ShortName == "MemoryRef");
+            if (cnt == null || mr == null || Slot(mr.AsInt32(le)) is not IgbMemoryBlock mb) continue;
+            var mem = MemoryOf(data, mb);
+            for (int i = 0; i < Math.Min(cnt.AsInt32(le), mem.Length / 4); i++)
+                yield return le ? BinaryPrimitives.ReadInt32LittleEndian(mem.AsSpan(4 * i)) : BinaryPrimitives.ReadInt32BigEndian(mem.AsSpan(4 * i));
+        }
+    }
+    var parent = new Dictionary<int, int>();
+    foreach (var (o, i) in f.Slots.Select((s, i) => (s, i)).Where(x => x.s is IgbObject).Select(x => ((IgbObject)x.s, x.i)))
+        if (f.Is(o, "igAttrSet")) foreach (int k in Kids(o)) parent.TryAdd(k, i);
+    var specs = new List<string>();
+    foreach (var o in f.Slots.OfType<IgbObject>().Where(o => o.TypeName == "beAction2Info"))
+    {
+        string name = Name(o);
+        int sw = o.Fields.FirstOrDefault(v => v.Desc.Slot == 7 && v.Desc.ShortName == "ObjectRef")?.AsInt32(le) ?? -1;
+        if (!name.StartsWith("j_start", StringComparison.Ordinal) || sw < 0) continue;
+        specs.Add($"{name}={(parent.TryGetValue(sw, out int p) ? p : sw)}");
+    }
+    if (specs.Count == 0) { Console.Error.WriteLine("nenhum ator j_start* no pacote"); return 1; }
+    Console.WriteLine($"atores: {string.Join(", ", specs)}");
+    int rc = IgbHudCmd(["igb-hud", areaPath, which, areaPath, which, full], specs.ToArray());
+    foreach (var s in specs) rc |= IgbSeq(areaPath, which, Path.Combine(full, s[..s.IndexOf('=')]), "--ator=" + s[..s.IndexOf('=')]);
+    return rc;
+}
+
 // Decodifica o vídeo inteiro (confere o decodificador) e grava em PNG os quadros pedidos (padrão: 0, 300, 900 e o último).
 int SfdQuadros(string path, string which, string outDir, string[] wanted)
 {
