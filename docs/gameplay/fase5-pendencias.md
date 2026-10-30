@@ -79,8 +79,11 @@ conferido na janela. O estado vem do repositório, dos testes (81 ok) e das jane
     sequências (quadro de início e duração; o arco do golpe são caixas em quadros seguidos). HIPÓTESE: caixa contra caixa, com a
     de golpe girada para os eixos do alvo. Sem caixas no json (regenerar com o igb-seq atual), fica a caixa pela malha.
 19. **Menu inicial** (2026-10-30): título do jogo conferido na prévia sem janela (dw4 hud-previa: túnel em perspectiva, logotipo, Press START);
-    música AM_TITLE2 em laço; criação com o h_<forma> girando; vagas e criação sobre o j_chrselback. Falta: janelas originais das
-    vagas e da criação (j_saveareawin, j_mainstatuswin, j_namewin, j_digisel*), cuja posição vem do código nativo da stagIS12/13.
+    música AM_TITLE2 em laço. Vagas com as janelas do jogo (j_saveareawin01..04 com o rosto, j_saveareacursorr, j_mainstatuswin,
+    j_digifacewin) e criação com j_namewin01 (nome pelo teclado), j_linewin01 e as setas j_digiselcursor*, e o h_<forma> animado.
+    FATO (main.dol): todas as janelas saem na mesma posição-base do controle; HIPÓTESE: a base é a origem (na prévia ficam no canto
+    de baixo à direita) e os textos foram postos nos campos da arte. DESCONHECIDO: a câmera original do h_ (há um par projeção/
+    modelview de 22,7° no #813, sem o elo com a camada C01 confirmado); o port enquadra o modelo sozinho.
 18. **Tela larga** (2026-10-30, ScreenLayout): HUD e minimapa presos às bordas, painéis 4:3 centrados, demos sem cortar em cima e
     embaixo. Sem rever na tela. Falta: os controles da Godot (chat, barra de técnicas, caixas) não escalam com a resolução (só com a
     escala da interface das configurações).

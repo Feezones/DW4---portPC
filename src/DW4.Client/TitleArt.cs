@@ -70,6 +70,30 @@ public sealed class TitleArt
 
     public bool Visible { get => _canvas.Visible; set => _canvas.Visible = value; }
 
+    readonly Dictionary<string, MeshInstance3D> _texts = [];
+
+    /// <summary>Fonte do jogo para <see cref="Text"/> (sem ela, os textos não aparecem).</summary>
+    public BitmapFont? Font { get; set; }
+
+    /// <summary>Texto na fonte MINIMUM da tela 640 × 480 (origem no centro, y para cima; x, y = canto de cima do texto, ou o da
+    /// direita com <paramref name="right"/>). Vazio apaga.</summary>
+    public void Text(string key, string? text, float x, float y, Color? color = null, bool right = false, float line = 16, float width = 400)
+    {
+        if (_texts.Remove(key, out var old)) old.QueueFree();
+        if (string.IsNullOrEmpty(text) || Font == null) return;
+        var mesh = Font.Build("MINIMUM", text, line, width, out var size);
+        if (mesh == null) return;
+        var mi = new MeshInstance3D { Mesh = mesh, MaterialOverride = Font.Material(color ?? new Color(0.92f, 0.92f, 0.92f), 120), Position = new Vector3(right ? x - size.X : x, y, 60) };
+        _root.AddChild(mi);
+        _texts[key] = mi;
+    }
+
+    public void ClearTexts()
+    {
+        foreach (var t in _texts.Values) t.QueueFree();
+        _texts.Clear();
+    }
+
     /// <summary>Gera o ator (se preciso) e começa a sequência.</summary>
     public void Play(string actor, string sequence)
     {
