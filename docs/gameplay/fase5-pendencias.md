@@ -9,13 +9,20 @@ conferido na janela. O estado vem do repositório, dos testes (81 ok) e das jane
    (FLG 86). O SQ_SHOK da stagML02 foi corrigido (66ebbfa). A troca de área já foi usada pelo usuário (escolha e NEXTSTAGE
    funcionam). Falta alguém jogar o caminho inteiro. Mapa das flags: fase5-enredo.md.
 2. **Chefes 02..06 em luta (bot, noite de 2026-10-29/30).**
-   - FATO (visto): chefe 2 (f_belvam) derrotado pelo bot no nível 40, com BT_WIN02 e EXP; chefes 4 (f_devl1) e 5 (f_devl22) tomam
-     dano normalmente (precisam de mais tempo ou nível).
-   - Corrigido: o golpe do jogador não acertava chefes grandes (corpo fixo de 8 × 14 × 8; agora pela caixa da malha, f_belvam
-     14 × 45); o LUACALL não passava o nome de chamada ("gr2" "GROUND"), e os scripts de fase de voo nunca mudavam de estado.
-   - Pendente: chefe 3 (f_luce) só toma dano no chão (g_Ground, pelo LUACALL "gr2" "GROUND") e chefe 6 (f_devl3) só fora do voo
-     (g_FIYCHACK, LUACALL "bck" "FLY"/"GROUND"/"CHACK" e MDLisStatus "BIND"); em 110 s de bot nenhum dos dois pousou. Os ataques
-     à distância dos chefes (SQ_MISSILE/SQ_BEAM) não ferem o jogador: os projéteis do inimigo não são criados no cliente.
+   - FATO (visto): chefe 2 (f_belvam) derrotado pelo bot duas vezes (nível 40 e 50), com BT_WIN02 e EXP. Chefes 4 (f_devl1) e
+     5 (f_devl22) tomam e dão dano (o bot nível 50 morreu no 4 e voltou ao lobby). Chefe 3 (f_luce) agora segue as fases do jogo
+     (SQ_ENTR → ATCKON → bombas → ATCKOF → voo/pouso → magia → CHACK) e fere o jogador com mísseis e golpes.
+   - Corrigido nesta noite: corpo dos chefes grandes para o golpe do jogador (caixa da malha); LUACALL com o nome de chamada
+     ("gr2" "GROUND"); o inimigo nasce pelo SQ_ENTR (AIMAP inicial e rótulos); o inimigo segue o JUMP para outra sequência;
+     GENERATER RESTART (gera a f_luce2); ISLIVE dos projéteis; projéteis pelos disparadores de ação (abaixo).
+   - Pendente: o chefe 3 só toma dano no chão (g_Ground); ele desce quando a peça f_luce2 (a "chave", SQ_SWON/SQ_SWOF) é
+     quebrada (hit_f_luce2.lua → g_dmgf, rl2_f_luce.lua). O bot só ataca o inimigo mais perto e nunca quebrou a peça: falta
+     alguém jogar. O chefe 6 (f_devl3) tem o mesmo tipo de fase (g_FIYCHACK, bck_f_devl3.lua) e não tomou dano em 150 s de bot.
+   - **Projéteis e golpes à distância dos inimigos (novo):** FATO, o jogo cria os modelos x_* pelos disparadores de ação
+     (beActionStarterInfo → modelo alvo → ação, sequência, quadro, deslocamento), exportados em disparos.json pelo
+     `dw4 igb-disparos` (também no fase-exportar). O cliente cria os x_* com as sequências deles (MOVE, HITBOX 7xxxx, cadeias)
+     e a caixa fere pelo hit_p. HIPÓTESES: o projétil com caixa sai mirando o jogador (os bits b6/b7 não foram lidos); os y_*
+     (só efeito) e as partículas não existem; o projétil aparece como uma esfera.
 3. **Morte.** DECISÃO DO PORT (904a338): perde os BITS no campo, HP/MP cheios e volta ao lobby. FATO lido: o SQ_DEAD do
    jogador toca DEADD1 e vai a SQ_ERAS (some); o veneno leva ao SQ_DEAD (0x803AD1E4); o cronômetro das missões põe SQ_DEAD em
    todos. DESCONHECIDO: quem age quando o jogador some (volta, tela, perda dos BITS); não há "GAMEOVER" no executável. O
