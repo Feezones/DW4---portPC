@@ -23,10 +23,10 @@ conferido na janela. O estado vem do repositório, dos testes (81 ok) e das jane
      `dw4 igb-disparos` (também no fase-exportar). O cliente cria os x_* com as sequências deles (MOVE, HITBOX 7xxxx, cadeias)
      e a caixa fere pelo hit_p. HIPÓTESES: o projétil com caixa sai mirando o jogador (os bits b6/b7 não foram lidos); os y_*
      (só efeito) e as partículas não existem; o projétil aparece como uma esfera.
-3. **Morte.** DECISÃO DO PORT (904a338): perde os BITS no campo, HP/MP cheios e volta ao lobby. FATO lido: o SQ_DEAD do
-   jogador toca DEADD1 e vai a SQ_ERAS (some); o veneno leva ao SQ_DEAD (0x803AD1E4); o cronômetro das missões põe SQ_DEAD em
-   todos. DESCONHECIDO: quem age quando o jogador some (volta, tela, perda dos BITS); não há "GAMEOVER" no executável. O
-   DEADRESTART da GAMERAM (HP/MP cheios) existe, mas quem o manda não foi achado.
+3. **Morte.** FATO (chk_i_timenm0.lua, tempo de missão esgotado): todos em SQ_DEAD → i_fadewn01 SQ_GAMEOVER → some QS_HURRY →
+   QS_DONOT → i_messwn com a mensagem → PLAYERPOINT SETGENERATEPOS I<0> → NEXTSTAGE "stagML11". O port faz a queda assim (perde os
+   BITS no campo, SQ_GAMEOVER, QS_DONOT, lobby na entrada 0). FATO: o DEADRESTART (GAMERAM, mensagem 16) não é mandado por nenhum
+   texto do código nem dos scripts. DESCONHECIDO: o código nativo da queda fora das missões e a mensagem exibida.
 4. **Efeitos de estado no jogador.** Feito (63796e8): o golpe no jogador roda o hit_p_<forma>.lua do jogo, com os estados do
    MsgAction (PlayerStatus). HIPÓTESES: tique do veneno por segundo, efeito de cada estado no controle, queda de atributos ainda
    fora do dano.

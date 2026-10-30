@@ -157,6 +157,8 @@ public partial class Fatia
             _fadeLen = Math.Max(1, len);
         }
         else if (seq == "SQ_STCHANGE01") (_fadeFrom, _fadeTo, _fadeLen) = (alpha, 1f, 30);
+        // Fim de missão / queda (chk_i_timenm0.lua). HIPÓTESE: escurece em 60 quadros e fica preto.
+        else if (seq == "SQ_GAMEOVER") (_fadeFrom, _fadeTo, _fadeLen) = (alpha, 1f, 60);
         else return;
         _fadeT = 0;
         _fadeSeq = seq;
