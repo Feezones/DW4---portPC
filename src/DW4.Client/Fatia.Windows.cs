@@ -70,7 +70,7 @@ public partial class Fatia
         return true;
     }
 
-    bool TalkWindowOpen => _windows.Keys.Any(k => k.Item1 is "i_talkwn" or "i_messwn");
+    bool TalkWindowOpen => _windows.Keys.Any(k => k.Item1 is "i_talkwn" or "i_messwn" or "i_messwnsp");
 
     static bool IsWindowName(string name) => name != "i_fadewn01" && (name.StartsWith("i_", StringComparison.Ordinal) || name.EndsWith("ic", StringComparison.Ordinal));
 
@@ -170,7 +170,7 @@ public partial class Fatia
     void UpdateWindowTexts()
     {
         if (_winRoot == null) return;
-        var box = _windows.Values.Where(w => w.Name is "i_talkwn" or "i_messwn").Select(w => Bounds(w.Actor.Root)).FirstOrDefault(b => b.HasValue);
+        var box = _windows.Values.Where(w => w.Name is "i_talkwn" or "i_messwn" or "i_messwnsp").Select(w => Bounds(w.Actor.Root)).FirstOrDefault(b => b.HasValue);
         // O rosto (n_*ic) fica à esquerda da fala: o texto começa à direita dele e o nome fica na altura do alto do rosto.
         var face = _windows.Values.Where(w => w.Name.EndsWith("ic", StringComparison.Ordinal)).Select(w => Bounds(w.Actor.Root, 20)).FirstOrDefault(b => b.HasValue);
         bool hasName = _winTexts.Any(x => x.Key.Contains("FONT03", StringComparison.Ordinal) && x.Value.On);
@@ -184,7 +184,7 @@ public partial class Fatia
                 _winLabels[key] = label;
             }
             bool name = key.Contains("FONT03", StringComparison.Ordinal);
-            bool main = key.EndsWith("/font00", StringComparison.Ordinal) && (key.StartsWith("TALKFONT02", StringComparison.Ordinal) || key.StartsWith("MESSFONT", StringComparison.Ordinal));
+            bool main = key.EndsWith("/font00", StringComparison.Ordinal) && (key.StartsWith("TALKFONT02", StringComparison.Ordinal) || key.StartsWith("TALKFONT05", StringComparison.Ordinal) || key.StartsWith("MESSFONT", StringComparison.Ordinal));
             label.Visible = t.On && box.HasValue && (name || main);
             if (!label.Visible) continue;
             var b = box!.Value;
@@ -250,7 +250,7 @@ public partial class Fatia
     void GameFontText(BitmapFont font, string key, (string Text, bool On, Color Color) t, Aabb? box, Aabb? face, bool hasName)
     {
         bool name = key.Contains("FONT03", StringComparison.Ordinal);
-        bool main = key.EndsWith("/font00", StringComparison.Ordinal) && (key.StartsWith("TALKFONT02", StringComparison.Ordinal) || key.StartsWith("MESSFONT", StringComparison.Ordinal));
+        bool main = key.EndsWith("/font00", StringComparison.Ordinal) && (key.StartsWith("TALKFONT02", StringComparison.Ordinal) || key.StartsWith("TALKFONT05", StringComparison.Ordinal) || key.StartsWith("MESSFONT", StringComparison.Ordinal));
         _winGlyphs.TryGetValue(key, out var g);
         bool visible = t.On && box.HasValue && (name || main);
         if (!visible) { if (g.Node != null) g.Node.Visible = false; return; }
