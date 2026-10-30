@@ -373,6 +373,87 @@ Test("MPEG-PS: pacote MPEG-1, PES com PTS, fim e preenchimento de setor", () =>
     True(MpegPs.Demux(ps.ToArray()[..20]).Problems.Count > 0, "PES cortado não foi apontado");
 });
 
+Test("MPEG-1: tabelas de VLC sem prefixo repetido e IDCT igual à fórmula direta", () =>
+{
+    var problems = Mpeg1Video.CheckTables();
+    True(problems.Count == 0, string.Join("; ", problems.Take(5)));
+    var rng = new Random(7);
+    var block = new int[64];
+    for (int i = 0; i < 64; i++) block[i] = i < 10 ? rng.Next(-300, 300) : 0;
+    var input = (int[])block.Clone();
+    Mpeg1Video.Idct(block, new double[64]);
+    for (int y = 0; y < 8; y++)
+        for (int x = 0; x < 8; x++)
+        {
+            double s = 0;
+            for (int v = 0; v < 8; v++)
+                for (int u = 0; u < 8; u++)
+                    s += (u == 0 ? Math.Sqrt(0.5) : 1) * (v == 0 ? Math.Sqrt(0.5) : 1) / 4 * input[v * 8 + u]
+                        * Math.Cos((2 * x + 1) * u * Math.PI / 16) * Math.Cos((2 * y + 1) * v * Math.PI / 16);
+            True(Math.Abs(block[y * 8 + x] - s) <= 0.5 + 1e-9, $"IDCT em ({x}, {y}): {block[y * 8 + x]} contra {s:0.###}");
+        }
+    var dc = new int[64];
+    dc[0] = 100 * 8;
+    Mpeg1Video.Idct(dc, new double[64]);
+    True(dc.All(v => v == 100), "bloco só com DC vira constante");
+});
+
+Test("MPEG-1: fluxo montado aqui (I com DC, P copiando e P com meio pixel) sai na ordem certa", () =>
+{
+    var bits = new List<bool>();
+    void B(string s) { foreach (char c in s) if (c != ' ') bits.Add(c == '1'); }
+    void U(int v, int n) { for (int i = n - 1; i >= 0; i--) bits.Add(((v >> i) & 1) == 1); }
+    void Align() { while (bits.Count % 8 != 0) bits.Add(false); }
+    void Start(int code) { Align(); U(0, 16); U(1, 8); U(code, 8); }
+    string[] luma = ["100", "00", "01", "101", "110", "1110", "11110", "111110", "1111110"];
+    string[] chroma = ["00", "01", "10", "110", "1110", "11110", "111110", "1111110", "11111110"];
+    void Dc(int diff, bool isLuma)
+    {
+        int size = diff == 0 ? 0 : 32 - BitOperations.LeadingZeroCount((uint)Math.Abs(diff));
+        B((isLuma ? luma : chroma)[size]);
+        if (size > 0) U(diff > 0 ? diff : diff + (1 << size) - 1, size);
+        B("10"); // fim do bloco
+    }
+    // Sequência 32 × 16 (dois macroblocos), 29,97 fps, matrizes padrão.
+    Start(0xB3); U(32, 12); U(16, 12); U(1, 4); U(4, 4); U(0x3FFFF, 18); U(1, 1); U(20, 10); U(0, 1); U(0, 1); U(0, 1);
+    // I: luma 100 no primeiro macrobloco e 200 no segundo, croma neutro.
+    Start(0x00); U(0, 10); U(1, 3); U(0xFFFF, 16); U(0, 1);
+    Start(0x01); U(8, 5); U(0, 1);
+    B("1"); B("1"); Dc(100 - 128, true); Dc(0, true); Dc(0, true); Dc(0, true); Dc(0, false); Dc(0, false);
+    B("1"); B("1"); Dc(200 - 100, true); Dc(0, true); Dc(0, true); Dc(0, true); Dc(0, false); Dc(0, false);
+    // P com vetor zero nos dois (MC sem resíduo): cópia da I.
+    Start(0x00); U(1, 10); U(2, 3); U(0xFFFF, 16); U(0, 1); U(1, 3); U(0, 1);
+    Start(0x01); U(8, 5); U(0, 1);
+    B("1"); B("001"); B("1"); B("1");
+    B("1"); B("001"); B("1"); B("1");
+    // P com +1/2 pixel na horizontal no primeiro: a coluna 15 mistura 100 e 200.
+    Start(0x00); U(2, 10); U(2, 3); U(0xFFFF, 16); U(0, 1); U(1, 3); U(0, 1);
+    Start(0x01); U(8, 5); U(0, 1);
+    B("1"); B("001"); B("010"); B("1");
+    B("1"); B("001"); B("1"); B("1");
+    Start(0xB7);
+    Align();
+    var data = new byte[bits.Count / 8];
+    for (int i = 0; i < bits.Count; i++) if (bits[i]) data[i >> 3] |= (byte)(0x80 >> (i & 7));
+
+    var dec = new Mpeg1Video(data);
+    Equal((32, 16), (dec.Width, dec.Height), "tamanho");
+    True(Math.Abs(dec.FrameRate - 29.97) < 0.01, "quadros por segundo");
+    var types = new List<char>();
+    var rows = new List<byte[]>();
+    while (dec.Next() is { } fr)
+    {
+        types.Add(fr.Type);
+        rows.Add(fr.Y.AsSpan(5 * fr.Stride, 32).ToArray());
+        Equal(128, (int)fr.Cb[3], "croma neutro");
+    }
+    Equal(0, dec.Problems.Count, string.Join("; ", dec.Problems));
+    Equal("IPP", new string(types.ToArray()), "ordem de exibição");
+    True(rows[0].Take(16).All(v => v == 100) && rows[0].Skip(16).All(v => v == 200), "I: " + string.Join(",", rows[0]));
+    True(rows[1].SequenceEqual(rows[0]), "P com vetor zero copia a I");
+    True(rows[2].Take(15).All(v => v == 100) && rows[2][15] == 150 && rows[2].Skip(16).All(v => v == 200), "meio pixel: " + string.Join(",", rows[2]));
+});
+
 Test("Câmera por volumes: escolha do volume e pose com recuo e inclinação", () =>
 {
     // Volume 1 com inclinação de 55° (linha Z da rotação = (0, sen, cos), como nas matrizes B do jogo) e recuo 135.
@@ -1385,6 +1466,28 @@ if (args.Length == 1)
         Equal(0, problems.Count, "problemas");
         Equal("A927F50F4A287659A8282A22039723D1D5E6EB6E1F661ECF50FDA2C37FE3A8FC", Convert.ToHexString(SHA256.HashData(streams[0xC0].Payload.ToArray())), "SHA-256 do áudio");
         Equal("6278B0561D3A7D51EFA4BB11A103557B34A6B76A331FD1644537065C6934D62B", Convert.ToHexString(SHA256.HashData(streams[0xE0].Payload.ToArray())), "SHA-256 do vídeo");
+    });
+
+    Test("Jogo: abertura AUS_ (#2) decodifica os 1920 quadros do MPEG-1 sem erro", () =>
+    {
+        using var afs = AfsArchive.Open(areaPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[2], ms);
+        var (streams, _, _) = MpegPs.Demux(ms.ToArray());
+        var dec = new Mpeg1Video(streams[0xE0].Payload.ToArray());
+        var counts = new Dictionary<char, int>();
+        string hash300 = "";
+        int frames = 0;
+        while (dec.Next() is { } fr)
+        {
+            Equal(frames++, fr.Index, "índice de exibição");
+            counts[fr.Type] = counts.GetValueOrDefault(fr.Type) + 1;
+            if (fr.Index == 300) hash300 = Convert.ToHexString(SHA256.HashData(fr.Y));
+        }
+        Equal(0, dec.Problems.Count, string.Join("; ", dec.Problems.Take(3)));
+        Equal(1920, frames, "quadros (64,06 s a 29,97 fps, a duração do ADX)");
+        Equal((139, 524, 1257), (counts['I'], counts['P'], counts['B']), "imagens I, P e B");
+        Equal("3B79BFC3847222CE65EF25CC4326454EA4D9FF0D08686BCBB0162DEBBEB0B7BE", hash300, "SHA-256 da luma do quadro 300 (conferido a olho em 2026-10-30)");
     });
 
     Test("Jogo: Guilmon (#857) tem 31 ossos, 26 matrizes, pele rígida e 82 animações", () =>

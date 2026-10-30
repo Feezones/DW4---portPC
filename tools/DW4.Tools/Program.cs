@@ -67,6 +67,7 @@ try
             args.FirstOrDefault(a => a.StartsWith("--pacote=", StringComparison.Ordinal))?["--pacote=".Length..]),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
+        "sfd-quadros" when args.Length >= 4 => SfdQuadros(args[1], args[2], args[3], args[4..]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
         "lua-extrair" when args.Length == 4 => LuaExtrair(args[1], int.Parse(args[2], CultureInfo.InvariantCulture), args[3]),
         "lua-trace" when args.Length >= 3 => LuaTrace(args[1], int.Parse(args[2], CultureInfo.InvariantCulture), args[3..]),
@@ -127,6 +128,7 @@ static int Usage()
           dw4 igb-hud      <ndmw.afs> <indice-fase> [<area.afs> <indice-usa_pack>] <pasta-de-trabalho> [--atores=a,b,c]   (atores de interface i_* com nós, sequências, medidores e números em JSON + PNG)
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
+          dw4 sfd-quadros  <arquivo.afs> <indice> <pasta-de-trabalho> [quadro...]   (decodifica o vídeo MPEG-1 e grava os quadros pedidos em PNG)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
           dw4 igb-objetos  <ndmw.afs> <entrada> <pasta> <ator|ator=raiz>... [--pacote=<arquivo.afs>:<indice>]   (objetos rígidos da fase para a fatia)
           dw4 lua-extrair  <ndmw.afs> <entrada> <pasta-de-trabalho>   (scripts da fase para o cliente; fora do repositório)
@@ -2449,6 +2451,48 @@ int IgbSurvey(string path, string csvPath)
 }
 
 // Separa os fluxos de um vídeo Sofdec (MPEG-PS) de um AFS: vídeo em .m1v e áudio em .adx, numa pasta fora do repositório.
+// Decodifica o vídeo inteiro (confere o decodificador) e grava em PNG os quadros pedidos (padrão: 0, 300, 900 e o último).
+int SfdQuadros(string path, string which, string outDir, string[] wanted)
+{
+    var inv = CultureInfo.InvariantCulture;
+    var root = Path.GetFullPath(outDir);
+    if (InsideGitRepo(root)) { Console.Error.WriteLine($"recusado: {root} está dentro de um repositório Git"); return 1; }
+    using var afs = AfsArchive.Open(path);
+    if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[idx], ms);
+    var (streams, _, _) = MpegPs.Demux(ms.ToArray());
+    if (!streams.TryGetValue(0xE0, out var video)) { Console.Error.WriteLine("sem fluxo de vídeo 0xE0"); return 1; }
+    var want = wanted.Select(w => int.Parse(w, inv)).ToHashSet();
+    var dec = new Mpeg1Video(video.Payload.ToArray());
+    Directory.CreateDirectory(root);
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    var counts = new Dictionary<char, int>();
+    byte[]? rgba = null, last = null;
+    int frames = 0;
+    while (dec.Next() is { } f)
+    {
+        frames++;
+        counts[f.Type] = counts.GetValueOrDefault(f.Type) + 1;
+        bool save = want.Count == 0 ? f.Index is 0 or 300 or 900 : want.Contains(f.Index);
+        if (!save && want.Count > 0) continue;
+        rgba ??= new byte[f.Width * f.Height * 4];
+        f.ToRgba(rgba);
+        if (want.Count == 0) last = (byte[])rgba.Clone();
+        if (!save) continue;
+        using var png = File.Create(Path.Combine(root, $"quadro_{f.Index:D4}.png"));
+        Png.WriteRgba(png, f.Width, f.Height, rgba);
+    }
+    if (last != null)
+    {
+        using var png = File.Create(Path.Combine(root, $"quadro_{frames - 1:D4}.png"));
+        Png.WriteRgba(png, dec.Width, dec.Height, last);
+    }
+    Console.WriteLine($"{dec.Width}x{dec.Height} a {dec.FrameRate:0.###} fps: {frames} quadros ({string.Join(", ", counts.OrderBy(k => k.Key).Select(k => $"{k.Key} {k.Value}"))}) em {sw.Elapsed.TotalSeconds:0.0} s; {dec.Problems.Count} problemas");
+    foreach (var p in dec.Problems.Take(20)) Console.WriteLine($"  problema: {p}");
+    return dec.Problems.Count == 0 ? 0 : 3;
+}
+
 int SfdDemux(string path, string which, string outDir)
 {
     var root = Path.GetFullPath(outDir);
