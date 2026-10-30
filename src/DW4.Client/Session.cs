@@ -96,6 +96,9 @@ public static class Session
     {
         if (Character is not { } c) return;
         if (Fatia.IsMenuStage(stage)) (stage, entry) = (NewGameStage, NewGameEntry); // nunca grava numa fase de menu
+        // Nem no tutorial (o original não grava lá): fica a última fase segura da vaga (ResumePoint é a rede de segurança).
+        if (stage.Equals(DW4.Script.Save.ResumePoint.Tutorial, System.StringComparison.OrdinalIgnoreCase))
+            (stage, entry) = c.Stage.Length == 0 || c.Stage.Equals(DW4.Script.Save.ResumePoint.Tutorial, System.StringComparison.OrdinalIgnoreCase) || Fatia.IsMenuStage(c.Stage) ? (NewGameStage, NewGameEntry) : (c.Stage, c.Entry);
         var s = CharacterSave.Capture(ram, 0, c.Name, stage, entry);
         s.Starter = c.Starter;
         s.Model = Fatia.PlayerModel; // muda na evolução

@@ -23,6 +23,7 @@ public partial class Fatia
         string? why = _demo || InCutscene ? "Não dá para salvar durante uma cena."
             : _menuOpen || ShopOpen || SubWindowOpen || ChatOpen ? "Feche a janela para salvar."
             : IsMenuStage(_stageName) ? "Não dá para salvar aqui."
+            : _stageName.Equals(DW4.Script.Save.ResumePoint.Tutorial, System.StringComparison.OrdinalIgnoreCase) ? "O tutorial não grava (como no original)."
             : _pf != null && _hp <= 0 ? "Não dá para salvar caído."
             : Session.Character == null ? "Sem vaga: abra pelo menu inicial para salvar."
             : _leaving ? "" : null;
