@@ -68,7 +68,8 @@ conferido na janela. O estado vem do repositório, dos testes (81 ok) e das jane
       embaixo. Banco, X-data e LABO seguem em caixas da Godot com a fonte do jogo (variantes BITPUTIN/XDATAITEM/SINKA levantadas).
 14. **Cartas:** álbum feito na loja de cartas (lista das 50); faltam a arte do pacote (j_shbooster/j_shcardNN) e o valor 0x7DA/0x7DB/0x7DC pela raridade.
 15. **NPCs:** andam, falam e passeiam pela IA do jogo; não foi visto se viram para o jogador e as escalas.
-16. **Filmes** (abertura e final, Sofdec): o leitor existe nas ferramentas, não no cliente.
+16. **Filmes:** um só, a abertura da stagIS09 (MOVIE PLAY AJP_/AUS_/AEU_opening.sfd pela região). Separação e ADX prontos; falta o
+    decodificador de vídeo MPEG-1 (opção recomendada: nosso, em C#, sem pacote). Ver fase5-filmes.md.
 17. **Câmera:** "Dungeon camera" e "Light" vão para a GAMERAM, sem efeito no cliente.
 
 ## Já resolvido (referência)
