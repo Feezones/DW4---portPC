@@ -82,8 +82,10 @@ public static class Session
         Fatia.PlayerModel = character.Model.Length > 0 ? character.Model : "p_girumon";
         // Vaga gravada numa fase de menu (stagIS*, sem cenário no port) ou sem fase: volta ao lobby, entrada 3.
         bool lobby = character.Stage.Length == 0 || Fatia.IsMenuStage(character.Stage);
-        OS.SetEnvironment("DW4_FASE", lobby ? NewGameStage : character.Stage);
-        OS.SetEnvironment("DW4_ENTRADA", (lobby ? NewGameEntry : character.Entry).ToString());
+        // Vaga gravada no meio do tutorial: volta ao começo dele, como o restart.lua (ResumePoint).
+        var (stage, entry) = lobby ? (NewGameStage, NewGameEntry) : DW4.Script.Save.ResumePoint.Adjust(ram, character.Stage, character.Entry);
+        OS.SetEnvironment("DW4_FASE", stage);
+        OS.SetEnvironment("DW4_ENTRADA", entry.ToString());
         OS.SetEnvironment("DW4_INICIO", "");
         tree.ChangeSceneToFile(GameScene);
         return true;

@@ -560,7 +560,9 @@ public partial class MainMenu : Control
 
     public override void _UnhandledInput(InputEvent e)
     {
-        if (TitleInput(e) || SlotsInput(e) || CreateInput(e)) { GetViewport().SetInputAsHandled(); return; }
+        if (!IsInsideTree()) return;
+        // A escolha pode trocar de cena (entrar no jogo): depois disso o menu já saiu da árvore e não tem viewport.
+        if (TitleInput(e) || SlotsInput(e) || CreateInput(e)) { if (IsInsideTree()) GetViewport().SetInputAsHandled(); return; }
         if (_movieOn) return;
         // Cancelar (Esc / B) volta ao título de qualquer tela.
         if (e.IsActionPressed("ui_cancel") && _root != null) { ShowTitle(); GetViewport().SetInputAsHandled(); }

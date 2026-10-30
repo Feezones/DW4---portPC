@@ -373,6 +373,19 @@ Test("MPEG-PS: pacote MPEG-1, PES com PTS, fim e preenchimento de setor", () =>
     True(MpegPs.Demux(ps.ToArray()[..20]).Problems.Count > 0, "PES cortado não foi apontado");
 });
 
+Test("Port: vaga gravada no meio do tutorial volta ao começo dele (FLG 503 desligada, entrada 0, como o restart.lua)", () =>
+{
+    var ram = new GameRam();
+    foreach (var n in new[] { 1, 501, 502, 503, 508, 700, 931, 935, 936 }) ram.SetFlag(n, true); // flags da vaga do relato (2026-10-30)
+    var (stage, entry) = DW4.Script.Save.ResumePoint.Adjust(ram, "stag0001", 2);
+    Equal(("stag0001", 0), (stage, entry), "tutorial na entrada 0");
+    True(ram.FlagOn(503) == 0 && ram.FlagOn(502) == 1 && ram.FlagOn(501) == 1, "só a 503 desliga");
+    var other = new GameRam();
+    other.SetFlag(503, true);
+    Equal(("stagml11", 3), DW4.Script.Save.ResumePoint.Adjust(other, "stagml11", 3), "outra fase não muda");
+    True(other.FlagOn(503) == 1, "flag fica fora do tutorial");
+});
+
 Test("Port: gráfico (anti-aliasing, sombras, campo de visão, resolução interna) volta do config e respeita a faixa", () =>
 {
     var c = new PortConfig { AntiAliasing = 3, Shadows = 2, Fov = 60, RenderScale = 0.75f, FastForward = 4 };
