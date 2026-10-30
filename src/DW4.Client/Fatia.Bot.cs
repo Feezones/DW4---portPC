@@ -5,7 +5,7 @@ namespace DW4.Client;
 
 /// <summary>
 /// DEPURAÇÃO (só no build Debug, não é do jogo): DW4_BOT=1 joga sozinho para conferir fases sem ninguém no controle — anda até o
-/// inimigo vivo mais perto, ataca a menos de 14 unidades e confirma as falas (um toque a cada 0,5 s). A cada 5 s grava no log
+/// inimigo vivo mais perto, ataca a menos de 7 unidades e confirma as falas (um toque a cada 0,5 s). A cada 5 s grava no log
 /// "[bot]" com FPS, quadro mais lento, HP, inimigos, objetos e a fase.
 /// </summary>
 public partial class Fatia
@@ -22,7 +22,7 @@ public partial class Fatia
         if (target == null) { attackDown = tap; return; } // sem inimigo: só confirma as falas
         var to = target.Body.GlobalPosition - _player.GlobalPosition;
         to.Y = 0;
-        if (to.Length() > 14) { dir = to.Normalized(); attackDown = tap && (TalkWindowOpen || _choice >= 0 || _listChoice >= 0); }
+        if (to.Length() > 7) { dir = to.Normalized(); attackDown = tap && (TalkWindowOpen || _choice >= 0 || _listChoice >= 0); }
         else { dir = to.Normalized() * 0.05f; attackDown = _tick % 15 < 2; }
     }
 

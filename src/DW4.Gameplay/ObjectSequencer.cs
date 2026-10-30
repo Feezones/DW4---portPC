@@ -69,9 +69,11 @@ public sealed class ObjectSequencer
     float? _motionLen;
     /// <summary>Canais do MOVE/MOVEEX (FATO, executor do jogo); quem desenha o objeto aplica o deslocamento.</summary>
     public MotionChannels Motion { get; } = new();
-    readonly Queue<string> _luaCalls = new();
+    readonly Queue<(string Name, string Call)> _luaCalls = new();
     /// <summary>LUACALL da sequência (ex.: f_devl1f2 "bmh"): quem roda os scripts consome um por vez.</summary>
-    public string? TakeLuaCall() => _luaCalls.Count > 0 ? _luaCalls.Dequeue() : null;
+    public string? TakeLuaCall() => TakeLuaCallWithName()?.Name;
+    /// <summary>LUACALL com o 2º valor (nome de chamada que o script testa com MDLisCallName, ex. "gr2" "GROUND").</summary>
+    public (string Name, string Call)? TakeLuaCallWithName() => _luaCalls.Count > 0 ? _luaCalls.Dequeue() : null;
     /// <summary>Contador de caixas ligadas (muda a cada HITBOX "Set"): um acerto por caixa.</summary>
     public int BoxSerial { get; private set; }
 
@@ -199,7 +201,7 @@ public sealed class ObjectSequencer
                     AiMap = c.S(0);
                     break;
                 case "LUACALL":
-                    _luaCalls.Enqueue(c.S(0));
+                    _luaCalls.Enqueue((c.S(0), c.S(1)));
                     break;
                 case "MOVE" or "MOVEEX" or "MOVERL":
                     Motion.Apply(c);

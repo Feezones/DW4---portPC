@@ -522,6 +522,12 @@ public partial class Fatia : Node3D
         // FATO (GAMEDATAINIT 0x8036CFEC..D0B8): jogador novo com nível 1, EXP 0, as 9 skills em 1 e sem armaduras.
         Array.Fill(_skill, 1);
         LoadProgress();
+        // DEPURAÇÃO (só no build Debug): DW4_NIVEL=n começa no nível n, com as skills na mesma proporção (testes de chefes pelo bot).
+        if (OS.IsDebugBuild() && int.TryParse(OS.GetEnvironment("DW4_NIVEL"), out int debugLevel) && debugLevel > 1)
+        {
+            _level = Math.Min(debugLevel, PlayerGrowth.MaxLevel);
+            Array.Fill(_skill, Math.Min(9999, debugLevel * 10));
+        }
         _equip = Ram.Players[0].Equipment; // equipamento da vaga (sem vaga: a w_sword01 da fatia, no Recalc)
         Recalc();
         _hp = _pf!.MaxHp;

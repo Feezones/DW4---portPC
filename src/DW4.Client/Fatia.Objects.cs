@@ -218,7 +218,7 @@ public partial class Fatia
             o.Tick(dt);
             if (o.Seq?.Motion.Attached is { } rl && AttachTarget(rl, o.Name) is { } at) o.Actor.Root.GlobalTransform = at;
             UpdateObjectAi(o, dt);
-            while (o.Seq?.TakeLuaCall() is { } lua) RunLuaCall(lua, o.Name, o); // LUACALL das peças f_* (ex.: f_devl1f2 "bmh")
+            while (o.Seq?.TakeLuaCallWithName() is { } lua) RunLuaCall(lua.Name, o.Name, o, lua.Call); // LUACALL das peças f_* (ex.: f_devl1f2 "bmh")
             UpdateCharacterAnim(o);
             CheckFloorHit(o);
             if (!o.Erased) continue;

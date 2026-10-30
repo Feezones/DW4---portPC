@@ -95,7 +95,7 @@ public partial class Fatia
             case "LUACALL":
                 // FATO: SQ_ATCK2 do f_apocaly faz LUACALL "bit" e a fase tem bit_f_apocaly.lua (gera o f_bit se ele não está vivo,
                 // senão manda o chefe de volta ao SQ_WAIT): o script é "<nome>_<modelo>.lua", no contexto do modelo.
-                RunLuaCall(c.S(0), e.Kind.Model, e);
+                RunLuaCall(c.S(0), e.Kind.Model, e, c.S(1));
                 break;
         }
     }
@@ -103,7 +103,9 @@ public partial class Fatia
 
     // LUACALL "<nome>" de um modelo: FATO "<nome>_<modelo>.lua" (bit_f_apocaly.lua). HIPÓTESE quando esse não existe e há um só
     // "<nome>_*.lua" na fase (FATO: f_devl1f2 chama "bmh" e a fase tem bmh_f_devl1h.lua): roda esse.
-    void RunLuaCall(string name, string model, IBeModel context)
+    // FATO (gr2_f_luce.lua): o 2º valor do LUACALL ("gr2" "GROUND"/"FLY"/"FLYSET") é o nome de chamada que o script testa com
+    // MDLisCallName; sem ele o g_Ground do f_luce nunca vira 1 e o chefe não toma dano (hit_f_luce.lua só tira HP no chão).
+    void RunLuaCall(string name, string model, IBeModel context, string? call = null)
     {
         if (_stage == null || name.Length == 0) return;
         string? script = $"{name}_{model}.lua";
@@ -113,7 +115,14 @@ public partial class Fatia
             var only = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, $"{name}_*.lua").Select(Path.GetFileName).ToList() : [];
             script = only.Count == 1 ? only[0] : null;
         }
-        if (script != null) _stage.RunAs(script, context);
+        if (script != null)
+        {
+            var host = _stage.Host;
+            var old = host.CallName;
+            host.CallName = string.IsNullOrEmpty(call) ? null : call;
+            try { _stage.RunAs(script, context); }
+            finally { host.CallName = old; }
+        }
         else if (_warnedLua.Add($"{model}:{name}")) ScriptLog($"{model}: LUACALL \"{name}\" sem {name}_{model}.lua");
     }
 
