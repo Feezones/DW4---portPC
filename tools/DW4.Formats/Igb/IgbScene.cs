@@ -25,9 +25,13 @@ public sealed class IgbMeshPart
     public List<uint> Colors { get; } = [];
     /// <summary>Raiz de cena (nó logo abaixo do igSceneInfo) de onde a geometria foi alcançada; -1 sem cena.</summary>
     public int SceneRoot { get; init; } = -1;
-    /// <summary>Pesos de pele (um float por vértice no DW4) e índice local de matriz (um byte por vértice).</summary>
+    /// <summary>
+    /// Pesos de pele e índices locais de matriz, <see cref="BlendCount"/> por vértice (em sequência). FATO: a maioria das peles do DW4
+    /// tem 1 (float + byte); o n_leomon tem 2 (8 B de pesos e 2 B de índices por vértice).
+    /// </summary>
     public List<float> BlendWeights { get; } = [];
     public List<int> BlendIndices { get; } = [];
+    public int BlendCount { get; set; } = 1;
     public List<int> Triangles { get; } = [];
     /// <summary>Uma linha por fluxo de vértices: slot externo, bloco de memória, tamanho, passo por vértice e se foi decodificado.</summary>
     public List<string> Notes { get; } = [];
@@ -255,10 +259,12 @@ public sealed class IgbScene
         // Pele (igb-blender: MemoryRef no slot 7 = pesos, slot 8 = índices). No DW4: 4 B (float) e 1 B por vértice.
         var weights = Memory(va.Fields.FirstOrDefault(v => v.Desc.ShortName == "MemoryRef" && v.Desc.Slot == 7));
         var blendIdx = Memory(va.Fields.FirstOrDefault(v => v.Desc.ShortName == "MemoryRef" && v.Desc.Slot == 8));
-        if (n > 0 && weights.Length == 4 * n && blendIdx.Length == n)
+        int k = n > 0 && blendIdx.Length % n == 0 ? blendIdx.Length / n : 0;
+        if (k is >= 1 and <= 4 && weights.Length == 4 * k * n)
         {
-            for (int i = 0; i < n; i++) part.BlendWeights.Add(F32(weights, 4 * i));
-            for (int i = 0; i < n; i++) part.BlendIndices.Add(blendIdx[i]);
+            part.BlendCount = k;
+            for (int i = 0; i < k * n; i++) part.BlendWeights.Add(F32(weights, 4 * i));
+            for (int i = 0; i < k * n; i++) part.BlendIndices.Add(blendIdx[i]);
         }
         else if (weights.Length > 0 || blendIdx.Length > 0)
             part.Notes.Add($"pele não reconhecida: pesos {weights.Length} B, índices {blendIdx.Length} B para {n} vértices");

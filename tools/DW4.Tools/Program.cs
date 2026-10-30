@@ -977,21 +977,34 @@ int IgbGltf(string path, string which, string outDir, string[] options)
                 attrs["JOINTS_0"] = g.AddJoints(Enumerable.Range(0, nv).SelectMany(_ => new[] { part.RigidBone, 0, 0, 0 }).ToList());
                 attrs["WEIGHTS_0"] = g.AddFloats(Enumerable.Range(0, nv).SelectMany(_ => new[] { 1f, 0, 0, 0 }).ToList(), 4, "VEC4", true);
             }
-            else if (part.BlendIndices.Count == nv)
+            else if (part.BlendIndices.Count == nv * part.BlendCount)
             {
                 var j4 = new List<int>();
                 var w4 = new List<float>();
-                int bad = 0;
-                foreach (var local in part.BlendIndices)
+                int bad = 0, k = part.BlendCount;
+                float minSum = float.MaxValue, maxSum = float.MinValue;
+                for (int v = 0; v < nv; v++)
                 {
-                    int bone = 0;
-                    if (local < sm.MatrixPalette.Count && boneOfMatrix.TryGetValue(sm.MatrixPalette[local], out int bi)) bone = bi;
-                    else bad++;
-                    j4.AddRange([bone, 0, 0, 0]);
-                    w4.AddRange([1, 0, 0, 0]); // pele rígida: todos os pesos do DW4 conferidos valem 1,0
+                    var js = new int[4];
+                    var ws = new float[4];
+                    float sum = 0;
+                    for (int c = 0; c < k; c++)
+                    {
+                        int local = part.BlendIndices[v * k + c];
+                        if (local < sm.MatrixPalette.Count && boneOfMatrix.TryGetValue(sm.MatrixPalette[local], out int bi)) js[c] = bi;
+                        else bad++;
+                        // Com 1 peso por vértice, todos os pesos conferidos valem 1,0 (pele rígida). Com mais, vale o peso de cada um.
+                        ws[c] = k == 1 ? 1 : part.BlendWeights[v * k + c];
+                        sum += part.BlendWeights[v * k + c];
+                    }
+                    minSum = Math.Min(minSum, sum); maxSum = Math.Max(maxSum, sum);
+                    float norm = ws.Sum();
+                    if (norm > 1e-6f) for (int c = 0; c < 4; c++) ws[c] /= norm; else ws[0] = 1;
+                    j4.AddRange(js);
+                    w4.AddRange(ws);
                 }
-                if (bad > 0) report.AppendLine($"    {bad} vértices com índice fora da paleta (ligados ao osso 0)");
-                if (part.BlendWeights.Any(w => Math.Abs(w - 1) > 1e-4)) report.AppendLine("    há pesos diferentes de 1,0: pele não é rígida, revisar");
+                if (bad > 0) report.AppendLine($"    {bad} índices fora da paleta (ligados ao osso 0)");
+                report.AppendLine($"    pele com {k} peso(s) por vértice; soma dos pesos entre {minSum:0.###} e {maxSum:0.###}");
                 attrs["JOINTS_0"] = g.AddJoints(j4);
                 attrs["WEIGHTS_0"] = g.AddFloats(w4, 4, "VEC4", true);
             }

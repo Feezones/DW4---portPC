@@ -84,6 +84,7 @@ public sealed class IgbCharacter
             {
                 var (node, image, bone) = stack.Pop();
                 if (!seen.Add(node.Index)) continue;
+                c.Notes.Add($"{mesh.Name}: nó #{node.Index} {node.TypeName} \"{Field(node, "String", 2)?.Text}\" (osso {bone})");
                 if (f.Is(node, "igModelViewMatrixBoneSelect"))
                 {
                     string boneName = Field(node, "String", 2)?.Text ?? "";
@@ -162,8 +163,16 @@ public sealed class IgbCharacter
             var bms = Refs(skin).FirstOrDefault(r => f.Is(r, "igBlendMatrixSelect"));
             if (bms == null && Refs(skin).FirstOrDefault(r => f.Is(r, "igModelViewMatrixBoneSelect")) is { } mvb)
             {
-                c.Skins.Add(ReadRigid(skin, mvb));
-                continue;
+                // FATO (n_digilff/n_digilfm do #821, e_goburi do #607): o igModelViewMatrixBoneSelect "CharaRoot" tem logo abaixo um
+                // igBlendMatrixSelect com a paleta e a geometria (pele normal, índice por vértice). Só sem ele a pele é rígida.
+                var nested = scene.Reachable(mvb).Select(i => Slot(i)).OfType<IgbObject>().FirstOrDefault(o => f.Is(o, "igBlendMatrixSelect"));
+                if (nested == null)
+                {
+                    c.Skins.Add(ReadRigid(skin, mvb));
+                    continue;
+                }
+                c.Notes.Add($"igSkin #{skin.Index}: igModelViewMatrixBoneSelect \"{Field(mvb, "String", 2)?.Text}\" com igBlendMatrixSelect #{nested.Index} abaixo: pele normal");
+                bms = nested;
             }
             if (bms == null) { c.Notes.Add($"igSkin #{skin.Index} sem igBlendMatrixSelect"); continue; }
             var palette = new List<int>();
