@@ -67,7 +67,9 @@ try
             args.FirstOrDefault(a => a.StartsWith("--pacote=", StringComparison.Ordinal))?["--pacote=".Length..]),
         "igb-survey" when args.Length == 3 => IgbSurvey(args[1], args[2]),
         "sfd-demux" when args.Length == 4 => SfdDemux(args[1], args[2], args[3]),
+        "hud-previa" when args.Length >= 5 => HudPrevia(args[1], args[2], args[3], args[4..]),
         "titulo-exportar" when args.Length == 4 => TituloExportar(args[1], args[2], args[3]),
+        "telas-exportar" when args.Length == 7 => TelasExportar(args[1], args[2], args[3], args[4], args[5], args[6].Split(',')),
         "sfd-quadros" when args.Length >= 4 => SfdQuadros(args[1], args[2], args[3], args[4..]),
         "lua-scan" when args.Length is 2 or 3 => LuaScan(args[1], args.Length == 3 ? args[2] : null),
         "lua-extrair" when args.Length == 4 => LuaExtrair(args[1], int.Parse(args[2], CultureInfo.InvariantCulture), args[3]),
@@ -129,7 +131,9 @@ static int Usage()
           dw4 igb-hud      <ndmw.afs> <indice-fase> [<area.afs> <indice-usa_pack>] <pasta-de-trabalho> [--atores=a,b,c]   (atores de interface i_* com nós, sequências, medidores e números em JSON + PNG)
           dw4 igb-survey   <arquivo.afs> <saida.csv>   (uma linha por IGB: contagens de classes-chave e nomes; fora do repositório)
           dw4 sfd-demux    <arquivo.afs> <indice> <pasta-de-trabalho>   (separa áudio e vídeo de um Sofdec, fora do repositório)
+          dw4 hud-previa   <pasta-hud> <saida.png> <largura> <ator:SQ:segundos[:dx:dy]>...   (prévia das telas em PNG, sem janela)
           dw4 titulo-exportar <area.afs> <indice-usa_pack> <pasta>   (tela de título j_start* do pacote de idioma, com sequências, para o menu inicial)
+          dw4 telas-exportar <ndmw.afs> <entrada> <area.afs> <indice-usa_pack> <pasta> <prefixo,prefixo>   (atores de tela j_*/h_* de uma fase de menu, com sequências)
           dw4 sfd-quadros  <arquivo.afs> <indice> <pasta-de-trabalho> [quadro...]   (decodifica o vídeo MPEG-1 e grava os quadros pedidos em PNG)
           dw4 lua-scan     <arquivo.afs> [pasta-de-trabalho]   (com pasta: grava listagens fora do repositório)
           dw4 igb-objetos  <ndmw.afs> <entrada> <pasta> <ator|ator=raiz>... [--pacote=<arquivo.afs>:<indice>]   (objetos rígidos da fase para a fatia)
@@ -2458,11 +2462,37 @@ int IgbSurvey(string path, string csvPath)
 // Tela de título da stagIS10 (FATO: o first.lua gera j_startback e o TITLE2 nativo mostra o resto; os atores j_startback,
 // j_startlogo, j_startmenu01 "Press START" e j_startmenu02 "Game Start / Option" ficam no pacote de idioma, area.afs #620 na
 // versão americana, com a textura num igAttrSet acima do igSwitch do beAction2Info). Exporta cada um pela raiz desse igAttrSet.
-int TituloExportar(string areaPath, string which, string outDir)
+// Prévia em software dos atores de interface (HudPreview), cada um com a sequência rodada pelo tempo pedido.
+int HudPrevia(string dir, string output, string width, string[] specs)
+{
+    var full = Path.GetFullPath(output);
+    if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
+    var layers = new List<HudPreview.Layer>();
+    foreach (var spec in specs)
+    {
+        // "3d=ator:…" vê o ator pela câmera de demo da stagIS10 ("entry": z 730, fov horizontal 54,43°, far 2000).
+        bool persp = spec.StartsWith("3d=", StringComparison.Ordinal);
+        var p = (persp ? spec[3..] : spec).Split(':');
+        float secs = p.Length > 2 ? float.Parse(p[2], inv) : 1;
+        var (time, alpha) = p.Length > 1 ? HudPreview.Run(dir, p[0], p[1], secs) : (secs, 1f);
+        var off = p.Length > 4 ? new System.Numerics.Vector2(float.Parse(p[3], inv), float.Parse(p[4], inv)) : default;
+        Console.WriteLine($"{p[0]}: quadro {time * 60:0}, alfa {alpha:0.##}");
+        layers.Add(persp ? new HudPreview.Layer(p[0], time, alpha, off, 730, 54.432224f, 2000) : new HudPreview.Layer(p[0], time, alpha, off));
+    }
+    File.WriteAllBytes(full, HudPreview.Render(dir, int.Parse(width, inv), layers));
+    Console.WriteLine($"-> {full}");
+    return 0;
+}
+
+int TituloExportar(string areaPath, string which, string outDir) => TelasExportar(areaPath, which, areaPath, which, outDir, ["j_start"]);
+
+// Atores de tela de uma fase de menu (beAction2Info cujo nome começa por um dos prefixos), cada um pela raiz do igAttrSet logo
+// acima do igSwitch dele (é ali que fica a textura), com as sequências. Texturas por nome no pacote de idioma.
+int TelasExportar(string mainPath, string which, string packPath, string packWhich, string outDir, string[] prefixes)
 {
     var full = Path.GetFullPath(outDir);
     if (InsideGitRepo(full)) { Console.Error.WriteLine($"recusado: {full} está dentro de um repositório Git"); return 1; }
-    using var afs = AfsArchive.Open(areaPath);
+    using var afs = AfsArchive.Open(mainPath);
     if (!int.TryParse(which, NumberStyles.None, inv, out int idx) || idx >= afs.Entries.Count) { Console.Error.WriteLine("índice inválido"); return 1; }
     using var ms = new MemoryStream();
     afs.CopyEntry(afs.Entries[idx], ms);
@@ -2493,13 +2523,13 @@ int TituloExportar(string areaPath, string which, string outDir)
     {
         string name = Name(o);
         int sw = o.Fields.FirstOrDefault(v => v.Desc.Slot == 7 && v.Desc.ShortName == "ObjectRef")?.AsInt32(le) ?? -1;
-        if (!name.StartsWith("j_start", StringComparison.Ordinal) || sw < 0) continue;
+        if (!prefixes.Any(p => name.StartsWith(p, StringComparison.Ordinal)) || sw < 0 || specs.Any(s => s.StartsWith(name + "=", StringComparison.Ordinal))) continue;
         specs.Add($"{name}={(parent.TryGetValue(sw, out int p) ? p : sw)}");
     }
-    if (specs.Count == 0) { Console.Error.WriteLine("nenhum ator j_start* no pacote"); return 1; }
+    if (specs.Count == 0) { Console.Error.WriteLine($"nenhum ator {string.Join("/", prefixes)}*"); return 1; }
     Console.WriteLine($"atores: {string.Join(", ", specs)}");
-    int rc = IgbHudCmd(["igb-hud", areaPath, which, areaPath, which, full], specs.ToArray());
-    foreach (var s in specs) rc |= IgbSeq(areaPath, which, Path.Combine(full, s[..s.IndexOf('=')]), "--ator=" + s[..s.IndexOf('=')]);
+    int rc = IgbHudCmd(["igb-hud", mainPath, which, packPath, packWhich, full], specs.ToArray());
+    foreach (var s in specs) rc |= IgbSeq(mainPath, which, Path.Combine(full, s[..s.IndexOf('=')]), "--ator=" + s[..s.IndexOf('=')]);
     return rc;
 }
 

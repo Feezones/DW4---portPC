@@ -14,16 +14,18 @@ namespace DW4.Client;
 ///    SQ_LINEON00 confirma) e j_startmenu02 ("Game Start" / "Option", SQ_LINESL00/01 com SQ_LINEDW01/SQ_LINEUP00 entre as linhas,
 ///    SQ_LINEON00/01 confirmam e SQ_CANCEL volta) ficam no pacote de idioma (area.afs #620), exportados com dw4 titulo-exportar
 ///    para &lt;fases&gt;\stagis10\titulo.
-/// HIPÓTESE: todos na origem da tela 640 × 480 (o TITLE2 não foi lido; as malhas já trazem a posição na tela, como as janelas
-/// das lojas). Desenhada numa SubViewport que acompanha a proporção da janela (o fundo cobre as laterais em tela larga).
+/// FATO: o j_startback é a camada BG02 do pacote (cenário, planos de z −1728 a +30) e é vista pela câmera de demo "entry" da
+/// stagIS10 (z 730 olhando para −z, fov horizontal 54,43°, near 10, far 2000); conferido com a prévia do dw4 hud-previa, que dá o
+/// túnel digital do título. Os outros (camada WN01) são janelas na tela 640 × 480, na origem (HIPÓTESE: o TITLE2 não foi lido; as
+/// malhas já trazem a posição na tela e a prévia fecha certo). Duas SubViewports que acompanham a proporção da janela.
 /// </summary>
 public sealed class TitleArt
 {
     readonly HudData _h;
     readonly string _dir;
     readonly Node _owner;
-    readonly SubViewport _vp;
-    readonly Node3D _root;
+    readonly SubViewport _vp, _bgVp;
+    readonly Node3D _root, _bgRoot;
     readonly Dictionary<string, (HudActor Actor, ObjectSequencer? Seq)> _actors = [];
 
     TitleArt(HudData h, string dir, Node owner, int layer)
@@ -35,11 +37,19 @@ public sealed class TitleArt
         _vp.AddChild(new Camera3D { Projection = Camera3D.ProjectionType.Orthogonal, Size = 480, KeepAspect = Camera3D.KeepAspectEnum.Height, Near = 1, Far = 20000, Current = true, Position = new Vector3(0, 0, 10000) });
         _root = new Node3D();
         _vp.AddChild(_root);
+        _bgVp = new SubViewport { Size = new Vector2I(640, 480), OwnWorld3D = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Always };
+        _bgVp.AddChild(new Camera3D { Fov = ScreenLayout.VerticalFov(54.432224f), KeepAspect = Camera3D.KeepAspectEnum.Height, Near = 10, Far = 2000, Current = true, Position = new Vector3(0, 0, 730) });
+        _bgVp.AddChild(new WorldEnvironment { Environment = new Godot.Environment { BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black } });
+        _bgRoot = new Node3D();
+        _bgVp.AddChild(_bgRoot);
         var canvas = new CanvasLayer { Layer = layer };
-        var rect = new TextureRect { Texture = _vp.GetTexture(), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, MouseFilter = Control.MouseFilterEnum.Ignore };
-        rect.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        canvas.AddChild(_vp);
-        canvas.AddChild(rect);
+        foreach (var vp in new[] { _bgVp, _vp })
+        {
+            var rect = new TextureRect { Texture = vp.GetTexture(), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, MouseFilter = Control.MouseFilterEnum.Ignore };
+            rect.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+            canvas.AddChild(vp);
+            canvas.AddChild(rect);
+        }
         owner.AddChild(canvas);
     }
 
@@ -58,9 +68,7 @@ public sealed class TitleArt
         {
             if (!_h.Actors.TryGetValue(actor, out int root)) return;
             var hud = new HudActor(_h, root, slot: 0, drawOrder: _actors.Count * 20);
-            // Fundo atrás de tudo (as malhas do j_startback têm planos em z −1200 a −1728).
-            if (actor == "j_startback") hud.Root.Position = new Vector3(0, 0, -2000);
-            _root.AddChild(hud.Root);
+            (actor == "j_startback" ? _bgRoot : _root).AddChild(hud.Root);
             var file = Directory.Exists(Path.Combine(_dir, actor)) ? Directory.EnumerateFiles(Path.Combine(_dir, actor), "*_seq.json").FirstOrDefault() : null;
             ObjectSequencer? seq = null;
             if (file != null) { var json = File.ReadAllText(file); seq = new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)); }
@@ -87,7 +95,7 @@ public sealed class TitleArt
         {
             var win = _owner.GetViewport().GetVisibleRect().Size;
             var size = new Vector2I((int)Math.Round(ScreenLayout.Fit(win.X, win.Y).WideWidth), 480);
-            if (_vp.Size != size) _vp.Size = size;
+            if (_vp.Size != size) { _vp.Size = size; _bgVp.Size = size; }
         }
         foreach (var name in _actors.Keys.ToList())
         {

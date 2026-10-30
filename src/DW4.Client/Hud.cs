@@ -22,7 +22,7 @@ public sealed class HudData
     public sealed record Seq(int Mask, float Duration, float[] Times, Vector3[] T, Quaternion[] R, Vector3[] S);
     public sealed record MeshData(Vector3[] Positions, Vector2[] Uvs, int[] Triangles);
     public sealed record NodeData(int Id, string Type, string Name, Transform3D? Matrix, Seq? Sequence, int[] Children,
-        string? Texture, bool TextureMatrix, MeshData[] Meshes, bool Billboard);
+        string? Texture, bool TextureMatrix, MeshData[] Meshes, bool Billboard, bool? Additive = null);
     public sealed record MeterData(string Name, int Node, float MaxValue, float NonZeroTime, float NonMaxTime, bool Notch);
     public sealed record NumberRam(int Geometry, float OffsetNext, int MaxValue, int[][] DigitVertices, int[][] DigitKinds);
 
@@ -71,10 +71,13 @@ public sealed class HudData
         }
         string? texture = e.TryGetProperty("texture", out var tx) && tx.ValueKind == JsonValueKind.String ? tx.GetString() : null;
         bool texMatrix = false;
+        bool? additive = null;
         if (e.TryGetProperty("attrs", out var attrs))
             foreach (var a in attrs.EnumerateArray())
             {
                 var type = a.GetProperty("type").GetString();
+                // igBlendFunctionAttr: destino 1 (ONE) = mistura aditiva (brilhos do j_startback); 5 = transparência normal.
+                if (type == "igBlendFunctionAttr" && a.TryGetProperty("dst", out var dst)) additive = dst.GetInt32() == 1;
                 if (type == "igTextureBindAttr" && texture == null && a.TryGetProperty("texture", out var bt) && bt.ValueKind == JsonValueKind.String) texture = bt.GetString();
                 if (type == "igTextureMatrixStateAttr" && a.GetProperty("enabled").GetBoolean()) texMatrix = true;
             }
@@ -89,7 +92,7 @@ public sealed class HudData
                 meshes.Add(new MeshData(pos, uvs, mm.GetProperty("triangles").EnumerateArray().Select(x => x.GetInt32()).ToArray()));
             }
         return new NodeData(id, e.GetProperty("type").GetString()!, e.GetProperty("name").GetString() ?? "", matrix, seq,
-            e.GetProperty("children").EnumerateArray().Select(c => c.GetInt32()).ToArray(), texture, texMatrix, meshes.ToArray(), e.TryGetProperty("billboard", out _));
+            e.GetProperty("children").EnumerateArray().Select(c => c.GetInt32()).ToArray(), texture, texMatrix, meshes.ToArray(), e.TryGetProperty("billboard", out _), additive);
     }
 
     static float[] Floats(JsonElement a) => a.EnumerateArray().Select(x => x.GetSingle()).ToArray();
@@ -157,13 +160,14 @@ public sealed class HudActor
         _h = h;
         _billboard = billboard;
         _drawOrder = drawOrder;
-        Build(root, Root, null, false, [], -1, slot);
+        Build(root, Root, null, false, [], -1, slot, false);
     }
 
-    void Build(int id, Node3D parent, string? texture, bool texSpace, List<HudData.NodeData> texChain, int meter, int slot)
+    void Build(int id, Node3D parent, string? texture, bool texSpace, List<HudData.NodeData> texChain, int meter, int slot, bool additive)
     {
         if (!_h.Nodes.TryGetValue(id, out var n)) return;
         texture = n.Texture ?? texture;
+        additive = n.Additive ?? additive;
         if (n.TextureMatrix) { texSpace = true; texChain = []; }
         if (n.Type == "beMeterCtrlNode") meter = n.Id;
         var here = parent;
@@ -201,6 +205,7 @@ public sealed class HudActor
                 CullMode = BaseMaterial3D.CullModeEnum.Disabled, AlbedoTexture = _h.Texture(texture), NoDepthTest = _billboard,
                 BillboardMode = _billboard ? BaseMaterial3D.BillboardModeEnum.Enabled : BaseMaterial3D.BillboardModeEnum.Disabled,
                 TextureFilter = BaseMaterial3D.TextureFilterEnum.Linear,
+                BlendMode = additive ? BaseMaterial3D.BlendModeEnum.Add : BaseMaterial3D.BlendModeEnum.Mix,
             };
             if (texture == null) mat.AlbedoColor = new Color(1, 1, 1, 0.3f);
             if (_drawOrder >= 0) mat.RenderPriority = Math.Min(127, _drawOrder++);
@@ -211,7 +216,7 @@ public sealed class HudActor
         }
         var children = n.Children;
         if (n.Type == "igSwitch" && children.Length > 0) children = [children[Math.Clamp(slot, 0, children.Length - 1)]];
-        foreach (var c in children) Build(c, here, texture, texSpace, texChain, meter, slot);
+        foreach (var c in children) Build(c, here, texture, texSpace, texChain, meter, slot, additive);
     }
 
     public void SetMeterTime(int meterNode, float t) => _meterTime[meterNode] = t;
