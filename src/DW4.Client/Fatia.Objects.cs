@@ -230,6 +230,8 @@ public partial class Fatia
 
     // NPCs do lobby (n_agumon, n_leomon…): o nó do ator no IGB é um igActor, então o desenho vem do personagem exportado
     // (dw4 fase-exportar → npcs<nome>…personagem.gltf). A animação segue a ACTION da sequência do objeto (MOTIONSET).
+    static readonly bool DiagNpc = OS.GetEnvironment("DW4_DIAG_NPC") == "1";
+
     void AttachCharacter(WorldObject o)
     {
         var dir = Path.Combine(_dir, "npcs", o.Name);
@@ -241,6 +243,8 @@ public partial class Fatia
         if (!FindAll<MeshInstance3D>(model).Any()) _problems.Add($"{o.Name}: personagem sem malha (pele igSkin sem igBlendMatrixSelect, formato ainda não lido)");
         o.Actor.Root.AddChild(model);
         o.CharacterAnim = FindAll<AnimationPlayer>(model).FirstOrDefault();
+        // DEPURAÇÃO (DW4_DIAG_NPC=1): o que cada NPC tem e o que recebe (T-pose dos NPCs).
+        if (DiagNpc) GD.Print($"[npc] {o.Name}/{o.Index}: AnimationPlayer {(o.CharacterAnim != null ? string.Join(",", o.CharacterAnim.GetAnimationList()) : "nenhum")}, esqueletos {FindAll<Skeleton3D>(model).Count()}");
         if (o.CharacterAnim is { } ca && o.Seq != null)
             o.Seq.MotionLength = m => ca.HasAnimation(m) ? (float)ca.GetAnimation(m).Length * ObjectSequencer.FramesPerSecond : null;
     }
@@ -250,6 +254,7 @@ public partial class Fatia
     {
         if (o.CharacterAnim is not { } anim || o.Seq is not { CurrentMotion: { } motion } seq || seq.MotionSerial == o.CharacterMotionSerial) return;
         o.CharacterMotionSerial = seq.MotionSerial;
+        if (DiagNpc) GD.Print($"[npc] {o.Name}/{o.Index}: {seq.Sequence} pede {motion} (laço {seq.MotionLoop}) → {(anim.HasAnimation(motion) ? "toca" : "NÃO EXISTE")}");
         if (!anim.HasAnimation(motion)) return;
         anim.GetAnimation(motion).LoopMode = seq.MotionLoop ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
         anim.Play(motion, seq.MotionBlend / ObjectSequencer.FramesPerSecond);

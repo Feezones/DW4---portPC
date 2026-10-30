@@ -33,6 +33,13 @@ public partial class MainMenu : Control
     public override void _Ready()
     {
         PortSettings.Apply(GetTree().Root);
+        if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_VER_MODELO").Length > 0)
+        {
+            CallDeferred(Node.MethodName.AddSibling, new ModelViewer());
+            Visible = false;
+            SetProcess(false);
+            return;
+        }
         if (OS.GetEnvironment("DW4_FASE").Length > 0)
         {
             CallDeferred(MethodName.GoStraight);
