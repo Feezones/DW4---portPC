@@ -373,6 +373,17 @@ Test("MPEG-PS: pacote MPEG-1, PES com PTS, fim e preenchimento de setor", () =>
     True(MpegPs.Demux(ps.ToArray()[..20]).Problems.Count > 0, "PES cortado não foi apontado");
 });
 
+Test("Port: gráfico (anti-aliasing, sombras, campo de visão, resolução interna) volta do config e respeita a faixa", () =>
+{
+    var c = new PortConfig { AntiAliasing = 3, Shadows = 2, Fov = 60, RenderScale = 0.75f, FastForward = 4 };
+    var b = PortConfig.FromIni(c.ToIni());
+    Equal((3, 2, 60, 0.75f, 4), (b.AntiAliasing, b.Shadows, b.Fov, b.RenderScale, b.FastForward), "ida e volta");
+    var d = new PortConfig();
+    Equal((0, 0, PortConfig.DefaultFov, 1f), (d.AntiAliasing, d.Shadows, d.Fov, d.RenderScale), "padrão: sem AA, sombra original, fov 45, 100%");
+    var x = PortConfig.FromIni("[grafico]\naa=9\nfov=200\nresolucao_interna=5\n");
+    Equal((5, 75, 2f), (x.AntiAliasing, x.Fov, x.RenderScale), "fora da faixa é corrigido");
+});
+
 Test("Port: mapa de controles (padrão, salvar e carregar no config, conflito, restaurar padrão, configurações novas)", () =>
 {
     var c = new PortConfig { WindowMode = 2, FpsLimit = 144, VoiceVolume = 0.5f };

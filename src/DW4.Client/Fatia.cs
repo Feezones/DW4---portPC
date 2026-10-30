@@ -162,7 +162,8 @@ public partial class Fatia : Node3D
             env.FogDepthCurve = 1;
         }
         AddChild(new WorldEnvironment { Environment = env });
-        AddChild(new DirectionalLight3D { RotationDegrees = new Vector3(-60, 30, 0) });
+        AddChild(_sun = new DirectionalLight3D { RotationDegrees = new Vector3(-60, 30, 0) });
+        ApplyShadows();
 
         // Luz (FATO, boot.lua): SYSgetLightMode() == 0 ("Suave") carrega o LS_pack, senão o LH_pack; o fase-exportar grava o LS como
         // cena_ls.gltf (texturas em cenario/<cena>/ls). Sem ele, fica o LH.
@@ -260,7 +261,7 @@ public partial class Fatia : Node3D
             .Select(p => CameraZones.FromJson(System.IO.File.ReadAllText(p))).ToArray();
         // FATO (boot.lua): SYSgetCameraMode() == 0 carrega o aaaCamera.igb, senão o aaaCameraL.igb (a "camera_afastada" da fase.json).
         if (Ram.CameraMode != 0 && _cameraSets.Length > 1) _cameraSet = 1;
-        _camera = new Camera3D { Fov = 45, Far = 4000, Current = true };
+        _camera = new Camera3D { Fov = PortSettings.Current.Fov, Far = 4000, Current = true };
         AddChild(_camera);
 
         var layer = new CanvasLayer();
@@ -470,7 +471,7 @@ public partial class Fatia : Node3D
         else
         {
             _camera.KeepAspect = Camera3D.KeepAspectEnum.Height;
-            _camera.Fov = 45;
+            _camera.Fov = PortSettings.Current.Fov; // ajustável nas Configurações (as demos usam o fov delas)
             var set = _cameraSets[_cameraSet];
             var target = new NVector3(p.X, p.Y, p.Z);
             _zone = set.Select(target, _zone);

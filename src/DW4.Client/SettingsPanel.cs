@@ -63,6 +63,11 @@ public partial class SettingsPanel : VBoxContainer
         var fps = PortConfig.FpsLimits;
         Choice(video, "Limite de FPS", fps.Select(f => f == 0 ? "Sem limite" : $"{f}").ToArray(), Math.Max(0, Array.IndexOf(fps, c.FpsLimit)), v => c.FpsLimit = fps[v]);
         Slider(video, "Escala da interface", 0.5f, 2f, 0.05f, c.UiScale, v => c.UiScale = v);
+        Choice(video, "Anti-aliasing", ["Desligado", "FXAA", "MSAA 2x", "MSAA 4x", "MSAA 8x", "TAA"], c.AntiAliasing, v => c.AntiAliasing = v);
+        Choice(video, "Sombras", ["Original (sem sombra)", "Baixa", "Média", "Alta"], c.Shadows, v => c.Shadows = v);
+        Slider(video, "Campo de visão (graus)", 35, 75, 1, c.Fov, v => c.Fov = (int)v);
+        Slider(video, "Resolução interna (FSR abaixo de 1)", 0.5f, 2f, 0.05f, c.RenderScale, v => c.RenderScale = v);
+        Choice(video, "Acelerar cenas (segurando)", ["2x", "3x", "4x"], c.FastForward - 2, v => c.FastForward = v + 2);
         // As duas opções da tela de opções do jogo (mswkMem0010..0015 → CAMERAMODE e LIGHTMODE da GAMERAM).
         Choice(video, "Luz", ["Suave", "Forte"], c.LightMode, v => c.LightMode = v);
         Choice(video, "Câmera da dungeon", ["Perto", "Longe"], c.CameraMode, v => c.CameraMode = v);

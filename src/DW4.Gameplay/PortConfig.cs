@@ -23,6 +23,17 @@ public sealed class PortConfig
     public int WindowMode { get; set; }
     /// <summary>Limite de quadros por segundo (0 = sem limite).</summary>
     public int FpsLimit { get; set; }
+    /// <summary>0 desligado, 1 FXAA, 2 MSAA 2x, 3 MSAA 4x, 4 MSAA 8x, 5 TAA.</summary>
+    public int AntiAliasing { get; set; }
+    /// <summary>0 = Original (o jogo não tem sombra dinâmica: só a luz direcional sem sombra), 1 baixo, 2 médio, 3 alto.</summary>
+    public int Shadows { get; set; }
+    /// <summary>Campo de visão vertical das câmeras de jogo, em graus (45 = o do port até aqui; as de demonstração não mudam).</summary>
+    public int Fov { get; set; } = DefaultFov;
+    public const int DefaultFov = 45;
+    /// <summary>Escala da resolução interna do 3D (0,5 a 2; abaixo de 1 usa FSR).</summary>
+    public float RenderScale { get; set; } = 1f;
+    /// <summary>Velocidade das cenas enquanto se segura a ação "acelerar" (2, 3 ou 4).</summary>
+    public int FastForward { get; set; } = 3;
     public bool VSync { get; set; } = true;
     /// <summary>Escala da interface (content scale), 0,5 a 2.</summary>
     public float UiScale { get; set; } = 1f;
@@ -55,6 +66,11 @@ public sealed class PortConfig
         if (Fullscreen && WindowMode == 0) WindowMode = 1;
         WindowMode = Math.Clamp(WindowMode, 0, 2);
         FpsLimit = Math.Clamp(FpsLimit, 0, 1000);
+        AntiAliasing = Math.Clamp(AntiAliasing, 0, 5);
+        Shadows = Math.Clamp(Shadows, 0, 3);
+        Fov = Math.Clamp(Fov, 35, 75);
+        RenderScale = Math.Clamp(RenderScale, 0.5f, 2f);
+        FastForward = Math.Clamp(FastForward, 2, 4);
         Fullscreen = WindowMode == 1;
         if (Account.Length == 0 || Account.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) Account = "local";
     }
@@ -74,6 +90,7 @@ public sealed class PortConfig
         Put("camera", CameraMode); Put("luz", LightMode); Put("vibracao", Vibration);
         Section("grafico");
         Put("largura", Width); Put("altura", Height); Put("tela_cheia", Fullscreen); Put("modo", WindowMode); Put("vsync", VSync); Put("fps", FpsLimit); Put("escala", UiScale);
+        Put("aa", AntiAliasing); Put("sombras", Shadows); Put("fov", Fov); Put("resolucao_interna", RenderScale); Put("acelerar", FastForward);
         Section("som");
         Put("geral", MasterVolume); Put("musica", MusicVolume); Put("efeitos", EffectsVolume); Put("vozes", VoiceVolume);
         foreach (var device in new[] { InputBindings.Keyboard, InputBindings.Pad })
@@ -109,6 +126,11 @@ public sealed class PortConfig
                 case ("grafico", "tela_cheia"): c.Fullscreen = Bool(value, c.Fullscreen); if (c.Fullscreen && c.WindowMode == 0) c.WindowMode = 1; break;
                 case ("grafico", "modo"): c.WindowMode = Int(value, c.WindowMode); break;
                 case ("grafico", "fps"): c.FpsLimit = Int(value, c.FpsLimit); break;
+                case ("grafico", "aa"): c.AntiAliasing = Int(value, c.AntiAliasing); break;
+                case ("grafico", "sombras"): c.Shadows = Int(value, c.Shadows); break;
+                case ("grafico", "fov"): c.Fov = Int(value, c.Fov); break;
+                case ("grafico", "resolucao_interna"): c.RenderScale = Float(value, c.RenderScale); break;
+                case ("grafico", "acelerar"): c.FastForward = Int(value, c.FastForward); break;
                 case ("som", "vozes"): c.VoiceVolume = Float(value, c.VoiceVolume); break;
                 case (InputBindings.Keyboard or InputBindings.Pad, _): c.Bindings.Load(section, key, Text(value) ?? ""); break;
                 case ("grafico", "vsync"): c.VSync = Bool(value, c.VSync); break;

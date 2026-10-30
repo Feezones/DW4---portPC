@@ -55,6 +55,13 @@ public static class PortSettings
                 break;
         }
         Engine.MaxFps = c.FpsLimit;
+        // Anti-aliasing, resolução interna (FSR abaixo de 100%) e o tamanho do mapa de sombras da luz direcional.
+        root.Msaa3D = c.AntiAliasing switch { 2 => Viewport.Msaa.Msaa2X, 3 => Viewport.Msaa.Msaa4X, 4 => Viewport.Msaa.Msaa8X, _ => Viewport.Msaa.Disabled };
+        root.ScreenSpaceAA = c.AntiAliasing == 1 ? Viewport.ScreenSpaceAAEnum.Fxaa : Viewport.ScreenSpaceAAEnum.Disabled;
+        root.UseTaa = c.AntiAliasing == 5;
+        root.Scaling3DScale = c.RenderScale;
+        root.Scaling3DMode = c.RenderScale < 0.999f ? Viewport.Scaling3DModeEnum.Fsr : Viewport.Scaling3DModeEnum.Bilinear;
+        RenderingServer.DirectionalShadowAtlasSetSize(c.Shadows switch { 1 => 1024, 2 => 2048, 3 => 4096, _ => 1024 }, true);
         DisplayServer.WindowSetVsyncMode(c.VSync ? DisplayServer.VSyncMode.Enabled : DisplayServer.VSyncMode.Disabled);
         root.ContentScaleFactor = c.UiScale;
         AudioServer.SetBusVolumeDb(0, PortConfig.ToDb(c.MasterVolume));
