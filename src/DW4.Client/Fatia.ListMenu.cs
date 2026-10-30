@@ -76,7 +76,7 @@ public partial class Fatia
     {
         if (_listChoice < 0) return;
         // Desistir: K / Backspace / botão B (o mesmo que fecha o menu de status).
-        if (_listCancellable && !ChatOpen && (Input.IsKeyPressed(Key.K) || Input.IsKeyPressed(Key.Backspace) || Input.IsJoyButtonPressed(0, JoyButton.B)))
+        if (_listCancellable && !ChatOpen && PortInput.Down("cancelar"))
         {
             _listResult = ListCancel;
             _selectEnded = true;

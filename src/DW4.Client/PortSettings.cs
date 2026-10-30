@@ -11,7 +11,7 @@ namespace DW4.Client;
 public static class PortSettings
 {
     const string File = "user://config.cfg";
-    public const string MusicBus = "Musica", EffectsBus = "Efeitos";
+    public const string MusicBus = "Musica", EffectsBus = "Efeitos", VoiceBus = "Vozes";
 
     static PortConfig? s_current;
     public static PortConfig Current => s_current ??= Load();
@@ -29,21 +29,39 @@ public static class PortSettings
         System.IO.File.WriteAllText(ProjectSettings.GlobalizePath(File), Current.ToIni());
     }
 
-    /// <summary>Janela (modo, tamanho, vsync, escala da interface) e volumes dos barramentos.</summary>
+    /// <summary>Janela (modo, tamanho, vsync, limite de FPS, escala da interface), volumes dos barramentos e o mapa de controles.</summary>
     public static void Apply(Window root)
     {
         var c = Current;
-        if (c.Fullscreen) DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
-        else
+        if (DisplayServer.GetName() == "headless") { PortInput.Apply(c.Bindings); return; } // sem janela: só o mapa de controles
+        switch (c.WindowMode)
         {
-            if (DisplayServer.WindowGetMode() != DisplayServer.WindowMode.Windowed) DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
-            DisplayServer.WindowSetSize(new Vector2I(c.Width, c.Height));
+            case 1:
+                DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.Borderless, false);
+                DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
+                break;
+            case 2:
+                // Sem borda: janela do tamanho da tela, sem moldura (troca de programa sem mudar o modo de vídeo).
+                if (DisplayServer.WindowGetMode() != DisplayServer.WindowMode.Windowed) DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+                DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.Borderless, true);
+                int screen = DisplayServer.WindowGetCurrentScreen();
+                DisplayServer.WindowSetPosition(DisplayServer.ScreenGetPosition(screen));
+                DisplayServer.WindowSetSize(DisplayServer.ScreenGetSize(screen));
+                break;
+            default:
+                if (DisplayServer.WindowGetMode() != DisplayServer.WindowMode.Windowed) DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+                DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.Borderless, false);
+                DisplayServer.WindowSetSize(new Vector2I(c.Width, c.Height));
+                break;
         }
+        Engine.MaxFps = c.FpsLimit;
         DisplayServer.WindowSetVsyncMode(c.VSync ? DisplayServer.VSyncMode.Enabled : DisplayServer.VSyncMode.Disabled);
         root.ContentScaleFactor = c.UiScale;
         AudioServer.SetBusVolumeDb(0, PortConfig.ToDb(c.MasterVolume));
         AudioServer.SetBusVolumeDb(Bus(MusicBus), PortConfig.ToDb(c.MusicVolume));
         AudioServer.SetBusVolumeDb(Bus(EffectsBus), PortConfig.ToDb(c.EffectsVolume));
+        AudioServer.SetBusVolumeDb(Bus(VoiceBus), PortConfig.ToDb(c.VoiceVolume));
+        PortInput.Apply(c.Bindings);
     }
 
     /// <summary>Índice do barramento (cria com saída no Master se ainda não existe).</summary>

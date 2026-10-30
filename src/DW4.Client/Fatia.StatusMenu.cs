@@ -45,7 +45,7 @@ public partial class Fatia
         bool Pad(params JoyButton[] buttons) => e is InputEventJoypadButton { Pressed: true } b && buttons.Contains(b.ButtonIndex);
         if (!_menuOpen)
         {
-            if (Key(Godot.Key.Tab) || Pad(JoyButton.Start)) { OpenMenu(); return true; }
+            if (PortInput.Pressed(e, "status")) { OpenMenu(); return true; }
             return false;
         }
         if (_menuClosing) return true;
@@ -67,7 +67,7 @@ public partial class Fatia
             }
             return true;
         }
-        if (Key(Godot.Key.Tab, Godot.Key.Escape, Godot.Key.K) || Pad(JoyButton.Start, JoyButton.B)) CloseMenu();
+        if (PortInput.Pressed(e, "status") || PortInput.Pressed(e, "cancelar") || PortInput.Pressed(e, "pausa")) CloseMenu();
         else if (Key(Godot.Key.W, Godot.Key.Up) || Pad(JoyButton.DpadUp)) { _menuCursor = (_menuCursor + 2) % 3; UpdateMenuText(); }
         else if (Key(Godot.Key.S, Godot.Key.Down) || Pad(JoyButton.DpadDown)) { _menuCursor = (_menuCursor + 1) % 3; UpdateMenuText(); }
         else if (Key(Godot.Key.J, Godot.Key.Enter) || Pad(JoyButton.A))

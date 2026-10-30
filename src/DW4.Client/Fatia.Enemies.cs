@@ -600,7 +600,7 @@ public partial class Fatia
                 // json, a caixa pela malha (HitHalf/HitHeight, mínimo a do Numemon 8 × 14 × 8) em eixos do mundo.
                 var c = BoxCenter(h);
                 bool touch = e.Kind.BodyBoxes.Count > 0
-                    ? HitBody.Hits(N(c), h.Size, _move.Facing, N(p), e.Yaw, e.Model.Scale.X, e.Kind.BodyBoxes)
+                    ? HitBody.Hits(N(c), h.Size, _move.Facing, N(p), e.Yaw, e.Model?.Scale.X ?? 1, e.Kind.BodyBoxes)
                     : Math.Abs(c.X - p.X) <= h.Size.X / 2 + e.HitHalf && Math.Abs(c.Z - p.Z) <= h.Size.Z / 2 + e.HitHalf && c.Y + h.Size.Y / 2 >= p.Y && c.Y - h.Size.Y / 2 <= p.Y + e.HitHeight;
                 if (!touch) continue;
                 _enemiesHitThisAction.Add(e);

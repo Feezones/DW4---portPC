@@ -70,13 +70,14 @@ public partial class Fatia
     IEnumerable<string> ShopKeys()
     {
         if (ChatOpen) yield break;
-        if (Input.IsKeyPressed(Key.W) || Input.IsKeyPressed(Key.Up) || Input.IsJoyButtonPressed(0, JoyButton.DpadUp)) yield return "up";
-        if (Input.IsKeyPressed(Key.S) || Input.IsKeyPressed(Key.Down) || Input.IsJoyButtonPressed(0, JoyButton.DpadDown)) yield return "down";
-        if (Input.IsKeyPressed(Key.A) || Input.IsKeyPressed(Key.Left) || Input.IsJoyButtonPressed(0, JoyButton.DpadLeft)) yield return "left";
-        if (Input.IsKeyPressed(Key.D) || Input.IsKeyPressed(Key.Right) || Input.IsJoyButtonPressed(0, JoyButton.DpadRight)) yield return "right";
-        if (Input.IsKeyPressed(Key.J) || Input.IsKeyPressed(Key.Enter) || Input.IsJoyButtonPressed(0, JoyButton.X)) yield return "ok";
+        // Pelo mapa de controles; o direcional do controle também anda (nas telas não troca técnica).
+        if (PortInput.Down("cima") || Input.IsJoyButtonPressed(0, JoyButton.DpadUp)) yield return "up";
+        if (PortInput.Down("baixo") || Input.IsJoyButtonPressed(0, JoyButton.DpadDown)) yield return "down";
+        if (PortInput.Down("esquerda") || Input.IsJoyButtonPressed(0, JoyButton.DpadLeft)) yield return "left";
+        if (PortInput.Down("direita") || Input.IsJoyButtonPressed(0, JoyButton.DpadRight)) yield return "right";
+        if (PortInput.Down("confirmar") || PortInput.Down("ataque")) yield return "ok";
         if (Input.IsKeyPressed(Key.V) || Input.IsJoyButtonPressed(0, JoyButton.Y)) yield return "mode";
-        if (Input.IsKeyPressed(Key.K) || Input.IsKeyPressed(Key.Backspace) || Input.IsJoyButtonPressed(0, JoyButton.B)) yield return "close";
+        if (PortInput.Down("cancelar")) yield return "close";
     }
 
     /// <summary>Loja aberta: consome a entrada e segura o resto do quadro (como o menu de status).</summary>

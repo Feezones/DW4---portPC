@@ -550,61 +550,126 @@ public partial class MainMenu : Control
 
     // ---------- configurações ----------
 
+    // Configurações do port em três abas (DECISÃO DO PORT, docs/decisoes-port-pc.md), gravadas em user://config.cfg.
     void ShowSettings()
     {
         Clear();
         Title("Configurações");
         var c = PortSettings.Current;
-        var tabs = new TabContainer { CustomMinimumSize = new Vector2(0, 380) };
+        var tabs = new TabContainer { CustomMinimumSize = new Vector2(0, 430) };
         _root.AddChild(tabs);
-
-        var game = Page(tabs, "Jogo");
-        Choice(game, "Câmera da dungeon", ["Perto", "Longe"], c.CameraMode, v => c.CameraMode = v);
-        Choice(game, "Luz", ["Suave", "Forte"], c.LightMode, v => c.LightMode = v);
-        Check(game, "Vibração do controle", c.Vibration, v => c.Vibration = v);
-        Note(game, "Textos do jogo: inglês (a versão lida).");
 
         var video = Page(tabs, "Gráfico");
         var res = PortConfig.Resolutions.ToList();
         int cur = res.FindIndex(r => r.W == c.Width && r.H == c.Height);
         if (cur < 0) { res.Insert(0, (c.Width, c.Height)); cur = 0; }
         Choice(video, "Resolução (janela)", res.Select(r => $"{r.W} × {r.H}").ToArray(), cur, v => (c.Width, c.Height) = res[v]);
-        Check(video, "Tela cheia", c.Fullscreen, v => c.Fullscreen = v);
+        Choice(video, "Modo", ["Janela", "Tela cheia", "Sem borda"], c.WindowMode, v => { c.WindowMode = v; c.Fullscreen = v == 1; });
         Check(video, "VSync", c.VSync, v => c.VSync = v);
+        var fps = PortConfig.FpsLimits;
+        Choice(video, "Limite de FPS", fps.Select(f => f == 0 ? "Sem limite" : $"{f}").ToArray(), Math.Max(0, Array.IndexOf(fps, c.FpsLimit)), v => c.FpsLimit = fps[v]);
         Slider(video, "Escala da interface", 0.5f, 2f, 0.05f, c.UiScale, v => c.UiScale = v);
+        // As duas opções da tela de opções do jogo (mswkMem0010..0015 → CAMERAMODE e LIGHTMODE da GAMERAM).
+        Choice(video, "Luz", ["Suave", "Forte"], c.LightMode, v => c.LightMode = v);
+        Choice(video, "Câmera da dungeon", ["Perto", "Longe"], c.CameraMode, v => c.CameraMode = v);
 
         var sound = Page(tabs, "Som");
         Slider(sound, "Volume geral", 0, 1, 0.05f, c.MasterVolume, v => c.MasterVolume = v);
         Slider(sound, "Música", 0, 1, 0.05f, c.MusicVolume, v => c.MusicVolume = v);
         Slider(sound, "Efeitos", 0, 1, 0.05f, c.EffectsVolume, v => c.EffectsVolume = v);
+        Slider(sound, "Vozes", 0, 1, 0.05f, c.VoiceVolume, v => c.VoiceVolume = v);
 
-        var keys = Page(tabs, "Controles");
-        foreach (var (what, key) in Controls) Note(keys, $"{what}: {key}");
+        var controls = Page(tabs, "Controles");
+        var scroll = new ScrollContainer { CustomMinimumSize = new Vector2(0, 340), SizeFlagsVertical = SizeFlags.ExpandFill };
+        controls.AddChild(scroll);
+        var list = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        list.AddThemeConstantOverride("separation", 4);
+        scroll.AddChild(list);
+        _bindStatus = new Label { Text = "Clique numa ação e aperte a nova tecla ou botão (Esc cancela).", AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        controls.AddChild(_bindStatus);
+        Check(controls, "Vibração do controle", c.Vibration, v => c.Vibration = v);
+        _bindButtons.Clear();
+        foreach (var (device, title) in new[] { (InputBindings.Keyboard, "Teclado e mouse"), (InputBindings.Pad, "Controle") })
+        {
+            var head = new HBoxContainer();
+            var label = new Label { Text = title, SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            label.AddThemeFontSizeOverride("font_size", 22);
+            head.AddChild(label);
+            var restore = new Button { Text = "Restaurar padrão" };
+            string dev = device;
+            restore.Pressed += () => { c.Bindings.RestoreDefaults(dev); PortInput.Apply(c.Bindings); RefreshBindings(); _bindStatus!.Text = $"{title}: padrão restaurado."; };
+            head.AddChild(restore);
+            list.AddChild(head);
+            foreach (var a in InputBindings.Actions)
+            {
+                var row = new HBoxContainer();
+                row.AddChild(new Label { Text = a.Label, CustomMinimumSize = new Vector2(300, 0) });
+                var b = new Button { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+                var action = a;
+                b.Pressed += () =>
+                {
+                    _capture = (dev, action.Id, action.Label);
+                    _bindStatus!.Text = $"Aperte {(dev == InputBindings.Pad ? "um botão do controle" : "uma tecla ou botão do mouse")} para \"{action.Label}\" (Esc cancela).";
+                    b.Text = "...";
+                };
+                row.AddChild(b);
+                list.AddChild(row);
+                _bindButtons[(dev, a.Id)] = b;
+            }
+        }
+        RefreshBindings();
 
         var buttons = new HBoxContainer();
         _root.AddChild(buttons);
         var apply = Btn(buttons, "Aplicar", () => { PortSettings.Save(); PortSettings.Apply(GetTree().Root); });
         apply.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        var back = Btn(buttons, "Voltar", () => { PortSettings.Save(); PortSettings.Apply(GetTree().Root); ShowTitle(); });
+        var back = Btn(buttons, "Voltar", () => { _capture = null; PortSettings.Save(); PortSettings.Apply(GetTree().Root); ShowTitle(); });
         back.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         tabs.GetTabBar().CallDeferred(Control.MethodName.GrabFocus);
     }
 
-    // Teclas que o cliente usa hoje (Fatia*.cs). Remapear fica para depois.
-    static readonly (string, string)[] Controls =
-    [
-        ("Andar", "WASD / setas / analógico"),
-        ("Atacar", "J / botão esquerdo do mouse / X"),
-        ("Técnica", "1..6 direto; K / botão direito / Y usam a selecionada; roda do mouse / LB-RB trocam"),
-        ("Pular", "Espaço"),
-        ("Menu de status", "Tab / Start"),
-        ("Confirmar", "J / Enter / A"),
-        ("Cancelar", "K / Backspace / B"),
-        ("Equipar o último item", "E"),
-        ("Voltar ao início da fase", "F5"),
-        ("Trocar conjunto de câmera", "F1"),
-        ("Gravar e voltar ao menu", "Esc"),
-    ];
+    // Troca de controles: a ação esperando a nova tecla/botão, os botões de cada ligação e a linha de aviso.
+    (string Device, string Action, string Label)? _capture;
+    readonly Dictionary<(string, string), Button> _bindButtons = [];
+    Label? _bindStatus;
+
+    void RefreshBindings()
+    {
+        var b = PortSettings.Current.Bindings;
+        foreach (var ((device, action), button) in _bindButtons)
+        {
+            if (!IsInstanceValid(button)) continue;
+            var list = b.Get(device, action);
+            button.Text = list.Count == 0 ? "(nenhuma)" : string.Join(", ", list.Select(InputBindings.Describe));
+        }
+    }
+
+    // Antes da interface: com uma ação esperando, a próxima tecla/botão vira a ligação dela (avisando de quem foi tirada).
+    public override void _Input(InputEvent e)
+    {
+        if (_capture is not { } cap) return;
+        if (e is InputEventKey { Pressed: true, Keycode: Key.Escape })
+        {
+            _capture = null;
+            RefreshBindings();
+            _bindStatus!.Text = "Troca cancelada.";
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+        if (PortInput.FromEvent(e, cap.Device) is not { } binding)
+        {
+            if (e is InputEventKey or InputEventMouseButton or InputEventJoypadButton) GetViewport().SetInputAsHandled();
+            return;
+        }
+        var bindings = PortSettings.Current.Bindings;
+        var taken = bindings.Set(cap.Device, cap.Action, binding);
+        PortInput.Apply(bindings);
+        _capture = null;
+        RefreshBindings();
+        string names = string.Join(", ", taken.Select(t => InputBindings.Actions.First(a => a.Id == t).Label));
+        _bindStatus!.Text = $"\"{cap.Label}\": {InputBindings.Describe(binding)}" + (taken.Count > 0 ? $". Conflito: tirada de \"{names}\"." : ".");
+        GetViewport().SetInputAsHandled();
+    }
 
     static VBoxContainer Page(TabContainer tabs, string title)
     {

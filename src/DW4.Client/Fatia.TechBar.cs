@@ -41,14 +41,7 @@ public partial class Fatia
     // Roda do mouse e LB/RB trocam a técnica selecionada.
     bool TechBarInput(InputEvent e)
     {
-        int step = e switch
-        {
-            InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelDown } => 1,
-            InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp } => -1,
-            InputEventJoypadButton { Pressed: true, ButtonIndex: JoyButton.RightShoulder } => 1,
-            InputEventJoypadButton { Pressed: true, ButtonIndex: JoyButton.LeftShoulder } => -1,
-            _ => 0,
-        };
+        int step = PortInput.Pressed(e, "tecnica_proxima") ? 1 : PortInput.Pressed(e, "tecnica_anterior") ? -1 : 0;
         if (step == 0 || _techs.Count == 0 || _menuOpen || ShopOpen || SubWindowOpen) return false;
         _techSelected = ((_techSelected + step) % _techs.Count + _techs.Count) % _techs.Count;
         return true;

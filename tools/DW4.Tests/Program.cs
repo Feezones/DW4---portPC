@@ -373,6 +373,38 @@ Test("MPEG-PS: pacote MPEG-1, PES com PTS, fim e preenchimento de setor", () =>
     True(MpegPs.Demux(ps.ToArray()[..20]).Problems.Count > 0, "PES cortado não foi apontado");
 });
 
+Test("Port: mapa de controles (padrão, salvar e carregar no config, conflito, restaurar padrão, configurações novas)", () =>
+{
+    var c = new PortConfig { WindowMode = 2, FpsLimit = 144, VoiceVolume = 0.5f };
+    var b = c.Bindings;
+    True(b.Get(InputBindings.Keyboard, "ataque").SequenceEqual(new[] { "tecla:J", "mouse:1" }), "ataque padrão no teclado: J e clique esquerdo");
+    True(b.Get(InputBindings.Pad, "pulo").SequenceEqual(new[] { "botao:10" }), "pulo no controle: Z do GameCube → RB");
+    True(b.Get(InputBindings.Pad, "guarda").SequenceEqual(new[] { "eixo:4+" }), "defesa no controle: L do GameCube → LT");
+    // Conflito: K já é da técnica; pôr K no pulo tira da técnica e avisa (cancelar com K é de outra tela, não conflita).
+    True(b.Conflicts(InputBindings.Keyboard, "tecla:K", "pulo").SequenceEqual(new[] { "tecnica" }), "conflito apontado: " + string.Join(",", b.Conflicts(InputBindings.Keyboard, "tecla:K", "pulo")));
+    var taken = b.Set(InputBindings.Keyboard, "pulo", "tecla:K");
+    True(taken.SequenceEqual(new[] { "tecnica" }), "Set devolve de quem tirou");
+    Equal("tecla:K", b.Get(InputBindings.Keyboard, "pulo")[0], "pulo agora em K");
+    True(!b.Get(InputBindings.Keyboard, "tecnica").Contains("tecla:K") && b.Get(InputBindings.Keyboard, "tecnica").Contains("mouse:2"), "técnica perdeu o K e manteve o mouse");
+    True(b.Get(InputBindings.Keyboard, "cancelar").Contains("tecla:K"), "cancelar (menus) continua com K");
+    b.Set(InputBindings.Pad, "ataque", "botao:2");
+    // Salvar e carregar pelo texto do config.cfg.
+    var back = PortConfig.FromIni(c.ToIni());
+    Equal((2, 144, 0.5f, false), (back.WindowMode, back.FpsLimit, back.VoiceVolume, back.Fullscreen), "modo sem borda, FPS e vozes voltam");
+    True(back.Bindings.Get(InputBindings.Keyboard, "pulo").SequenceEqual(b.Get(InputBindings.Keyboard, "pulo")), "pulo trocado volta do arquivo");
+    True(back.Bindings.Get(InputBindings.Pad, "ataque").SequenceEqual(new[] { "botao:2" }), "ataque do controle trocado volta do arquivo");
+    True(back.Bindings.Get(InputBindings.Keyboard, "tecnica").SequenceEqual(new[] { "mouse:2" }), "técnica sem o K volta do arquivo");
+    // Restaurar o padrão de um aparelho não mexe no outro.
+    back.Bindings.RestoreDefaults(InputBindings.Keyboard);
+    True(back.Bindings.Get(InputBindings.Keyboard, "pulo").SequenceEqual(new[] { "tecla:Space" }), "teclado de volta ao padrão");
+    True(back.Bindings.Get(InputBindings.Pad, "ataque").SequenceEqual(new[] { "botao:2" }), "controle ficou como estava");
+    // Arquivo editado à mão: ligação inválida some, ação desconhecida é ignorada, arquivo antigo (tela_cheia) vira modo 1.
+    var hand = PortConfig.FromIni("[grafico]\ntela_cheia=true\n[teclado]\nataque=\"tecla:J,lixo,mouse:999\"\ninexistente=\"tecla:Q\"\n");
+    Equal(1, hand.WindowMode, "tela_cheia antiga vira modo tela cheia");
+    True(hand.Bindings.Get(InputBindings.Keyboard, "ataque").SequenceEqual(new[] { "tecla:J" }), "só a ligação válida fica");
+    Equal("LT", InputBindings.Describe("eixo:4+"), "nome do gatilho");
+});
+
 Test("Combate: caixa de golpe contra as caixas do corpo (eixos e escala do alvo, giro do golpe)", () =>
 {
     var body = HitBody.Load("{\"body\":[[-4,0,-4,4,14,4]]}");

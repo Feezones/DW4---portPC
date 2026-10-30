@@ -38,7 +38,7 @@ public partial class Fatia
         };
     }
 
-    static bool JumpDown() => Input.IsKeyPressed(Key.Space) || Input.IsJoyButtonPressed(0, JumpPadButton);
+    static bool JumpDown() => PortInput.Down("pulo");
 
     // Sem pulo com menu aberto (o _PhysicsProcess nem chega aqui), com o controle travado pelo script, caído ou durante um golpe.
     bool TryStartAir(bool jumpPressed)

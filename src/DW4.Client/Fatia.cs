@@ -280,13 +280,23 @@ public partial class Fatia : Node3D
             if (k.Keycode == Key.F1 && _cameraSets.Length > 1) _cameraSet = (_cameraSet + 1) % _cameraSets.Length;
             if (k.Keycode == Key.F2) _showBoxes = !_showBoxes;
             if (k.Keycode == Key.F5) { _player.Position = _spawn; _snapToFloor = !_demo; _player.Velocity = Vector3.Zero; _move.Stop(); _hp = _pf?.MaxHp ?? 0; _mp = _pf?.MaxMp ?? 0; }
-            if (k.Keycode is >= Key.Key1 and <= Key.Key6) _techKey = (int)(k.Keycode - Key.Key1);
-            if (k.Keycode == Key.K) _techKey = _techSelected;
-            if (k.Keycode == Key.E) EquipLast();
             if (k.Keycode == Key.F9 && OS.IsDebugBuild()) DebugWeakenBoss();
             if (k.Keycode == Key.F8 && OS.IsDebugBuild()) DebugNextTarget();
-            if (k.Keycode == Key.Escape) LeaveGame();
         }
+        // Ações do mapa de controles (PortInput, configurável nas Configurações).
+        for (int i = 0; i < 6; i++) if (PortInput.Pressed(e, $"tecnica{i + 1}")) _techKey = i;
+        if (PortInput.Pressed(e, "equipar")) EquipLast();
+        if (PortInput.Pressed(e, "guarda")) _guardPressed = true;
+        if (PortInput.Pressed(e, "pausa")) LeaveGame();
+    }
+
+    bool _guardPressed, _usingPad;
+
+    // Último aparelho usado: com o controle, o golpe não vira para o cursor do mouse.
+    public override void _Input(InputEvent e)
+    {
+        if (e is InputEventJoypadButton { Pressed: true } || e is InputEventJoypadMotion { AxisValue: > 0.5f or < -0.5f }) _usingPad = true;
+        else if (e is InputEventKey { Pressed: true } || e is InputEventMouseButton { Pressed: true }) _usingPad = false;
     }
 
     public override void _PhysicsProcess(double delta)
@@ -311,11 +321,7 @@ public partial class Fatia : Node3D
         TickStageChange(dt);
         if (_leaving) return;
         TickObjects(dt);
-        var input = Input.GetVector("ui_left", "ui_right", "ui_up", "ui_down");
-        if (Input.IsKeyPressed(Key.A)) input.X -= 1;
-        if (Input.IsKeyPressed(Key.D)) input.X += 1;
-        if (Input.IsKeyPressed(Key.W)) input.Y -= 1;
-        if (Input.IsKeyPressed(Key.S)) input.Y += 1;
+        var input = Input.GetVector(PortInput.Name("esquerda"), PortInput.Name("direita"), PortInput.Name("cima"), PortInput.Name("baixo"));
         input = input.LimitLength(1);
 
         // Direção relativa à câmera, no plano XZ
@@ -325,7 +331,7 @@ public partial class Fatia : Node3D
         var right = forward.Cross(Vector3.Up);
         var dir = right * input.X - forward * input.Y;
 
-        bool attackDown = Input.IsKeyPressed(Key.J) || Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsJoyButtonPressed(0, JoyButton.X);
+        bool attackDown = PortInput.Down("ataque");
         bool jumpDown = JumpDown();
         _tick++;
         if (_demo)
@@ -352,17 +358,23 @@ public partial class Fatia : Node3D
         bool attackPressed = attackDown && !_attackHeld;
         // Com o controle bloqueado o botão continua "segurado": o toque que fechou a mensagem não vira ataque quando o controle volta.
         _attackHeld = attackDown || attackRaw;
-        bool techDown = !ChatOpen && (Input.IsMouseButtonPressed(MouseButton.Right) || Input.IsJoyButtonPressed(0, JoyButton.Y));
+        bool techDown = !ChatOpen && PortInput.Down("tecnica");
         if (techDown && !_techHeld) _techKey = _techSelected;
         _techHeld = techDown;
         if (_pf != null && _hp <= 0) _techKey = -1;
         bool attacking = _runner?.Running == true;
         bool wasWaza = _wazaPending != null;
+        // Defender (FATO: o bit 0x8000 do controle leva ao SQ_GUARD; no GameCube, o gatilho L): começa no bloco do estilo da arma.
+        if (_guardPressed)
+        {
+            _guardPressed = false;
+            if (_runner != null && !attacking && _padEnabled && _playerCtrl && _status.CanAct && !ChatOpen && _runner.Start("SQ_GUARD", StyleOf("SQ_GUARD"))) { attacking = true; _move.Stop(); }
+        }
         if (_runner != null && !attacking && (attackPressed || _techKey >= 0))
         {
             attacking = _techKey >= 0 ? StartTechnique(_techKey) && _runner.Running : _runner.Start("SQ_ATCK1", StyleOf("SQ_ATCK1"));
             _techKey = -1;
-            if (attacking && !_demo && !Input.IsJoyButtonPressed(0, JoyButton.X) && MouseGround() is { } aim)
+            if (attacking && !_demo && !_usingPad && MouseGround() is { } aim)
             {
                 // DECISÃO DO PORT PARA PC (não é do original): o golpe sai na direção do cursor do mouse.
                 var to = aim - _player.GlobalPosition;

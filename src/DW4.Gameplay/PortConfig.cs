@@ -19,6 +19,10 @@ public sealed class PortConfig
     public int Width { get; set; } = 1280;
     public int Height { get; set; } = 720;
     public bool Fullscreen { get; set; }
+    /// <summary>0 = janela, 1 = tela cheia, 2 = janela sem borda do tamanho da tela.</summary>
+    public int WindowMode { get; set; }
+    /// <summary>Limite de quadros por segundo (0 = sem limite).</summary>
+    public int FpsLimit { get; set; }
     public bool VSync { get; set; } = true;
     /// <summary>Escala da interface (content scale), 0,5 a 2.</summary>
     public float UiScale { get; set; } = 1f;
@@ -26,6 +30,10 @@ public sealed class PortConfig
     public float MasterVolume { get; set; } = 1f;
     public float MusicVolume { get; set; } = 0.8f;
     public float EffectsVolume { get; set; } = 1f;
+    public float VoiceVolume { get; set; } = 1f;
+    // [teclado] e [controle]
+    public InputBindings Bindings { get; private set; } = new();
+    public static readonly int[] FpsLimits = [0, 30, 60, 120, 144, 240];
     // [conta]
     /// <summary>Conta local cujas vagas aparecem em "Jogar online" (na Fase 6, a conta do servidor).</summary>
     public string Account { get; set; } = "local";
@@ -43,6 +51,11 @@ public sealed class PortConfig
         MasterVolume = Math.Clamp(MasterVolume, 0f, 1f);
         MusicVolume = Math.Clamp(MusicVolume, 0f, 1f);
         EffectsVolume = Math.Clamp(EffectsVolume, 0f, 1f);
+        VoiceVolume = Math.Clamp(VoiceVolume, 0f, 1f);
+        if (Fullscreen && WindowMode == 0) WindowMode = 1;
+        WindowMode = Math.Clamp(WindowMode, 0, 2);
+        FpsLimit = Math.Clamp(FpsLimit, 0, 1000);
+        Fullscreen = WindowMode == 1;
         if (Account.Length == 0 || Account.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) Account = "local";
     }
 
@@ -60,9 +73,14 @@ public sealed class PortConfig
         Section("jogo");
         Put("camera", CameraMode); Put("luz", LightMode); Put("vibracao", Vibration);
         Section("grafico");
-        Put("largura", Width); Put("altura", Height); Put("tela_cheia", Fullscreen); Put("vsync", VSync); Put("escala", UiScale);
+        Put("largura", Width); Put("altura", Height); Put("tela_cheia", Fullscreen); Put("modo", WindowMode); Put("vsync", VSync); Put("fps", FpsLimit); Put("escala", UiScale);
         Section("som");
-        Put("geral", MasterVolume); Put("musica", MusicVolume); Put("efeitos", EffectsVolume);
+        Put("geral", MasterVolume); Put("musica", MusicVolume); Put("efeitos", EffectsVolume); Put("vozes", VoiceVolume);
+        foreach (var device in new[] { InputBindings.Keyboard, InputBindings.Pad })
+        {
+            Section(device);
+            foreach (var (key, value) in Bindings.Save(device)) Put(key, value);
+        }
         Section("conta");
         Put("nome", Account);
         return sb.ToString();
@@ -88,7 +106,11 @@ public sealed class PortConfig
                 case ("jogo", "vibracao"): c.Vibration = Bool(value, c.Vibration); break;
                 case ("grafico", "largura"): c.Width = Int(value, c.Width); break;
                 case ("grafico", "altura"): c.Height = Int(value, c.Height); break;
-                case ("grafico", "tela_cheia"): c.Fullscreen = Bool(value, c.Fullscreen); break;
+                case ("grafico", "tela_cheia"): c.Fullscreen = Bool(value, c.Fullscreen); if (c.Fullscreen && c.WindowMode == 0) c.WindowMode = 1; break;
+                case ("grafico", "modo"): c.WindowMode = Int(value, c.WindowMode); break;
+                case ("grafico", "fps"): c.FpsLimit = Int(value, c.FpsLimit); break;
+                case ("som", "vozes"): c.VoiceVolume = Float(value, c.VoiceVolume); break;
+                case (InputBindings.Keyboard or InputBindings.Pad, _): c.Bindings.Load(section, key, Text(value) ?? ""); break;
                 case ("grafico", "vsync"): c.VSync = Bool(value, c.VSync); break;
                 case ("grafico", "escala"): c.UiScale = Float(value, c.UiScale); break;
                 case ("som", "geral"): c.MasterVolume = Float(value, c.MasterVolume); break;

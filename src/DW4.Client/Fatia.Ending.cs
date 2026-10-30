@@ -56,7 +56,7 @@ public partial class Fatia
     {
         if (_ending == null) return;
         _endingTime += dt;
-        bool skip = _endingTime > 5 && (Input.IsKeyPressed(Key.Enter) || Input.IsKeyPressed(Key.Escape) || Input.IsKeyPressed(Key.J) || Input.IsJoyButtonPressed(0, JoyButton.A));
+        bool skip = _endingTime > 5 && (PortInput.Down("confirmar") || PortInput.Down("pausa") || PortInput.Down("ataque"));
         if (skip || (_endingMusic == null && _endingTime > 10)) FinishEnding();
     }
 

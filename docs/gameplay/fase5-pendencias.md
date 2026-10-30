@@ -74,6 +74,8 @@ conferido na janela. O estado vem do repositório, dos testes (81 ok) e das jane
 16. **Filmes:** a abertura toca antes do menu (2026-10-30; OpeningMovie.cs, decodificador MPEG-1 nosso em src/DW4.Media). Visto só sem
     janela (Godot --headless: carregou do area.afs, tocou com o ADX como relógio e acabou sozinho em 64,1 s). Falta ver a imagem
     na tela e o pulo com botão. Ver fase5-filmes.md.
+21. **Configurações e controles** (2026-10-30): abas Gráfico/Som/Controles, mapa remapeável (InputMap, config.cfg), padrão do controle
+    pelo GameCube. DESCONHECIDO: o botão do ícone de ataque (≪) e os de X/Y/R do GameCube; o barramento Vozes ainda não recebe sons.
 20. **Caixas de golpe** (2026-10-30, HitBody): o corpo de jogador, inimigos e objetos usa as caixas do jogo (beModelCtrlInfoDataHit "HIT",
     igAABox no espaço do ator; FATO: Guilmon 5 × 7 × 5, Numemon 8 × 14 × 8; sem osso). As caixas de golpe já vinham do HITBOX das
     sequências (quadro de início e duração; o arco do golpe são caixas em quadros seguidos). HIPÓTESE: caixa contra caixa, com a
