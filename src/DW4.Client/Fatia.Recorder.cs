@@ -229,9 +229,10 @@ sealed class Minimap
             if (who == 0) actor.Root.Position = center;
             actor.Update();
         }
-        // Mesma escala do HUD: tela 640 × 480 pela altura da janela, centrada.
-        float s = window.Y / 480f, ox = (window.X - 640 * s) / 2;
-        _rect.Position = new Vector2(ox + 500 * s, 52 * s);
-        _rect.Size = new Vector2(120 * s, 120 * s);
+        // Mesma escala do HUD (altura da janela); em tela larga, preso à borda direita como na tela 4:3 (ScreenLayout).
+        var fit = ScreenLayout.Fit(window.X, window.Y);
+        var (x, y) = fit.ToWindow(500, 52, anchor: true);
+        _rect.Position = new Vector2(x, y);
+        _rect.Size = new Vector2(120 * fit.Scale, 120 * fit.Scale);
     }
 }

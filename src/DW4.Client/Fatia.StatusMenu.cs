@@ -98,8 +98,8 @@ public partial class Fatia
     int MenuItemAt(Vector2 mouse)
     {
         var size = GetViewport().GetVisibleRect().Size;
-        float s = Math.Min(size.X / 640, size.Y / 480);
-        var p = (mouse - new Vector2((size.X - 640 * s) / 2, (size.Y - 480 * s) / 2)) / s;
+        var fit = ScreenLayout.Fit(size.X, size.Y);
+        var p = (mouse - new Vector2(fit.OffsetX, fit.OffsetY)) / fit.Scale;
         float x = p.X - 320, y = 240 - p.Y;
         if (x < -110 || x > 54) return -1;
         for (int i = 0; i < MenuRows.Length; i++)

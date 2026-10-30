@@ -24,6 +24,7 @@ public partial class Fatia
     readonly List<(HudActor Actor, ObjectSequencer? Seq)> _shopArtActors = [];
     readonly List<MeshInstance3D> _shopArtTexts = [];
     string _shopArtVariant = "";
+    ColorRect? _shopArtDim;
 
     bool ShopArtReady()
     {
@@ -40,7 +41,11 @@ public partial class Fatia
         var layer = new CanvasLayer { Layer = 5 };
         var rect = new TextureRect { Texture = vp.GetTexture(), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, MouseFilter = Control.MouseFilterEnum.Ignore };
         rect.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        // Tela larga: a janela da loja é 4:3 centrada; as faixas dos lados escurecem como no menu de status.
+        _shopArtDim = new ColorRect { Color = new Color(0, 0, 0, 0.85f), MouseFilter = Control.MouseFilterEnum.Ignore, Visible = false };
+        _shopArtDim.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         layer.AddChild(vp);
+        layer.AddChild(_shopArtDim);
         layer.AddChild(rect);
         AddChild(layer);
         return true;
@@ -69,6 +74,7 @@ public partial class Fatia
                     _shopArtActors.Add((actor, seq));
                 }
         }
+        if (_shopArtDim != null) _shopArtDim.Visible = variant.Length > 0;
         foreach (var t in _shopArtTexts) t.QueueFree();
         _shopArtTexts.Clear();
         if (variant.Length == 0) return;

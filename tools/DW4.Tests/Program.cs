@@ -373,6 +373,23 @@ Test("MPEG-PS: pacote MPEG-1, PES com PTS, fim e preenchimento de setor", () =>
     True(MpegPs.Demux(ps.ToArray()[..20]).Problems.Count > 0, "PES cortado não foi apontado");
 });
 
+Test("Port: tela larga (escala pela altura, HUD preso às bordas, 5:4 com faixas, fov da 4:3)", () =>
+{
+    var wide = ScreenLayout.Fit(1920, 1080);
+    Equal(2.25f, wide.Scale, "escala 16:9");
+    True(Math.Abs(wide.Extra - 106.6667f) < 0.01f, $"sobra de cada lado: {wide.Extra}");
+    True(Math.Abs(wide.WideWidth - 853.333f) < 0.01f, "largura da tela larga");
+    True(Math.Abs(wide.AnchorX(-260) - (-366.667f)) < 0.01f && wide.AnchorX(0) == 0, "painel à esquerda vai para a borda");
+    var (x, y) = wide.ToWindow(500, 52, anchor: true);
+    True(Math.Abs(1920 - (x + 120 * wide.Scale) - 20 * wide.Scale) < 0.01f && Math.Abs(y - 117) < 0.01f, $"minimapa a 20 da borda direita: {x}, {y}");
+    var four = ScreenLayout.Fit(1024, 768);
+    Equal((1.6f, 0f, 0f, 0f), (four.Scale, four.Extra, four.OffsetX, four.OffsetY), "4:3 igual ao jogo");
+    var tall = ScreenLayout.Fit(1280, 1024);
+    Equal(2f, tall.Scale, "5:4 pela largura");
+    Equal((0f, 32f), (tall.Extra, tall.OffsetY), "5:4 com faixas em cima e embaixo");
+    True(Math.Abs(ScreenLayout.VerticalFov(60) - 46.8264f) < 0.01f, "fov vertical da 4:3");
+});
+
 Test("MPEG-1: tabelas de VLC sem prefixo repetido e IDCT igual à fórmula direta", () =>
 {
     var problems = Mpeg1Video.CheckTables();

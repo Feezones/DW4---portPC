@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Godot;
+using DW4.Gameplay;
 
 namespace DW4.Client;
 
@@ -269,7 +270,9 @@ public sealed class HudActor
 }
 
 /// <summary>
-/// Painel de status do jogador 1 (i_stpnl01..04) numa SubViewport ortográfica de 640 × 480 desenhada por cima da tela.
+/// Painel de status do jogador 1 (i_stpnl01..04) numa SubViewport ortográfica de 480 linhas desenhada por cima da tela.
+/// DECISÃO DO PORT (tela larga): a SubViewport acompanha a proporção da janela e o painel fica preso à borda esquerda, à mesma
+/// distância dela que tem na tela 4:3 (<see cref="ScreenLayout"/>); a arte não estica.
 /// </summary>
 public sealed class HudOverlay
 {
@@ -281,6 +284,9 @@ public sealed class HudOverlay
     readonly HudData.MeterData? _hp, _mp;
     readonly HudData.NumberRam? _hpNum, _mpNum, _lvNum;
     float _ringTime;
+    readonly SubViewport _vp;
+    readonly Node3D _holder;
+    readonly Node _owner;
 
     // FATO (i_stpnl02, SQ_WAIT01): LABEL do Digimon → WAITk = JOINTSET 2 + 10k; a ordem segue o atlas charaicon.
     static readonly Dictionary<string, int> FaceWait = new()
@@ -299,10 +305,11 @@ public sealed class HudOverlay
     public HudOverlay(HudData h, Node owner)
     {
         _h = h;
-        var vp = new SubViewport { Size = new Vector2I(640, 480), TransparentBg = true, OwnWorld3D = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Always };
+        _owner = owner;
+        var vp = _vp = new SubViewport { Size = new Vector2I(640, 480), TransparentBg = true, OwnWorld3D = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Always };
         // Projeção do igProjectionMatrixAttr: diag(2/640, 2/480), z de −10 a −10010 (FATO no #179).
         vp.AddChild(new Camera3D { Projection = Camera3D.ProjectionType.Orthogonal, Size = 480, KeepAspect = Camera3D.KeepAspectEnum.Height, Near = 1, Far = 20000, Current = true });
-        var holder = new Node3D { Position = Panel1 };
+        var holder = _holder = new Node3D { Position = Panel1 };
         vp.AddChild(holder);
         // Ordem de desenho: a mesma do Lua (01, 02, 03, 04).
         foreach (var name in new[] { "i_stpnl01", "i_stpnl02", "i_stpnl03", "i_stpnl04" })
@@ -323,7 +330,7 @@ public sealed class HudOverlay
         _mpNum = h.Numbers.GetValueOrDefault("mpnm")?.FirstOrDefault();
         _lvNum = h.Numbers.GetValueOrDefault("lvnm")?.FirstOrDefault();
         var layer = new CanvasLayer { Layer = 1 };
-        // DECISÃO DA FATIA: a tela 640 × 480 é escalada para a altura da janela e centrada.
+        // A tela do jogo é escalada para a altura da janela; com a SubViewport na proporção da janela, cobre a janela toda.
         var rect = new TextureRect { Texture = vp.GetTexture(), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = Control.MouseFilterEnum.Ignore };
         rect.SetAnchorsPreset(Control.LayoutPreset.FullRect);
@@ -346,6 +353,14 @@ public sealed class HudOverlay
 
     public void Update(float dt, int hp, int maxHp, int mp, int maxMp, int level)
     {
+        if (_owner.IsInsideTree())
+        {
+            var win = _owner.GetViewport().GetVisibleRect().Size;
+            var fit = ScreenLayout.Fit(win.X, win.Y);
+            var size = new Vector2I((int)Math.Round(fit.WideWidth), 480);
+            if (_vp.Size != size) _vp.Size = size;
+            _holder.Position = new Vector3(fit.AnchorX(Panel1.X), Panel1.Y, Panel1.Z);
+        }
         // i_stpnl01: WAIT01 = JOINTSET 0..360 "LP" (FATO).
         _ringTime = (_ringTime + dt) % 6f;
         if (_ring != null) _ring.Time = _ringTime;

@@ -149,15 +149,16 @@ public partial class Fatia : IBeEngine
         _cameraDemoT = 0;
     }
 
-    // Câmera da demo: posição, frente e cima amostradas; fov horizontal do igCamera (KeepAspect Width).
+    // Câmera da demo: posição, frente e cima amostradas; o fov horizontal do igCamera vale para a tela 4:3. Tela larga: o fov
+    // vertical da 4:3 fica (KeepAspect Height) e os lados mostram mais (DECISÃO DO PORT, ScreenLayout).
     void UpdateCameraDemo(float dt)
     {
         if (_cameraDemo is not { } d) return;
         _cameraDemoT += dt;
         var f = d.Sample(_cameraDemoT);
         var pos = new Vector3(f.Position.X, f.Position.Y, f.Position.Z);
-        _camera.KeepAspect = Camera3D.KeepAspectEnum.Width;
-        _camera.Fov = d.FovHorizontalDeg;
+        _camera.KeepAspect = Camera3D.KeepAspectEnum.Height;
+        _camera.Fov = ScreenLayout.VerticalFov(d.FovHorizontalDeg);
         _camera.LookAtFromPosition(pos, pos + new Vector3(f.Forward.X, f.Forward.Y, f.Forward.Z), new Vector3(f.Up.X, f.Up.Y, f.Up.Z));
     }
 

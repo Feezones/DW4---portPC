@@ -74,6 +74,9 @@ conferido na janela. O estado vem do repositório, dos testes (81 ok) e das jane
 16. **Filmes:** a abertura toca antes do menu (2026-10-30; OpeningMovie.cs, decodificador MPEG-1 nosso em src/DW4.Media). Visto só sem
     janela (Godot --headless: carregou do area.afs, tocou com o ADX como relógio e acabou sozinho em 64,1 s). Falta ver a imagem
     na tela e o pulo com botão. Ver fase5-filmes.md.
+18. **Tela larga** (2026-10-30, ScreenLayout): HUD e minimapa presos às bordas, painéis 4:3 centrados, demos sem cortar em cima e
+    embaixo. Sem rever na tela. Falta: os controles da Godot (chat, barra de técnicas, caixas) não escalam com a resolução (só com a
+    escala da interface das configurações).
 17. **Câmera:** "Dungeon camera" e "Light" vão para a GAMERAM, sem efeito no cliente.
 
 ## Já resolvido (referência)
