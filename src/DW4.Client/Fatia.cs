@@ -842,11 +842,13 @@ public partial class Fatia : Node3D
         }
     }
 
-    // WAV PCM 16 bits com o chunk "smpl" do adx-wav (início e fim inclusivo do loop).
-    AudioStreamWav? LoadWav(string file)
+    AudioStreamWav? LoadWav(string file) => ReadWav(file, _problems);
+
+    /// <summary>WAV PCM 16 bits com o chunk "smpl" do adx-wav (início e fim inclusivo do loop).</summary>
+    public static AudioStreamWav? ReadWav(string file, List<string> problems)
     {
         var b = System.IO.File.ReadAllBytes(file);
-        if (b.Length < 12 || System.Text.Encoding.ASCII.GetString(b, 0, 4) != "RIFF") { _problems.Add($"{file}: não é WAV"); return null; }
+        if (b.Length < 12 || System.Text.Encoding.ASCII.GetString(b, 0, 4) != "RIFF") { problems.Add($"{file}: não é WAV"); return null; }
         int channels = 0, rate = 0, loopStart = -1, loopEnd = -1;
         byte[]? data = null;
         for (int at = 12; at + 8 <= b.Length;)
@@ -859,7 +861,7 @@ public partial class Fatia : Node3D
             else if (id == "data") data = b.AsSpan(body, Math.Min(size, b.Length - body)).ToArray();
             at = body + size + (size & 1);
         }
-        if (data == null || channels == 0) { _problems.Add($"{file}: WAV sem fmt ou data"); return null; }
+        if (data == null || channels == 0) { problems.Add($"{file}: WAV sem fmt ou data"); return null; }
         var w = new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, MixRate = rate, Stereo = channels == 2, Data = data };
         if (loopStart >= 0) { w.LoopMode = AudioStreamWav.LoopModeEnum.Forward; w.LoopBegin = loopStart; w.LoopEnd = loopEnd; }
         return w;

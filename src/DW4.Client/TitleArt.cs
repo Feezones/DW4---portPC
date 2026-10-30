@@ -27,11 +27,14 @@ public sealed class TitleArt
     readonly SubViewport _vp, _bgVp;
     readonly Node3D _root, _bgRoot;
     readonly Dictionary<string, (HudActor Actor, ObjectSequencer? Seq)> _actors = [];
+    readonly string _background;
+    readonly CanvasLayer _canvas;
 
-    TitleArt(HudData h, string dir, Node owner, int layer)
+    TitleArt(HudData h, string dir, Node owner, int layer, string background)
     {
         _h = h;
         _dir = dir;
+        _background = background;
         _owner = owner;
         _vp = new SubViewport { Size = new Vector2I(640, 480), TransparentBg = true, OwnWorld3D = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Always };
         _vp.AddChild(new Camera3D { Projection = Camera3D.ProjectionType.Orthogonal, Size = 480, KeepAspect = Camera3D.KeepAspectEnum.Height, Near = 1, Far = 20000, Current = true, Position = new Vector3(0, 0, 10000) });
@@ -42,7 +45,7 @@ public sealed class TitleArt
         _bgVp.AddChild(new WorldEnvironment { Environment = new Godot.Environment { BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black } });
         _bgRoot = new Node3D();
         _bgVp.AddChild(_bgRoot);
-        var canvas = new CanvasLayer { Layer = layer };
+        var canvas = _canvas = new CanvasLayer { Layer = layer };
         foreach (var vp in new[] { _bgVp, _vp })
         {
             var rect = new TextureRect { Texture = vp.GetTexture(), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -54,12 +57,18 @@ public sealed class TitleArt
     }
 
     /// <summary>Carrega a arte de &lt;fases&gt;\stagis10\titulo; null se não foi exportada.</summary>
-    public static TitleArt? Create(Node owner, string stagesDir, int layer, List<string> problems)
+    public static TitleArt? Create(Node owner, string stagesDir, int layer, List<string> problems) =>
+        Create(owner, Path.Combine(stagesDir, "stagis10", "titulo"), "j_startback", layer, problems, "dw4 titulo-exportar area.afs 620");
+
+    /// <summary>Telas de uma fase de menu (pasta do dw4 telas-exportar), com <paramref name="background"/> visto em perspectiva.
+    /// FATO: as stagIS12/13 usam a mesma câmera de demo "entry" da stagIS10 (z 730, fov horizontal 54,43°).</summary>
+    public static TitleArt? Create(Node owner, string dir, string background, int layer, List<string> problems, string command)
     {
-        var dir = Path.Combine(stagesDir, "stagis10", "titulo");
-        var h = HudData.Load(dir, problems, "*_hud.json", $"falta {dir} (dw4 titulo-exportar area.afs 620 {dir}): menu na caixa da Godot");
-        return h == null ? null : new TitleArt(h, dir, owner, layer);
+        var h = HudData.Load(dir, problems, "*_hud.json", $"falta {dir} ({command} {dir}): tela na caixa da Godot");
+        return h == null ? null : new TitleArt(h, dir, owner, layer, background);
     }
+
+    public bool Visible { get => _canvas.Visible; set => _canvas.Visible = value; }
 
     /// <summary>Gera o ator (se preciso) e começa a sequência.</summary>
     public void Play(string actor, string sequence)
@@ -68,7 +77,7 @@ public sealed class TitleArt
         {
             if (!_h.Actors.TryGetValue(actor, out int root)) return;
             var hud = new HudActor(_h, root, slot: 0, drawOrder: _actors.Count * 20);
-            (actor == "j_startback" ? _bgRoot : _root).AddChild(hud.Root);
+            (actor == _background ? _bgRoot : _root).AddChild(hud.Root);
             var file = Directory.Exists(Path.Combine(_dir, actor)) ? Directory.EnumerateFiles(Path.Combine(_dir, actor), "*_seq.json").FirstOrDefault() : null;
             ObjectSequencer? seq = null;
             if (file != null) { var json = File.ReadAllText(file); seq = new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)); }

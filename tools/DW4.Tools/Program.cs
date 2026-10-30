@@ -2174,7 +2174,22 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
             foreach (var n in shopNames) Step($"loja/{n} seq", () => IgbSeq(ndmwPath, M, Path.Combine(outDir, "loja", n), "--ator=" + n));
         }
         // Tela de título (j_start* no pacote de idioma; o menu inicial do port desenha com ela).
-        if (stage.Equals("stagis10", StringComparison.OrdinalIgnoreCase)) Step("titulo", () => TituloExportar(areaPath, usa.ToString(inv), Path.Combine(outDir, "titulo")));
+        if (stage.Equals("stagis10", StringComparison.OrdinalIgnoreCase))
+        {
+            Step("titulo", () => TituloExportar(areaPath, usa.ToString(inv), Path.Combine(outDir, "titulo")));
+            // Música do título: AM_TITLE2 = [0.20] no beSoundInfo #806 (o first.lua toca AM_TITLE2 fora da região 0); o #805 não a tem.
+            Step("titulo audio", () => AdxWav(ndmwPath, Path.Combine(outDir, "audio"), ["20"]));
+        }
+        // Escolha de personagem (stagIS13): telas j_* e os modelos de escolha h_* (com esqueleto, girando na criação do port).
+        if (stage.Equals("stagis13", StringComparison.OrdinalIgnoreCase))
+        {
+            Step("telas", () => TelasExportar(ndmwPath, M, areaPath, usa.ToString(inv), Path.Combine(outDir, "telas"), ["j_"]));
+            foreach (var h in actors.Select(x => x.Name).Where(n => n.StartsWith("h_", StringComparison.Ordinal)).Distinct())
+            {
+                Step($"escolha/{h}", () => IgbGltf(ndmwPath, M, Path.Combine(outDir, "escolha", h), ["--ator=" + h]));
+                Step($"escolha/{h} seq", () => IgbSeq(ndmwPath, M, Path.Combine(outDir, "escolha", h), "--ator=" + h));
+            }
+        }
     }
     else problems.Add("usa_pack: não encontrado no índice (textos, db, hud e menu sem exportar)");
     if (objectNames.Length > 0) Step("objetos", () => IgbObjetos(ndmwPath, M, Path.Combine(outDir, "objetos"), Specs(objectNames), TexturePack()));

@@ -31,7 +31,10 @@ public partial class MainMenu : Control
     const int NameMax = 12; // DECISÃO DO PORT: o limite do jogo não foi lido
 
     VBoxContainer _root = null!;
-    TitleArt? _art;
+    TitleArt? _art, _sel;
+    ModelTurntable? _turntable;
+    CenterContainer _center = null!;
+    string _stages = "";
     enum TitleState { None, Press, Opening, Menu, Confirm, Cancel }
     TitleState _title;
     int _titleLine;
@@ -57,10 +60,25 @@ public partial class MainMenu : Control
         SetAnchorsPreset(LayoutPreset.FullRect);
         var stages = OS.GetEnvironment("DW4_FASES") is { Length: > 0 } s ? s : @"D:\dw4-work\fases";
         var problems = new List<string>();
+        _stages = stages;
         _art = TitleArt.Create(this, stages, -1, problems);
+        // Fundo das telas de vagas e criação: j_chrselback (em perspectiva) e j_chrselbase da stagIS13 (dw4 telas-exportar).
+        _sel = _art != null ? TitleArt.Create(this, System.IO.Path.Combine(stages, "stagis13", "telas"), "j_chrselback", -1, problems, "dw4 telas-exportar ndmw.afs 813 area.afs 650") : null;
+        if (_sel != null) _sel.Visible = false;
+        if (ModelTurntable.Available(stages)) _turntable = new ModelTurntable(this, stages, 0);
+        // Música do título (FATO, first.lua da stagIS10: SYSgetArea 0 → AM_TITLE, senão AM_TITLE2; no beSoundInfo #806, AM_TITLE2 =
+        // [0.20] = ndmw #20). DECISÃO DO PORT: toca em laço no título e nas telas de vagas, criação e configurações.
+        var music = System.IO.Path.Combine(stages, "stagis10", "audio", "ndmw_0020.wav");
+        if (System.IO.File.Exists(music) && Fatia.ReadWav(music, problems) is { } wav)
+        {
+            if (wav.LoopMode == AudioStreamWav.LoopModeEnum.Disabled) { wav.LoopMode = AudioStreamWav.LoopModeEnum.Forward; wav.LoopBegin = 0; wav.LoopEnd = wav.Data.Length / (wav.Stereo ? 4 : 2); }
+            _music = new AudioStreamPlayer { Stream = wav, Bus = PortSettings.MusicBus };
+            AddChild(_music);
+        }
+        else problems.Add($"falta {music} (dw4 adx-wav ndmw.afs <fases>\\stagis10\\audio 20): título sem música");
         foreach (var p in problems) GD.Print($"[menu] {p}");
         if (_art == null) AddChild(new ColorRect { Color = new Color(0.05f, 0.06f, 0.1f), AnchorRight = 1, AnchorBottom = 1 });
-        var center = new CenterContainer { AnchorRight = 1, AnchorBottom = 1 };
+        var center = _center = new CenterContainer { AnchorRight = 1, AnchorBottom = 1 };
         AddChild(center);
         _root = new VBoxContainer { CustomMinimumSize = new Vector2(720, 0) };
         _root.AddThemeConstantOverride("separation", 14);
@@ -81,18 +99,22 @@ public partial class MainMenu : Control
             _root.Visible = false;
             _movieOn = true;
             var movie = new OpeningMovie();
-            movie.Finished += () => { _movieOn = false; _root.Visible = true; ShowTitle(); };
+            movie.Finished += () => { _movieOn = false; _root.Visible = true; _music?.Play(); ShowTitle(); };
             AddChild(movie);
         }
+        else _music?.Play();
     }
 
     static bool _openingShown;
     PanelContainer? _panel;
+    AudioStreamPlayer? _music;
 
     public override void _Process(double delta)
     {
         if (_art == null) return;
         _art.Tick((float)delta);
+        if (_sel?.Visible == true) _sel.Tick((float)delta);
+        _turntable?.Tick((float)delta);
         // Fim das animações de confirmação: segue para a tela pedida.
         if (_title == TitleState.Opening && !_art.Has("j_startmenu01")) { _art.Play("j_startmenu02", "SQ_OPEN"); (_title, _titleLine) = (TitleState.Menu, 0); }
         else if (_title == TitleState.Confirm && !_art.Has("j_startmenu02")) { if (_titleLine == 0) ShowSlots(); else ShowSettings(); }
@@ -163,6 +185,16 @@ public partial class MainMenu : Control
         }
         _title = TitleState.None;
         if (_panel != null) _panel.Visible = true;
+        // Telas do port sobre o fundo da escolha de personagem do jogo; o Digimon girando só na criação.
+        if (_sel != null)
+        {
+            _art!.Visible = false;
+            _sel.Visible = true;
+            if (!_sel.Has("j_chrselback")) _sel.Play("j_chrselback", "SQ_OPEN");
+            if (!_sel.Has("j_chrselbase")) _sel.Play("j_chrselbase", "SQ_OPEN");
+        }
+        if (_turntable != null) _turntable.Visible = false;
+        _center.AnchorLeft = 0;
     }
 
     Label Title(string text, int size = 40)
@@ -188,6 +220,8 @@ public partial class MainMenu : Control
         if (_art != null)
         {
             _panel!.Visible = false;
+            _art.Visible = true;
+            if (_sel != null) _sel.Visible = false;
             if (!_art.Has("j_startback")) _art.Play("j_startback", "SQ_OPEN");
             _art.Play("j_startlogo", "SQ_OPEN");
             _art.Play("j_startmenu01", "SQ_OPEN");
@@ -292,11 +326,18 @@ public partial class MainMenu : Control
         {
             int form = d;
             bool ok = Playable(FormModel(d));
-            var b = Btn(forms, FormName(d) + (ok ? "" : "\n(sem modelo ainda)"), () => { chosen = form; foreach (var p in picks) p.ButtonPressed = p == picks[form]; }, ok);
+            var b = Btn(forms, FormName(d) + (ok ? "" : "\n(sem modelo ainda)"), () => { chosen = form; foreach (var p in picks) p.ButtonPressed = p == picks[form]; _turntable?.Show(FormModel(form)); }, ok);
             b.ToggleMode = true;
             b.SizeFlagsHorizontal = SizeFlags.ExpandFill;
             picks.Add(b);
             if (ok && chosen < 0) { chosen = d; b.ButtonPressed = true; }
+        }
+        // Digimon escolhido girando à esquerda; o painel vai para a direita.
+        if (_turntable != null && chosen >= 0)
+        {
+            _turntable.Visible = true;
+            _turntable.Show(FormModel(chosen));
+            _center.AnchorLeft = 0.42f;
         }
         Title("Nome", 18);
         var name = new LineEdit { MaxLength = NameMax, PlaceholderText = "Nome do seu Digimon", CustomMinimumSize = new Vector2(0, 44) };
@@ -318,9 +359,12 @@ public partial class MainMenu : Control
             var n = name.Text.Trim();
             if (n.Length == 0) { status.Text = "Dê um nome ao Digimon."; name.GrabFocus(); return; }
             if (chosen < 0) { status.Text = "Escolha um Digimon."; return; }
+            _turntable?.Enjoy();
             var save = CharacterSave.New(n, chosen, FormModel(chosen), diff.Selected, Session.NewGameStage, Session.NewGameEntry, chosen < _shinka.Count ? _shinka[chosen].Weapons : null);
             Session.Store.Save(Session.Account, slot, save);
-            ShowSlots();
+            // Com o modelo de escolha, deixa o dcngC01 (SQ_ENJOY) tocar antes de voltar às vagas.
+            if (_turntable?.Visible == true) { _root.ProcessMode = ProcessModeEnum.Disabled; GetTree().CreateTimer(1.5).Timeout += () => { _root.ProcessMode = ProcessModeEnum.Inherit; ShowSlots(); }; }
+            else ShowSlots();
         });
         create.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         var cancel = Btn(buttons, "Cancelar", ShowSlots);
