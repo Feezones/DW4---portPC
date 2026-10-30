@@ -23,7 +23,13 @@ public partial class Fatia
         var to = target.Body.GlobalPosition - _player.GlobalPosition;
         to.Y = 0;
         if (to.Length() > 7) { dir = to.Normalized(); attackDown = tap && (TalkWindowOpen || _choice >= 0 || _listChoice >= 0); }
-        else { dir = to.Normalized() * 0.05f; attackDown = _tick % 15 < 2; }
+        else
+        {
+            // Atacando o jogador não vira (o golpe para o movimento): só ataca virado para o alvo; senão, só vira.
+            if (_runner?.Running != true) _move.Face(Mathf.Atan2(to.X, to.Z));
+            dir = Vector3.Zero;
+            attackDown = _tick % 15 < 2;
+        }
     }
 
     void TickBotStats(double dt)
@@ -36,7 +42,7 @@ public partial class Fatia
         GD.Print($"[bot] {_stageName}: {_botFrames / _botClock:0} FPS, quadro mais lento {_botWorst * 1000:0} ms, HP {_hp}/{_pf?.MaxHp ?? 0}, inimigos {_enemies.Count(e => !e.Dead)}, objetos {_objects.Count}, EXP {_exp}, nível {_level}");
         var near = _enemies.Where(e => !e.Dead).OrderBy(e => e.Body.GlobalPosition.DistanceSquaredTo(_player.GlobalPosition)).FirstOrDefault();
         if (near != null)
-            GD.Print($"[bot]   alvo {near.Kind.Model} HP {near.Hp}/{near.MaxHp} em {near.Body.GlobalPosition.Round()} (jogador {_player.GlobalPosition.Round()}), sequência {near.Runner?.Sequence ?? "-"}, ação {near.Runner?.Action ?? "-"} {near.Runner?.ActionFrame ?? 0:0}/{near.Runner?.ActionLength ?? 0:0}, anim {(near.Anim?.CurrentAnimation ?? "-")}, iniciado {near.Started}, invencível {near.Runner?.Invincible == true}");
+            GD.Print($"[bot]   alvo {near.Kind.Model} HP {near.Hp}/{near.MaxHp} em {near.Body.GlobalPosition.Round()} (jogador {_player.GlobalPosition.Round()}), sequência {near.Runner?.Sequence ?? "-"}, ação {near.Runner?.Action ?? "-"} {near.Runner?.ActionFrame ?? 0:0}/{near.Runner?.ActionLength ?? 0:0}, anim {(near.Anim?.CurrentAnimation ?? "-")}, corpo {near.HitHalf:0.#}×{near.HitHeight:0.#}, iniciado {near.Started}, invencível {near.Runner?.Invincible == true}");
         _botClock = 0;
         _botFrames = 0;
         _botWorst = 0;

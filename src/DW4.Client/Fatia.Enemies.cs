@@ -24,6 +24,9 @@ public partial class Fatia
         public required EnemyKind Kind { get; init; }
         public Node3D? Model { get; init; }
         public AnimationPlayer? Anim { get; init; }
+        /// <summary>Meia largura e altura do corpo para o golpe do jogador, pela caixa da malha (mínimo 4 × 14, o do Numemon).</summary>
+        public float HitHalf { get; set; } = 4;
+        public float HitHeight { get; set; } = 14;
         public EnemyBrain? Brain { get; set; }
         public SequenceRunner? Runner { get; set; }
         /// <summary>Canais do MOVE/MOVEEX das sequências (FATO, executor do jogo; ver MotionChannels).</summary>
@@ -227,6 +230,16 @@ public partial class Fatia
             foreach (var n in new[] { kind.Wait, kind.Run })
                 if (n != null && e.Anim.HasAnimation(n)) e.Anim.GetAnimation(n).LoopMode = Animation.LoopModeEnum.Linear;
             if (kind.Wait != null && e.Anim.HasAnimation(kind.Wait)) e.Anim.Play(kind.Wait);
+        }
+        // Tamanho do corpo pela caixa da malha no espaço do modelo (escala do nó incluída). HIPÓTESE: a malha em repouso aproxima o
+        // corpo de colisão do jogo; os chefes grandes (f_belvam) passam muito dos 8 × 14 × 8 do Numemon.
+        var boxes = FindAll<MeshInstance3D>(model).Where(mi => mi.Mesh != null).Select(mi => model.GlobalTransform.AffineInverse() * mi.GlobalTransform * mi.Mesh.GetAabb()).ToList();
+        if (boxes.Count > 0)
+        {
+            var all = boxes.Aggregate((a, b) => a.Merge(b));
+            var s = model.Scale;
+            e.HitHalf = Math.Max(4, Math.Min(all.Size.X * s.X, all.Size.Z * s.Z) * 0.35f);
+            e.HitHeight = Math.Max(14, all.Size.Y * s.Y);
         }
         _enemies.Add(e);
         return e;
@@ -529,9 +542,10 @@ public partial class Fatia
             var p = e.Body.GlobalPosition;
             foreach (var h in _runner.ActiveHitBoxes().Where(h => h.Type == 10000))
             {
-                // Caixa de dano contra a caixa de corpo do Numemon (8 × 14 × 8), em eixos do mundo: aproximação.
+                // Caixa de dano contra a caixa do corpo (HitHalf/HitHeight: pela malha, mínimo a do Numemon 8 × 14 × 8), em eixos do mundo:
+                // aproximação (o corpo de colisão dos chefes grandes não foi lido).
                 var c = BoxCenter(h);
-                if (!(Math.Abs(c.X - p.X) <= h.Size.X / 2 + 4 && Math.Abs(c.Z - p.Z) <= h.Size.Z / 2 + 4 && c.Y + h.Size.Y / 2 >= p.Y && c.Y - h.Size.Y / 2 <= p.Y + 14)) continue;
+                if (!(Math.Abs(c.X - p.X) <= h.Size.X / 2 + e.HitHalf && Math.Abs(c.Z - p.Z) <= h.Size.Z / 2 + e.HitHalf && c.Y + h.Size.Y / 2 >= p.Y && c.Y - h.Size.Y / 2 <= p.Y + e.HitHeight)) continue;
                 _enemiesHitThisAction.Add(e);
                 _hits++;
                 _lastEnemy = e;
