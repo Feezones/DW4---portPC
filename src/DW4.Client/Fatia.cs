@@ -298,6 +298,7 @@ public partial class Fatia : Node3D
         TickQuestTimer(dt);
         TickWindows(dt);
         if (_leaving || !IsInsideTree()) return;
+        TickBotStats(dt);
         if (_snapToFloor) SnapToFloor();
         if (TickMenu(dt)) { _jumpHeld = true; return; } // o botão que fechou o menu não vira pulo
         if (TickShop()) { _jumpHeld = true; return; } // loja aberta: o jogador fica parado
@@ -329,8 +330,9 @@ public partial class Fatia : Node3D
             attackDown = _tick % 15 < 2 && _tick > 30; // um toque a cada 0,25 s depois de 0,5 s
             if (_tick < 3) input = new Vector2(0, 0);
         }
+        if (_bot) BotInput(ref dir, ref attackDown);
         // Decisão do port PC: sem foco na janela, nada do controle/teclado move o jogador (controle pareado dava entrada fantasma).
-        if (!_demo && (!_hasFocus || ChatOpen)) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; }
+        if (!_demo && !_bot && (!_hasFocus || ChatOpen)) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; }
         if (_pf != null && _hp <= 0) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; } // caído: Fatia.Death.cs volta ao lobby
         // Estados do hit_p (PlayerStatus, HIPÓTESE): atordoado ou dormindo não age; preso não anda nem pula.
         if (!_status.CanAct) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; }
