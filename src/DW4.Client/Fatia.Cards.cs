@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Linq;
 using DW4.Gameplay;
@@ -35,8 +36,27 @@ public partial class Fatia
         int packs = _inventory.Disks(CardPack.PackRow);
         string head = $"B. Pack: {packs}    Cartas: {list.Count(b => b != 0)}/{card.Rows}" + (result.Length > 0 ? $"\n\n{result}" : "");
         SaveWindow(head, packs > 0
-            ? [("Abrir um B. Pack", OpenPack), ("Sair", LeaveCardShop)]
-            : [("Sem B. Pack.", LeaveCardShop)]);
+            ? [("Abrir um B. Pack", OpenPack), ("Álbum", () => OpenAlbum(0)), ("Sair", LeaveCardShop)]
+            : [("Álbum", () => OpenAlbum(0)), ("Sem B. Pack.", LeaveCardShop)]);
+    }
+
+    // Álbum: as 50 cartas da tabela, 10 por página, com a raridade; as que faltam aparecem como "????" (DECISÃO DO PORT: o álbum do
+    // jogo fica no menu de status, DATABASE "card" CARDINFO/SQALBUM com a arte j_shcardNN, ainda não portado).
+    void OpenAlbum(int page)
+    {
+        var card = CardTable()!;
+        var list = Ram.Players[0].Cards;
+        const int per = 10;
+        int pages = (card.Rows + per - 1) / per;
+        string[] rare = ["comum", "incomum", "rara"];
+        var lines = Enumerable.Range(page * per, Math.Min(per, card.Rows - page * per))
+            .Select(r => $"{r + 1,2}. {(r < list.Length && list[r] != 0 ? $"{card.Text(r, "NAME")}  ({rare[Math.Clamp(card.Int(r, "RARE"), 0, 2)]})" : "????")}");
+        SaveWindow($"Álbum  {list.Count(b => b != 0)}/{card.Rows}   página {page + 1}/{pages}\n\n" + string.Join("\n", lines),
+        [
+            ("Próxima página", () => OpenAlbum((page + 1) % pages)),
+            ("Página anterior", () => OpenAlbum((page + pages - 1) % pages)),
+            ("Voltar", () => OpenCardShop()),
+        ]);
     }
 
     // FATO (beNDMWStatus, 0x8034FA10): ao fechar a janela SUBWND tipo 10 (CARD), se não é STAGECTL ISRESETSTART, o jogo põe
