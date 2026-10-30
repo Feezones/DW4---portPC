@@ -61,7 +61,9 @@ public partial class Fatia
             _shopArtActors.Clear();
             _shopArtVariant = variant;
             if (variant.Length > 0)
-                foreach (var (name, seqName) in new[] { ("j_shback", "SQ_OPEN"), ("j_shbase", "SQ_OPEN"), ("j_shwin", variant) })
+                // Sem o j_shback: é um fundo de cenário (esfera em grade) visto por câmera de perspectiva, e na camada ortográfica saía como
+                // uma bola verde por cima de tudo (captura de 2026-10-30); as faixas escurecidas fazem o papel de fundo.
+                foreach (var (name, seqName) in new[] { ("j_shbase", "SQ_OPEN"), ("j_shwin", variant) })
                 {
                     if (!_shopArtData.Actors.TryGetValue(name, out int root)) continue;
                     var actor = new HudActor(_shopArtData, root, slot: 0, drawOrder: _shopArtActors.Count * 20);
@@ -89,17 +91,26 @@ public partial class Fatia
             _shopArtRoot.AddChild(mi);
             _shopArtTexts.Add(mi);
         }
-        Put(title, -142, 153, 370);
+        // Posições pelas linhas da arte (capturas de 2026-10-30 na tela 16:9): as linhas do j_shwin vêm a cada 19 unidades, a primeira
+        // em y 113 (o texto fica logo acima de cada linha); a variante SINKA (LABO) tem a lista no painel da esquerda.
+        bool sinka = variant.StartsWith("SQ_SINKA", StringComparison.Ordinal);
+        float titleX = sinka ? -300 : -142, titleY = sinka ? 118 : 153, rowX = sinka ? -283 : -128, rowY = sinka ? 93 : 128;
+        bool xdata = variant.StartsWith("SQ_XDATA", StringComparison.Ordinal);
+        float nameW = sinka ? 200 : xdata ? 110 : 168, priceRight = sinka ? -62 : xdata ? 120 : 228, helpX = sinka ? -300 : -142, helpY = sinka ? -150 : -100;
+        // Quadro do jogador do j_shbase (canto de cima à esquerda): o nível depois de "Lv.".
+        if (_shopArtActors.Count > 1) Put($"{_level}", -222, 200, 60); // só com o j_shbase gerado
+        Put(title, titleX, titleY, 370);
         for (int r = 0; r < lines.Count && r < ShopPage; r++)
         {
             var parts = lines[r].Split('\t');
-            float y = 127 - 16 * r;
+            float y = rowY - ShopRowStep * r;
             var color = r == cursor ? new Color(1f, 0.95f, 0.4f) : (Color?)null;
-            Put(r == cursor ? ">" : "", -146, y, 12, color: color);
-            Put(parts[0], -128, y, 168, color: color);
-            if (parts.Length > 1) Put(parts[1], 130, y, 98, right: true, color: color);
+            Put(r == cursor ? ">" : "", rowX - 18, y, 12, color: color);
+            // Sem valor à direita, o nome pode ocupar a linha toda (não quebra por cima da linha de baixo).
+            Put(parts[0], rowX, y, parts.Length > 1 ? nameW : 340, color: color);
+            if (parts.Length > 1) Put(parts[1], priceRight - 98, y, 98, right: true, color: color);
         }
-        Put(help, -142, -68, 351);
+        Put(help, helpX, helpY, 300);
     }
 
     void TickShopArt(float dt)

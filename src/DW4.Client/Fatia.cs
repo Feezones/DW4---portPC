@@ -265,7 +265,8 @@ public partial class Fatia : Node3D
         AddChild(_camera);
 
         var layer = new CanvasLayer();
-        _hud = new Label { Position = new Vector2(12, 12) };
+        // Texto de depuração (posição, câmera, scripts): só no build de depuração e com F3; não aparece para quem joga.
+        _hud = new Label { Position = new Vector2(12, 12), Visible = false };
         layer.AddChild(_hud);
         AddChild(layer);
     }
@@ -280,6 +281,7 @@ public partial class Fatia : Node3D
         {
             if (k.Keycode == Key.F1 && _cameraSets.Length > 1) _cameraSet = (_cameraSet + 1) % _cameraSets.Length;
             if (k.Keycode == Key.F2) _showBoxes = !_showBoxes;
+            if (k.Keycode == Key.F3 && OS.IsDebugBuild()) _hud.Visible = !_hud.Visible;
             if (k.Keycode == Key.F6 && OS.IsDebugBuild()) { _player.Position = _spawn; _snapToFloor = !_demo; _player.Velocity = Vector3.Zero; _move.Stop(); _hp = _pf?.MaxHp ?? 0; _mp = _pf?.MaxMp ?? 0; }
             if (k.Keycode == Key.F9 && OS.IsDebugBuild()) DebugWeakenBoss();
             if (k.Keycode == Key.F8 && OS.IsDebugBuild()) DebugNextTarget();

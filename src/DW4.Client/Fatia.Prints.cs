@@ -23,9 +23,32 @@ public partial class Fatia
             _printAt.Enqueue(t);
     }
 
+    // DEPURAÇÃO: DW4_ABRIR=pausa|config|status|banco|xdata|labo|loja:WPU abre essa janela aos 3 s (para o DW4_PRINT fotografar).
+    bool _opened;
+
+    void OpenForPrint()
+    {
+        var what = OS.GetEnvironment("DW4_ABRIR");
+        if (what.StartsWith("loja:", StringComparison.Ordinal))
+        {
+            DeliverToShop(new DW4.Script.Be.BeMessage("SUBWND", null, -1, "GENERATE", [new DW4.Script.Be.BeArg('\0', what[5..], [])], what[5..]));
+            return;
+        }
+        switch (what)
+        {
+            case "pausa": OpenPause(); break;
+            case "config": OpenSettings(); break;
+            case "status": OpenMenu(); break;
+            case "banco": if (ShopArtReady()) OpenBankArt(); else OpenBank(); break;
+            case "xdata": OpenXDataMenu(); break;
+            case "labo": OpenEvolve(); break;
+        }
+    }
+
     void TickPrints(float dt)
     {
         if (_printAt.Count == 0) return;
+        if (!_opened && _printClock >= 3 && OS.GetEnvironment("DW4_ABRIR").Length > 0) { _opened = true; OpenForPrint(); }
         _printClock += dt;
         if (_printClock < _printAt.Peek()) return;
         var t = _printAt.Dequeue();
@@ -33,5 +56,6 @@ public partial class Fatia
         var path = $"user://prints/{_stageName}_{t:0}.png";
         GetViewport().GetTexture().GetImage().SavePng(path);
         GD.Print($"[print] {ProjectSettings.GlobalizePath(path)}");
+        if (_printAt.Count == 0 && OS.GetEnvironment("DW4_ABRIR").Length > 0) GetTree().Quit(); // captura de janela: fecha sozinho
     }
 }

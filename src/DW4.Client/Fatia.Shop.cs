@@ -19,7 +19,9 @@ public partial class Fatia
 {
     // FATO (0x804E16B0): nomes dos tipos de SUBWND, índice = tipo.
     static readonly string[] SubWndNames = ["STATUS", "XDATA", "LABO", "BANK", "CNOS", "DISK", "WPU", "APU", "CHIP", "JUNK", "CARD"];
-    const int ShopPage = 12;
+    // Linhas por página: as 11 linhas da arte do j_shwin (a 12ª caía em cima da ajuda), a cada 19 unidades.
+    const int ShopPage = 11;
+    const float ShopRowStep = 19;
 
     GameTables? _shopDb;
     int _shopKind = -1, _shopCursor, _shopPageNo;
