@@ -1,16 +1,21 @@
-# Fase 5: o que ainda impede jogar do começo ao fim (2026-10-26)
+# Fase 5: o que ainda impede jogar do começo ao fim (2026-10-30)
 
 Critério da Fase 5 (roadmap): o jogo inteiro no Windows, jogável do início ao fim, com desempenho estável. "Não visto" = nunca
-conferido na janela. O estado vem do repositório, dos testes (79 ok) e das janelas autorizadas.
+conferido na janela. O estado vem do repositório, dos testes (81 ok) e das janelas autorizadas (incluindo a noite de 2026-10-29/30, com o bot DW4_BOT).
 
 ## A. Impedem o critério (jogável do início ao fim)
 
 1. **Caminho do enredo nunca jogado inteiro.** Lobby → stagML02 → stag0001 → masmorras dng1..dng4 → chefes stagbs01..06 → fim
    (FLG 86). O SQ_SHOK da stagML02 foi corrigido (66ebbfa). A troca de área já foi usada pelo usuário (escolha e NEXTSTAGE
    funcionam). Falta alguém jogar o caminho inteiro. Mapa das flags: fase5-enredo.md.
-2. **Chefes 02..06 não vistos em luta.** Carregam (varredura) e os scripts rodam sem erro. O movimento é o do jogo, mas a escala
-   da unidade (30 Hz, unidade do jogo = do mundo) é HIPÓTESE, as peças presas (f_luce "ball") nunca foram vistas e a correção
-   da IA (valor 0 segura a decisão) não foi vista.
+2. **Chefes 02..06 em luta (bot, noite de 2026-10-29/30).**
+   - FATO (visto): chefe 2 (f_belvam) derrotado pelo bot no nível 40, com BT_WIN02 e EXP; chefes 4 (f_devl1) e 5 (f_devl22) tomam
+     dano normalmente (precisam de mais tempo ou nível).
+   - Corrigido: o golpe do jogador não acertava chefes grandes (corpo fixo de 8 × 14 × 8; agora pela caixa da malha, f_belvam
+     14 × 45); o LUACALL não passava o nome de chamada ("gr2" "GROUND"), e os scripts de fase de voo nunca mudavam de estado.
+   - Pendente: chefe 3 (f_luce) só toma dano no chão (g_Ground, pelo LUACALL "gr2" "GROUND") e chefe 6 (f_devl3) só fora do voo
+     (g_FIYCHACK, LUACALL "bck" "FLY"/"GROUND"/"CHACK" e MDLisStatus "BIND"); em 110 s de bot nenhum dos dois pousou. Os ataques
+     à distância dos chefes (SQ_MISSILE/SQ_BEAM) não ferem o jogador: os projéteis do inimigo não são criados no cliente.
 3. **Morte.** DECISÃO DO PORT (904a338): perde os BITS no campo, HP/MP cheios e volta ao lobby. FATO lido: o SQ_DEAD do
    jogador toca DEADD1 e vai a SQ_ERAS (some); o veneno leva ao SQ_DEAD (0x803AD1E4); o cronômetro das missões põe SQ_DEAD em
    todos. DESCONHECIDO: quem age quando o jogador some (volta, tela, perda dos BITS); não há "GAMEOVER" no executável. O
@@ -20,23 +25,19 @@ conferido na janela. O estado vem do repositório, dos testes (79 ok) e das jane
    fora do dano.
 5. **Painel de técnicas.** Lido (fase4-levantamento-combate.md): 3 listas pelo estado, anterior/próxima com repetição e a
    regra de uso do TechniquePanel. A barra do port faz o mesmo; faltam a terceira lista e o mapa dos botões.
-6. **Desempenho.** Não medido: fases grandes, número de NPCs e inimigos, memória numa sessão longa.
+6. **Desempenho.** Medido pelo bot (registro a cada 5 s): 60 FPS (teto do vsync), quadro mais lento 17 ms em stag0001,
+   stag0101 (331 geometrias, 66 objetos), stagml12, stagml11 e chefes 2..6. Memória numa sessão longa: não medida.
 
-## A2. Defeitos vistos pelo usuário em 2026-10-26 (sessão de jogo)
+## A2. Defeitos vistos pelo usuário em 2026-10-26 (resolvidos na noite de 2026-10-29/30)
 
-- **Mapa do tutorial (stag0001) preto.** Os arquivos estão íntegros (cena.gltf e cena_ls.gltf com 12 geometrias e 7 texturas de
-  grama/pedra, nada faltando; nenhum erro no log). DESCONHECIDO: por que o cenário não apareceu. HIPÓTESE principal: o
-  cena_ls.gltf (texturas na subpasta ls/, luz Suave, que é a padrão) carregado em tempo de execução. Feito: o cliente cai no
-  cena.gltf se o LS não carrega, não tem malha ou perde as texturas. Falta ver na tela; a reexportação das 32 fases com LS parou
-  na stag0401 (as outras ficam só com LH).
-- **Goburimon (e_goburi) retorcido.** FATO (relatório do exportador): a pele dele é "rígida por osso, 1 geometria em 1 osso"
-  com 29 matrizes de pele: o formato da pele (igSkin sem igBlendMatrixSelect, posições num igObjectDirEntry externo) não foi
-  lido, e o corpo inteiro vai para um osso. O modelo é de antes de hoje (15:28), não é regressão desta sessão.
-- **NPCs em T-pose no lobby.** FATO: os modelos dos NPCs não mudaram desde 13:14 (o .bin da Digi-Elf é idêntico) e têm as
-  animações (wait01, walk01, talk01); a sequência chega ao MOTIONSET wait01 (teste novo). O n_leomon tem "pele não
-  reconhecida" (pesos 8 B e índices 2 B por vértice: HIPÓTESE 2 pesos float + 2 índices de 1 byte). DESCONHECIDO: por que a
-  animação não toca na Digi-Elf; precisa de uma janela de conferência com o registro do AnimationPlayer.
-- **Barra de técnicas por cima do MP do painel.** Feito: a barra foi para o canto inferior direito.
+- **Goburimon retorcido e NPCs em T-pose:** a mesma causa. FATO: o igModelViewMatrixBoneSelect "CharaRoot"/"gobr_main" tem
+  logo abaixo um igBlendMatrixSelect com a paleta (pele normal); o exportador prendia tudo a um osso. Corrigido (3f09f71); o
+  n_leomon tem 2 pesos por vértice (soma 1). Visto no visualizador (DW4_VER_MODELO) e no jogo (DW4_DIAG_NPC: todas as NPCs
+  tocam a animação pedida).
+- **Mapa do tutorial (stag0001) preto:** não é defeito: o chão da fase é a textura 0001ground03 (preta com faixas) sob o céu rosa
+  da neblina; visto no jogo. O texto da janela do tutorial (i_messwnsp, TALKFONT05) faltava: corrigido. O bot passou o tutorial
+  (Goburimons derrotados, SQ_ENJOY).
+- **Barra de técnicas por cima do MP do painel:** movida para o canto inferior direito, vista no jogo.
 
 ## B. Partes do jogo feitas, mas não vistas
 
@@ -57,7 +58,7 @@ conferido na janela. O estado vem do repositório, dos testes (79 ok) e das jane
     - lojas, banco, X-data e LABO: caixas da Godot com a fonte do jogo. A arte (j_shwin) e as caixas STWINFONT estão levantadas
       (fase5-lojas.md), mas a posição das caixas na tela não está nos dados (o usa_pack só tem categoria, linha, largura e
       altura da linha; o código nativo passa só ALIGN/TEXTSET). DESCONHECIDO até ler o beTextCtrl.
-14. **Cartas:** arte do pacote (j_shbooster/j_shcardNN), o álbum e o valor 0x7DA/0x7DB/0x7DC pela raridade.
+14. **Cartas:** álbum feito na loja de cartas (lista das 50); faltam a arte do pacote (j_shbooster/j_shcardNN) e o valor 0x7DA/0x7DB/0x7DC pela raridade.
 15. **NPCs:** andam, falam e passeiam pela IA do jogo; não foi visto se viram para o jogador e as escalas.
 16. **Filmes** (abertura e final, Sofdec): o leitor existe nas ferramentas, não no cliente.
 17. **Câmera:** "Dungeon camera" e "Light" vão para a GAMERAM, sem efeito no cliente.
