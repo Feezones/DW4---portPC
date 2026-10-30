@@ -1728,6 +1728,9 @@ int IgbDisparos(string path, string which, string outDir)
     // Sequências dos projéteis x_* (os y_* são só efeito visual): MOVE, HITBOX 7xxxx e LUACALL "bht" (cada um em disparos/<nome>).
     foreach (var name in list.Select(n => n!["nome"]!.GetValue<string>()).Where(n => n.StartsWith("x_", StringComparison.Ordinal)).Distinct())
         IgbSeq(path, which, Path.Combine(full, "disparos", name), "--ator=" + name);
+    // Modelos dos x_* (FATO: atores com malha e textura próprias, ex. x_035fblst02a com x_beem02a/b): o cliente desenha com eles.
+    var shotNames = list.Select(n => n!["nome"]!.GetValue<string>()).Where(n => n.StartsWith("x_", StringComparison.Ordinal)).Distinct().ToArray();
+    if (shotNames.Length > 0) IgbObjetos(path, which, Path.Combine(full, "disparos"), shotNames);
     Console.WriteLine($"{list.Count} disparadores, {entries} entradas -> {file}");
     return 0;
 }
