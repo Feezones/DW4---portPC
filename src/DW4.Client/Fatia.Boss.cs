@@ -145,6 +145,7 @@ public partial class Fatia
     bool StartEnemySequence(Enemy e, string seq)
     {
         if (e.Runner == null) return false;
+        if (DiagNpc) GD.Print($"[ini] {e.Kind.Model}: {seq} (mapa {e.Brain?.Map.Name ?? "-"})");
         e.Motion.SequenceChanged(); // 0x8030EA38: troca de sequência
         if (e.Labels.TryGetValue(seq, out var l) && e.Runner.Start(seq, l)) return true;
         if (e.Runner.Start(seq, "common") || e.Runner.Start(seq, "NORM")) return true;

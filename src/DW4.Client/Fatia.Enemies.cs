@@ -316,6 +316,13 @@ public partial class Fatia
             case "STOP":
                 g.Active = false;
                 break;
+            // FATO (en2_f_luce.lua: GENERATER RESTART "GENE-01" gera a f_luce2, a peça que derruba o chefe 3). HIPÓTESE: recomeça a
+            // contagem e liga de novo, mesmo depois de terminado.
+            case "RESTART":
+                g.Finished = false;
+                g.Spawned = g.Alive.Count;
+                g.Active = true;
+                break;
             case "STOPREVERS":
                 g.Active = false;
                 foreach (var o in g.Alive.ToList()) Despawn(o);
@@ -358,6 +365,7 @@ public partial class Fatia
             if (spawned == null) { g.Active = false; ScriptLog($"{g.Name}: não sei gerar {model} (linha {g.EnemyRow})"); continue; }
             g.Spawned++;
             g.Alive.Add(spawned);
+            if (DiagNpc) GD.Print($"[gerador] {g.Name}: {model} ({g.Spawned}/{g.Count}) em {pos}");
         }
     }
 
@@ -423,6 +431,14 @@ public partial class Fatia
                     if (!e.Started) e.Brain.Release();
                 }
                 else e.Runner.Tick(dt, false);
+                // FATO (f_luce SQ_BOMBn → JUMP "SQ_ATCKOF", que põe o MAP02 e leva ao voo/pouso): JUMP para outra sequência continua
+                // nela; só SQ_WAIT (e SQ_ERAS) devolvem o inimigo à IA.
+                if (e.Started && !e.Runner.Running && e.Runner.Next is { } next && next is not ("SQ_WAIT" or "SQ_ERAS") && e.Kind.Sequences.ContainsKey(next)
+                    && e.Hp > 0 && StartEnemySequence(e, next))
+                {
+                    e.Brain.Force(next);
+                    e.Serial = -1;
+                }
                 if (e.Started && !e.Runner.Running)
                 {
                     e.Started = false;
