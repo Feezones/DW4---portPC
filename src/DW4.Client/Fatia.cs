@@ -287,7 +287,7 @@ public partial class Fatia : Node3D
         for (int i = 0; i < 6; i++) if (PortInput.Pressed(e, $"tecnica{i + 1}")) _techKey = i;
         if (PortInput.Pressed(e, "equipar")) EquipLast();
         if (PortInput.Pressed(e, "guarda")) _guardPressed = true;
-        if (PortInput.Pressed(e, "pausa")) LeaveGame();
+        if (PortInput.Pressed(e, "pausa")) { if (SubWindowOpen) CloseSaveWindow(); else if (!_menuOpen && !ShopOpen) OpenPause(); }
     }
 
     bool _guardPressed, _usingPad;
