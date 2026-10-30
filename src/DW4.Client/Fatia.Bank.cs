@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Godot;
 using DW4.Gameplay;
@@ -8,16 +9,71 @@ namespace DW4.Client;
 
 /// <summary>
 /// D.S.G. Bank (bankshop.lua → SUBWND GENERATE "BANK/I&lt;jogador&gt;"; classe beNDMWShopCtrlEditBit, campos _editBit e _editMax).
-/// Regras em <see cref="Inventory"/> (BANKBIT e BANKDEVICE, até 96 itens). DECISÃO DA FATIA: janela da Godot com duas abas, BITS e
-/// itens, no lugar das janelas j_* do jogo (não exportadas). Item equipado não vai para o banco (HIPÓTESE, como na venda).
+/// Regras em <see cref="Inventory"/> (BANKBIT e BANKDEVICE, até 96 itens). Com a pasta loja, menus na j_shwin (Fatia.ArtMenu.cs):
+/// SQ_BITPUTINOPEN para depositar BITS e SQ_BITDRAWOUTOPEN para sacar (FATO: as variantes existem; HIPÓTESE: qual é qual pelo
+/// nome), com o valor mexido por esquerda/direita e um passo de 1 a 1 000 000 (HIPÓTESE: o _editBit do jogo edita o valor, o modo
+/// não foi lido). Sem a pasta, janela da Godot com duas abas. Item equipado não vai para o banco (HIPÓTESE, como na venda).
 /// </summary>
 public partial class Fatia
 {
     bool DeliverToBank(BeMessage m)
     {
         if (m.Class != "SUBWND" || m.Command != "GENERATE" || m.Arg(0)?.Text != "BANK") return false;
-        OpenBank();
+        if (ShopArtReady()) OpenBankArt(); else OpenBank();
         return true;
+    }
+
+    int _bankAmount, _bankStep = 1000;
+
+    string BankHead => $"{TextKey("mswkPRG1301", "BITS Folder")}: {_inventory.Bit}  {TextKey("mswkPRG1302", "BITS Bank")}: {_inventory.BankBit}";
+
+    void OpenBankArt(string status = "") => Menu("SQ_AWINOPEN", $"{TextKey("mswkPRG1300", "Bank")}\n{BankHead}" + (status.Length > 0 ? $"\n{status}" : ""),
+    [
+        ("Depositar BITS", () => OpenBankBits(true)),
+        ("Sacar BITS", () => OpenBankBits(false)),
+        ($"{TextKey("mswkPRG1350", "Deposit Item into Bank.")}\t{_inventory.Devices.Count}/{Inventory.DeviceMax}", () => OpenBankItems(true)),
+        ($"{TextKey("mswkPRG1351", "Withdraw Item.")}\t{_inventory.BankDevices.Count}/{Inventory.BankDeviceMax}", () => OpenBankItems(false)),
+        ("Sair do banco", CloseSaveWindow),
+    ]);
+
+    void OpenBankBits(bool deposit, string status = "", int cursor = 0)
+    {
+        var inv = _inventory;
+        int max = deposit ? inv.Bit : Math.Min(inv.BankBit, Math.Max(0, Inventory.BitMax - inv.Bit));
+        _bankAmount = Math.Clamp(_bankAmount, 0, max);
+        var rows = new List<ArtRow>
+        {
+            new("Valor", $"{_bankAmount}", null, d => { _bankAmount = Math.Clamp(_bankAmount + d * _bankStep, 0, max); OpenBankBits(deposit, "", 0); }),
+            new("Passo", $"{_bankStep}", null, d => { _bankStep = Math.Clamp(d > 0 ? _bankStep * 10 : _bankStep / 10, 1, 1_000_000); OpenBankBits(deposit, "", 1); }),
+            new(deposit ? "Tudo da pasta" : "Tudo o que cabe", $"{max}", () => { _bankAmount = max; OpenBankBits(deposit, "", 2); }),
+            new(deposit ? "Depositar" : "Sacar", "", () =>
+            {
+                bool ok = _bankAmount > 0 && (deposit ? inv.DepositBit(_bankAmount) : inv.WithdrawBit(_bankAmount));
+                if (ok) _bankAmount = 0;
+                OpenBankBits(deposit, ok ? "OK!" : deposit ? "Não deu: valor maior que o que você tem." : "Não deu: valor maior que o guardado.", 3);
+            }),
+            new("Voltar", "", () => OpenBankArt()),
+        };
+        OpenArtMenu(deposit ? "SQ_BITPUTINOPEN" : "SQ_BITDRAWOUTOPEN", deposit ? "Depositar BITS" : "Sacar BITS",
+            BankHead + "  esq./dir. muda a linha" + (status.Length > 0 ? $"  {status}" : ""), rows, () => OpenBankArt(), cursor);
+    }
+
+    void OpenBankItems(bool deposit, string status = "", int cursor = 0)
+    {
+        var inv = _inventory;
+        var list = (deposit ? inv.Devices : inv.BankDevices).ToList();
+        string Name(ItemRef i) => _db != null && _db.Contains(i.Table) ? _db[i.Table].Text(i.Row, "NAME") : $"{i.Table} {i.Row}";
+        var rows = list.Select((item, k) => new ArtRow(Name(item), deposit && Equipped(item) ? "(E)" : "", () =>
+        {
+            string fail = deposit
+                ? Equipped(item) ? "Está equipado." : inv.DepositDevice(item) ? "" : "O banco está cheio (96)."
+                : inv.WithdrawDevice(item) ? "" : "A pasta está cheia (36).";
+            OpenBankItems(deposit, fail, k);
+        })).ToList();
+        rows.Add(new("Voltar", "", () => OpenBankArt()));
+        string head = deposit ? $"{TextKey("mswkPRG1350", "Deposit Item into Bank.")}  {inv.Devices.Count}/{Inventory.DeviceMax}"
+            : $"{TextKey("mswkPRG1351", "Withdraw Item.")}  {inv.BankDevices.Count}/{Inventory.BankDeviceMax}";
+        OpenArtMenu("SQ_AWINOPEN", head, status, rows, () => OpenBankArt(), Math.Min(cursor, rows.Count - 1));
     }
 
     void OpenBank(int tab = 0)

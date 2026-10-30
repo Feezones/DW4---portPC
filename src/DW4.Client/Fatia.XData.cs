@@ -8,7 +8,8 @@ namespace DW4.Client;
 
 /// <summary>
 /// Fortalecer chip com X-data (xdatashop.lua → SUBWND GENERATE "XDATA/I&lt;jogador&gt;"; regra em <see cref="Inventory.UpgradeChip"/>).
-/// DECISÃO DA FATIA: janela da Godot com os chips da pasta, o custo (NEXTX) e o X-data do jogador, no lugar da j_shwin.
+/// Com a pasta loja, janela j_shwin (SQ_XDATASTATUSOPEN nos atributos, SQ_XDATAITEMOPEN nos chips; Fatia.ArtMenu.cs);
+/// sem ela, caixa da Godot. Mostra os chips da pasta, o custo (NEXTX) e o X-data do jogador.
 /// Chip equipado continua equipado com a linha nova (o jogo mexe no próprio objeto do item, 0x803A61AC).
 /// </summary>
 public partial class Fatia
@@ -21,7 +22,7 @@ public partial class Fatia
     }
 
     // Primeira tela do X-data: as escolhas do jogo (mswkPRG1150..1152).
-    void OpenXDataMenu() => SaveWindow($"{TextKey("mswkPRG1100", "¶ Data Keeper")}\n¶ Data: {_inventory.XData}",
+    void OpenXDataMenu() => Menu("SQ_XDATASTATUSOPEN", $"{TextKey("mswkPRG1100", "¶ Data Keeper")}\n¶ Data: {_inventory.XData}",
     [
         (TextKey("mswkPRG1150", "Raise Digimon parameter."), () => OpenXDataStatus()),
         (TextKey("mswkPRG1151", "Raise Ability Chip parameter."), () => OpenXDataChips()),
@@ -39,10 +40,10 @@ public partial class Fatia
         for (int i = 0; i < values.Length; i++)
         {
             int p = i;
-            options.Add(($"{names[i]}  {values[i]}   {XDataStatus.Cost(values[i])} ¶", () => RaiseStatus(p, values[p])));
+            options.Add(($"{names[i]}  {values[i]}\t{XDataStatus.Cost(values[i])} ¶", () => RaiseStatus(p, values[p])));
         }
         options.Add(("Voltar", () => OpenXDataMenu()));
-        SaveWindow($"{TextKey("mswkPRG1153", "Select the parameter you want to raise.")}\n¶ Data: {_inventory.XData}" + (status.Length > 0 ? $"\n\n{status}" : ""), options.ToArray());
+        Menu("SQ_XDATASTATUSOPEN", $"{TextKey("mswkPRG1153", "Select the parameter you want to raise.")}\n¶ Data: {_inventory.XData}" + (status.Length > 0 ? $"\n\n{status}" : ""), options.ToArray());
     }
 
     void RaiseStatus(int param, int value)
@@ -70,13 +71,13 @@ public partial class Fatia
             int row = inv.Devices[i].Row;
             int next = t.Int(row, "NEXTX");
             int index = i;
-            options.Add(($"{t.Text(row, "NAME")}   {(next < 0 ? "—" : $"{next} ¶")}", () => UpgradeChip(index)));
+            options.Add(($"{t.Text(row, "NAME")}\t{(next < 0 ? "—" : $"{next} ¶")}", () => UpgradeChip(index)));
         }
         options.Add(("Voltar", () => OpenXDataMenu()));
         string head = $"{TextKey("mswkPRG1151", "Increase Ability Chip Parameter.")}\n¶ Data: {inv.XData}"
             + (chips.Count == 0 ? $"\n{TextKey("mswkPRG1169", "No Ability Chip")}" : $"\n{TextKey("mswkPRG1168", "Select the Ability Chip you want to increase.")}")
             + (status.Length > 0 ? $"\n\n{status}" : "");
-        SaveWindow(head, options.ToArray());
+        Menu("SQ_XDATAITEMOPEN", head, options.ToArray());
     }
 
     void UpgradeChip(int index)

@@ -46,11 +46,10 @@ public partial class Fatia
         return true;
     }
 
-    // Abre ou troca a variante da janela; fecha quando a loja fecha.
-    void UpdateShopArt(IReadOnlyList<string> lines, string title, string help)
+    // Abre ou troca a variante da janela (vazia fecha). Serve à loja e aos menus do banco, X-data e LABO (Fatia.ArtMenu.cs).
+    void UpdateShopArt(string variant, IReadOnlyList<string> lines, string title, string help, int cursor)
     {
         if (_shopArtRoot == null || _shopArtData == null) return;
-        string variant = !ShopOpen ? "" : _shopKind == Array.IndexOf(SubWndNames, "JUNK") ? "SQ_JUNKOPEN" : _shopSelling ? "SQ_BWINOPEN" : "SQ_AWINOPEN";
         if (variant != _shopArtVariant)
         {
             foreach (var (a, _) in _shopArtActors) a.Root.QueueFree();
@@ -89,8 +88,8 @@ public partial class Fatia
         {
             var parts = lines[r].Split('\t');
             float y = 127 - 16 * r;
-            var color = r == _shopCursor ? new Color(1f, 0.95f, 0.4f) : (Color?)null;
-            Put(r == _shopCursor ? ">" : "", -146, y, 12, color: color);
+            var color = r == cursor ? new Color(1f, 0.95f, 0.4f) : (Color?)null;
+            Put(r == cursor ? ">" : "", -146, y, 12, color: color);
             Put(parts[0], -128, y, 168, color: color);
             if (parts.Length > 1) Put(parts[1], 130, y, 98, right: true, color: color);
         }

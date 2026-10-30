@@ -49,7 +49,7 @@ public partial class Fatia
             InputEventJoypadButton { Pressed: true, ButtonIndex: JoyButton.LeftShoulder } => -1,
             _ => 0,
         };
-        if (step == 0 || _techs.Count == 0 || _menuOpen || ShopOpen || _saveLayer != null) return false;
+        if (step == 0 || _techs.Count == 0 || _menuOpen || ShopOpen || SubWindowOpen) return false;
         _techSelected = ((_techSelected + step) % _techs.Count + _techs.Count) % _techs.Count;
         return true;
     }

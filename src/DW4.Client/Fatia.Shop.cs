@@ -65,7 +65,7 @@ public partial class Fatia
         return true;
     }
 
-    double? QueryShop(BeMessage m) => m.Class == "SUBWND" && m.Command == "ISRUN" ? (ShopOpen || _saveLayer != null ? 1 : 0) : null;
+    double? QueryShop(BeMessage m) => m.Class == "SUBWND" && m.Command == "ISRUN" ? (ShopOpen || SubWindowOpen ? 1 : 0) : null;
 
     IEnumerable<string> ShopKeys()
     {
@@ -152,7 +152,7 @@ public partial class Fatia
         }
         bool art = ShopArtReady();
         _shopPanel.Visible = ShopOpen && !art;
-        if (!ShopOpen || _db == null) { if (art) UpdateShopArt([], "", ""); return; }
+        if (!ShopOpen || _db == null) { if (art && _artMenu == null) UpdateShopArt("", [], "", "", 0); return; }
         var list = ShopList();
         int pages = Math.Max(1, (list.Count + ShopPage - 1) / ShopPage);
         if (art)
@@ -166,8 +166,9 @@ public partial class Fatia
                 var tt = _db[it.Table];
                 rows.Add($"{tt.Text(it.Row, "NAME")}{(_shopSelling && Equipped(it) ? " (E)" : "")}\t{tt.Int(it.Row, _shopSelling ? "KAITORI" : "HANBAI")}");
             }
-            UpdateShopArt(rows, $"{(_shopSelling ? "Vender" : "Comprar")}   BIT {_inventory.Bit}   {_shopPageNo + 1}/{pages}",
-                _shopMessage.Length > 0 ? _shopMessage : "cima/baixo escolhe, esq./dir. página, ataque confirma, V/Y troca, K/B sai");
+            string variant = _shopKind == Array.IndexOf(SubWndNames, "JUNK") ? "SQ_JUNKOPEN" : _shopSelling ? "SQ_BWINOPEN" : "SQ_AWINOPEN";
+            UpdateShopArt(variant, rows, $"{(_shopSelling ? "Vender" : "Comprar")}   BIT {_inventory.Bit}   {_shopPageNo + 1}/{pages}",
+                _shopMessage.Length > 0 ? _shopMessage : "cima/baixo escolhe, esq./dir. página, ataque confirma, V/Y troca, K/B sai", _shopCursor);
             return;
         }
         var sb = new System.Text.StringBuilder();

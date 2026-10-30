@@ -113,7 +113,7 @@ public partial class Fatia
         Button? first = null;
         foreach (var (l, pick) in options)
         {
-            var b = new Button { Text = l, CustomMinimumSize = new Vector2(0, 44) };
+            var b = new Button { Text = l.Replace("	", "   "), CustomMinimumSize = new Vector2(0, 44) };
             b.AddThemeFontSizeOverride("font_size", 22);
             b.Pressed += pick;
             box.AddChild(b);
@@ -129,6 +129,7 @@ public partial class Fatia
 
     void CloseSaveWindow()
     {
+        CloseArtMenu();
         if (_saveLayer == null) return;
         _saveLayer.QueueFree();
         _saveLayer = null;

@@ -303,7 +303,7 @@ public partial class Fatia : Node3D
         if (_snapToFloor) SnapToFloor();
         if (TickMenu(dt)) { _jumpHeld = true; return; } // o botão que fechou o menu não vira pulo
         TickShopArt(dt);
-        if (TickShop()) { _jumpHeld = true; return; } // loja aberta: o jogador fica parado
+        if (TickShop() || TickArtMenu()) { _jumpHeld = true; return; } // loja aberta: o jogador fica parado
         _stage?.Tick();
         WatchDemo();
         if (_leaving) return;

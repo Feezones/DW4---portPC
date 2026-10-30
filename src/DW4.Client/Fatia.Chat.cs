@@ -57,7 +57,7 @@ public partial class Fatia
     {
         if (ChatOpen) return true; // a caixa de texto consome o que precisa; o resto não chega ao jogo
         if (e is not InputEventKey { Pressed: true, Echo: false, Keycode: Key.Enter or Key.KpEnter }) return false;
-        if (_menuOpen || ShopOpen || _saveLayer != null || _choice >= 0) return false;
+        if (_menuOpen || ShopOpen || SubWindowOpen || _choice >= 0) return false;
         _chat.Open();
         _chatInput!.Visible = true;
         _chatInput.Text = "";

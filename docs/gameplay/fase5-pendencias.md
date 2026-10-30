@@ -65,7 +65,10 @@ conferido na janela. O estado vem do repositório, dos testes (81 ok) e das jane
     - lojas: arte do jogo (j_shback, j_shbase, j_shwin; variante AWIN comprando, BWIN vendendo, JUNK no ferro-velho) com a fonte
       do jogo (2026-10-30, sem rever na tela). FATO: o código nativo não manda posição de texto (o TEXTCTL SETPOSITION só serve aos
       nomes de item no chão). HIPÓTESE pela geometria: cabeçalho de 28 px, 12 linhas de 16 px (y 127 a −65) e a ajuda de 3 linhas
-      embaixo. Banco, X-data e LABO seguem em caixas da Godot com a fonte do jogo (variantes BITPUTIN/XDATAITEM/SINKA levantadas).
+      embaixo. Banco, X-data e LABO usam a mesma arte (2026-10-30, sem rever na tela; Fatia.ArtMenu.cs): banco no AWIN com os BITS
+      no BITPUTIN (depositar) e BITDRAWOUT (sacar), X-data no XDATASTATUS (atributos) e XDATAITEM (chips), LABO no SINKAON.
+      HIPÓTESE: qual variante vai com cada tela, pelo nome; o modo de editar o valor do banco (_editBit) não foi lido (no port:
+      esquerda/direita com passo de 1 a 1 000 000).
 14. **Cartas:** álbum feito na loja de cartas (lista das 50); faltam a arte do pacote (j_shbooster/j_shcardNN) e o valor 0x7DA/0x7DB/0x7DC pela raridade.
 15. **NPCs:** andam, falam e passeiam pela IA do jogo; não foi visto se viram para o jogador e as escalas.
 16. **Filmes:** um só, a abertura da stagIS09 (MOVIE PLAY AJP_/AUS_/AEU_opening.sfd pela região). Separação e ADX prontos; falta o

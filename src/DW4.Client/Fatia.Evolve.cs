@@ -13,7 +13,7 @@ namespace DW4.Client;
 ///    liberadas e o nível de cada;
 ///  · a escolha (0x8039CA4C) faz CURRENT2BASE e BASE2CURRENT (cada forma com nível, EXP, skills e UPCNT próprios), tira armaduras e
 ///    chips e re-escolhe a arma. Sem custo nem condição além de a forma estar liberada.
-/// PORT: janela da Godot com a lista; o modelo novo entra recarregando a fase no mesmo ponto. A arma da fatia continua a
+/// PORT: lista na j_shwin (SQ_SINKAONOPEN, HIPÓTESE; caixa da Godot sem a pasta loja); o modelo novo entra recarregando a fase no mesmo ponto. A arma da fatia continua a
 /// w_sword01 (DECISÃO DA FATIA); só as armaduras e os chips saem.
 /// Modelos das formas: &lt;fatia&gt;\formas\&lt;MODEL_NAME&gt; (dw4 igb-gltf/igb-seq ndmw.afs 850..865); o Guilmon também aceita a pasta antiga
 /// &lt;fatia&gt;\guilmon.
@@ -49,11 +49,11 @@ public partial class Fatia
         {
             string model = shinka.Text(d, "MODEL_NAME");
             bool here = d == forms.Current, drawable = HasPlayerModel(_common, model);
-            string label = $"{shinka.Text(d, "NAME")}  nv {forms[d].Level}" + (here ? "  (atual)" : drawable ? "" : "  (sem modelo exportado)");
+            string label = $"{shinka.Text(d, "NAME")}" + (here ? " (atual)" : drawable ? "" : " (sem modelo)") + $"\tnv {forms[d].Level}";
             return (label, (Action)(() => { if (!here && drawable) Evolve(d, model); else CloseSaveWindow(); }));
         }).ToList();
         options.Add(("Voltar", CloseSaveWindow));
-        SaveWindow("Digievolução", options.ToArray());
+        Menu("SQ_SINKAONOPEN", "Digievolução", options.ToArray());
     }
 
     void Evolve(int digimonNo, string model)
