@@ -16,6 +16,17 @@ public partial class Fatia
 
     void BotInput(ref Vector3 dir, ref bool attackDown)
     {
+        // DW4_ANDAR="x,z": anda até esse ponto do mundo (conferir colisão), avisando a posição a cada segundo.
+        if (OS.GetEnvironment("DW4_ANDAR") is { Length: > 0 } walk && walk.Split(",") is [var sx, var sz]
+            && float.TryParse(sx, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float wx)
+            && float.TryParse(sz, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float wz))
+        {
+            var go = new Vector3(wx, 0, wz) - new Vector3(_player.GlobalPosition.X, 0, _player.GlobalPosition.Z);
+            dir = go.Length() > 2 ? go.Normalized() : Vector3.Zero;
+            attackDown = _tick % 30 < 2 && (TalkWindowOpen || _choice >= 0 || _listChoice >= 0);
+            if (_tick % 60 == 0) GD.Print($"[andar] {_player.GlobalPosition.Round()} chão {_player.IsOnFloor()} parede {_player.IsOnWall()}");
+            return;
+        }
         var target = _enemies.Where(e => !e.Dead && !e.Killed && e.Body.IsInsideTree())
             .OrderBy(e => e.Body.GlobalPosition.DistanceSquaredTo(_player.GlobalPosition)).FirstOrDefault();
         bool tap = _tick % 30 < 2;
