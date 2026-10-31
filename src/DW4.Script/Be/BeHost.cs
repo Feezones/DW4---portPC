@@ -318,6 +318,9 @@ public sealed class BeHost
             case "MsgBox": return Nothing;
             // FATO (0x802EBC88): devolve sempre 1.
             case "SYSgetArea": return N(1);
+            // DESCONHECIDO: o que o SYSgetTarget devolve no código nativo (o gene01.lua do tutorial troca uma fala quando vale 3).
+            // HIPÓTESE: 0 na versão lida; com isso fica a fala comum.
+            case "SYSgetTarget": return N(0);
 
             // FATO (0x802EBCFC, 0x802EBE94, 0x802EBEF8): GAMERAM GATESTAGENO = n e GATESTAGENAME = nome (nulo → texto vazio).
             case "SYSsetGateStage":

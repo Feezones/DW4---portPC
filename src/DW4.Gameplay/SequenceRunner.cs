@@ -90,7 +90,35 @@ public static class ActionAnimations
     {
         if (!actions.TryGetValue(action, out var cmds)) return null;
         if (cmds.FirstOrDefault(c => c.Kind == "WAITCHECK" && c.S(0) == "Frame") is { } w) return w.F(1);
-        return Motion(actions, action) is { } m ? motionFrames(m) : null;
+        // Animações em fila: MOTIONSET, WAITCHECK "Motion", MOTIONSET… (FATO: MDMG01 do e_goburi = Sdmg01 OS, espera, Sdmg02 OS).
+        // A ação dura a soma; antes contava só a primeira e o recuo de dano acabava na metade (relato de 2026-10-30).
+        float? total = null;
+        foreach (var m in Chain(actions, action))
+            if (motionFrames(m) is { } f) total = (total ?? 0) + f;
+        return total;
+    }
+
+    /// <summary>
+    /// Animações tocadas em sequência pela ação: a primeira e cada MOTIONSET que vem depois de um WAITCHECK "Motion" (as que não
+    /// esperam, como no RUNNS1 "waitS" → "runS", substituem a anterior na hora e não somam).
+    /// </summary>
+    public static List<string> Chain(IReadOnlyDictionary<string, List<SeqCommand>> actions, string action)
+    {
+        var chain = new List<string>();
+        if (!actions.TryGetValue(action, out var cmds)) return chain;
+        bool waited = true;
+        foreach (var c in cmds)
+        {
+            if (c.Kind == "WAITCHECK" && c.S(0) == "Motion") waited = true;
+            else if (c.Kind == "MOTIONSET")
+            {
+                if (waited || chain.Count == 0) chain.Add(c.S(0)); else chain[^1] = c.S(0);
+                waited = false;
+            }
+        }
+        // Sem WAITCHECK entre elas, vale a primeira (comportamento antigo do Motion).
+        if (!cmds.Any(c => c.Kind == "WAITCHECK" && c.S(0) == "Motion")) return Motion(actions, action) is { } first ? [first] : [];
+        return chain;
     }
 }
 

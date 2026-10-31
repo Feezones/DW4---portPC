@@ -469,6 +469,9 @@ public partial class Fatia
                     {
                         e.Anim.GetAnimation(an).LoopMode = ActionAnimations.Loops(e.Kind.Actions, e.Runner.Action) ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
                         e.Anim.Play(an, ActionAnimations.Blend(e.Kind.Actions, e.Runner.Action) / SequenceRunner.FramesPerSecond);
+                        // As animações seguintes da ação (MOTIONSET depois de WAITCHECK "Motion") entram em fila.
+                        foreach (var next in ActionAnimations.Chain(e.Kind.Actions, e.Runner.Action).Skip(1))
+                            if (e.Anim.HasAnimation(next)) e.Anim.Queue(next);
                     }
                 }
                 CheckEnemyHits(e);

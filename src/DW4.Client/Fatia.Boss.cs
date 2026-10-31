@@ -54,6 +54,11 @@ public partial class Fatia
             case "BLTgetDamageRank" when ef != null:
                 return DamageFormula.Rank(_fightDamage, (int)args.ElementAtOrDefault(0), ef.MaxHp);
             // BLTcalcSkillUp(acertou, …): HIPÓTESE pelo uso (1 depois de acertar, 0 na defesa) → P2ESKILLUP da arma.
+            // FATO (lua-trace do hit_g_rock01z01.lua): golpe físico (10000) só tira HP da pedra com BLTisPlayerBullet() ≠ 0; com o
+            // neutro 0 as pedras nunca reagiam (relato de 2026-10-30). HIPÓTESE: "o golpe é do jogador" (os scripts de acerto do
+            // cliente só rodam para golpes do jogador).
+            case "BLTisPlayerBullet":
+                return 1;
             case "BLTcalcSkillUp":
                 if (args.ElementAtOrDefault(0) != 0) SkillUp();
                 return 0;
@@ -147,7 +152,7 @@ public partial class Fatia
     bool StartEnemySequence(Enemy e, string seq)
     {
         if (e.Runner == null) return false;
-        if (DiagNpc) GD.Print($"[ini] {e.Kind.Model}: {seq} (mapa {e.Brain?.Map.Name ?? "-"})");
+        if (DiagNpc) GD.Print($"[ini] {Engine.GetPhysicsFrames()} {e.Kind.Model}: {seq} (mapa {e.Brain?.Map.Name ?? "-"}) anim {e.Anim?.CurrentAnimation ?? "-"}");
         e.Motion.SequenceChanged(); // 0x8030EA38: troca de sequência
         e.HitLua = null;
         if (e.Labels.TryGetValue(seq, out var l) && e.Runner.Start(seq, l)) return true;
