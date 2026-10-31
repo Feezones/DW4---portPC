@@ -914,8 +914,6 @@ public partial class Fatia : Node3D
             uniform vec4 tint : source_color = vec4(1.0);
             uniform bool has_tex = true;
             void vertex() {
-                POSITION = PROJECTION_MATRIX * (MODELVIEW_MATRIX * vec4(VERTEX, 1.0));
-                POSITION.z += 0.0004 * POSITION.w;
             }
             void fragment() {
                 vec4 c = (has_tex ? texture(tex, UV) : vec4(1.0)) * tint;
@@ -927,6 +925,7 @@ public partial class Fatia : Node3D
 
     static void ApplyAdditive(Node root)
     {
+        var addPlanes = new List<Aabb>();
         foreach (var mi in FindAll<MeshInstance3D>(root))
             for (int s = 0; s < mi.Mesh.GetSurfaceCount(); s++)
                 if (mi.Mesh.SurfaceGetMaterial(s) is StandardMaterial3D m && m.ResourceName.EndsWith("_add", StringComparison.Ordinal))
@@ -936,7 +935,37 @@ public partial class Fatia : Node3D
                     add.SetShaderParameter("has_tex", m.AlbedoTexture != null);
                     add.SetShaderParameter("tint", m.AlbedoColor);
                     mi.SetSurfaceOverrideMaterial(s, add);
+                    if (SurfaceBox(mi, s, root) is { Size.Y: < 0.01f } box) addPlanes.Add(box);
                 }
+        // FATO (stag0001): a grade aditiva 0001ground02_add fica em y 9,8 e o chão preto opaco 0001ground03 em y 10,1, acima dela; no
+        // jogo a grade aparece. HIPÓTESE: o chão de cor lisa é desenhado sem gravar profundidade (igDepthWriteStateAttr desligado),
+        // então a grade passa por ele mas não pelos personagens. Aqui: plano opaco horizontal a menos de 1 unidade de um plano aditivo
+        // que se sobrepõe a ele não grava profundidade e vai antes (o avanço de profundidade no shader da grade, usado antes, pintava
+        // a grade por cima dos personagens longe da câmera: o Agumon parecia transparente, relato de 2026-10-30).
+        if (addPlanes.Count == 0) return;
+        foreach (var mi in FindAll<MeshInstance3D>(root))
+            for (int s = 0; s < mi.Mesh.GetSurfaceCount(); s++)
+                if (mi.Mesh.SurfaceGetMaterial(s) is StandardMaterial3D m && !m.ResourceName.EndsWith("_add", StringComparison.Ordinal)
+                    && SurfaceBox(mi, s, root) is { Size.Y: < 0.01f } box
+                    && addPlanes.Any(p => Math.Abs(p.Position.Y - box.Position.Y) < 1f && p.Intersects(box.Grow(1f))))
+                {
+                    var flat = (StandardMaterial3D)m.Duplicate();
+                    flat.DepthDrawMode = BaseMaterial3D.DepthDrawModeEnum.Disabled;
+                    flat.RenderPriority = -1;
+                    mi.SetSurfaceOverrideMaterial(s, flat);
+                }
+    }
+
+    // Caixa da superfície no espaço da raiz (a cena ainda não está na árvore: sem GlobalTransform).
+    static Aabb? SurfaceBox(MeshInstance3D mi, int s, Node root)
+    {
+        var xf = Transform3D.Identity;
+        for (Node? n = mi; n != null && n != root; n = n.GetParent()) if (n is Node3D n3) xf = n3.Transform * xf;
+        var verts = mi.Mesh.SurfaceGetArrays(s)[(int)Mesh.ArrayType.Vertex].AsVector3Array();
+        if (verts.Length == 0) return null;
+        var box = new Aabb(xf * verts[0], Vector3.Zero);
+        foreach (var v in verts) box = box.Expand(xf * v);
+        return box;
     }
 
     // DECISÃO DO PORT: geometria do cenário sem textura (material "sem_textura": o plano de 3200 × 3200 em y 10 da stagbs06 e da
