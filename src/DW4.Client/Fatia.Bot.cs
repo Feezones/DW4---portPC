@@ -14,9 +14,21 @@ public partial class Fatia
     double _botClock, _botWorst;
     int _botFrames;
 
+    Vector3? _walkTarget;
+
     void BotInput(ref Vector3 dir, ref bool attackDown)
     {
         // DW4_ANDAR="x,z": anda até esse ponto do mundo (conferir colisão), avisando a posição a cada segundo.
+        // DW4_ANDAR=frente: anda 40 unidades para a frente a partir do ponto inicial (varredura das fases).
+        if (OS.GetEnvironment("DW4_ANDAR") == "frente")
+        {
+            _walkTarget ??= _spawn + new Vector3(System.MathF.Sin(_move.Facing), 0, System.MathF.Cos(_move.Facing)) * 40;
+            var go2 = new Vector3(_walkTarget.Value.X - _player.GlobalPosition.X, 0, _walkTarget.Value.Z - _player.GlobalPosition.Z);
+            dir = go2.Length() > 2 ? go2.Normalized() : Vector3.Zero;
+            attackDown = _tick % 30 < 2 && (TalkWindowOpen || _choice >= 0 || _listChoice >= 0);
+            if (_tick % 60 == 0) GD.Print($"[andar] {_player.GlobalPosition.Round()} chão {_player.IsOnFloor()} parede {_player.IsOnWall()} início {_spawn.Round()}");
+            return;
+        }
         if (OS.GetEnvironment("DW4_ANDAR") is { Length: > 0 } walk && walk.Split(",") is [var sx, var sz]
             && float.TryParse(sx, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float wx)
             && float.TryParse(sz, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float wz))

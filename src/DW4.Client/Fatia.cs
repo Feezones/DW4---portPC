@@ -991,7 +991,9 @@ public partial class Fatia : Node3D
         var body = new StaticBody3D();
         foreach (var mi in FindAll<MeshInstance3D>(collision))
         {
-            var shape = new CollisionShape3D { Shape = mi.Mesh.CreateTrimeshShape(), Transform = mi.GlobalTransformIn(collision) };
+            var trimesh = mi.Mesh.CreateTrimeshShape();
+            if (OS.GetEnvironment("DW4_DIAG_FACES") == "1") GD.Print($"[faces] backface {trimesh.BackfaceCollision}");
+            var shape = new CollisionShape3D { Shape = trimesh, Transform = mi.GlobalTransformIn(collision) };
             body.AddChild(shape);
             var path = new List<string>();
             for (Node? n = mi; n != null && n != collision; n = n.GetParent()) path.Add(n.Name);
