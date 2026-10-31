@@ -22,7 +22,9 @@ public partial class Fatia
     const int TalkProbe = 60000;
     // HIPÓTESE: volume de conversa do gravador (não lido ainda): caixa 10 × 20 × 10 na base do objeto.
     static readonly Vector3 TalkVolume = new(10, 20, 10);
-    const string PlayerModel = "p_girumon";
+    /// <summary>Modelo da forma atual do jogador (MODEL_NAME da shinka). Vem da vaga (Session) e muda na evolução.</summary>
+    // DEPURAÇÃO: DW4_FORMA=p_agumon abre a fase direto com outra forma (só no build de depuração).
+    public static string PlayerModel { get; set; } = OS.IsDebugBuild() && OS.GetEnvironment("DW4_FORMA") is { Length: > 0 } f ? f : "p_girumon";
 
     bool _playerCtrl = true, _enemiesFrozen, _generatorsFrozen;
     bool _confirmDown, _confirmArmed, _selectEnded;
@@ -53,6 +55,10 @@ public partial class Fatia
                 if (!_stage.Has(script)) continue;
                 o.BulletKind = TalkProbe;
                 _stage.RunAs(script, o);
+                // O script guardou a direção (MDLgetRotStr) antes; no fim ele devolve com MOVETRANS "pos/rot" (FATO, hit_n_digilfm.lua).
+                // HIPÓTESE: entre os dois o motor vira o NPC para quem falou.
+                var to = _player.GlobalPosition - p;
+                if (to.X * to.X + to.Z * to.Z > 1e-4f) o.Actor.Root.Rotation = new Vector3(o.Actor.Root.Rotation.X, MathF.Atan2(to.X, to.Z), o.Actor.Root.Rotation.Z);
                 return;
             }
         }
@@ -67,12 +73,20 @@ public partial class Fatia
             case ("MODELCTRL", "SQ_WAIT") when m.Name == PlayerModel:
                 _runner?.Stop(); // corta o ataque que abriu a conversa
                 return true;
-            case ("MODELCTRL", "GENERATE") when m.Name == "j_map101b1" || m.Name == "j_mapcur":
+            case ("MODELCTRL", "GENERATE") when m.Name != null && m.Name.Length > 0 && (m.Name == _mapBase || m.Name == _mapCursor):
                 _minimap ??= Minimap.Create(Path.Combine(_dir, "mapa"), this, _problems);
-                _minimap?.Generate(m.Name, m.Index, m.Text(0));
+                _minimap?.Generate(m.Name, m.Index, m.Text(0), m.Name == _mapCursor);
                 return true;
             case ("PLAYER", "OFCTRL"): _playerCtrl = false; return true;
             case ("PLAYER", "ONCTRL"): _playerCtrl = true; return true;
+            // FATO (gene00.lua): MOVETRANS "V<pos>/V<0,giro,0>" põe o jogador no ponto (o 2º vetor em graus). Só o jogador 0 na fatia.
+            case ("PLAYER", "MOVETRANS") when m.Index <= 0 && m.Arg(0) is { Kind: 'V', Numbers.Length: 3 } mp:
+                _player.GlobalPosition = new Vector3((float)mp.Numbers[0], (float)mp.Numbers[1], (float)mp.Numbers[2]);
+                _player.Velocity = Vector3.Zero;
+                _move.Stop();
+                if (m.Arg(1) is { Kind: 'V', Numbers.Length: 3 } mr) _move.Face(Mathf.DegToRad((float)mr.Numbers[1]));
+                _snapToFloor = true;
+                return true;
             case ("ENEMY", "OFCTRL"): _enemiesFrozen = true; return true;
             case ("ENEMY", "ONCTRL"): _enemiesFrozen = false; return true;
             case ("GENERATER", "ONFREEZE"): _generatorsFrozen = true; return true;
@@ -179,13 +193,13 @@ sealed class Minimap
         return data == null ? null : new Minimap(dir, data, owner);
     }
 
-    public void Generate(string name, int index, string? sequence)
+    public void Generate(string name, int index, string? sequence, bool cursor)
     {
         if (!_data.Actors.TryGetValue(name, out int root)) return;
         int player = Math.Max(0, index);
         string key = $"{name}/{player}";
         if (_actors.Any(a => a.Key == key)) return;
-        var actor = new HudActor(_data, root, slot: name == "j_mapcur" ? player : 0);
+        var actor = new HudActor(_data, root, slot: cursor ? player : 0);
         var seqDir = Path.Combine(_dir, name);
         var seqFile = Directory.Exists(seqDir) ? Directory.EnumerateFiles(seqDir, "*_seq.json").FirstOrDefault() : null;
         ObjectSequencer? seq = null;
@@ -197,8 +211,8 @@ sealed class Minimap
             if (!(sequence != null && sequence.StartsWith("SQ_", StringComparison.Ordinal) && seq.Start(sequence))) seq.Start($"SQ_OPEN0{player}");
         }
         _vp.AddChild(actor.Root);
-        _actors.Add((key, actor, seq, name == "j_mapcur" ? player : -1));
-        if (name == "j_map101b1") _rect.Visible = true;
+        _actors.Add((key, actor, seq, cursor ? player : -1));
+        if (!cursor) _rect.Visible = true;
     }
 
     public bool Has(string name, int index) => _actors.Any(a => a.Key == $"{name}/{Math.Max(0, index)}");
@@ -216,9 +230,10 @@ sealed class Minimap
             if (who == 0) actor.Root.Position = center;
             actor.Update();
         }
-        // Mesma escala do HUD: tela 640 × 480 pela altura da janela, centrada.
-        float s = window.Y / 480f, ox = (window.X - 640 * s) / 2;
-        _rect.Position = new Vector2(ox + 500 * s, 52 * s);
-        _rect.Size = new Vector2(120 * s, 120 * s);
+        // Mesma escala do HUD (altura da janela); em tela larga, preso à borda direita como na tela 4:3 (ScreenLayout).
+        var fit = ScreenLayout.Fit(window.X, window.Y);
+        var (x, y) = fit.ToWindow(500, 52, anchor: true);
+        _rect.Position = new Vector2(x, y);
+        _rect.Size = new Vector2(120 * fit.Scale, 120 * fit.Scale);
     }
 }

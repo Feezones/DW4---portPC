@@ -20,6 +20,8 @@ public partial class Fatia : Node3D
     // PROVISÓRIO até medir no jogo: ponto inicial (gerador GENE-03 da dng1; o PLAYERPOINT real ainda não foi achado)
     // e gravidade. Caixa de corpo do Guilmon (beModelCtrlInfoDataHit → igAABox): 5 × 7 × 5, FATO.
     static readonly Vector3 Start = new(-180, 45, 60);
+    // Onde a fase começou (ponto de entrada ou DW4_INICIO): o F5 volta para cá. Último ponto no chão: rede contra queda.
+    Vector3 _spawn, _lastFloor;
     // Numemon no gerador GENE-05 da dng1 (FATO: posição e rotação −90° do beGeneraterData).
     static readonly Vector3 EnemyAt = new(40, 45, 120);
     // HIPÓTESE: o primeiro número do MOVE "Move" é proporcional à velocidade. O Guilmon anda com 0,7 e PadMovement.MaxSpeed
@@ -36,7 +38,6 @@ public partial class Fatia : Node3D
     AnimationPlayer? _anim;
     string? _animWait, _animRun;
     // Ataque: sequência SQ_ATCK1 do Guilmon no bloco do estilo da arma (w_sword01 = "slash", FATO pelo beWeaponSeqData).
-    const string WeaponStyle = "slash";
     // HIPÓTESE: osso da mão direita para prender a arma (beWeaponAttachData só existe no executável).
     const string WeaponBone = "RArm04";
     SequenceRunner? _runner;
@@ -44,11 +45,7 @@ public partial class Fatia : Node3D
     int _lastSerial;
     bool _attackHeld, _showBoxes, _techHeld;
     int _techKey = -1;
-    // Inimigos (Fatia.Enemies.cs): animações e sequências do e_nume (#179) comuns a todos; IA por inimigo (EnemyBrain).
-    string? _enemyWait, _enemyHurt, _enemyRun;
     int _hits;
-    Dictionary<string, List<SeqCommand>> _enemyActions = [];
-    float _enemyWalk = 0.24f;
     int _hitsTaken;
     readonly Random _rng = new();
     // Combate com as tabelas e fórmulas do jogo (GameTables, DamageFormula, PlayerGrowth, SkillGrowth). Sorteio: o MT19937
@@ -56,7 +53,7 @@ public partial class Fatia : Node3D
     GameTables? _db;
     SkillGrowth? _skillGrowth;
     readonly MersenneTwister _mt = new();
-    Fighter? _pf, _ef;
+    Fighter? _pf;
     int _shinkaRow = -1, _weaponRow = -1, _level = 1, _hp;
     long _exp;
     readonly int[] _skill = new int[9];
@@ -69,12 +66,14 @@ public partial class Fatia : Node3D
     // Projéteis das técnicas (KIND_PBULLET x_200fire01…: MOVE "Push" 1,5 e HITBOX 4 × 4 × 4 por 1000 quadros, FATO).
     // A fatia desenha uma esfera no lugar do modelo do projétil.
     readonly List<(MeshInstance3D Mesh, Vector3 Dir, float Life, Technique Tech)> _shots = [];
-    // Drops (Drops, Inventory): lista do gerador do Numemon no modo normal (GENE-01..07 do #183 → nZ1nume1, FATO), um
-    // sorteio por Numemon morto. A fatia desenha uma caixa com o nome no lugar do modelo do item.
+    // Drops (Drops, Inventory): FATO (beGeneraterPlayerData): cada gerador aponta, por número de jogadores, para 3 listas (uma por
+    // dificuldade, nZ1/hZ1/vZ1) de drop por inimigo morto. A fatia desenha uma caixa com o nome no lugar do modelo do item.
+    // Sem gerador (o Numemon fixo da fatia), vale a lista do Numemon normal.
     const string DropList = "nZ1nume1";
-    List<DropEntry>? _drops;
-    readonly Inventory _inventory = new();
-    int _xdata;
+    Dictionary<string, List<DropEntry>> _dropLists = [];
+    readonly Dictionary<string, string?[][]> _dropOfGenerator = [];
+    // O inventário é da GAMERAM (registro do jogador 0): sobrevive à troca de fase e os SYSctl*Folder dos scripts o usam.
+    static Inventory _inventory => Ram.Players[0].Items;
     // Equipamento (RECALCPLAYER completo). DECISÃO DA FATIA: sem o menu de status, a tecla E equipa o último equipamento
     // pego, se a regra do jogo deixar; a arma muda só os números (o modelo na mão continua o da w_sword01).
     Equipment? _equip;
@@ -96,11 +95,27 @@ public partial class Fatia : Node3D
     HudOverlay? _overlay;
     DamageNumbers? _damageNumbers;
     readonly List<string> _problems = [];
+    // Neblina da fase (cor, início, fim), do fase.json; null sem neblina.
+    (Color Color, float Begin, float End)? _fog;
+    int _problemsLogged;
 
     // FATO (colisão #1862): sobre as vagas do grupo 0 (y 40) há uma peça de colisão de 10 de altura (topo em y 50); nascer
     // dentro dela derruba o Guilmon pelo chão. HIPÓTESE: o jogo assenta o jogador no chão acima do ponto. No primeiro quadro
     // de física, um raio de y + 60 para baixo põe o jogador no primeiro chão.
     bool _snapToFloor;
+    // Foco da janela pelas notificações do SO (começa com foco; só perde quando o SO avisa que saiu).
+    bool _hasFocus = true;
+
+    public override void _Notification(int what)
+    {
+        if (what == NotificationWMCloseRequest && !_leaving) SaveProgress();
+        if (what == NotificationApplicationFocusOut) _hasFocus = false;
+        else if (what == NotificationApplicationFocusIn) _hasFocus = true;
+    }
+    // Troca de fase pedida: a cena vai ser recarregada, a física para de rodar (evita !is_inside_tree).
+    bool _leaving;
+    // Gatilhos de área só depois do assentamento no chão e de um quadro inteiro na fase (posição velha disparava matt01).
+    int _volumeGrace = 2;
 
     void SnapToFloor()
     {
@@ -114,7 +129,7 @@ public partial class Fatia : Node3D
         _player.Velocity = Vector3.Zero;
     }
 
-    (Vector3 Position, float RotYDeg)? EntryPoint(int group)
+    (Vector3 Position, float RotYDeg)? EntryPoint(int group, int slotIndex = 0)
     {
         var file = System.IO.Path.Combine(_dir, "pontos_entrada.json");
         if (!System.IO.File.Exists(file)) { _problems.Add($"falta {file} (dw4 igb-entradas ndmw.afs 179 <fatia>): início no ponto fixo"); return null; }
@@ -122,7 +137,8 @@ public partial class Fatia : Node3D
         foreach (var pt in doc.RootElement.GetProperty("points").EnumerateArray())
         {
             if (pt.GetProperty("index").GetInt32() != group) continue;
-            var slot = pt.GetProperty("slots").EnumerateArray().First();
+            var slots = pt.GetProperty("slots").EnumerateArray().ToList();
+            var slot = slots[Math.Clamp(slotIndex, 0, slots.Count - 1)];
             var p = slot.GetProperty("position");
             return (new Vector3(p[0].GetSingle(), p[1].GetSingle(), p[2].GetSingle()), slot.GetProperty("rotYDeg").GetSingle());
         }
@@ -132,11 +148,38 @@ public partial class Fatia : Node3D
 
     public override void _Ready()
     {
-        _dir = OS.GetEnvironment("DW4_FATIA") is { Length: > 0 } d ? d : @"D:\dw4-work\fatia";
-        AddChild(new WorldEnvironment { Environment = new Godot.Environment { AmbientLightSource = Godot.Environment.AmbientSource.Color, AmbientLightColor = new Color(0.6f, 0.6f, 0.65f), BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black } });
-        AddChild(new DirectionalLight3D { RotationDegrees = new Vector3(-60, 30, 0) });
+        ChooseStage();
+        var env = new Godot.Environment { AmbientLightSource = Godot.Environment.AmbientSource.Color, AmbientLightColor = new Color(0.6f, 0.6f, 0.65f), BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black };
+        // FATO (stag0102 #621): igFogAttr 60..300 com cor (0,8 0,7 0,8). Fundo na cor da neblina e neblina por profundidade.
+        if (_fog is { } fg)
+        {
+            env.BackgroundColor = fg.Color;
+            env.FogEnabled = true;
+            env.FogMode = Godot.Environment.FogModeEnum.Depth;
+            env.FogLightColor = fg.Color;
+            env.FogDepthBegin = fg.Begin;
+            env.FogDepthEnd = fg.End;
+            env.FogDepthCurve = 1;
+        }
+        AddChild(new WorldEnvironment { Environment = env });
+        AddChild(_sun = new DirectionalLight3D { RotationDegrees = new Vector3(-60, 30, 0) });
+        ApplyShadows();
 
-        if (Load("cenario", "cena.gltf") is { } scenery) AddChild(scenery);
+        // Luz (FATO, boot.lua): SYSgetLightMode() == 0 ("Suave") carrega o LS_pack, senão o LH_pack; o fase-exportar grava o LS como
+        // cena_ls.gltf (texturas em cenario/<cena>/ls). Sem ele, fica o LH.
+        bool soft = Ram.LightMode == 0 && System.IO.Directory.Exists(StagePath("cenario"))
+            && System.IO.Directory.EnumerateFiles(StagePath("cenario"), "cena_ls.gltf", System.IO.SearchOption.AllDirectories).Any();
+        // O LS (texturas em ls/) ainda não foi visto na tela e o mapa do tutorial (stag0001) apareceu preto: se ele não carrega, não
+        // tem malha ou perde as texturas que o LH tem, fica o cena.gltf.
+        var scenery = soft ? Load("cenario", "cena_ls.gltf") : null;
+        if (soft && (scenery == null || !FindAll<MeshInstance3D>(scenery).Any() || TexturedCount(scenery) == 0))
+        {
+            _problems.Add("cena_ls.gltf sem malha ou sem textura: usando o cena.gltf (luz Forte)");
+            scenery?.QueueFree();
+            scenery = null;
+        }
+        scenery ??= Load("cenario", "cena.gltf");
+        if (scenery != null) { ApplyAdditive(scenery); PaintUntextured(scenery, _fog?.Color ?? Colors.Black); AddChild(scenery); }
         if (Load("colisao", "colisao.gltf") is { } collision) AddChild(MakeStaticBody(collision));
 
         _demo = OS.GetEnvironment("DW4_DEMO") == "1";
@@ -155,10 +198,11 @@ public partial class Fatia : Node3D
             && xyz.Select(t => float.TryParse(t, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var f) ? f : float.NaN).ToArray() is var v3
             && v3.All(float.IsFinite))
             start = new Vector3(v3[0], v3[1], v3[2]);
+        _spawn = _lastFloor = start;
         _player = new CharacterBody3D { Position = start, FloorSnapLength = 4f };
         _player.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 2.5f, Height = 7f }, Position = new Vector3(0, 3.5f, 0) });
         AddChild(_player);
-        _model = Load("guilmon", "personagem.gltf");
+        _model = Load(PlayerFolder, "personagem.gltf");
         if (_model != null)
         {
             _player.AddChild(_model);
@@ -166,52 +210,35 @@ public partial class Fatia : Node3D
             if (_anim != null)
             {
             }
-            var seqFile = SeqFile("guilmon");
-            if (seqFile == null) _problems.Add("falta o *_seq.json do Guilmon (dw4 igb-seq ndmw.afs 857 <fatia>\\guilmon)");
+            var seqFile = SeqFile(PlayerFolder);
+            if (seqFile == null) _problems.Add($"falta o *_seq.json de {PlayerModel} em {PlayerFolder} (dw4 igb-seq)");
             else
             {
                 var json = System.IO.File.ReadAllText(seqFile);
                 _actions = SeqCommand.LoadActions(json);
                 if (_actions.Count == 0) _problems.Add("o *_seq.json não tem ações: regere com o igb-seq atual");
                 var sequences = SeqCommand.LoadAll(json);
+                _playerBody = HitBody.Load(json);
                 _runner = new SequenceRunner(sequences, AnimFrames);
-                // Parado e andando conforme o estilo da arma: SQ_WAIT / SQ_WALK → primeira ACTION do bloco → MOTIONSET.
-                // (Antes era "waitG"/"runG": o G é o estilo gun, por isso os braços erguidos.)
-                if (ActionAnimations.FirstAction(sequences, "SQ_WAIT", WeaponStyle) is { } wa) _animWait = AnimName(wa);
-                // SQ_WALK (bloco slash) → RUNNS1, cujos MOTIONSET são "waitS" e depois "runS": o andar é o último.
-                // HIPÓTESE: o primeiro é a transição de parado para andando.
-                _animRun = ActionAnimations.BlockActions(sequences, "SQ_WALK", WeaponStyle)
-                    .SelectMany(a => ActionAnimations.Motions(_actions, a)).LastOrDefault() is { } rm && _anim != null && _anim.HasAnimation(rm) ? rm : null;
-            }
-            if (_anim != null)
-            {
-                var names = _anim.GetAnimationList();
-                _animWait ??= Pick(names, "waitS", "wait");
-                _animRun ??= Pick(names, "runS", "run");
-                foreach (var n in new[] { _animWait, _animRun })
-                    if (n != null) _anim.GetAnimation(n).LoopMode = Animation.LoopModeEnum.Linear;
-                if (_animWait != null) _anim.Play(_animWait);
-            }
-            var skeleton = FindAll<Skeleton3D>(_model).FirstOrDefault();
-            if (Load("arma", "cena.gltf") is { } weapon && skeleton != null)
-            {
-                if (skeleton.FindBone(WeaponBone) < 0) _problems.Add($"osso {WeaponBone} não existe para a arma");
-                var attach = new BoneAttachment3D { BoneName = WeaponBone };
-                skeleton.AddChild(attach);
-                attach.AddChild(weapon);
+                SetupJump(_runner);
+                // Parado e andando: pelo bloco da arma equipada (Fatia.Weapon.cs, depois do LoadCombat).
             }
         }
 
-        LoadEnemyTemplate();
         LoadCombat();
+        RefreshWeapon(); // modelo na mão e blocos de sequência pela arma equipada
         LoadStageData();
         // Sem geradores: o Numemon fixo do GENE-05 que renasce (fatia anterior).
-        if (_generators.Count == 0) SpawnEnemy(EnemyAt, -MathF.PI / 2, null, respawns: true);
+        // Só na fatia antiga (sem fase exportada): uma fase exportada sem geradores (dngq5b1*, stag0000) simplesmente não tem.
+        if (_generators.Count == 0 && _dir == _common) SpawnEnemy(EnemyRow, EnemyAt, -MathF.PI / 2, null, respawns: true);
         if (HudData.Load(System.IO.Path.Combine(_dir, "hud"), _problems) is { } hud)
         {
             _overlay = new HudOverlay(hud, this);
             _damageNumbers = new DamageNumbers(hud, this);
         }
+        SetupChat();
+        SetupPrints();
+        SetupTechBar();
         // Som da dng1 (FATO: first.lua toca "AM_DUNGE" e "DG_CAVE1"; beSoundInfo da fase → ndmw #6 e #35), com o loop do
         // cabeçalho ADX. Gerado por: dw4 adx-wav ndmw.afs <fatia>\audio 6 35. Volume do beSoundData (S8): unidade
         // desconhecida, por isso os dois tocam a 0 dB.
@@ -223,51 +250,84 @@ public partial class Fatia : Node3D
             {
                 var wav = System.IO.Path.Combine(_dir, "audio", $"ndmw_{idx:D4}.wav");
                 if (!System.IO.File.Exists(wav)) { _problems.Add($"falta {wav} (dw4 adx-wav ndmw.afs <fatia>\\audio 6 35)"); continue; }
-                if (LoadWav(wav) is { } stream) { var p = new AudioStreamPlayer { Stream = stream }; AddChild(p); p.Play(); }
+                if (LoadWav(wav) is { } stream) { var p = new AudioStreamPlayer { Stream = stream, Bus = PortSettings.EffectsBus }; AddChild(p); p.Play(); }
             }
         }
 
-        _cameraSets = new[] { "ndmw_0180_camera.json", "ndmw_0181_camera.json" }
+        // Câmeras por volume da fase (fase.json); campos sem aaacamera ficam com a câmera de seguir (HIPÓTESE da fatia).
+        _cameraSets = _cameraFiles
             .Select(f => System.IO.Path.Combine(_dir, f))
             .Where(p => { bool ok = System.IO.File.Exists(p); if (!ok) _problems.Add($"falta {p}"); return ok; })
             .Select(p => CameraZones.FromJson(System.IO.File.ReadAllText(p))).ToArray();
-        _camera = new Camera3D { Fov = 45, Far = 4000, Current = true };
+        // FATO (boot.lua): SYSgetCameraMode() == 0 carrega o aaaCamera.igb, senão o aaaCameraL.igb (a "camera_afastada" da fase.json).
+        if (Ram.CameraMode != 0 && _cameraSets.Length > 1) _cameraSet = 1;
+        _camera = new Camera3D { Fov = PortSettings.Current.Fov, Far = 4000, Current = true };
         AddChild(_camera);
 
         var layer = new CanvasLayer();
-        _hud = new Label { Position = new Vector2(12, 12) };
+        // Texto de depuração (posição, câmera, scripts): só no build de depuração e com F3; não aparece para quem joga.
+        _hud = new Label { Position = new Vector2(12, 12), Visible = false };
         layer.AddChild(_hud);
         AddChild(layer);
     }
 
     public override void _UnhandledInput(InputEvent e)
     {
+        if (_ending != null) { GetViewport().SetInputAsHandled(); return; } // créditos: Fatia.Ending.cs lê as teclas
+        if (ChatInput(e)) { GetViewport().SetInputAsHandled(); return; } // chat aberto: nada chega ao jogo
+        if (TechBarInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (MenuInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (e is InputEventKey { Pressed: true, Echo: false } k)
         {
             if (k.Keycode == Key.F1 && _cameraSets.Length > 1) _cameraSet = (_cameraSet + 1) % _cameraSets.Length;
             if (k.Keycode == Key.F2) _showBoxes = !_showBoxes;
-            if (k.Keycode == Key.F5) { _player.Position = Start; _player.Velocity = Vector3.Zero; _move.Stop(); _hp = _pf?.MaxHp ?? 0; _mp = _pf?.MaxMp ?? 0; }
-            if (k.Keycode is >= Key.Key1 and <= Key.Key6) _techKey = (int)(k.Keycode - Key.Key1);
-            if (k.Keycode == Key.K) _techKey = 0;
-            if (k.Keycode == Key.E) EquipLast();
-            if (k.Keycode == Key.Escape) GetTree().Quit();
+            if (k.Keycode == Key.F3 && OS.IsDebugBuild()) _hud.Visible = !_hud.Visible;
+            if (k.Keycode == Key.F6 && OS.IsDebugBuild()) { _player.Position = _spawn; _snapToFloor = !_demo; _player.Velocity = Vector3.Zero; _move.Stop(); _hp = _pf?.MaxHp ?? 0; _mp = _pf?.MaxMp ?? 0; }
+            if (k.Keycode == Key.F9 && OS.IsDebugBuild()) DebugWeakenBoss();
+            if (k.Keycode == Key.F8 && OS.IsDebugBuild()) DebugNextTarget();
         }
+        // Ações do mapa de controles (PortInput, configurável nas Configurações).
+        for (int i = 0; i < 6; i++) if (PortInput.Pressed(e, $"tecnica{i + 1}")) _techKey = i;
+        if (PortInput.Pressed(e, "equipar")) EquipLast();
+        if (PortInput.Pressed(e, "guarda")) _guardPressed = true;
+        if (PortInput.Pressed(e, "salvar_rapido")) QuickSave();
+        if (PortInput.Pressed(e, "pausa")) { if (SubWindowOpen) CloseSaveWindow(); else if (!_menuOpen && !ShopOpen) OpenPause(); }
+    }
+
+    bool _guardPressed, _usingPad;
+
+    // Último aparelho usado: com o controle, o golpe não vira para o cursor do mouse.
+    public override void _Input(InputEvent e)
+    {
+        DeviceIcons.Seen(e);
+        if (e is InputEventJoypadButton { Pressed: true } || e is InputEventJoypadMotion { AxisValue: > 0.5f or < -0.5f }) _usingPad = true;
+        else if (e is InputEventKey { Pressed: true } || e is InputEventMouseButton { Pressed: true }) _usingPad = false;
     }
 
     public override void _PhysicsProcess(double delta)
     {
+        TickQuickSaveAndSpeed(delta);
         float dt = (float)delta;
+        TickChat(dt);
+        TickDeath(dt);
+        TickEnding(dt);
+        TickPrints(dt);
+        UpdateTechBar();
+        TickQuestTimer(dt);
+        TickWindows(dt);
+        if (_leaving || !IsInsideTree()) return;
+        TickBotStats(dt);
         if (_snapToFloor) SnapToFloor();
-        if (TickMenu(dt)) return;
+        if (TickMenu(dt)) { _jumpHeld = true; return; } // o botão que fechou o menu não vira pulo
+        TickShopArt(dt);
+        if (TickShop() || TickArtMenu()) { _jumpHeld = true; return; } // loja aberta: o jogador fica parado
         _stage?.Tick();
+        WatchDemo();
+        if (_leaving) return;
         TickStageChange(dt);
+        if (_leaving) return;
         TickObjects(dt);
-        var input = Input.GetVector("ui_left", "ui_right", "ui_up", "ui_down");
-        if (Input.IsKeyPressed(Key.A)) input.X -= 1;
-        if (Input.IsKeyPressed(Key.D)) input.X += 1;
-        if (Input.IsKeyPressed(Key.W)) input.Y -= 1;
-        if (Input.IsKeyPressed(Key.S)) input.Y += 1;
+        var input = Input.GetVector(PortInput.Name("esquerda"), PortInput.Name("direita"), PortInput.Name("cima"), PortInput.Name("baixo"));
         input = input.LimitLength(1);
 
         // Direção relativa à câmera, no plano XZ
@@ -277,46 +337,65 @@ public partial class Fatia : Node3D
         var right = forward.Cross(Vector3.Up);
         var dir = right * input.X - forward * input.Y;
 
-        bool attackDown = Input.IsKeyPressed(Key.J) || Input.IsMouseButtonPressed(MouseButton.Left) || Input.IsJoyButtonPressed(0, JoyButton.X);
+        bool attackDown = PortInput.Down("ataque");
+        bool jumpDown = JumpDown();
         _tick++;
         if (_demo)
         {
             attackDown = _tick % 15 < 2 && _tick > 30; // um toque a cada 0,25 s depois de 0,5 s
             if (_tick < 3) input = new Vector2(0, 0);
         }
-        if (_pf != null && _hp <= 0) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; } // caído: F5 reinicia
+        if (_bot) BotInput(ref dir, ref attackDown);
+        // Decisão do port PC: sem foco na janela, nada do controle/teclado move o jogador (controle pareado dava entrada fantasma).
+        if (!_demo && !_bot && (!_hasFocus || ChatOpen)) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; }
+        if (_pf != null && _hp <= 0) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; } // caído: Fatia.Death.cs volta ao lobby
+        // Estados do hit_p (PlayerStatus, HIPÓTESE): atordoado ou dormindo não age; preso não anda nem pula.
+        if (!_status.CanAct) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; }
+        else if (!_status.CanMove) { input = Vector2.Zero; dir = Vector3.Zero; jumpDown = false; }
         // Só vale um toque que começou depois de abrir a mensagem (o ataque que abriu a conversa ainda pode estar apertado).
         if (!attackDown) _confirmArmed = true;
         _confirmDown = attackDown && _confirmArmed;
         if (_confirmDown) _selectEnded = true;
         _menuInput = input;
         bool attackRaw = attackDown;
-        if (!_padEnabled || !_playerCtrl) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = false; _techKey = -1; } // STAGECTL PADINPUT DISABLE do script
+        bool jumpPressed = jumpDown && !_jumpHeld;
+        _jumpHeld = jumpDown; // segurado com o controle travado não vira pulo quando ele volta
+        if (!_padEnabled || !_playerCtrl) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpPressed = false; _techKey = -1; } // STAGECTL PADINPUT DISABLE do script
         bool attackPressed = attackDown && !_attackHeld;
         // Com o controle bloqueado o botão continua "segurado": o toque que fechou a mensagem não vira ataque quando o controle volta.
         _attackHeld = attackDown || attackRaw;
-        bool techDown = Input.IsMouseButtonPressed(MouseButton.Right) || Input.IsJoyButtonPressed(0, JoyButton.Y);
-        if (techDown && !_techHeld) _techKey = 0;
+        bool techDown = !ChatOpen && PortInput.Down("tecnica");
+        if (techDown && !_techHeld) _techKey = _techSelected;
         _techHeld = techDown;
         if (_pf != null && _hp <= 0) _techKey = -1;
         bool attacking = _runner?.Running == true;
         bool wasWaza = _wazaPending != null;
+        // Defender (FATO: o bit 0x8000 do controle leva ao SQ_GUARD; no GameCube, o gatilho L): começa no bloco do estilo da arma.
+        if (_guardPressed)
+        {
+            _guardPressed = false;
+            if (_runner != null && !attacking && _padEnabled && _playerCtrl && _status.CanAct && !ChatOpen && _runner.Start("SQ_GUARD", StyleOf("SQ_GUARD"))) { attacking = true; _move.Stop(); }
+        }
         if (_runner != null && !attacking && (attackPressed || _techKey >= 0))
         {
-            attacking = _techKey >= 0 ? StartTechnique(_techKey) && _runner.Running : _runner.Start("SQ_ATCK1", WeaponStyle);
+            attacking = _techKey >= 0 ? StartTechnique(_techKey) && _runner.Running : _runner.Start("SQ_ATCK1", StyleOf("SQ_ATCK1"));
             _techKey = -1;
-            if (attacking && !_demo && !Input.IsJoyButtonPressed(0, JoyButton.X) && MouseGround() is { } aim)
+            if (attacking && !_demo && !_usingPad && MouseGround() is { } aim)
             {
                 // DECISÃO DO PORT PARA PC (não é do original): o golpe sai na direção do cursor do mouse.
                 var to = aim - _player.GlobalPosition;
                 if (to.X * to.X + to.Z * to.Z > 0.01f) _move.Face(MathF.Atan2(to.X, to.Z));
             }
         }
-        else if (attacking) _runner!.Tick(dt, attackPressed && !wasWaza);
+        else if (attacking) _runner!.Tick(dt, attackPressed && !wasWaza, attackDown && !wasWaza);
+        // O golpe carregado: o SQ_ATCK1 termina em JUMP "SQ_ATCKTM" quando o ataque é solto depois de carregar.
+        if (attacking && _runner is { Running: false, Next: SequenceRunner.ChargedSequence }) _runner.Start(SequenceRunner.ChargedSequence, StyleOf(SequenceRunner.ChargedSequence));
+        if (!attacking && TryStartAir(jumpPressed)) attacking = true;
         _techKey = -1;
         _panel.Tick(dt);
         if (_wazaPending is { } waza && _runner?.Running != true) { _wazaPending = null; ReleaseTechnique(waza); }
-        if (attacking) { dir = Vector3.Zero; _move.Stop(); }
+        if (InAirSequence) dir *= _airControl;
+        else if (attacking) { dir = Vector3.Zero; _move.Stop(); }
         if (_demo && _tick < 30 && _enemies.FirstOrDefault() is { } first)
         {
             var to = first.Body.GlobalPosition - _player.GlobalPosition;
@@ -333,9 +412,14 @@ public partial class Fatia : Node3D
         var vel = _player.Velocity;
         vel.X = v.X;
         vel.Z = v.Y;
-        vel.Y = _player.IsOnFloor() ? -1f : vel.Y - Gravity * dt;
+        vel.Y = VerticalVelocity(vel.Y, dt);
         _player.Velocity = vel;
         _player.MoveAndSlide();
+        // DECISÃO DO PORT PC: rede de segurança. Se atravessar o chão (empurrão forte numa borda, ponto inicial dentro de
+        // uma parede), volta ao último ponto em que estava no chão em vez de cair para sempre.
+        _airTime = _player.IsOnFloor() ? 0 : _airTime + dt;
+        if (_player.IsOnFloor()) _lastFloor = _player.GlobalPosition;
+        else if (_player.GlobalPosition.Y < _lastFloor.Y - 400) { _player.GlobalPosition = _lastFloor; _player.Velocity = Vector3.Zero; }
         if (_model != null) _model.Rotation = new Vector3(0, _move.Facing, 0);
 
         if (_runner?.Running == true)
@@ -346,7 +430,7 @@ public partial class Fatia : Node3D
                 _enemiesHitThisAction.Clear();
                 _objectsHitThisAction.Clear();
                 CheckTalkProbe();
-                if (_runner.Action != null) _sfx?.Action("p_girumon", _runner.Action);
+                if (_runner.Action != null) _sfx?.Action(PlayerModel, _runner.Action);
                 if (_anim != null && _runner.Action != null && AnimName(_runner.Action) is { } an)
                 {
                     _anim.GetAnimation(an).LoopMode = ActionAnimations.Loops(_actions, _runner.Action) ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
@@ -364,10 +448,12 @@ public partial class Fatia : Node3D
         }
         TickVolumes();
         if (!_generatorsFrozen) TickGenerators();
-        if (!_enemiesFrozen) UpdateEnemies(dt);
+        if (!_enemiesFrozen) { UpdateEnemies(dt); TickShots(dt); }
         _minimap?.Update(dt, _player.GlobalPosition, GetViewport().GetVisibleRect().Size);
         UpdateFloaters(dt);
         _damageNumbers?.Update(dt);
+        TickPlayerStatus(dt);
+        if (_overlay != null) _overlay.Face = FaceKey;
         if (_pf != null) _overlay?.Update(dt, _hp, _pf.MaxHp, _mp, _pf.MaxMp, _level);
         UpdateShots(dt);
         UpdateGround();
@@ -379,6 +465,8 @@ public partial class Fatia : Node3D
 
     void UpdateCamera(float dt)
     {
+        while (_problemsLogged < _problems.Count) GD.Print($"[problema] {_problems[_problemsLogged++]}"); // também no log (passadas)
+        DebugKeepAim();
         var p = _player.GlobalPosition;
         if (_cameraDemo != null) UpdateCameraDemo(dt);
         else if (_cameraSets.Length == 0)
@@ -388,7 +476,7 @@ public partial class Fatia : Node3D
         else
         {
             _camera.KeepAspect = Camera3D.KeepAspectEnum.Height;
-            _camera.Fov = 45;
+            _camera.Fov = PortSettings.Current.Fov; // ajustável nas Configurações (as demos usam o fov delas)
             var set = _cameraSets[_cameraSet];
             var target = new NVector3(p.X, p.Y, p.Z);
             _zone = set.Select(target, _zone);
@@ -396,15 +484,15 @@ public partial class Fatia : Node3D
             _camera.LookAtFromPosition(new Vector3(pos.X, pos.Y, pos.Z), new Vector3(look.X, look.Y, look.Z), Vector3.Up);
         }
         _hud.Text = $"pos ({p.X:0.0}, {p.Y:0.0}, {p.Z:0.0})  vel {_move.Velocity.Length():0.0} u/s\n" +
-            $"câmera {(_cameraSet == 0 ? "#180" : "#181 (afastada)")} volume {_zone}  [F1 troca, F5 reinicia, Esc sai]\n" +
+            $"câmera {(_cameraSet < _cameraFiles.Length ? _cameraFiles[_cameraSet].Replace("_camera.json", "") : "-")}{(_cameraSet == 1 ? " (afastada)" : "")} volume {_zone}  [F1 troca, F5 reinicia, Esc sai]\n" +
             $"animações: parado = {_animWait ?? "-"}, correndo = {_animRun ?? "-"}\n" +
             $"ataque [J, clique ou X]: {(_runner?.Running == true ? $"{_runner.Action} → {(_runner.Action == null ? "-" : AnimName(_runner.Action) ?? "sem animação")} quadro {_runner.ActionFrame:0}/{_runner.ActionLength:0}" : "-")}  acertos no Numemon: {_hits}  [F2 caixas]\n" +
             $"Numemon: {(_lastEnemy?.Brain is not { } br ? "-" : $"{br.Map.Name}, {(br.External ?? br.Current?.Sequence ?? "-")}")}{(_lastEnemy?.Runner?.Running == true ? $" ({_lastEnemy.Runner.Action})" : "")}  golpes no Guilmon: {_hitsTaken}\n" +
             (_pf == null ? "combate: sem tabelas (dw4 igb-db area.afs 3 <fatia>\\db)\n" :
-                $"Guilmon nv {_level}  HP {_hp}/{_pf.MaxHp}  MP {_mp}/{_pf.MaxMp}  EXP {_exp}/{PlayerGrowth.NextExp(_level)}  SLASH {_skill[1]}  |  Numemon HP {(_lastEnemy is { } le ? (le.Dead || le.Killed ? "derrotado" : $"{le.Hp}/{_ef!.MaxHp}") : "-")} (vivos {_enemies.Count(x => !x.Dead)})  |  {_lastEvent}{(_hp <= 0 ? "  |  CAIU: F5 reinicia" : "")}\n" +
+                $"{FormName} nv {_level}  HP {_hp}/{_pf.MaxHp}  MP {_mp}/{_pf.MaxMp}  EXP {_exp}/{PlayerGrowth.NextExp(_level)}  SLASH {_skill[1]}  |  {_lastEnemy?.Kind.Name ?? "inimigo"} HP {(_lastEnemy is { } le ? (le.Dead || le.Killed ? "derrotado" : $"{le.Hp}/{le.Kind.Stats?.MaxHp}") : "-")} (vivos {_enemies.Count(x => !x.Dead)})  |  {_lastEvent}{(_hp <= 0 ? "  |  CAIU" : "")}\n" +
                 $"técnicas [1..6; K, botão direito ou Y = 1]: {(_techs.Count == 0 ? "-" : string.Join("  ", _techs.Select((t, i) => $"{i + 1} {t.Name} {t.Mp} MP{(_panel.Cooldown(t) > 0 ? $" ({_panel.Cooldown(t):0.0} s)" : "")}")))}  skills ataque/cura/suporte {_skill[6]}/{_skill[7]}/{_skill[8]}\n" +
                 $"arma {_db!["weapon"].Text(_equip!.WeaponRow, "NAME")}  armaduras {(_equip.Armor1Row >= 0 ? _db["armor1"].Text(_equip.Armor1Row, "NAME") : "-")} / {(_equip.Armor2Row >= 0 ? _db["armor2"].Text(_equip.Armor2Row, "NAME") : "-")}  [E equipa o último pego]  " +
-                $"BIT {_inventory.Bit}  Xデータ {_xdata}  equipamentos {_inventory.Devices.Count}/{Inventory.DeviceMax}{(_inventory.Devices.Count > 0 ? ": " + string.Join(", ", _inventory.Devices.TakeLast(3).Select(d => _db![d.Table].Text(d.Row, "NAME"))) : "")}\n") +
+                $"BIT {_inventory.Bit}  Xデータ {_inventory.XData}  equipamentos {_inventory.Devices.Count}/{Inventory.DeviceMax}{(_inventory.Devices.Count > 0 ? ": " + string.Join(", ", _inventory.Devices.TakeLast(3).Select(d => _db![d.Table].Text(d.Row, "NAME"))) : "")}\n") +
             "movimento, gravidade, ponto inicial e IA PROVISÓRIOS (não medidos no jogo)" +
             (_stage != null ? $"\nscripts{(_padEnabled ? "" : " (controle travado pelo script)")}:\n  " + string.Join("\n  ", _scriptLog.TakeLast(6)) : "") +
             (_problems.Count > 0 ? "\n" + string.Join("\n", _problems) : "");
@@ -427,7 +515,7 @@ public partial class Fatia : Node3D
 
     string? SeqFile(string sub)
     {
-        var root = System.IO.Path.Combine(_dir, sub);
+        var root = StagePath(sub);
         return System.IO.Directory.Exists(root)
             ? System.IO.Directory.EnumerateFiles(root, "*_seq.json", System.IO.SearchOption.AllDirectories).FirstOrDefault() : null;
     }
@@ -444,31 +532,49 @@ public partial class Fatia : Node3D
         var dbFile = System.IO.Directory.Exists(dbDir) ? System.IO.Directory.EnumerateFiles(dbDir, "*_db.json").FirstOrDefault() : null;
         if (dbFile == null) { _problems.Add("falta o *_db.json (dw4 igb-db area.afs 3 <fatia>\\db): combate desligado"); return; }
         _db = GameTables.FromJson(System.IO.File.ReadAllText(dbFile));
-        var skillFile = System.IO.Path.Combine(_dir, "skillup.json");
+        var skillFile = StagePath("skillup.json");
         if (System.IO.File.Exists(skillFile)) _skillGrowth = SkillGrowth.FromJson(System.IO.File.ReadAllText(skillFile));
         else _problems.Add("falta skillup.json (dw4 dol-skilltab <main.dol> <fatia>): skill não sobe");
-        _shinkaRow = _db["shinka"].RowsWhere("MODEL_NAME", "p_girumon").DefaultIfEmpty(-1).First();
+        _shinkaRow = _db["shinka"].RowsWhere("MODEL_NAME", PlayerModel).DefaultIfEmpty(-1).First();
         // DECISÃO DA FATIA: Guilmon com a w_sword01 α (linha 25, SKILLPOINT 1: equipável com as skills iniciais). No jogo
         // ele começa com INI_WEAPON1 = 268 (adaga STAB, TSUYOSA 22) ativa e 275/274 de reserva; a espada fica mais forte.
         _weaponRow = _db["weapon"].RowsWhere("MODEL", "w_sword01").DefaultIfEmpty(-1).First();
-        if (_shinkaRow < 0 || _weaponRow < 0) { _problems.Add("p_girumon ou w_sword01 não estão nas tabelas"); _db = null; return; }
+        if (_shinkaRow < 0 || _weaponRow < 0) { _problems.Add($"{PlayerModel} ou w_sword01 não estão nas tabelas"); _db = null; return; }
         // FATO (GAMEDATAINIT 0x8036CFEC..D0B8): jogador novo com nível 1, EXP 0, as 9 skills em 1 e sem armaduras.
         Array.Fill(_skill, 1);
+        LoadProgress();
+        // DEPURAÇÃO (só no build Debug): DW4_NIVEL=n começa no nível n, com as skills na mesma proporção (testes de chefes pelo bot).
+        if (OS.IsDebugBuild() && int.TryParse(OS.GetEnvironment("DW4_NIVEL"), out int debugLevel) && debugLevel > 1)
+        {
+            _level = Math.Min(debugLevel, PlayerGrowth.MaxLevel);
+            Array.Fill(_skill, Math.Min(9999, debugLevel * 10));
+        }
+        _equip = Ram.Players[0].Equipment; // equipamento da vaga (sem vaga: a w_sword01 da fatia, no Recalc)
         Recalc();
         _hp = _pf!.MaxHp;
         _mp = _pf.MaxMp;
         if (!_db.Contains("pcTech")) _problems.Add("a pcTech não está no *_db.json: técnicas desligadas");
         var dropsDir = System.IO.Path.Combine(_dir, "drops");
         var dropsFile = System.IO.Directory.Exists(dropsDir) ? System.IO.Directory.EnumerateFiles(dropsDir, "*_drops.json").FirstOrDefault() : null;
-        if (dropsFile == null) _problems.Add("falta o *_drops.json (dw4 igb-drops ndmw.afs 183 <fatia>\\drops): sem drops");
-        else if (!Drops.FromJson(System.IO.File.ReadAllText(dropsFile)).TryGetValue(DropList, out _drops)) _problems.Add($"{DropList} não está no *_drops.json");
-        _ef = _db.Enemy(EnemyRow);
+        if (dropsFile == null) { if (_dir == _common) _problems.Add("falta o *_drops.json (dw4 igb-drops ndmw.afs 183 <fatia>\\drops): sem drops"); }
+        else
+        {
+            var dropsJson = System.IO.File.ReadAllText(dropsFile);
+            _dropLists = Drops.FromJson(dropsJson);
+            using var dd = System.Text.Json.JsonDocument.Parse(dropsJson);
+            if (dd.RootElement.TryGetProperty("generators", out var gens))
+                foreach (var g in gens.EnumerateObject())
+                    _dropOfGenerator[g.Name] = g.Value.EnumerateArray().Select(p => p.GetProperty("drop").EnumerateArray().Select(n => n.GetString()).ToArray()).ToArray();
+            else _problems.Add("o *_drops.json não liga gerador a lista (regere com o fase-exportar atual): só a lista do Numemon");
+        }
     }
 
     void Recalc()
     {
         _equip ??= new Equipment(_weaponRow);
-        _pf = _db!.Player(_shinkaRow, _level, _equip, _skill);
+        // UPCNT da forma atual (X-data e outros aumentos somam no RECALC).
+        var up = Ram.Players[0].Forms.Current == _shinkaRow && _shinkaRow >= 0 ? Ram.Players[0].Forms[_shinkaRow].UpCount : null;
+        _pf = _db!.Player(_shinkaRow, _level, _equip, _skill, up);
         if (_db.Contains("pcTech")) _techs = Techniques.List(_db, _shinkaRow, _level, _skill);
     }
 
@@ -530,20 +636,20 @@ public partial class Fatia : Node3D
     // P2EISHITCHECK (técnica acerta sempre), P2EISCRITICAL e P2EDAMAGE no ramo técnica; código = 40000 + linha (HIPÓTESE).
     void TechniqueStrikes(Enemy e, Technique t)
     {
-        if (_pf == null || _ef == null) return;
+        if (_pf == null || e.Kind.Stats is not { } ef) return;
         int code = 40000 + t.Row;
-        bool crit = DamageFormula.TechniqueCritical(t.Stats, _ef, _mt);
-        var r = DamageFormula.Technique(_pf, _ef, t.Stats, crit, _mt);
+        bool crit = DamageFormula.TechniqueCritical(t.Stats, ef, _mt);
+        var r = DamageFormula.Technique(Pf!, ef, t.Stats, crit, _mt);
         RaiseSkill(t.Stats.SkillIndex, technique: true);
         e.Hp = Math.Max(0, e.Hp - r.Damage);
         _hits++;
         _lastEnemy = e;
         Damage(e.Body, r.Damage, onPlayer: false, crit ? $"{r.Damage}!" : r.Damage.ToString(), crit ? Colors.Orange : Colors.Gold);
         _lastEvent = $"{t.Name}: {r.Damage}{(crit ? " crítico" : "")} (código {code})";
-        if (e.Hp <= 0 && !e.Killed) { e.Killed = true; GainExp(); DropItem(e.Body.GlobalPosition); }
+        if (e.Hp <= 0 && !e.Killed) { e.Killed = true; GainExp(e); DropItem(e); }
         if (e.Brain != null && e.Runner != null)
         {
-            e.Brain.Force(DamageSequences[DamageFormula.Rank(r.Damage, e.Hp, _ef.MaxHp)]);
+            e.Brain.Force(DamageSequences[DamageFormula.Rank(r.Damage, e.Hp, ef.MaxHp)]);
             e.Started = false;
         }
     }
@@ -551,22 +657,22 @@ public partial class Fatia : Node3D
     // hit_e_nume.lua com o FIGHTCALC: acerto, crítico, dano, skill, HP, faixa → sequência de reação do Numemon.
     string PlayerStrikes(Enemy e, int code)
     {
-        if (_db == null || _pf == null || _ef == null) return "SQ_SDMG";
-        if (!DamageFormula.PlayerHits(_pf, _ef, technique: false, new StatusMods(), _mt))
+        if (_db == null || _pf == null || e.Kind.Stats is not { } ef) return "SQ_SDMG";
+        if (!DamageFormula.PlayerHits(Pf!, ef, technique: false, new StatusMods(), _mt))
         {
             SkillUp();
             Float(e.Body, "MISS", Colors.LightGray);
-            _lastEvent = "Guilmon errou (Numemon defendeu)";
+            _lastEvent = $"Guilmon errou ({e.Kind.Name} defendeu)";
             return "SQ_GUARD";
         }
-        bool crit = DamageFormula.PlayerCritical(_pf, _mt);
-        var r = DamageFormula.Physical(_pf, _ef, crit, new StatusMods(), _mt);
+        bool crit = DamageFormula.PlayerCritical(Pf!, _mt);
+        var r = DamageFormula.Physical(Pf!, ef, crit, new StatusMods(), _mt);
         SkillUp();
         e.Hp = Math.Max(0, e.Hp - r.Damage);
-        int rank = DamageFormula.Rank(r.Damage, e.Hp, _ef.MaxHp);
+        int rank = DamageFormula.Rank(r.Damage, e.Hp, ef.MaxHp);
         Damage(e.Body, r.Damage, onPlayer: false, crit ? $"{r.Damage}!" : r.Damage.ToString(), crit ? Colors.Orange : Colors.White);
         _lastEvent = $"Guilmon: {r.Damage}{(crit ? " crítico" : "")}{(r.Strong ? " forte" : "")} (código {code})";
-        if (e.Hp <= 0 && !e.Killed) { e.Killed = true; GainExp(); DropItem(e.Body.GlobalPosition); }
+        if (e.Hp <= 0 && !e.Killed) { e.Killed = true; GainExp(e); DropItem(e); }
         return DamageSequences[rank];
     }
 
@@ -587,12 +693,19 @@ public partial class Fatia : Node3D
         if (_skill[idx] != before) { Recalc(); Float(_player, $"SKILL {_skill[idx]}", Colors.Cyan); }
     }
 
-    // Sorteio do drop (0x802FCC48) na posição do inimigo morto.
-    void DropItem(Vector3 at)
+    // Sorteio do drop (0x802FCC48) na posição do inimigo morto. HIPÓTESE da fatia: só a lista do Numemon (nZ1nume1) é
+    // conhecida; a ligação inimigo → lista de drop dos outros ainda não foi lida.
+    void DropItem(Enemy e)
     {
+        // Lista do gerador do inimigo: [jogadores − 1][dificuldade].
+        string? listName = e.Gen != null && _dropOfGenerator.TryGetValue(e.Gen.Name, out var perPlayers) && perPlayers.Length > 0
+            ? perPlayers[Math.Clamp(Ram.Ninzu, 1, perPlayers.Length) - 1].ElementAtOrDefault(Math.Clamp(Ram.Difficulty, 0, 2)) : e.Gen == null ? DropList : null;
+        var drops = listName != null ? _dropLists.GetValueOrDefault(listName) : null;
+        if (drops == null && OS.GetEnvironment("DW4_DROP").Length == 0) return;
+        var at = e.Body.GlobalPosition;
         // DW4_DROP="tabela:linha" (ex.: insItem:0): força o item, para conferir a coleta sem depender do sorteio.
         DropEntry? d = OS.GetEnvironment("DW4_DROP").Split(':') is [var tb, var rw] && int.TryParse(rw, out int forced)
-            ? new DropEntry(new ItemRef(tb, forced), 0, 0) : _drops != null ? Drops.Roll(_drops, _mt) : null;
+            ? new DropEntry(new ItemRef(tb, forced), 0, 0) : drops != null ? Drops.Roll(drops, _mt) : null;
         if (d == null) return;
         string name = _db!.Contains(d.Item.Table) ? _db[d.Item.Table].Text(d.Item.Row, "NAME") : "";
         if (name.Length == 0) name = $"{d.Item.Table}:{d.Item.Row}";
@@ -627,7 +740,7 @@ public partial class Fatia : Node3D
                 else
                 {
                     var (nouryoku, up) = Inventory.Instant(_db!, item.Row);
-                    if (nouryoku is "" or "xdata") { _xdata += up; text = $"+{up} Xデータ"; }
+                    if (nouryoku is "" or "xdata") { _inventory.XData += up; text = $"+{up} Xデータ"; }
                     else text = $"{nouryoku} +{up} (ainda não ligado)";
                 }
             }
@@ -660,14 +773,15 @@ public partial class Fatia : Node3D
             _ => _equip with { Armor2Row = item.Row },
         };
         Recalc();
+        RefreshWeapon();
         _hp = Math.Min(_hp, _pf!.MaxHp);
         _mp = Math.Min(_mp, _pf.MaxMp);
         _lastEvent = $"equipou {name}";
     }
 
-    void GainExp()
+    void GainExp(Enemy e)
     {
-        int gain = DamageFormula.ExpShare(_db!["enemy"].Int(EnemyRow, "EXP"), 0, players: 1, killer: true);
+        int gain = DamageFormula.ExpShare(_db!["enemy"].Int(e.Kind.Row, "EXP"), 0, players: 1, killer: true);
         _exp += gain;
         _lastEvent += $"  +{gain} EXP";
         bool up = false;
@@ -679,13 +793,15 @@ public partial class Fatia : Node3D
         Float(_player, $"NÍVEL {_level}", Colors.Yellow);
     }
 
-    // Golpe do Numemon: código do HITBOX (70004) → linha da eneatk (HIPÓTESE forte), E2PISHITCHECK e E2PDAMAGE.
-    string? EnemyStrikes(int code, string who = "Numemon")
+    // Golpe de inimigo ou objeto: código do HITBOX (70004 no Numemon) → linha da eneatk (HIPÓTESE forte), E2PISHITCHECK e
+    // E2PDAMAGE. Sem atacante (piso de dano, TYPE 2): o golpe não depende dos números dele, usa o próprio jogador no lugar.
+    string? EnemyStrikes(int code, Fighter? attacker, string who)
     {
-        if (_db == null || _pf == null || _ef == null) return "SQ_SDMG";
+        if (_db == null || _pf == null) return "SQ_SDMG";
+        var ef = attacker ?? _pf;
         var atk = _db.EnemyAttackRow(code);
-        if (!DamageFormula.EnemyHits(_ef, atk, _pf, _mt)) { Float(_player, "MISS", Colors.LightGray); return null; }
-        var r = DamageFormula.EnemyDamage(_ef, atk, _pf, new StatusMods(), _mt);
+        if (!DamageFormula.EnemyHits(ef, atk, Pf!, _mt)) { Float(_player, "MISS", Colors.LightGray); return null; }
+        var r = DamageFormula.EnemyDamage(ef, atk, Pf!, new StatusMods(), _mt);
         _hp = Math.Max(0, _hp - r.Damage);
         Damage(_player, r.Damage, onPlayer: true, r.Damage.ToString(), Colors.Red);
         _lastEvent = $"{who}: {r.Damage} (eneatk {code % 10000})";
@@ -727,7 +843,7 @@ public partial class Fatia : Node3D
             active.AddRange(_runner.ActiveHitBoxes().Select(h => (BoxCenter(h), _move.Facing, h)));
         if (_showBoxes)
             foreach (var e in _enemies.Where(e => e.Started && e.Runner?.Running == true))
-                active.AddRange(e.Runner!.ActiveHitBoxes().Where(h => h.Type == 70004).Select(h => (EnemyBoxCenter(e, h), e.Yaw, h)));
+                active.AddRange(e.Runner!.ActiveHitBoxes().Where(h => h.Type / 10000 == 7).Select(h => (EnemyBoxCenter(e, h), e.Yaw, h)));
         while (_boxMeshes.Count < active.Count)
         {
             var m = new MeshInstance3D { Mesh = new BoxMesh(), MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(1, 0, 0, 0.35f), Transparency = BaseMaterial3D.TransparencyEnum.Alpha, ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded } };
@@ -745,11 +861,13 @@ public partial class Fatia : Node3D
         }
     }
 
-    // WAV PCM 16 bits com o chunk "smpl" do adx-wav (início e fim inclusivo do loop).
-    AudioStreamWav? LoadWav(string file)
+    AudioStreamWav? LoadWav(string file) => ReadWav(file, _problems);
+
+    /// <summary>WAV PCM 16 bits com o chunk "smpl" do adx-wav (início e fim inclusivo do loop).</summary>
+    public static AudioStreamWav? ReadWav(string file, List<string> problems)
     {
         var b = System.IO.File.ReadAllBytes(file);
-        if (b.Length < 12 || System.Text.Encoding.ASCII.GetString(b, 0, 4) != "RIFF") { _problems.Add($"{file}: não é WAV"); return null; }
+        if (b.Length < 12 || System.Text.Encoding.ASCII.GetString(b, 0, 4) != "RIFF") { problems.Add($"{file}: não é WAV"); return null; }
         int channels = 0, rate = 0, loopStart = -1, loopEnd = -1;
         byte[]? data = null;
         for (int at = 12; at + 8 <= b.Length;)
@@ -762,7 +880,7 @@ public partial class Fatia : Node3D
             else if (id == "data") data = b.AsSpan(body, Math.Min(size, b.Length - body)).ToArray();
             at = body + size + (size & 1);
         }
-        if (data == null || channels == 0) { _problems.Add($"{file}: WAV sem fmt ou data"); return null; }
+        if (data == null || channels == 0) { problems.Add($"{file}: WAV sem fmt ou data"); return null; }
         var w = new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, MixRate = rate, Stereo = channels == 2, Data = data };
         if (loopStart >= 0) { w.LoopMode = AudioStreamWav.LoopModeEnum.Forward; w.LoopBegin = loopStart; w.LoopEnd = loopEnd; }
         return w;
@@ -770,7 +888,7 @@ public partial class Fatia : Node3D
 
     Node3D? Load(string sub, string fileName)
     {
-        var root = System.IO.Path.Combine(_dir, sub);
+        var root = StagePath(sub);
         var file = System.IO.Directory.Exists(root)
             ? System.IO.Directory.EnumerateFiles(root, fileName, System.IO.SearchOption.AllDirectories).FirstOrDefault() : null;
         if (file == null) { _problems.Add($"falta {fileName} em {root}"); return null; }
@@ -779,6 +897,89 @@ public partial class Fatia : Node3D
         var err = doc.AppendFromFile(file, state);
         if (err != Error.Ok) { _problems.Add($"{file}: {err}"); return null; }
         return doc.GenerateScene(state) as Node3D;
+    }
+
+    // Materiais "_add" do exportador = igBlendFunctionAttr SRC_ALPHA/ONE do jogo (luzes, brilhos): mistura aditiva, sem luz e
+    // sem gravar profundidade (os atores com essa mistura também têm igDepthWriteStateAttr).
+    // FATO (stag0001, tutorial): o chão é um plano opaco preto (0001ground03 com UV constante) e, na MESMA altura (y 10), a grade
+    // aditiva 0001ground02_add. Com o teste de profundidade comum a camada aditiva coplanar perdia para o chão e o tutorial ficava
+    // preto liso. DECISÃO DO PORT: as camadas aditivas (_add) vão num shader com um pequeno avanço de profundidade (o jogo desenha
+    // depois, com LEQUAL; aqui o empate não é garantido). Z invertido da Godot 4: z maior = mais perto.
+    static readonly Shader AdditiveShader = new()
+    {
+        Code = """
+            shader_type spatial;
+            render_mode blend_add, unshaded, depth_draw_never, cull_disabled;
+            uniform sampler2D tex : source_color, filter_linear_mipmap, repeat_enable;
+            uniform vec4 tint : source_color = vec4(1.0);
+            uniform bool has_tex = true;
+            void vertex() {
+            }
+            void fragment() {
+                vec4 c = (has_tex ? texture(tex, UV) : vec4(1.0)) * tint;
+                ALBEDO = c.rgb;
+                ALPHA = c.a;
+            }
+            """,
+    };
+
+    static void ApplyAdditive(Node root)
+    {
+        var addPlanes = new List<Aabb>();
+        foreach (var mi in FindAll<MeshInstance3D>(root))
+            for (int s = 0; s < mi.Mesh.GetSurfaceCount(); s++)
+                if (mi.Mesh.SurfaceGetMaterial(s) is StandardMaterial3D m && m.ResourceName.EndsWith("_add", StringComparison.Ordinal))
+                {
+                    var add = new ShaderMaterial { Shader = AdditiveShader, ResourceName = m.ResourceName };
+                    add.SetShaderParameter("tex", m.AlbedoTexture);
+                    add.SetShaderParameter("has_tex", m.AlbedoTexture != null);
+                    add.SetShaderParameter("tint", m.AlbedoColor);
+                    mi.SetSurfaceOverrideMaterial(s, add);
+                    if (SurfaceBox(mi, s, root) is { Size.Y: < 0.01f } box) addPlanes.Add(box);
+                }
+        // FATO (stag0001): a grade aditiva 0001ground02_add fica em y 9,8 e o chão preto opaco 0001ground03 em y 10,1, acima dela; no
+        // jogo a grade aparece. HIPÓTESE: o chão de cor lisa é desenhado sem gravar profundidade (igDepthWriteStateAttr desligado),
+        // então a grade passa por ele mas não pelos personagens. Aqui: plano opaco horizontal a menos de 1 unidade de um plano aditivo
+        // que se sobrepõe a ele não grava profundidade e vai antes (o avanço de profundidade no shader da grade, usado antes, pintava
+        // a grade por cima dos personagens longe da câmera: o Agumon parecia transparente, relato de 2026-10-30).
+        if (addPlanes.Count == 0) return;
+        foreach (var mi in FindAll<MeshInstance3D>(root))
+            for (int s = 0; s < mi.Mesh.GetSurfaceCount(); s++)
+                if (mi.Mesh.SurfaceGetMaterial(s) is StandardMaterial3D m && !m.ResourceName.EndsWith("_add", StringComparison.Ordinal)
+                    && SurfaceBox(mi, s, root) is { Size.Y: < 0.01f } box
+                    && addPlanes.Any(p => Math.Abs(p.Position.Y - box.Position.Y) < 1f && p.Intersects(box.Grow(1f))))
+                {
+                    var flat = (StandardMaterial3D)m.Duplicate();
+                    flat.DepthDrawMode = BaseMaterial3D.DepthDrawModeEnum.Disabled;
+                    flat.RenderPriority = -1;
+                    mi.SetSurfaceOverrideMaterial(s, flat);
+                }
+    }
+
+    // Caixa da superfície no espaço da raiz (a cena ainda não está na árvore: sem GlobalTransform).
+    static Aabb? SurfaceBox(MeshInstance3D mi, int s, Node root)
+    {
+        var xf = Transform3D.Identity;
+        for (Node? n = mi; n != null && n != root; n = n.GetParent()) if (n is Node3D n3) xf = n3.Transform * xf;
+        var verts = mi.Mesh.SurfaceGetArrays(s)[(int)Mesh.ArrayType.Vertex].AsVector3Array();
+        if (verts.Length == 0) return null;
+        var box = new Aabb(xf * verts[0], Vector3.Zero);
+        foreach (var v in verts) box = box.Expand(xf * v);
+        return box;
+    }
+
+    // DECISÃO DO PORT: geometria do cenário sem textura (material "sem_textura": o plano de 3200 × 3200 em y 10 da stagbs06 e da
+    // stagbs04, sem igColorAttr nem cor de vértice no IGB) saía branca. Ela fica na cor da neblina, a mesma do fundo; o que o jogo
+    // desenha ali não foi achado.
+    static int TexturedCount(Node root) => FindAll<MeshInstance3D>(root)
+        .Sum(mi => Enumerable.Range(0, mi.Mesh.GetSurfaceCount()).Count(s => mi.Mesh.SurfaceGetMaterial(s) is StandardMaterial3D { AlbedoTexture: not null }));
+
+    static void PaintUntextured(Node root, Color color)
+    {
+        foreach (var mi in FindAll<MeshInstance3D>(root))
+            for (int s = 0; s < mi.Mesh.GetSurfaceCount(); s++)
+                if (mi.Mesh.SurfaceGetMaterial(s) is StandardMaterial3D m && m.AlbedoTexture == null && m.ResourceName.StartsWith("sem_textura", StringComparison.Ordinal))
+                    m.AlbedoColor = color;
     }
 
     // Cada malha vira uma forma; o caminho de nomes fica guardado para o HITLANDMODEL dos scripts ligar e desligar partes
@@ -790,7 +991,9 @@ public partial class Fatia : Node3D
         var body = new StaticBody3D();
         foreach (var mi in FindAll<MeshInstance3D>(collision))
         {
-            var shape = new CollisionShape3D { Shape = mi.Mesh.CreateTrimeshShape(), Transform = mi.GlobalTransformIn(collision) };
+            var trimesh = mi.Mesh.CreateTrimeshShape();
+            if (OS.GetEnvironment("DW4_DIAG_FACES") == "1") GD.Print($"[faces] backface {trimesh.BackfaceCollision}");
+            var shape = new CollisionShape3D { Shape = trimesh, Transform = mi.GlobalTransformIn(collision) };
             body.AddChild(shape);
             var path = new List<string>();
             for (Node? n = mi; n != null && n != collision; n = n.GetParent()) path.Add(n.Name);

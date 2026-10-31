@@ -18,13 +18,26 @@ namespace DW4.Client;
 /// </summary>
 public partial class Fatia
 {
-    sealed class Enemy
+    sealed class Enemy : IBeModel
     {
         public required CharacterBody3D Body { get; init; }
+        public required EnemyKind Kind { get; init; }
         public Node3D? Model { get; init; }
         public AnimationPlayer? Anim { get; init; }
+        /// <summary>Meia largura e altura do corpo para o golpe do jogador, pela caixa da malha (mínimo 4 × 14, o do Numemon).</summary>
+        public float HitHalf { get; set; } = 4;
+        /// <summary>Ação e quadro já vistos pelos disparadores (Fatia.Shots).</summary>
+        public string? ShotAction { get; set; }
+        public float ShotFrame { get; set; }
+        /// <summary>LUACALL de evento armado (nome de chamada terminado em "Hit", ex. "wft" "WHit"): roda quando bater na parede.</summary>
+        public (string Name, string Call)? HitLua { get; set; }
+        public float HitHeight { get; set; } = 14;
         public EnemyBrain? Brain { get; set; }
         public SequenceRunner? Runner { get; set; }
+        /// <summary>Canais do MOVE/MOVEEX das sequências (FATO, executor do jogo; ver MotionChannels).</summary>
+        public MotionChannels Motion { get; } = new();
+        /// <summary>Subiu por um MOVEEX no eixo Y: sem gravidade até voltar ao chão (HIPÓTESE).</summary>
+        public bool Airborne { get; set; }
         public float Yaw { get; set; }
         public bool Started { get; set; }
         public int Serial { get; set; }
@@ -37,6 +50,24 @@ public partial class Fatia
         public float RespawnTimer { get; set; }
         public Vector3 Home { get; init; }
         public Generator? Gen { get; init; }
+        // IBeModel (hit_<modelo>.lua do chefe roda no contexto dele).
+        public int Index => 0;
+        public int BulletKind { get; set; }
+        public int MaxHp => Kind.Stats?.MaxHp ?? 0;
+        public string ModelName => Kind.Model;
+        (double X, double Y, double Z) IBeModel.Position => (Body.GlobalPosition.X, Body.GlobalPosition.Y, Body.GlobalPosition.Z);
+        double IBeModel.Yaw => Yaw;
+        int IBeModel.RecNo => Kind.Row;
+        string? IBeModel.SequenceName => Started && Runner?.Running == true ? Runner.Sequence : "SQ_WAIT";
+        /// <summary>Rótulo guardado por sequência (SETLABEL "SQ_SDMG/common", LABELCTRL "FLOAT" "SQ_WAIT").</summary>
+        public Dictionary<string, string> Labels { get; } = [];
+        /// <summary>MDLsetSeq / MODELCTRL nome SQ_X: interrompe a IA com a sequência.</summary>
+        public void SetSequence(string name)
+        {
+            if (Brain == null) return;
+            Brain.Force(name);
+            Started = false;
+        }
     }
 
     /// <summary>
@@ -70,74 +101,167 @@ public partial class Fatia
         public bool Inside { get; set; }
     }
 
+    /// <summary>
+    /// Tipo de inimigo (modelo da coluna MODEL da tabela enemy): cena, sequências, ações, mapas de IA e o lutador da linha.
+    /// Carregado uma vez por modelo; cada inimigo gera a própria cena a partir dele.
+    /// </summary>
+    sealed class EnemyKind
+    {
+        public required string Model { get; init; }
+        public required int Row { get; init; }
+        public GltfDocument? Doc { get; init; }
+        public GltfState? State { get; init; }
+        /// <summary>Inimigo sem esqueleto (ex.: f_luce2): nó do ator no objetos.json usado como modelo; −1 = personagem glTF.</summary>
+        public int RigidRoot { get; init; } = -1;
+        public Fighter? Stats { get; init; }
+        public string? Json { get; init; }
+        public Dictionary<string, List<SeqCommand>> Sequences { get; init; } = [];
+        public Dictionary<string, List<SeqCommand>> Actions { get; init; } = [];
+        /// <summary>Caixas do corpo (beModelCtrlInfoDataHit, FATO); vazio = caixa pela malha (HitHalf/HitHeight).</summary>
+        public List<(NVector3 Min, NVector3 Max)> BodyBoxes { get; init; } = [];
+        public string? Wait { get; set; }
+        public string? Run { get; set; }
+        public string? Hurt { get; set; }
+        public float Walk { get; init; } = 0.24f;
+        public string Name => Model;
+    }
+
     readonly List<Enemy> _enemies = [];
     readonly HashSet<Enemy> _enemiesHitThisAction = [];
     readonly Dictionary<string, Generator> _generators = [];
     readonly List<MatVolume> _volumes = [];
-    GltfDocument? _enemyDoc;
-    GltfState? _enemyState;
-    string? _enemyJson;
-    Dictionary<string, List<SeqCommand>> _enemySequences = [];
+    readonly Dictionary<int, EnemyKind?> _enemyKinds = [];
     Enemy? _lastEnemy;
 
-    // Modelo do Numemon carregado uma vez; cada inimigo gera a própria cena a partir dele.
-    void LoadEnemyTemplate()
+    // Pasta do modelo: <fase>\inimigos\<modelo> (dw4 fase-exportar); a fatia antiga tinha <fatia>\numemon.
+    string? EnemyDir(string model)
     {
-        var root = Path.Combine(_dir, "numemon");
-        var file = Directory.Exists(root) ? Directory.EnumerateFiles(root, "personagem.gltf", SearchOption.AllDirectories).FirstOrDefault() : null;
-        if (file == null) { _problems.Add($"falta personagem.gltf em {root}"); return; }
-        var doc = new GltfDocument();
-        var state = new GltfState();
-        if (doc.AppendFromFile(file, state) != Error.Ok) { _problems.Add($"{file}: erro ao ler"); return; }
-        (_enemyDoc, _enemyState) = (doc, state);
-        if (SeqFile("numemon") is not { } enemySeq) _problems.Add("falta o *_seq.json do Numemon (dw4 igb-seq ndmw.afs 179 <fatia>\\numemon --ator=e_nume)");
-        else
-        {
-            _enemyJson = File.ReadAllText(enemySeq);
-            _enemyActions = SeqCommand.LoadActions(_enemyJson);
-            _enemySequences = SeqCommand.LoadAll(_enemyJson);
-            if (AiMap.LoadAll(_enemyJson).Count == 0) _problems.Add("o *_seq.json do Numemon não tem mapas de IA: regere com o igb-seq atual");
-            // Parado e andando: SQ_WAIT → WAIT01 → "wait01"; SQ_WALK → RUNN01 → "run01" e MOVE "Move" 0,24.
-            if (ActionAnimations.FirstAction(_enemySequences, "SQ_WAIT", null) is { } wa) _enemyWait = ActionAnimations.Motion(_enemyActions, wa);
-            if (ActionAnimations.FirstAction(_enemySequences, "SQ_WALK", null) is { } ra) _enemyRun = ActionAnimations.Motion(_enemyActions, ra);
-            if (_enemySequences.TryGetValue("SQ_WALK", out var walk) && walk.FirstOrDefault(c => c.Kind == "MOVE" && c.S(0) == "Move") is { } mv)
-                _enemyWalk = mv.F(1);
-        }
+        var dir = Path.Combine(_dir, "inimigos", model);
+        if (Directory.Exists(dir)) return dir;
+        // FATO (varredura 2026-10-25): alguns campos usam inimigos cujo IGB não está entre os da fase (e_mummy na stag0204,
+        // e_mecha3/e_megadra na stag0403). HIPÓTESE: o modelo é o mesmo exportado em outra fase; usa a primeira que tiver.
+        var stagesRoot = Path.GetDirectoryName(_dir);
+        if (stagesRoot != null && Directory.Exists(stagesRoot))
+            foreach (var other in Directory.EnumerateDirectories(stagesRoot).OrderBy(d => d, StringComparer.Ordinal))
+                if (Directory.Exists(Path.Combine(other, "inimigos", model))) return Path.Combine(other, "inimigos", model);
+        dir = Path.Combine(_dir, "numemon");
+        return model == "e_nume" && Directory.Exists(dir) ? dir : null;
     }
 
-    Enemy? SpawnEnemy(Vector3 pos, float yaw, Generator? gen, bool respawns = false)
+    EnemyKind? Kind(int row)
     {
-        if (_enemyDoc == null || _enemyState == null || _enemyDoc.GenerateScene(_enemyState) is not Node3D model) return null;
-        // Caixa de corpo do Numemon (igAABox do HIT): 8 × 14 × 8, FATO; forma de cápsula é aproximação.
+        if (_enemyKinds.TryGetValue(row, out var known)) return known;
+        string model = _db != null && _db.Contains("enemy") ? _db["enemy"].Text(row, "MODEL") : "e_nume";
+        // Mesmo modelo em outra linha (ex.: e_nume 12/13/636): cena e sequências iguais, lutador da linha.
+        var same = _enemyKinds.Values.FirstOrDefault(k => k?.Model == model);
+        EnemyKind? kind = null;
+        if (same != null) kind = new EnemyKind
+        {
+            Model = model, Row = row, Doc = same.Doc, State = same.State, RigidRoot = same.RigidRoot, Stats = _db?.Enemy(row), Json = same.Json,
+            Sequences = same.Sequences, Actions = same.Actions, Wait = same.Wait, Run = same.Run, Hurt = same.Hurt, Walk = same.Walk,
+        };
+        else kind = LoadEnemyKind(model, row);
+        _enemyKinds[row] = kind;
+        return kind;
+    }
+
+    EnemyKind? LoadEnemyKind(string model, int row)
+    {
+        var root = EnemyDir(model);
+        var file = root != null ? Directory.EnumerateFiles(root, "personagem.gltf", SearchOption.AllDirectories).FirstOrDefault() : null;
+        if (file == null) return LoadRigidEnemyKind(model, row);
+        var doc = new GltfDocument();
+        var state = new GltfState();
+        if (doc.AppendFromFile(file, state) != Error.Ok) { _problems.Add($"{file}: erro ao ler"); return null; }
+        var seqFile = Directory.EnumerateFiles(root!, "*_seq.json", SearchOption.AllDirectories).FirstOrDefault();
+        string? json = seqFile != null ? File.ReadAllText(seqFile) : null;
+        if (json == null) _problems.Add($"falta o *_seq.json de {model}: sem IA");
+        var seqs = json != null ? SeqCommand.LoadAll(json) : [];
+        var acts = json != null ? SeqCommand.LoadActions(json) : [];
+        if (json != null && AiMap.LoadAll(json).Count == 0) _problems.Add($"o *_seq.json de {model} não tem mapas de IA");
+        float walk = 0.24f;
+        // Parado e andando: SQ_WAIT → ação → MOTIONSET; SQ_WALK → ação e MOVE "Move" n.
+        if (seqs.TryGetValue("SQ_WALK", out var w) && w.FirstOrDefault(c => c.Kind == "MOVE" && c.S(0) == "Move") is { } mv) walk = mv.F(1);
+        return new EnemyKind
+        {
+            Model = model, Row = row, Doc = doc, State = state, Stats = _db?.Enemy(row), Json = json, Sequences = seqs, Actions = acts, Walk = walk,
+            BodyBoxes = json != null ? HitBody.Load(json) : [],
+            Wait = ActionAnimations.FirstAction(seqs, "SQ_WAIT", null) is { } wa ? ActionAnimations.Motion(acts, wa) : null,
+            Run = ActionAnimations.FirstAction(seqs, "SQ_WALK", null) is { } ra ? ActionAnimations.Motion(acts, ra) : null,
+        };
+    }
+
+    // Inimigo sem esqueleto (exportado como objeto rígido: objetos.json + objetos\<modelo>\*_seq.json).
+    EnemyKind? LoadRigidEnemyKind(string model, int row)
+    {
+        if (ObjectData() is not { } data || !data.Actors.TryGetValue(model, out int root))
+        {
+            _problems.Add($"falta inimigos\\{model}\\personagem.gltf (dw4 fase-exportar)");
+            return null;
+        }
+        var seqDir = Path.Combine(_dir, "objetos", model);
+        var seqFile = Directory.Exists(seqDir) ? Directory.EnumerateFiles(seqDir, "*_seq.json").FirstOrDefault() : null;
+        string? json = seqFile != null ? File.ReadAllText(seqFile) : null;
+        return new EnemyKind
+        {
+            Model = model, Row = row, RigidRoot = root, Stats = _db?.Enemy(row), Json = json,
+            Sequences = json != null ? SeqCommand.LoadAll(json) : [], Actions = json != null ? SeqCommand.LoadActions(json) : [],
+            BodyBoxes = json != null ? HitBody.Load(json) : [],
+        };
+    }
+
+    Enemy? SpawnEnemy(int row, Vector3 pos, float yaw, Generator? gen, bool respawns = false)
+    {
+        if (Kind(row) is not { } kind) return null;
+        Node3D? model = kind.RigidRoot >= 0 && ObjectData() is { } od ? new HudActor(od, kind.RigidRoot, slot: 0).Root
+            : kind.Doc?.GenerateScene(kind.State!) as Node3D;
+        if (model == null) return null;
+        // Caixa de corpo do Numemon (igAABox do HIT): 8 × 14 × 8, FATO; HIPÓTESE: a mesma para os outros até ler o HIT de cada um.
         var body = new CharacterBody3D { Position = pos, FloorSnapLength = 4f };
         body.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 4f, Height = 14f }, Position = new Vector3(0, 7, 0) });
         body.AddChild(model);
         model.Rotation = new Vector3(0, yaw, 0);
         AddChild(body);
-        var e = new Enemy { Body = body, Model = model, Anim = FindAll<AnimationPlayer>(model).FirstOrDefault(), Yaw = yaw, Hp = _ef?.MaxHp ?? 0, Gen = gen, Home = pos, Respawns = respawns };
-        if (_enemyJson != null)
+        var e = new Enemy { Body = body, Model = model, Kind = kind, Anim = FindAll<AnimationPlayer>(model).FirstOrDefault(), Yaw = yaw, Hp = kind.Stats?.MaxHp ?? 0, Gen = gen, Home = pos, Respawns = respawns };
+        if (kind.Json != null)
         {
-            e.Runner = new SequenceRunner(_enemySequences, a => EnemyAnimFrames(e, a));
-            var maps = AiMap.LoadAll(_enemyJson);
-            if (maps.Count > 0) e.Brain = new EnemyBrain(maps, _enemySequences, () => _rng.Next(16));
+            e.Runner = new SequenceRunner(kind.Sequences, a => EnemyAnimFrames(e, a)) { CarryHitBoxes = true };
+            e.Runner.Command = c => EnemyCommand(e, c);
+            e.Runner.MoveStarted = m => e.Motion.Apply(m);
+            var maps = AiMap.LoadAll(kind.Json);
+            if (maps.Count > 0) e.Brain = new EnemyBrain(maps, kind.Sequences, () => _rng.Next(16));
+            // FATO (e_goburi, f_luce, f_belvam): o SQ_ENTR é a entrada (TRNS01, MUTEKI) e põe o AIMAP inicial (MAP00/MAP02) e os
+            // rótulos (LABELCTRL). HIPÓTESE: todo inimigo nasce por ele; sem isso o f_luce começava no 1º mapa do arquivo (MAP08,
+            // mísseis) e nunca chegava às fases de voo e pouso.
+            if (e.Brain != null && kind.Sequences.ContainsKey("SQ_ENTR")) e.Brain.Force("SQ_ENTR");
         }
         if (e.Anim != null)
         {
             var names = e.Anim.GetAnimationList();
-            _enemyWait ??= Pick(names, "wait01", "wait");
-            _enemyHurt ??= Pick(names, "Sdmg01", "dmg");
-            foreach (var n in new[] { _enemyWait, _enemyRun })
+            kind.Wait ??= Pick(names, "wait01", "wait");
+            kind.Hurt ??= Pick(names, "Sdmg01", "dmg");
+            foreach (var n in new[] { kind.Wait, kind.Run })
                 if (n != null && e.Anim.HasAnimation(n)) e.Anim.GetAnimation(n).LoopMode = Animation.LoopModeEnum.Linear;
-            if (_enemyWait != null && e.Anim.HasAnimation(_enemyWait)) e.Anim.Play(_enemyWait);
+            if (kind.Wait != null && e.Anim.HasAnimation(kind.Wait)) e.Anim.Play(kind.Wait);
+        }
+        // Tamanho do corpo pela caixa da malha no espaço do modelo (escala do nó incluída). HIPÓTESE: a malha em repouso aproxima o
+        // corpo de colisão do jogo; os chefes grandes (f_belvam) passam muito dos 8 × 14 × 8 do Numemon.
+        var boxes = FindAll<MeshInstance3D>(model).Where(mi => mi.Mesh != null).Select(mi => model.GlobalTransform.AffineInverse() * mi.GlobalTransform * mi.Mesh.GetAabb()).ToList();
+        if (boxes.Count > 0)
+        {
+            var all = boxes.Aggregate((a, b) => a.Merge(b));
+            var s = model.Scale;
+            e.HitHalf = Math.Max(4, Math.Min(all.Size.X * s.X, all.Size.Z * s.Z) * 0.35f);
+            e.HitHeight = Math.Max(14, all.Size.Y * s.Y);
         }
         _enemies.Add(e);
         return e;
     }
 
     string? EnemyAnimName(Enemy e, string action) =>
-        ActionAnimations.Motion(_enemyActions, action) is { } motion ? e.Anim?.GetAnimationList().FirstOrDefault(n => n == motion) : null;
+        ActionAnimations.Motion(e.Kind.Actions, action) is { } motion ? e.Anim?.GetAnimationList().FirstOrDefault(n => n == motion) : null;
 
-    float? EnemyAnimFrames(Enemy e, string action) => ActionAnimations.Length(_enemyActions, action, motion =>
+    float? EnemyAnimFrames(Enemy e, string action) => ActionAnimations.Length(e.Kind.Actions, action, motion =>
         e.Anim != null && e.Anim.HasAnimation(motion) ? (float)e.Anim.GetAnimation(motion).Length * SequenceRunner.FramesPerSecond : null);
 
     bool Vulnerable(Enemy e) => !e.Dead && !e.Killed && !(e.Started && e.Runner?.Invincible == true);
@@ -167,7 +291,7 @@ public partial class Fatia
                 _generators[gen.Name] = gen;
             }
         }
-        else _problems.Add("falta geradores.json (dw4 igb-geradores ndmw.afs 184 <fatia>): sem ondas, Numemon fixo");
+        else if (_dir == _common) _problems.Add("falta geradores.json (dw4 igb-geradores ndmw.afs 184 <fatia>): sem ondas, Numemon fixo");
         var matFile = Path.Combine(_dir, "gatilhos.json");
         if (File.Exists(matFile))
         {
@@ -197,6 +321,13 @@ public partial class Fatia
                 break;
             case "STOP":
                 g.Active = false;
+                break;
+            // FATO (en2_f_luce.lua: GENERATER RESTART "GENE-01" gera a f_luce2, a peça que derruba o chefe 3). HIPÓTESE: recomeça a
+            // contagem e liga de novo, mesmo depois de terminado.
+            case "RESTART":
+                g.Finished = false;
+                g.Spawned = g.Alive.Count;
+                g.Active = true;
                 break;
             case "STOPREVERS":
                 g.Active = false;
@@ -234,12 +365,13 @@ public partial class Fatia
             var pos = g.Positions[slot];
             float rot = g.RotYDeg.Length > slot ? g.RotYDeg[slot] : 0;
             string model = _db != null && _db.Contains("enemy") ? _db["enemy"].Text(g.EnemyRow, "MODEL") : "";
-            object? spawned = model == "g_box"
-                ? SpawnBox(pos, rot, g)
-                : SpawnEnemy(pos, rot * MathF.PI / 180, g);
+            object? spawned = model.StartsWith("g_", StringComparison.Ordinal)
+                ? SpawnBox(model, pos, rot, g)
+                : SpawnEnemy(g.EnemyRow, pos, rot * MathF.PI / 180, g);
             if (spawned == null) { g.Active = false; ScriptLog($"{g.Name}: não sei gerar {model} (linha {g.EnemyRow})"); continue; }
             g.Spawned++;
             g.Alive.Add(spawned);
+            if (DiagNpc) GD.Print($"[gerador] {g.Name}: {model} ({g.Spawned}/{g.Count}) em {pos}");
         }
     }
 
@@ -247,7 +379,8 @@ public partial class Fatia
 
     void TickVolumes()
     {
-        if (_stage == null) return;
+        if (_stage == null || _leaving) return;
+        if (_snapToFloor || _volumeGrace > 0) { if (!_snapToFloor) _volumeGrace--; return; }
         var p = _player.GlobalPosition;
         foreach (var v in _volumes)
         {
@@ -277,7 +410,7 @@ public partial class Fatia
             e.RespawnTimer -= dt;
             if (e.RespawnTimer > 0) return;
             e.Dead = false;
-            e.Hp = _ef?.MaxHp ?? 0;
+            e.Hp = e.Kind.Stats?.MaxHp ?? 0;
             e.Killed = false;
             e.Body.Position = e.Home;
             e.Body.Visible = true;
@@ -299,47 +432,94 @@ public partial class Fatia
                 // Sequência do jogo (SQ_ATCK1, SQ_FIRE, SQ_SDMG…); "common" é o bloco sem elemento das de dano.
                 if (!e.Started)
                 {
-                    e.Started = e.Runner.Start(ext, "common");
+                    e.Started = StartEnemySequence(e, ext);
                     e.Serial = -1;
                     if (!e.Started) e.Brain.Release();
                 }
                 else e.Runner.Tick(dt, false);
+                // FATO (f_luce SQ_BOMBn → JUMP "SQ_ATCKOF", que põe o MAP02 e leva ao voo/pouso): JUMP para outra sequência continua
+                // nela; só SQ_WAIT (e SQ_ERAS) devolvem o inimigo à IA.
+                if (e.Started && !e.Runner.Running && e.Runner.Next is { } next && next is not ("SQ_WAIT" or "SQ_ERAS") && e.Kind.Sequences.ContainsKey(next)
+                    && e.Hp > 0 && StartEnemySequence(e, next))
+                {
+                    e.Brain.Force(next);
+                    e.Serial = -1;
+                }
                 if (e.Started && !e.Runner.Running)
                 {
                     e.Started = false;
+                    e.Motion.SequenceChanged();
+                    // FATO: o SQ_WAIT do jogo começa por MOVE "Stop" 1 4 (e_nume, f_apocaly, f_luce); a IA do cliente não roda essa
+                    // sequência, então o freio vem daqui (HIPÓTESE: a volta é sempre para o SQ_WAIT).
+                    if (e.Kind.Sequences.TryGetValue("SQ_WAIT", out var wait) && wait.FirstOrDefault(c => c.Kind == "MOVE") is { } stop && stop.S(0) == "Stop") e.Motion.Apply(stop);
                     e.Brain.Release();
                     // SQ_DDMG termina em JUMP "SQ_ERAS" (depois do ERDE01 com FADESET "OUT"): o inimigo some.
-                    if (_ef != null && e.Hp <= 0) { Kill(e); return; }
+                    if (e.Kind.Stats != null && e.Hp <= 0) { Kill(e); return; }
                 }
             }
             if (e.Started && e.Runner.Running)
             {
-                if (e.Runner.Move is { } m)
-                    vel = m.S(0) switch { "Move" => forward * Speed(m.F(1)), "Back" => -forward * Speed(m.F(1)), _ => Vector3.Zero };
                 if (e.Runner.ActionSerial != e.Serial)
                 {
                     e.Serial = e.Runner.ActionSerial;
-                    e.HitThisAction.Clear();
-                    if (e.Runner.Action != null) _sfx?.Action("e_nume", e.Runner.Action);
+                    // Caixa que já acertou e passou para a ação nova (CarryHitBoxes) não acerta de novo.
+                    e.HitThisAction.RemoveWhere(k => !e.Runner.CarriedHitBoxes.Any(h => HitKey(h) == k));
+                    if (e.Runner.Action != null) _sfx?.Action(e.Kind.Model, e.Runner.Action);
                     if (e.Anim != null && e.Runner.Action != null && EnemyAnimName(e, e.Runner.Action) is { } an)
                     {
-                        e.Anim.GetAnimation(an).LoopMode = ActionAnimations.Loops(_enemyActions, e.Runner.Action) ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
-                        e.Anim.Play(an, ActionAnimations.Blend(_enemyActions, e.Runner.Action) / SequenceRunner.FramesPerSecond);
+                        e.Anim.GetAnimation(an).LoopMode = ActionAnimations.Loops(e.Kind.Actions, e.Runner.Action) ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
+                        e.Anim.Play(an, ActionAnimations.Blend(e.Kind.Actions, e.Runner.Action) / SequenceRunner.FramesPerSecond);
+                        // As animações seguintes da ação (MOTIONSET depois de WAITCHECK "Motion") entram em fila.
+                        foreach (var next in ActionAnimations.Chain(e.Kind.Actions, e.Runner.Action).Skip(1))
+                            if (e.Anim.HasAnimation(next)) e.Anim.Queue(next);
                     }
                 }
                 CheckEnemyHits(e);
             }
             else
             {
-                if (e.Brain.Walking) vel = forward * Speed(_enemyWalk);
-                var want = e.Brain.Walking ? _enemyRun : _enemyWait;
+                if (e.Brain.Walking) vel = forward * Speed(e.Kind.Walk);
+                var want = e.Brain.Walking ? e.Kind.Run : e.Kind.Wait;
                 if (e.Anim != null && want != null && e.Anim.HasAnimation(want) && e.Anim.CurrentAnimation != want) e.Anim.Play(want, 8 / SequenceRunner.FramesPerSecond);
             }
         }
-        else if (e.Anim != null && _enemyWait != null && !e.Anim.IsPlaying()) e.Anim.Play(_enemyWait);
-        vel.Y = e.Body.IsOnFloor() ? -1f : e.Body.Velocity.Y - Gravity * dt;
+        else if (e.Anim != null && e.Kind.Wait != null && !e.Anim.IsPlaying()) e.Anim.Play(e.Kind.Wait);
+        // MOVE/MOVEEX: deslocamento local por quadro (X direita, Y cima, Z frente) e giro Y em graus. HIPÓTESE: unidade do jogo =
+        // unidade do mundo, quadros a 30 Hz (como o pulo); o andar da IA (SQ_WALK) segue na escala do PadMovement.
+        bool flying = false;
+        if (e.Motion.Attached is { } rl && AttachTarget(rl, e.Kind.Model) is { } at)
+        {
+            e.Body.GlobalPosition = at.Origin;
+            e.Yaw = MathF.Atan2(at.Basis.Z.X, at.Basis.Z.Z);
+            vel = Vector3.Zero;
+            flying = true;
+        }
+        if (e.Motion.AnyActive && dt > 0)
+        {
+            var (local, yawDeg) = e.Motion.Step(dt * SequenceRunner.FramesPerSecond);
+            e.Yaw += yawDeg * MathF.PI / 180;
+            var fw = new Vector3(MathF.Sin(e.Yaw), 0, MathF.Cos(e.Yaw));
+            var right = new Vector3(fw.Z, 0, -fw.X);
+            vel += (right * local.X + fw * local.Z) / dt;
+            if (e.Motion[1].Active) { vel.Y = local.Y / dt; flying = true; if (local.Y > 0) e.Airborne = true; }
+        }
+        if (!flying)
+        {
+            if (e.Airborne && e.Body.IsOnFloor()) e.Airborne = false;
+            vel.Y = e.Airborne ? 0 : e.Body.IsOnFloor() ? -1f : e.Body.Velocity.Y - Gravity * dt;
+        }
         e.Body.Velocity = vel;
         e.Body.MoveAndSlide();
+        // HIPÓTESE (f_devl3 SQ_WALK: LUACALL "wft" "WHit" e MOVEEX "TZPACC" para a frente; wft_f_devl3.lua manda SQ_WALKOFF): "WHit"
+        // é o evento de bater na parede. No passeio da IA (SQ_WALK interno) o evento vem do SQ_WALK do jogo.
+        if (e.HitLua == null && e.Brain?.Walking == true && !e.Started && e.Kind.Sequences.TryGetValue("SQ_WALK", out var walk)
+            && walk.FirstOrDefault(c => c.Kind == "LUACALL" && c.S(1).EndsWith("Hit", StringComparison.Ordinal)) is { } wl)
+            e.HitLua = (wl.S(0), wl.S(1));
+        if (e.HitLua is { } hit && e.Body.IsOnWall())
+        {
+            e.HitLua = null;
+            RunLuaCall(hit.Name, e.Kind.Model, e, hit.Call);
+        }
         if (e.Model != null) e.Model.Rotation = new Vector3(0, e.Yaw, 0);
     }
 
@@ -361,23 +541,43 @@ public partial class Fatia
 
     Vector3 EnemyBoxCenter(Enemy e, HitBox h) => e.Body.GlobalPosition + new Vector3(h.Position.X, h.Position.Y, h.Position.Z).Rotated(Vector3.Up, e.Yaw);
 
-    // Caixas 70004 do Numemon (ataque, HIPÓTESE pelo SQ_ATCK1) contra a caixa de corpo do Guilmon (5 × 7 × 5, FATO).
+    // A mesma caixa antes e depois de passar para a ação seguinte (o quadro inicial muda).
+    static HitBox HitKey(HitBox h) => h with { StartFrame = 0 };
+
+    // Caixas do corpo do jogador (beModelCtrlInfoDataHit da forma atual; o Guilmon tem 5 × 7 × 5, FATO).
+    List<(NVector3 Min, NVector3 Max)> _playerBody = [];
+
+    static NVector3 N(Vector3 v) => new(v.X, v.Y, v.Z);
+
+    /// <summary>Caixa de golpe (centro no mundo, tamanho nos eixos de quem bate) contra o corpo do jogador.</summary>
+    bool HitsPlayer(Vector3 c, NVector3 size, float attackerYaw)
+    {
+        var g = _player.GlobalPosition;
+        return _playerBody.Count > 0
+            ? HitBody.Hits(N(c), size, attackerYaw, N(g), _move.Facing, 1, _playerBody)
+            : Math.Abs(c.X - g.X) <= size.X / 2 + 2.5f && Math.Abs(c.Z - g.Z) <= size.Z / 2 + 2.5f && c.Y + size.Y / 2 >= g.Y && c.Y - size.Y / 2 <= g.Y + 7;
+    }
+
+    // Caixas 7xxxx do inimigo (ataque; 70004 no Numemon, HIPÓTESE pelo SQ_ATCK1) contra as caixas do corpo do jogador; sem elas no
+    // json, a caixa do Guilmon.
     void CheckEnemyHits(Enemy e)
     {
         if (e.Runner == null || _runner?.Invincible == true) return;
         var g = _player.GlobalPosition;
-        foreach (var h in e.Runner.ActiveHitBoxes().Where(h => h.Type == 70004))
+        foreach (var h in e.Runner.ActiveHitBoxes().Where(h => h.Type / 10000 == 7))
         {
-            if (e.HitThisAction.Contains(h)) continue;
+            if (e.HitThisAction.Contains(HitKey(h))) continue;
             var c = EnemyBoxCenter(e, h);
-            if (Math.Abs(c.X - g.X) <= h.Size.X / 2 + 2.5f && Math.Abs(c.Z - g.Z) <= h.Size.Z / 2 + 2.5f && c.Y + h.Size.Y / 2 >= g.Y && c.Y - h.Size.Y / 2 <= g.Y + 7)
+            if (HitsPlayer(c, h.Size, e.Yaw))
             {
-                e.HitThisAction.UnionWith(e.Runner.ActionHitBoxes);
+                e.HitThisAction.UnionWith(e.Runner.ActionHitBoxes.Select(HitKey));
                 _hitsTaken++;
-                string? reaction = EnemyStrikes(h.Type);
+                // Com o hit_p_<forma>.lua da fase, o próprio script decide dano, reação e estados (Fatia.PlayerHit.cs).
+                if (PlayerHitScript(h.Type, e.Kind.Stats, e.Kind.Name, e.Body.GlobalPosition)) break;
+                string? reaction = EnemyStrikes(h.Type, e.Kind.Stats, e.Kind.Name);
                 if (reaction == null) break; // errou ou bloqueou: sem reação
                 // Reação do Guilmon pela faixa do dano (bloco do estilo da arma, ou "common"), virado para quem bateu (HIPÓTESE).
-                if (_runner != null && (_runner.Start(reaction, WeaponStyle) || _runner.Start(reaction, "common")))
+                if (_runner != null && (_runner.Start(reaction, StyleOf(reaction)) || _runner.Start(reaction, "common")))
                 {
                     _wazaPending = null; // interrompida: o MP já foi gasto no painel
                     var to = e.Body.GlobalPosition - g;
@@ -399,12 +599,21 @@ public partial class Fatia
             var p = e.Body.GlobalPosition;
             foreach (var h in _runner.ActiveHitBoxes().Where(h => h.Type == 10000))
             {
-                // Caixa de dano contra a caixa de corpo do Numemon (8 × 14 × 8), em eixos do mundo: aproximação.
+                // Caixa de dano contra as caixas do corpo do inimigo (beModelCtrlInfoDataHit, nos eixos e na escala dele). Sem elas no
+                // json, a caixa pela malha (HitHalf/HitHeight, mínimo a do Numemon 8 × 14 × 8) em eixos do mundo.
                 var c = BoxCenter(h);
-                if (!(Math.Abs(c.X - p.X) <= h.Size.X / 2 + 4 && Math.Abs(c.Z - p.Z) <= h.Size.Z / 2 + 4 && c.Y + h.Size.Y / 2 >= p.Y && c.Y - h.Size.Y / 2 <= p.Y + 14)) continue;
+                bool touch = e.Kind.BodyBoxes.Count > 0
+                    ? HitBody.Hits(N(c), h.Size, _move.Facing, N(p), e.Yaw, e.Model?.Scale.X ?? 1, e.Kind.BodyBoxes)
+                    : Math.Abs(c.X - p.X) <= h.Size.X / 2 + e.HitHalf && Math.Abs(c.Z - p.Z) <= h.Size.Z / 2 + e.HitHalf && c.Y + h.Size.Y / 2 >= p.Y && c.Y - h.Size.Y / 2 <= p.Y + e.HitHeight;
+                if (!touch) continue;
                 _enemiesHitThisAction.Add(e);
                 _hits++;
                 _lastEnemy = e;
+                if (UsesHitScript(e))
+                {
+                    StrikeWithScript(e, h.Type); // a reação vem do MDLsetSeq do próprio script
+                    break;
+                }
                 string reaction = PlayerStrikes(e, h.Type);
                 if (e.Brain != null && e.Runner != null)
                 {
@@ -413,7 +622,7 @@ public partial class Fatia
                     var to = _player.GlobalPosition - p;
                     e.Yaw = MathF.Atan2(to.X, to.Z); // HIPÓTESE: vira para quem bateu
                 }
-                else if (e.Anim != null && _enemyHurt != null) e.Anim.Play(_enemyHurt, 0.05f);
+                else if (e.Anim != null && e.Kind.Hurt != null) e.Anim.Play(e.Kind.Hurt, 0.05f);
                 break;
             }
         }

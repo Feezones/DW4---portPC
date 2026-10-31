@@ -262,7 +262,8 @@ public sealed class IgbHud
     {
         if (_packScene != null && _packImage.TryGetValue(name, out int idx) && _packScene.Images.TryGetValue(idx, out var img))
         {
-            var file = $"pack_{Safe(name)}";
+            // Sempre .png (o nome do pacote pode vir com .dds: "TA01GM02.dds" no lh_pack do campo).
+            var file = $"pack_{Safe(Path.GetFileNameWithoutExtension(name))}.png";
             if (!_images.ContainsKey(file) && IgbScene.ToRgba(img) is { } rgba) _images[file] = new HudImage(file, name, img.Width, img.Height, rgba);
             if (_images.ContainsKey(file)) return file;
         }

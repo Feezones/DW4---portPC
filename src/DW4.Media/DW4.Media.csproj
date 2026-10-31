@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Contêineres e mídia que o cliente também lê (AFS, MPEG-PS dos Sofdec, ADX, vídeo MPEG-1). net8.0 por causa do cliente
+         Godot; as ferramentas (net10.0) referenciam normalmente. Os nomes de espaço DW4.Formats.* ficaram os de antes da mudança. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

@@ -8,4 +8,9 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Os SYS* dos scripts leem e gravam o estado do jogador (Inventory, Evolution). -->
+    <ProjectReference Include="..\DW4.Gameplay\DW4.Gameplay.csproj" />
+  </ItemGroup>
+
 </Project>

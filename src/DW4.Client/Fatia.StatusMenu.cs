@@ -14,7 +14,8 @@ namespace DW4.Client;
 /// FATO: atores e sequências de abertura/fecho; textos I&lt;11..13&gt; (ajuda), I&lt;14..25&gt; (atributos), I&lt;26..28&gt; (menu).
 /// HIPÓTESES: Tab/Start abre, Tab/Esc/B fecha, a fase fica pausada; atores na origem da tela 640 × 480 (os GENERATE nativos
 /// não foram lidos); i_stmenu01 abre com SQ_3LINEUPOPEN.
-/// DECISÃO DA FATIA: textos com a fonte da Godot em posições aproximadas; cursor como "▶"; submenus ainda não portados.
+/// DECISÃO DA FATIA: textos com a fonte do jogo (MINIMUM, ícones de elemento e ¶ inclusos) em posições aproximadas; cursor como
+/// "&gt;" (a fonte do jogo não tem "▶"); submenus ainda não portados.
 /// </summary>
 public partial class Fatia
 {
@@ -35,7 +36,7 @@ public partial class Fatia
     static readonly (string Actor, string Open)[] MenuBase =
     [
         ("i_stback", "SQ_OPEN"), ("i_stbase", "SQ_LOPEN"), ("i_sttitle", "SQ_OPEN"), ("i_staccount", "SQ_OPEN"),
-        ("i_stdigiface", "SQ_girumonOPEN"), ("i_stmenu01", "SQ_3LINEUPOPEN"),
+        ("i_stdigiface", "SQ_girumonOPEN") /* trocado pela forma atual em OpenMenu */, ("i_stmenu01", "SQ_3LINEUPOPEN"),
     ];
 
     bool MenuInput(InputEvent e)
@@ -44,7 +45,7 @@ public partial class Fatia
         bool Pad(params JoyButton[] buttons) => e is InputEventJoypadButton { Pressed: true } b && buttons.Contains(b.ButtonIndex);
         if (!_menuOpen)
         {
-            if (Key(Godot.Key.Tab) || Pad(JoyButton.Start)) { OpenMenu(); return true; }
+            if (PortInput.Pressed(e, "status")) { OpenMenu(); return true; }
             return false;
         }
         if (_menuClosing) return true;
@@ -62,15 +63,15 @@ public partial class Fatia
             {
                 _menuCursor = hit;
                 UpdateMenuText();
-                ScriptLog($"menu: {Text(26 + _menuCursor)} (submenu ainda não portado)");
+                ScriptLog($"menu: {Text(StatusText(15, _menuCursor, 26))} (submenu ainda não portado)");
             }
             return true;
         }
-        if (Key(Godot.Key.Tab, Godot.Key.Escape, Godot.Key.K) || Pad(JoyButton.Start, JoyButton.B)) CloseMenu();
+        if (PortInput.Pressed(e, "status") || PortInput.Pressed(e, "cancelar") || PortInput.Pressed(e, "pausa")) CloseMenu();
         else if (Key(Godot.Key.W, Godot.Key.Up) || Pad(JoyButton.DpadUp)) { _menuCursor = (_menuCursor + 2) % 3; UpdateMenuText(); }
         else if (Key(Godot.Key.S, Godot.Key.Down) || Pad(JoyButton.DpadDown)) { _menuCursor = (_menuCursor + 1) % 3; UpdateMenuText(); }
         else if (Key(Godot.Key.J, Godot.Key.Enter) || Pad(JoyButton.A))
-            ScriptLog($"menu: {Text(26 + _menuCursor)} (submenu ainda não portado)");
+            ScriptLog($"menu: {Text(StatusText(15, _menuCursor, 26))} (submenu ainda não portado)");
         return true;
     }
 
@@ -79,11 +80,26 @@ public partial class Fatia
 
     // DECISÃO DO PORT PC (docs/decisoes-port-pc.md): o mouse aponta os itens do menu, clique esquerdo escolhe, direito cancela.
     // Mouse da janela → ponto da tela 640 × 480 do menu (mesma escala do TextureRect, KeepAspectCentered) → linha do menu.
+    // Índices de texto de cada tela do menu, do txt_status.lua da fase (be:TXTgetCallNo = 0 ajuda, 3 atributos, 15 menu): os
+    // pacotes de texto de cada fase têm outra ordem (FATO: na dng1 dá I<11..13>, I<14..25>, I<26..28>; no stag0101, outros).
+    // Sem o script na fase, usa o da pasta comum; sem nenhum, os índices da dng1.
+    readonly Dictionary<int, List<int>> _statusTexts = [];
+    int StatusText(int callNo, int i, int dng1Start)
+    {
+        if (!_statusTexts.TryGetValue(callNo, out var list))
+        {
+            var common = Path.Combine(_common, "lua", "txt_status.lua");
+            var got = _stage?.RunText("txt_status.lua", callNo, File.Exists(common) ? File.ReadAllBytes(common) : null) ?? [];
+            _statusTexts[callNo] = list = got.Select(m => m.Args.LastOrDefault() is { Kind: 'I', Numbers.Length: > 0 } k ? (int)k.Numbers[0] : -1).ToList();
+        }
+        return i < list.Count && list[i] >= 0 ? list[i] : dng1Start + i;
+    }
+
     int MenuItemAt(Vector2 mouse)
     {
         var size = GetViewport().GetVisibleRect().Size;
-        float s = Math.Min(size.X / 640, size.Y / 480);
-        var p = (mouse - new Vector2((size.X - 640 * s) / 2, (size.Y - 480 * s) / 2)) / s;
+        var fit = ScreenLayout.Fit(size.X, size.Y);
+        var p = (mouse - new Vector2(fit.OffsetX, fit.OffsetY)) / fit.Scale;
         float x = p.X - 320, y = 240 - p.Y;
         if (x < -110 || x > 54) return -1;
         for (int i = 0; i < MenuRows.Length; i++)
@@ -110,6 +126,8 @@ public partial class Fatia
             foreach (var (name, open) in MenuBase)
             {
                 if (!_menuData.Actors.TryGetValue(name, out int root)) continue;
+                // O rosto da aba segue a forma atual (FATO: SQ_agumonOPEN, SQ_vmonOPEN… para as 16 formas).
+                string openSeq = name == "i_stdigiface" ? $"SQ_{FaceKey}OPEN" : open;
                 // Ordem de desenho pela ordem de geração (fundo primeiro) e, dentro do ator, pela ordem do grafo.
                 var actor = new HudActor(_menuData, root, slot: 0, drawOrder: _menuActors.Count * 20);
                 var seqDir = Path.Combine(_dir, "menu", name);
@@ -119,7 +137,7 @@ public partial class Fatia
                 {
                     var json = File.ReadAllText(seqFile);
                     seq = new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json));
-                    seq.Start(open);
+                    seq.Start(openSeq);
                 }
                 _menuVp.AddChild(actor.Root);
                 // HIPÓTESE: o fundo (i_stback, esfera com projeção própria) é desenhado antes e por trás das janelas; aqui
@@ -166,6 +184,8 @@ public partial class Fatia
     void MenuLabel(string text, float x, float y, int size = 13, HorizontalAlignment align = HorizontalAlignment.Left, float width = 0)
     {
         var l = new Label { Text = text, Position = MenuPx(x, y), HorizontalAlignment = align };
+        // Fonte do jogo (MINIMUM): a linha dela é a altura toda do texto, ~1,45 × o tamanho em pontos da fonte da Godot.
+        if (GameFont()?.ToFontFile("MINIMUM") is { } gf) { l.AddThemeFontOverride("font", gf); size = (int)Math.Round(size * 1.45f); }
         if (width > 0) l.Size = new Vector2(width, 0);
         l.AddThemeFontSizeOverride("font_size", size);
         l.AddThemeColorOverride("font_outline_color", Colors.Black);
@@ -194,7 +214,7 @@ public partial class Fatia
         // Nível: "Lv." do mojiL em x −244..−222, y 189..207; linha do número em x −228..−176, y 185..189.
         MenuLabel(_level.ToString(), -220, 207, 14, HorizontalAlignment.Right, 44);
         // Nome: moldura em x −306..−152, y 133..151.
-        MenuLabel("Guilmon", -296, 151, 12);
+        MenuLabel(FormName, -296, 151, 12);
         // HP/MP: "HP" do mojiL em y 105..118 e "MP" em 87..100 (x −300..−282); linhas em y 105..109 e 87..91, atual em
         // x −282..−234, "/" em −221..−214, máximo em −213..−165.
         MenuLabel(_hp.ToString(), -282, 124, 12, HorizontalAlignment.Right, 48);
@@ -207,17 +227,17 @@ public partial class Fatia
         for (int i = 0; i < values.Length; i++)
         {
             float y = tops[i] + 17;
-            MenuLabel(Text(14 + i)?.Replace("\r\n", " ") ?? "", -292, y, 12);
+            MenuLabel(Text(StatusText(3, i, 14))?.Replace("\r\n", " ") ?? "", -292, y, 12);
             MenuLabel(values[i], -262, y, 12, HorizontalAlignment.Right, 95);
         }
         // i_stmenu01 (L3, SQ_3LINEUPOPEN): moldura em x −110..54, y 140..216; separadores em y 188..192 e 166..170 (x −84..48).
         // Linhas: topo 212, 189 e 167.
         float[] rows = MenuRows;
         for (int i = 0; i < 3; i++)
-            MenuLabel((i == _menuCursor ? "▶ " : "    ") + Text(26 + i), -100, rows[i], 13);
+            MenuLabel((i == _menuCursor ? (GameFont() != null ? "> " : "▶ ") : "    ") + Text(StatusText(15, i, 26)), -100, rows[i], 13);
         // i_staccount (win01: x 128..312, y 156..216): nome.
-        MenuLabel("Guilmon", 140, 200, 13);
-        MenuLabel(string.Join("    ", Enumerable.Range(11, 3).Select(i => Text(i)?.Replace("\r\n", " "))), -320, -212, 13, HorizontalAlignment.Center, 640);
+        MenuLabel(FormName, 140, 200, 13);
+        MenuLabel(string.Join("    ", Enumerable.Range(0, 3).Select(i => Text(StatusText(0, i, 11))?.Replace("\r\n", " "))), -320, -212, 13, HorizontalAlignment.Center, 640);
     }
 
     /// <summary>Com o menu aberto a fase fica parada (HIPÓTESE): só o menu anda. true = pular o resto do quadro.</summary>

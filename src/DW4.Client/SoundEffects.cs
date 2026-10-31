@@ -54,6 +54,9 @@ public sealed class SoundEffects
 
     public int Count => _cue.Count;
 
+    /// <summary>O nome é um efeito do banco de sons (beSoundData com cue), não uma música.</summary>
+    public bool Has(string sound) => _cue.ContainsKey(sound);
+
     /// <summary>Ação nova do ator: agenda o som dela, se houver.</summary>
     public void Action(string actor, string action)
     {
@@ -82,7 +85,7 @@ public sealed class SoundEffects
             wait -= dt;
             if (wait > 0) { _pending[i] = (wait, stream); continue; }
             _pending.RemoveAt(i);
-            var p = new AudioStreamPlayer { Stream = stream };
+            var p = new AudioStreamPlayer { Stream = stream, Bus = PortSettings.EffectsBus };
             _owner.AddChild(p);
             p.Finished += p.QueueFree;
             p.Play();

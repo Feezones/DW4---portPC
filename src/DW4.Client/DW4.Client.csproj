@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\DW4.Gameplay\DW4.Gameplay.csproj" />
     <ProjectReference Include="..\DW4.Script\DW4.Script.csproj" />
+    <ProjectReference Include="..\DW4.Media\DW4.Media.csproj" />
   </ItemGroup>
 
 </Project>

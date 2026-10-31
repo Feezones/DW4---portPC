@@ -5,8 +5,17 @@ namespace DW4.Formats.Igb;
 /// <summary>Uma geometria (igGeometryAttr) já resolvida, em coordenadas do mundo quando havia igTransform acima dela.</summary>
 public sealed class IgbMeshPart
 {
+    /// <summary>Osso a que a geometria inteira está presa (igModelViewMatrixBoneSelect); −1 = pele por vértice.</summary>
+    public int RigidBone { get; set; } = -1;
+    /// <summary>Destino do igBlendFunctionAttr que vale para a geometria (GL: 1 = ONE → mistura aditiva); −1 sem.</summary>
+    public int BlendDst { get; set; } = -1;
+    /// <summary>Cor do igColorAttr que vale para a geometria (RGBA 0..1); null sem. FATO: o plano sem textura da stagbs06 fica sob o
+    /// igColorAttr (0,4 0,4 0,4 1).</summary>
+    public float[]? Color { get; set; }
     public int GeometryIndex { get; init; }
     public int ImageIndex { get; set; } = -1;
+    /// <summary>Textura por nome (beTextureCtrlAttr sobre um igAttrSet acima da geometria), resolvida num pacote; null sem.</summary>
+    public string? TextureName { get; set; }
     public int PrimitiveType { get; set; }
     public int VertexCount { get; set; }
     public uint VertexFormat { get; set; }
@@ -16,9 +25,13 @@ public sealed class IgbMeshPart
     public List<uint> Colors { get; } = [];
     /// <summary>Raiz de cena (nó logo abaixo do igSceneInfo) de onde a geometria foi alcançada; -1 sem cena.</summary>
     public int SceneRoot { get; init; } = -1;
-    /// <summary>Pesos de pele (um float por vértice no DW4) e índice local de matriz (um byte por vértice).</summary>
+    /// <summary>
+    /// Pesos de pele e índices locais de matriz, <see cref="BlendCount"/> por vértice (em sequência). FATO: a maioria das peles do DW4
+    /// tem 1 (float + byte); o n_leomon tem 2 (8 B de pesos e 2 B de índices por vértice).
+    /// </summary>
     public List<float> BlendWeights { get; } = [];
     public List<int> BlendIndices { get; } = [];
+    public int BlendCount { get; set; } = 1;
     public List<int> Triangles { get; } = [];
     /// <summary>Uma linha por fluxo de vértices: slot externo, bloco de memória, tamanho, passo por vértice e se foi decodificado.</summary>
     public List<string> Notes { get; } = [];
@@ -59,6 +72,12 @@ public sealed class IgbScene
     public List<string> Notes { get; } = [];
     public int TransformCount { get; private set; }
     int _root = -1;
+    // beTextureCtrlAttr [@2 nome, @3 igAttrSet]: o igAttrSet e o que está abaixo dele usam a textura do pacote com esse nome
+    // (FATO no campo stag0101: o cenário BG02 usa P10G00n, P11G00n… do lh_pack/ls_pack #618/#619).
+    readonly Dictionary<int, string> _textureNameOf = [];
+    string? _textureName;
+    int _blendDst = -1;
+    float[]? _color;
 
     IgbScene(IgbFile f, byte[] data)
     {
@@ -70,6 +89,12 @@ public sealed class IgbScene
     public static IgbScene Read(IgbFile f, byte[] data)
     {
         var s = new IgbScene(f, data);
+        foreach (var tc in f.Slots.OfType<IgbObject>().Where(o => o.TypeName == "beTextureCtrlAttr"))
+        {
+            var name = tc.Fields.FirstOrDefault(v => v.Desc.Slot == 2 && v.Desc.ShortName == "String")?.Text;
+            int target = tc.Fields.FirstOrDefault(v => v.Desc.Slot == 3 && v.Desc.ShortName == "ObjectRef")?.AsInt32(s._le) ?? -1;
+            if (name != null && target >= 0) s._textureNameOf.TryAdd(target, name);
+        }
         var roots = new List<IgbObject>();
         foreach (var si in f.Slots.OfType<IgbObject>().Where(o => f.Is(o, "igSceneInfo")))
             foreach (var r in s.Refs(si))
@@ -99,6 +124,10 @@ public sealed class IgbScene
     void Visit(IgbObject node, float[]? parent, int image, HashSet<int> ancestors)
     {
         if (!ancestors.Add(node.Index)) return;
+        var savedName = _textureName;
+        var savedBlend = _blendDst;
+        var savedColor = _color;
+        if (_textureNameOf.TryGetValue(node.Index, out var tn)) _textureName = tn;
         var world = parent;
         if (_f.Is(node, "igTransform"))
         {
@@ -115,6 +144,13 @@ public sealed class IgbScene
         if (_f.Is(node, "igAttrSet"))
         {
             var attrs = AttrList(node);
+            // igBlendFunctionAttr [@4 origem, @5 destino] (GL 4 = SRC_ALPHA, 1 = ONE, 5 = ONE_MINUS_SRC_ALPHA): vale para o que está abaixo.
+            foreach (var a in attrs.Where(a => _f.Is(a, "igBlendFunctionAttr")))
+                _blendDst = a.Fields.FirstOrDefault(v => v.Desc.Slot == 5 && v.Desc.ShortName is "Int" or "Enum")?.AsInt32(_le) ?? _blendDst;
+            // igColorAttr [@4 Vec4f]: cor de vértice padrão para o que está abaixo.
+            foreach (var a in attrs.Where(a => _f.Is(a, "igColorAttr")))
+                if (a.Fields.FirstOrDefault(v => v.Desc.Slot == 4 && v.Raw.Length >= 16) is { } c)
+                    _color = [F32(c.Raw, 0), F32(c.Raw, 4), F32(c.Raw, 8), F32(c.Raw, 12)];
             foreach (var a in attrs.Where(a => _f.Is(a, "igTextureBindAttr")))
             {
                 int img = FindImage(a);
@@ -126,6 +162,9 @@ public sealed class IgbScene
 
         foreach (var child in Children(node)) Visit(child, world, image, ancestors);
         ancestors.Remove(node.Index);
+        _textureName = savedName;
+        _blendDst = savedBlend;
+        _color = savedColor;
     }
 
     // Filhos de um igGroup: igNodeList (igObjectList) ou referência direta a igNode.
@@ -201,7 +240,7 @@ public sealed class IgbScene
 
     IgbMeshPart BuildPart(IgbObject geom, float[]? world, int image)
     {
-        var part = new IgbMeshPart { GeometryIndex = geom.Index, ImageIndex = image, SceneRoot = _root };
+        var part = new IgbMeshPart { GeometryIndex = geom.Index, ImageIndex = image, SceneRoot = _root, TextureName = image < 0 ? _textureName : null, BlendDst = _blendDst, Color = _color };
         IgbObject? va = null, ia = null, pla = null;
         foreach (var r in Refs(geom))
         {
@@ -220,10 +259,12 @@ public sealed class IgbScene
         // Pele (igb-blender: MemoryRef no slot 7 = pesos, slot 8 = índices). No DW4: 4 B (float) e 1 B por vértice.
         var weights = Memory(va.Fields.FirstOrDefault(v => v.Desc.ShortName == "MemoryRef" && v.Desc.Slot == 7));
         var blendIdx = Memory(va.Fields.FirstOrDefault(v => v.Desc.ShortName == "MemoryRef" && v.Desc.Slot == 8));
-        if (n > 0 && weights.Length == 4 * n && blendIdx.Length == n)
+        int k = n > 0 && blendIdx.Length % n == 0 ? blendIdx.Length / n : 0;
+        if (k is >= 1 and <= 4 && weights.Length == 4 * k * n)
         {
-            for (int i = 0; i < n; i++) part.BlendWeights.Add(F32(weights, 4 * i));
-            for (int i = 0; i < n; i++) part.BlendIndices.Add(blendIdx[i]);
+            part.BlendCount = k;
+            for (int i = 0; i < k * n; i++) part.BlendWeights.Add(F32(weights, 4 * i));
+            for (int i = 0; i < k * n; i++) part.BlendIndices.Add(blendIdx[i]);
         }
         else if (weights.Length > 0 || blendIdx.Length > 0)
             part.Notes.Add($"pele não reconhecida: pesos {weights.Length} B, índices {blendIdx.Length} B para {n} vértices");

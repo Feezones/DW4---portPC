@@ -60,6 +60,15 @@ public sealed class GameTables
         return new EnemyAttack(t.Int(row, "TYPE"), t.Int(row, "TSUYOSA"), t.Int(row, "MEICHURITSU"), t.Int(row, "CHIMEIRITSU"), element);
     }
 
+    /// <summary>Campos de estado do golpe inimigo (eneatk: TYPE, KOUKA, KOUKARANK, KOUKATIME, MAHIRITSU, GEDOKU).</summary>
+    public EnemyEffect EnemyEffectRow(int code)
+    {
+        var t = this["eneatk"];
+        int row = code % 10000;
+        return new EnemyEffect(t.Int(row, "TYPE"), t.Text(row, "KOUKA"), t.Int(row, "KOUKARANK"), t.Int(row, "KOUKATIME"),
+            t.Int(row, "MAHIRITSU"), t.Int(row, "GEDOKU"));
+    }
+
     /// <summary>Inimigo pela linha da tabela enemy (Int@7 do gerador, HIPÓTESE forte).</summary>
     public Fighter Enemy(int row)
     {
@@ -121,7 +130,7 @@ public sealed class GameTables
             Luckritsu = A2("LUCKRITSU"),
             AttackDelay = Math.Min(70, Weapon("DELAY")),
             MaxHp = Max(PlayerGrowth.MaxHpMp(level, s.Int(shinkaRow, "MHP_INI"), s.Int(shinkaRow, "MHP_GROW"), Up(0)) + A1("MAXHP") + A2("MAXHP")),
-            // HIPÓTESE: UPCNT[1] é o do MMP (o [0] é o do MHP e os atributos começam no [2]).
+            // FATO (X-data, 0x803948E4..0x803949F0): UPCNT[0] = MHP, [1] = MMP, [2..6] = STR, AC, INT, MND, DEX.
             MaxMp = Max(PlayerGrowth.MaxHpMp(level, s.Int(shinkaRow, "MMP_INI"), s.Int(shinkaRow, "MMP_GROW"), Up(1)) + A1("MAXMP") + A2("MAXMP")),
             Skill = skill,
             WeaponSkillNo = Weapon("SKILL"),
