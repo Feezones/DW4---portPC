@@ -114,11 +114,12 @@ public partial class MainMenu : Control
             case "vagas": ShowSlots(); break;
             case "criar": ShowCreate(3); break;
             case "config": ShowSettings(); break;
+            case var st when st.StartsWith("status", System.StringComparison.Ordinal): ShowStatusPreview(st.Length > 7 ? st[7..] : ""); break;
         }
         await ToSignal(GetTree().CreateTimer(4.0), SceneTreeTimer.SignalName.Timeout);
         var dir = OS.GetEnvironment("DW4_TELA_PASTA") is { Length: > 0 } d ? d : @"D:\dw4-work\previas";
         System.IO.Directory.CreateDirectory(dir);
-        GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(dir, $"menu_{screen}.png"));
+        GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(dir, $"menu_{screen.Replace(':', '_')}.png"));
         GetTree().Quit();
     }
 

@@ -145,6 +145,30 @@ public sealed class Inventory
         }
     }
 
+    /// <summary>Tira o item na posição <paramref name="index"/> da DEVICEFOLDER ("Break" do menu). false fora da pasta.</summary>
+    public bool RemoveDeviceAt(int index)
+    {
+        if (index < 0 || index >= _devices.Count) return false;
+        _devices.RemoveAt(index);
+        return true;
+    }
+
+    /// <summary>"Sort" da Device Folder: ordem pela chave dada (estável).</summary>
+    public void SortDevices(Func<ItemRef, int> key)
+    {
+        var sorted = _devices.OrderBy(key).ToList();
+        _devices.Clear();
+        _devices.AddRange(sorted);
+    }
+
+    /// <summary>Joga fora discos ("Break" da Disk Folder). false sem essa quantidade.</summary>
+    public bool RemoveDisks(int conItemRow, int count)
+    {
+        if (count <= 0 || Disks(conItemRow) < count) return false;
+        _disks[conItemRow] -= count;
+        return true;
+    }
+
     /// <summary>
     /// Disco usado no painel (0x80349B0C): exige quantidade &gt; 0, gasta 1 e devolve a cura de HP e MP da conItem (o jogo
     /// soma com limite no máximo, como o ADDHP/ADDMP em 0x8036F220). Null sem disco. A recarga do slot não está aqui

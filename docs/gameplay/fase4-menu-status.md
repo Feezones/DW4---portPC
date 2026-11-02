@@ -29,3 +29,6 @@ Levantamento estático (main.dol e #179) de 2026-10-25. Nada executado.
   ainda não conta), submenus só registram a escolha.
 - **Pendente (refino)**: os glifos ⊂ ⊃ ∪ ∩ ¶ são ícones de elemento e de Data na fonte do jogo; com a fonte da Godot saem como
   símbolos. O rosto do i_stdigiface aparece deslocado/cortado na aba. Os dois dependem da fonte e da ordem de desenho originais.
+
+> 2026-11-02: a tela foi refeita com layout próprio e as subtelas; ver `menu-status-tab.md`. A seção "No port" acima descreve a
+> montagem antiga.
