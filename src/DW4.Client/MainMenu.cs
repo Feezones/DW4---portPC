@@ -26,7 +26,7 @@ public partial class MainMenu : Control
     // textos da stagIS13; "Hard" não está nos textos exportados.
     static readonly string[] Difficulties = ["Normal", "Hard", "Very Hard"];
     // O cliente desenha e controla as formas cuja pasta foi exportada (<fatia>/formas/<modelo>, ver Fatia.Evolve.cs).
-    static readonly string Common = OS.GetEnvironment("DW4_FATIA") is { Length: > 0 } d ? d : @"D:\dw4-work\fatia";
+    static readonly string Common = DataPaths.Fatia;
     static bool Playable(string model) => Fatia.HasPlayerModel(Common, model);
     const int NameMax = 12; // DECISÃO DO PORT: o limite do jogo não foi lido
 
@@ -44,6 +44,12 @@ public partial class MainMenu : Control
     public override void _Ready()
     {
         PortSettings.Apply(GetTree().Root);
+        if (DataPaths.Version is { Length: > 0 } version)
+        {
+            // Pacote do launcher: a versão publicada vai no título da janela e no log (para os relatos de teste).
+            DisplayServer.WindowSetTitle($"Digimon World 4 (port PC) {version}");
+            GD.Print($"[versao] {version}; dados em {DataPaths.Fatia}");
+        }
         if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_VER_MODELO").Length > 0)
         {
             CallDeferred(Node.MethodName.AddSibling, new ModelViewer());
@@ -58,7 +64,7 @@ public partial class MainMenu : Control
         }
         _shinka = LoadShinka();
         SetAnchorsPreset(LayoutPreset.FullRect);
-        var stages = OS.GetEnvironment("DW4_FASES") is { Length: > 0 } s ? s : @"D:\dw4-work\fases";
+        var stages = DataPaths.Fases;
         var problems = new List<string>();
         _stages = stages;
         _art = TitleArt.Create(this, stages, -1, problems);
@@ -171,7 +177,7 @@ public partial class MainMenu : Control
     // Nomes das formas (NAME e MODEL_NAME da shinka), lidos da pasta de trabalho: nada do jogo fica no repositório.
     static List<(string, string, int[])> LoadShinka()
     {
-        var stages = OS.GetEnvironment("DW4_FASES") is { Length: > 0 } s ? s : @"D:\dw4-work\fases";
+        var stages = DataPaths.Fases;
         var csv = Path.Combine(stages, Session.NewGameStage, "db", "db_shinka.csv");
         if (!File.Exists(csv)) return [];
         var lines = File.ReadAllLines(csv);

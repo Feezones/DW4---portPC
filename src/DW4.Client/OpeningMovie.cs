@@ -46,12 +46,10 @@ public partial class OpeningMovie : Control
     AudioStreamWav? _sound;
     string? _error;
 
-    /// <summary>Caminho do area.afs: DW4_ARQUIVOS (pasta files da extração) ou &lt;pasta das fases&gt;\..\extracted\files.</summary>
+    /// <summary>Caminho do area.afs, na pasta DataPaths.Arquivos.</summary>
     public static string AreaAfs()
     {
-        var files = OS.GetEnvironment("DW4_ARQUIVOS") is { Length: > 0 } a ? a
-            : Path.Combine(Path.GetDirectoryName(Path.GetFullPath(OS.GetEnvironment("DW4_FASES") is { Length: > 0 } s ? s : @"D:\dw4-work\fases")) ?? "", "extracted", "files");
-        return Path.Combine(files, "area.afs");
+        return Path.Combine(DataPaths.Arquivos, "area.afs");
     }
 
     public static bool CanPlay() => OS.GetEnvironment("DW4_SEM_FILME") != "1" && File.Exists(AreaAfs());

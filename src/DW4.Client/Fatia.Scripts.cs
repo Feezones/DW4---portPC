@@ -57,7 +57,7 @@ public partial class Fatia : IBeEngine
     void RunGameStart(BeHost host)
     {
         Session.PendingGameStart = false;
-        var stages = OS.GetEnvironment("DW4_FASES") is { Length: > 0 } s ? s : @"D:\dw4-work\fases";
+        var stages = DataPaths.Fases;
         var file = Path.Combine(stages, "stagis10", "lua", "gameStart.lua");
         if (!File.Exists(file)) { _problems.Add($"falta {file} (dw4 fase-exportar … stagIS10): flags do começo de jogo não refeitas"); return; }
         var gs = new StageScripts(new Dictionary<string, byte[]> { ["gameStart.lua"] = File.ReadAllBytes(file) }, host) { Error = (n, m) => ScriptLog($"ERRO {n}: {m}") };

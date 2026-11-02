@@ -19,3 +19,6 @@ bin/
 obj/
 *.user
 .vs/
+
+# Godot (cache de importação e pacotes exportados)
+.godot/
