@@ -5,6 +5,7 @@
 # Os dados extraídos (fatia, fases, area.afs) vão no pacote do CDN por decisão do responsável (2026-11-02); nunca no git.
 # Este script não sobe nada para a internet: o envio do CDN local para a produção é um passo separado, com OK.
 #
+# A exportação .NET autocontida usa os runtime packs win-x64 do nuget.org (cache em %USERPROFILE%\.nuget\packages).
 # Uso:  .\tools\scripts\publicar.ps1 -Versao 0.5.0 [-Opcional] [-SemExportar]
 param(
     [Parameter(Mandatory = $true)][string]$Versao,
@@ -39,9 +40,17 @@ if (-not $SemExportar) {
     $console = Get-ChildItem $Godot -Filter "Godot_v4.7.2-stable_mono_win64_console.exe" | Select-Object -First 1
     if (-not $console) { throw "Godot (console) não encontrada em $Godot" }
     $env:DW4_GODOT_NUPKGS = Join-Path $Godot "GodotSharp\Tools\nupkgs"
+    # Os nós do MSBuild e o servidor do compilador (VBCSCompiler) que ficam vivos herdam a saída da Godot e o
+    # _console.exe nunca termina.
+    $env:MSBUILDDISABLENODEREUSE = "1"
+    $env:UseSharedCompilation = "false"
     Remove-Item (Join-Path $Pacote "DW4.exe"), (Join-Path $Pacote "data_*") -Recurse -Force -ErrorAction SilentlyContinue
     & $console.FullName --headless --path $client --export-release "Windows" (Join-Path $Pacote "DW4.exe")
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $Pacote "DW4.exe"))) { throw "a exportação da Godot falhou (código $LASTEXITCODE)" }
+    # Sem o .sln a Godot exporta "com avisos" e devolve 0, mas o C# fica de fora e o DW4.exe não abre.
+    if (-not (Get-ChildItem (Join-Path $Pacote "data_*") -Recurse -Filter "DW4.Client.dll" -ErrorAction SilentlyContinue)) {
+        throw "a exportação saiu sem o C# (falta data_*\...\DW4.Client.dll); veja os erros da Godot acima"
+    }
 }
 
 # 2. Dados: espelha a fatia e as fases (robocopy /MIR só regrava o que mudou) e o area.afs da abertura.
