@@ -800,7 +800,11 @@ public partial class Fatia : Node3D
         Recalc();
         _hp = _pf!.MaxHp; // P2EEXPUP: sobe de nível com HP e MP cheios
         _mp = _pf.MaxMp;
-        Float(_player, $"NÍVEL {_level}", Colors.Yellow);
+        // FATO (P2EEXPUP 0x80373DE0..0x80373DF8, textos em 0x80458F30 + 0x898/0x8A4/0x8C0): depois do RECALCPLAYER o jogo manda
+        // MODELCTRL "i_getitempnl01" … "SQ_LVUP": o painel "LEVEL UP" (ação LVUP: FADESET IN 12, JOINTSET 290..360, FADESET OUT 40,
+        // depois SQ_ERAS). Sem a arte das janelas, o texto de antes.
+        if (!DeliverToWindows(new DW4.Script.Be.BeMessage("MODELCTRL", "i_getitempnl01", 0, "GENERATE", [], "SQ_LVUP")))
+            Float(_player, $"NÍVEL {_level}", Colors.Yellow);
     }
 
     // Golpe de inimigo ou objeto: código do HITBOX (70004 no Numemon) → linha da eneatk (HIPÓTESE forte), E2PISHITCHECK e
