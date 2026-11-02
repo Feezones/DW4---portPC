@@ -1286,6 +1286,9 @@ int IgbCena(string path, string which, string rootArg, string outDir, string? pa
         g.AddRootNode(g.AddNode(new JsonObject { ["name"] = name, ["mesh"] = mesh }));
     }
     g.Save(dir, "cena");
+    // Arma dupla: lado de cada superfície da malha "cena", na ordem (o cliente prende "right" na mão direita e "left" na esquerda).
+    if (parts.Any(p => p.Hand == "left"))
+        File.WriteAllText(Path.Combine(dir, "maos.json"), new JsonArray(parts.Select(p => (JsonNode?)(p.Hand ?? "right")).ToArray()).ToJsonString());
     var byImage = parts.GroupBy(p => p.ImageIndex).OrderByDescending(x => x.Count()).Select(x => $"#{x.Key}: {x.Count()}");
     report.AppendLine($"geometrias por imagem: {string.Join(", ", byImage)}");
     File.WriteAllText(Path.Combine(dir, "relatorio.txt"), report.ToString());

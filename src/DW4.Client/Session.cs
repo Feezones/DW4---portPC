@@ -30,11 +30,14 @@ public static class Session
 {
     public const string MenuScene = "res://MainMenu.tscn", GameScene = "res://Fatia.tscn";
     /// <summary>
-    /// FATO: a gatedisc.lua da stagIS10 (título, onde começa o jogo) e a da stagIS13 (criar/chamar Digimon) saem com
-    /// SETGENERATEPOS I&lt;3&gt; e NEXTSTAGE "stagML11". Personagem novo começa ali: lobby, entrada 3.
+    /// Começo do jogo vindo do menu: lobby, entrada 0. FATO: a gatedisc.lua (em toda fase, inclusive nas stagIS*) é o uso do
+    /// Gate Disk, que sai com SETGENERATEPOS I&lt;3&gt; para o Emergency Gate do lobby (entrada 3, em (210, 40, 120)); o
+    /// hostLoad.lua e o gameStart.lua da stagIS10 não escolhem entrada. FATO (relato do usuário com o original, 2026-11-02): ao
+    /// entrar, o Digimon aparece em (60,9, 10, −43), dentro da caixa da entrada 0 da stagml11 (41..79 × −55..−20; vagas em
+    /// (60, −30), (60, −50), (70, −40), (50, −40)). HIPÓTESE: sem SETGENERATEPOS o jogo usa a entrada 0.
     /// </summary>
     public const string NewGameStage = "stagml11";
-    public const int NewGameEntry = 3;
+    public const int NewGameEntry = 0;
 
     static ICharacterStore? s_store;
     public static ICharacterStore Store
@@ -80,8 +83,9 @@ public static class Session
         Fatia.UseRam(ram);
         PendingGameStart = true;
         Fatia.PlayerModel = character.Model.Length > 0 ? character.Model : "p_girumon";
-        // Vaga gravada numa fase de menu (stagIS*, sem cenário no port) ou sem fase: volta ao lobby, entrada 3.
-        bool lobby = character.Stage.Length == 0 || Fatia.IsMenuStage(character.Stage);
+        // Vaga gravada numa fase de menu (stagIS*, sem cenário no port), sem fase ou no próprio lobby: começa no lobby, entrada 0
+        // (a 3 das vagas antigas era a do Gate Disk).
+        bool lobby = character.Stage.Length == 0 || Fatia.IsMenuStage(character.Stage) || character.Stage.Equals(NewGameStage, System.StringComparison.OrdinalIgnoreCase);
         // Vaga gravada no meio do tutorial: volta ao começo dele, como o restart.lua (ResumePoint).
         var (stage, entry) = lobby ? (NewGameStage, NewGameEntry) : DW4.Script.Save.ResumePoint.Adjust(ram, character.Stage, character.Entry);
         OS.SetEnvironment("DW4_FASE", stage);

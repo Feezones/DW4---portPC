@@ -554,6 +554,10 @@ public partial class Fatia : Node3D
             Array.Fill(_skill, Math.Min(9999, debugLevel * 10));
         }
         _equip = Ram.Players[0].Equipment; // equipamento da vaga (sem vaga: a w_sword01 da fatia, no Recalc)
+        // DEPURAÇÃO (só no build Debug): DW4_ARMA=w_arm01 começa com essa arma (conferir modelo na mão, estilo e tiro).
+        if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_ARMA") is { Length: > 0 } debugWeapon
+            && _db["weapon"].RowsWhere("MODEL", debugWeapon).DefaultIfEmpty(-1).First() is int debugRow and >= 0)
+            _equip = new Equipment(debugRow);
         Recalc();
         _hp = _pf!.MaxHp;
         _mp = _pf.MaxMp;
@@ -785,7 +789,9 @@ public partial class Fatia : Node3D
 
     void GainExp(Enemy e)
     {
-        int gain = DamageFormula.ExpShare(_db!["enemy"].Int(e.Kind.Row, "EXP"), 0, players: 1, killer: true);
+        // FATO (P2EEXPUP 0x80373B48): EXP do inimigo × (EXPRITSU + 100)/100, com o EXPRITSU do jogador (equipamento e chips);
+        // antes ia 0 e o bônus de EXP dos itens não valia.
+        int gain = DamageFormula.ExpShare(_db!["enemy"].Int(e.Kind.Row, "EXP"), _pf?.Expritsu ?? 0, players: 1, killer: true);
         _exp += gain;
         _lastEvent += $"  +{gain} EXP";
         bool up = false;
