@@ -196,7 +196,10 @@ public partial class OpeningMovie : Control
     void Layout()
     {
         if (_screen == null || _width == 0) return;
-        var view = Size;
+        // A abertura cobre a janela inteira, qualquer que seja o tamanho do pai (na 0.5.1 ela saía 640 × 285 no canto).
+        var view = GetViewportRect().Size;
+        Position = Vector2.Zero;
+        Size = view;
         float scale = Math.Min(view.X / _width, view.Y / _height);
         _screen.Size = new Vector2(_width, _height) * scale;
         _screen.Position = (view - _screen.Size) / 2;

@@ -281,7 +281,12 @@ public partial class MainMenu : Control
         catch (Exception e) when (e is KeyNotFoundException or IndexOutOfRangeException or ArgumentException or InvalidOperationException) { return (0, 0); }
     }
 
-    void ShowSlots() => ShowSlotsUi();
+    void ShowSlots()
+    {
+        // As vagas são da conta do launcher: sem ela (exe aberto direto), nenhuma vaga aparece.
+        if (Session.Account == null) { Message("Abra o Digimon World 4 pelo launcher RE:DIGITAL, com a sua conta conectada, para ver e criar os seus Digimon.", ShowTitle); return; }
+        ShowSlotsUi();
+    }
 
     void Play(int slot, CharacterSave c)
     {
@@ -314,7 +319,7 @@ public partial class MainMenu : Control
         Title($"Apagar {c.Name} ({FormName(c.CurrentForm)} nv {c.Level})?", 26);
         Title("Isso não pode ser desfeito.", 18);
         var no = Btn(_root, "Não, manter", ShowSlots);
-        Btn(_root, "Sim, apagar", () => { Session.Store.Delete(Session.Account, slot); ShowSlots(); });
+        Btn(_root, "Sim, apagar", () => { Session.Store.Delete(Session.Account!, slot); ShowSlots(); });
         no.CallDeferred(Control.MethodName.GrabFocus);
     }
 
