@@ -102,6 +102,7 @@ public partial class Fatia
 
     void SpawnShot(Starter s, Transform3D at, Fighter? owner, string ownerName, Func<Transform3D?> source, Func<string?> sourceSequence)
     {
+        if (DiagNpc) GD.Print($"[tiro] {ownerName}: {s.Effect} ({s.Action})");
         if (_enemyShots.Count > 200 || ShotSeqs(s.Effect) is not { } seqs) return;
         var seq = new ObjectSequencer(seqs.Seqs, seqs.Acts);
         if (!seq.Start(s.Sequence) && !seq.Start(seqs.Seqs.Keys.FirstOrDefault(k => k.StartsWith("SQ_ATCK", StringComparison.Ordinal)) ?? "")) return;
@@ -156,6 +157,15 @@ public partial class Fatia
                 () => src.Dead ? null : new Transform3D(new Basis(Vector3.Up, src.Yaw), src.Body.GlobalPosition),
                 () => src.Dead || !src.Started ? null : src.Runner?.Sequence);
             e.ShotAction = la; e.ShotFrame = lf;
+        }
+        // Objetos também disparam pela ação (FATO: x_bltcannon01 na BLST01 do g_cannon01, deslocamento (0, 7,5, 1)).
+        foreach (var o in _objects.Where(o => !o.Dead && o.Seq != null && !o.Erased).ToList())
+        {
+            string? la = o.ShotAction; float lf = o.ShotFrame;
+            var src = o;
+            FireStarters(o.Name, o.Seq!.Action, o.Seq.ActionTime, ref la, ref lf, o.Actor.Root.GlobalTransform, o.Owner?.Kind.Stats, o.Name,
+                () => src.Dead || src.Erased ? null : src.Actor.Root.GlobalTransform, () => src.Dead || src.Erased ? null : src.Seq?.Sequence);
+            o.ShotAction = la; o.ShotFrame = lf;
         }
         for (int i = _enemyShots.Count - 1; i >= 0; i--)
         {

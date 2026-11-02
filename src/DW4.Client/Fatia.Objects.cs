@@ -49,6 +49,10 @@ public partial class Fatia
         /// <summary>IA de objeto com mapas (f_bit: MAP00 e MAP01, SQ_PHASE2 troca pelo AIMAP) e a sequência que ela pediu.</summary>
         public EnemyBrain? Brain { get; set; }
         public string? AiSequence { get; set; }
+        /// <summary>FLASHSET já visto (Fatia.Flash) e ação e quadro já vistos pelos disparadores (Fatia.Shots).</summary>
+        public int FlashSerial { get; set; }
+        public string? ShotAction { get; set; }
+        public float ShotFrame { get; set; }
         /// <summary>NPC passeando (o script ligou um mapa de IA, ex.: SQ_WALKON → AIMAP MAP01) e o ponto atual do aim_&lt;nome&gt;.lua.</summary>
         public bool Wander { get; set; }
         public Vector3? Target { get; set; }
@@ -144,7 +148,8 @@ public partial class Fatia
         };
         // f_* (f_bit): IA de luta. n_*: IA de passeio, ligada quando o script manda um AIMAP (ver UpdateNpcAi).
         if (o.Seq != null && name.StartsWith("n_", StringComparison.Ordinal)) o.Seq.ReturnToWaitAtEnd = true; // NPC: SQ_TALK sem JUMP volta ao SQ_WAIT (HIPÓTESE)
-        if ((name.StartsWith("f_", StringComparison.Ordinal) || name.StartsWith("n_", StringComparison.Ordinal)) && json != null && AiMap.LoadAll(json) is { Count: > 0 } maps) o.Brain = new EnemyBrain(maps, SeqCommand.LoadAll(json), () => _rng.Next(16));
+        // g_* com mapa de IA (FATO: g_cannon01 MAP00 2500/3600/6400 "NEAR": perto → SQ_FIRE) também ganha o cérebro.
+        if ((name.StartsWith("f_", StringComparison.Ordinal) || name.StartsWith("n_", StringComparison.Ordinal) || name.StartsWith("g_", StringComparison.Ordinal)) && json != null && AiMap.LoadAll(json) is { Count: > 0 } maps) o.Brain = new EnemyBrain(maps, SeqCommand.LoadAll(json), () => _rng.Next(16));
         AddChild(actor.Root);
         // HIPÓTESE: rotação do GENERATE em graus no eixo do mundo (0/±90/180 nos scripts; o −90° do Numemon já bate assim).
         actor.Root.Position = pos;
@@ -224,6 +229,7 @@ public partial class Fatia
             o.Tick(dt);
             if (o.Seq?.Motion.Attached is { } rl && AttachTarget(rl, o.Name) is { } at) o.Actor.Root.GlobalTransform = at;
             UpdateObjectAi(o, dt);
+            CheckObjectFlash(o);
             while (o.Seq?.TakeLuaCallWithName() is { } lua) RunLuaCall(lua.Name, o.Name, o, lua.Call); // LUACALL das peças f_* (ex.: f_devl1f2 "bmh")
             UpdateCharacterAnim(o);
             CheckFloorHit(o);
@@ -311,12 +317,23 @@ public partial class Fatia
             brain.Release();
             o.AiSequence = null;
         }
-        if (seq.Sequence != "SQ_WAIT") return; // entrada, saída e as sequências pedidas pelos scripts mandam
         var p = o.Actor.Root.GlobalPosition;
         var t = _player.GlobalPosition;
+        // HIPÓTESE (nome da ação: "homing"): a torreta ligada (SQ_WAIT no rótulo ON, ação HMNG01) vira para o jogador no máximo o
+        // giro por quadro do mapa (0,0349 = 2°); FATO: o SQ_WAIT "ON" tem MOVE "Stop" e HMNG01, e o tiro sai para a frente (+z).
+        if (o.Name.StartsWith("g_", StringComparison.Ordinal) && seq.Action == "HMNG01")
+        {
+            var root = o.Actor.Root;
+            float want = MathF.Atan2(t.X - p.X, t.Z - p.Z);
+            float diff = Mathf.Wrap(want - root.GlobalRotation.Y, -MathF.PI, MathF.PI);
+            float step = brain.Map.TurnPerFrame * dt * SequenceRunner.FramesPerSecond;
+            root.RotateY(Math.Clamp(diff, -step, step));
+        }
+        if (seq.Sequence != "SQ_WAIT") return; // entrada, saída e as sequências pedidas pelos scripts mandam
         brain.Tick(dt, new System.Numerics.Vector3(p.X, p.Y, p.Z), new System.Numerics.Vector3(t.X, t.Y, t.Z), o.Actor.Root.GlobalRotation.Y);
         if (brain.External is { } ext)
         {
+            if (DiagNpc) GD.Print($"[obj-ia] {o.Name}/{o.Index}: {ext} (estava em {seq.Sequence}, ação {seq.Action})");
             o.SetSequence(ext);
             o.AiSequence = ext;
         }

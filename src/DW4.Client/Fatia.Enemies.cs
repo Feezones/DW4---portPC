@@ -29,6 +29,9 @@ public partial class Fatia
         /// <summary>Ação e quadro já vistos pelos disparadores (Fatia.Shots).</summary>
         public string? ShotAction { get; set; }
         public float ShotFrame { get; set; }
+        /// <summary>Ação e quadro já vistos pelo pisca de dano (Fatia.Flash).</summary>
+        public string? FlashAction { get; set; }
+        public float FlashFrame { get; set; }
         /// <summary>LUACALL de evento armado (nome de chamada terminado em "Hit", ex. "wft" "WHit"): roda quando bater na parede.</summary>
         public (string Name, string Call)? HitLua { get; set; }
         public float HitHeight { get; set; } = 14;
@@ -86,6 +89,12 @@ public partial class Fatia
         public int MaxCount { get; init; }
         public int EnemyRow { get; init; }
         public string? CallLua { get; init; }
+        /// <summary>_startModeStr ("direct", "radar", "timer"…), _startData e _genePoint.</summary>
+        public string StartMode { get; init; } = "direct";
+        public float StartData { get; init; }
+        public Vector3 Point { get; init; }
+        /// <summary>Ligado (START, ou sozinho quando nenhum script da fase cita o gerador) mas esperando o modo de início.</summary>
+        public bool Armed { get; set; }
         public bool Active { get; set; }
         public int Spawned { get; set; }
         public bool Finished { get; set; }
@@ -287,9 +296,14 @@ public partial class Fatia
                     MaxCount = g.GetProperty("maxCount")[0].GetInt32(),
                     EnemyRow = g.GetProperty("enemyRow").GetInt32(),
                     CallLua = g.TryGetProperty("callLua", out var cl) && cl.ValueKind == JsonValueKind.String ? cl.GetString() : null,
+                    StartMode = g.TryGetProperty("startMode", out var sm) ? sm.GetString() ?? "direct" : "direct",
+                    StartData = g.TryGetProperty("startData", out var sd) ? sd.GetSingle() : 0,
+                    // Sem "point" (exportação antiga): a primeira vaga (FATO: igual ao ponto nos geradores de posição relativa da stag0101).
+                    Point = g.TryGetProperty("point", out var pt) ? V(pt) : g.GetProperty("positions").EnumerateArray().Select(V).FirstOrDefault(),
                 };
                 _generators[gen.Name] = gen;
             }
+            ArmUnreferencedGenerators();
         }
         else if (_dir == _common) _problems.Add("falta geradores.json (dw4 igb-geradores ndmw.afs 184 <fatia>): sem ondas, Numemon fixo");
         var matFile = Path.Combine(_dir, "gatilhos.json");
@@ -311,16 +325,56 @@ public partial class Fatia
         else _problems.Add("falta gatilhos.json (dw4 igb-gatilhos ndmw.afs 179 <fatia>): sem gatilhos de área");
     }
 
+    // FATO (main.dol 0x802FD658..: tratador do GENERATER com START, STOP, STOPREVERS, RESET, RESTART, PERFECTDROP, ONFREEZE,
+    // OFFREEZE; 0x802FCF80: a atualização só roda com o byte +0x14 ligado, que o START liga). Na stag0101 nenhum script cita
+    // GENE-00..13, GENE-17/18/20/23..29/31..52 nem os barris e caixotes GBRL/GWCS, e o jogo tem Goburimons e caixas ali (relato do
+    // usuário, 2026-11-02); os citados são as ondas de sala (dng1: matg01..07 → START) e os 16 épicos de um mesmo ponto, um por
+    // forma (first.lua). FATO (stag0101): quase todo gerador "direct" de 1 inimigo sem script fica exatamente numa vaga de um
+    // gerador "radar" (GENE-01..05 nas vagas do GENE-00, GENE-11..13 nas do GENE-10…); ligar todos dava 40 Goburimons vivos de
+    // uma vez. HIPÓTESE: nasce ligado o gerador sem script que é "radar" (grupo que aparece quando o jogador chega perto) ou que
+    // gera objeto (barris e caixotes g_*); os "direct" de inimigo sem script ficam desligados (alternativas por vaga, uso não
+    // achado). Onde o byte +0x14 começa ligado não foi achado no código nativo.
+    void ArmUnreferencedGenerators()
+    {
+        var luaDir = Path.Combine(_dir, "lua");
+        if (!Directory.Exists(luaDir)) return;
+        var cited = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var file in Directory.EnumerateFiles(luaDir, "*.lua"))
+            foreach (System.Text.RegularExpressions.Match s in System.Text.RegularExpressions.Regex.Matches(
+                System.Text.Encoding.Latin1.GetString(File.ReadAllBytes(file)), @"[ -~]{3,}"))
+                cited.Add(s.Value);
+        foreach (var g in _generators.Values.Where(g => !cited.Contains(g.Name)))
+        {
+            string model = _db != null && _db.Contains("enemy") ? _db["enemy"].Text(g.EnemyRow, "MODEL") : "";
+            if (g.StartMode.StartsWith('r') || model.StartsWith("g_", StringComparison.Ordinal)) g.Armed = true;
+        }
+    }
+
+    // Modo de início de um gerador ligado. FATO (0x802FD1E0..0x802FD2C8): 'd' (direct) começa já; 'r' (radar) quando a distância²
+    // do jogador mais perto ao _genePoint fica ≤ _startData (3025 = 55²); 't' (timer) pelo BOOT_TIMER, aqui começa já (HIPÓTESE).
+    void TickGeneratorStart()
+    {
+        foreach (var g in _generators.Values.Where(g => g.Armed && !g.Active && !g.Finished))
+        {
+            if (g.StartMode.StartsWith('r') && _player.GlobalPosition.DistanceSquaredTo(g.Point) > g.StartData) continue;
+            g.Armed = false;
+            g.Active = true;
+            ScriptLog($"{g.Name}: começou ({g.StartMode})");
+        }
+    }
+
     bool DeliverToGenerators(BeMessage m)
     {
         if (m.Class != "GENERATER" || m.Text(0) is not { } name || !_generators.TryGetValue(name, out var g)) return false;
         switch (m.Command)
         {
             case "START":
-                if (!g.Finished) g.Active = true;
+                // Depois de um STOP (pausa), volta a gerar; na primeira vez, espera o modo de início (direct/radar).
+                if (!g.Finished) { if (g.Spawned > 0) g.Active = true; else g.Armed = true; }
                 break;
             case "STOP":
                 g.Active = false;
+                g.Armed = false;
                 break;
             // FATO (en2_f_luce.lua: GENERATER RESTART "GENE-01" gera a f_luce2, a peça que derruba o chefe 3). HIPÓTESE: recomeça a
             // contagem e liga de novo, mesmo depois de terminado.
@@ -358,6 +412,7 @@ public partial class Fatia
 
     void TickGenerators()
     {
+        TickGeneratorStart();
         foreach (var g in _generators.Values.Where(g => g.Active))
         {
             if (g.Spawned >= g.Count || g.Alive.Count >= g.MaxCount || g.Positions.Length == 0) continue;
@@ -403,6 +458,7 @@ public partial class Fatia
 
     void UpdateEnemy(Enemy e, float dt)
     {
+        CheckEnemyFlash(e);
         if (e.Dead)
         {
             if (!e.Respawns) return;

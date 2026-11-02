@@ -327,6 +327,7 @@ public partial class Fatia : Node3D
         TickStageChange(dt);
         if (_leaving) return;
         TickObjects(dt);
+        TickFlashes(dt);
         var input = Input.GetVector(PortInput.Name("esquerda"), PortInput.Name("direita"), PortInput.Name("cima"), PortInput.Name("baixo"));
         input = input.LimitLength(1);
 

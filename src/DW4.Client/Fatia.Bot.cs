@@ -25,7 +25,7 @@ public partial class Fatia
             _walkTarget ??= _spawn + new Vector3(System.MathF.Sin(_move.Facing), 0, System.MathF.Cos(_move.Facing)) * 40;
             var go2 = new Vector3(_walkTarget.Value.X - _player.GlobalPosition.X, 0, _walkTarget.Value.Z - _player.GlobalPosition.Z);
             dir = go2.Length() > 2 ? go2.Normalized() : Vector3.Zero;
-            attackDown = _tick % 30 < 2 && (TalkWindowOpen || _choice >= 0 || _listChoice >= 0);
+            attackDown = _tick % 30 < 2 && (TalkWindowOpen || _choice >= 0 || _listChoice >= 0 || !_padEnabled);
             if (_tick % 60 == 0) GD.Print($"[andar] {_player.GlobalPosition.Round()} chão {_player.IsOnFloor()} parede {_player.IsOnWall()} início {_spawn.Round()}");
             return;
         }
@@ -35,7 +35,7 @@ public partial class Fatia
         {
             var go = new Vector3(wx, 0, wz) - new Vector3(_player.GlobalPosition.X, 0, _player.GlobalPosition.Z);
             dir = go.Length() > 2 ? go.Normalized() : Vector3.Zero;
-            attackDown = _tick % 30 < 2 && (TalkWindowOpen || _choice >= 0 || _listChoice >= 0);
+            attackDown = _tick % 30 < 2 && (TalkWindowOpen || _choice >= 0 || _listChoice >= 0 || !_padEnabled);
             if (_tick % 60 == 0) GD.Print($"[andar] {_player.GlobalPosition.Round()} chão {_player.IsOnFloor()} parede {_player.IsOnWall()}");
             return;
         }

@@ -48,6 +48,8 @@ public sealed class ObjectSequencer
     public float ActionTime { get; private set; }
     public float Alpha { get; private set; } = 1;
     public bool Running { get; private set; }
+    /// <summary>Conta os FLASHSET "Damage" executados (pisca de dano; quem desenha compara com o último visto).</summary>
+    public int FlashSerial { get; private set; }
     /// <summary>SQ_ERAS: o objeto deve sumir.</summary>
     public bool Erased { get; private set; }
     public IEnumerable<HitBox> ActiveHitBoxes => _boxes.Where(b => b.Age >= b.Box.StartFrame).Select(b => b.Box);
@@ -257,6 +259,9 @@ public sealed class ObjectSequencer
                     break;
                 case "FADESET":
                     Fade(c);
+                    break;
+                case "FLASHSET" when c.S(0) == "Damage":
+                    FlashSerial++;
                     break;
                 case "WAITCHECK" when c.S(0) == "Frame":
                     _actWait = c.F(1);

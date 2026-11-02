@@ -1690,6 +1690,7 @@ int IgbGeradores(string path, string which, string outDir)
         ["enemyRow"] = g.EnemyRow,
         ["callLua"] = g.CallLua,
         ["global"] = g.Global,
+        ["point"] = V([g.Point.X, g.Point.Y, g.Point.Z]),
         ["startMode"] = g.StartMode, ["startData"] = g.StartData, ["fillMode"] = g.FillMode, ["fillData"] = g.FillData,
     }).ToArray());
     Directory.CreateDirectory(full);
