@@ -26,3 +26,12 @@ Relato do usuário: parede invisível no meio da ponte suspensa da stag0101 (F3:
 - O jogador sobe degraus de até 6 (`Fatia.Step.cs`; HIPÓTESE do valor). A cápsula sozinha parava em bordas de ~0,7.
 - Objeto transparente (alpha 0) não segura o jogador.
 - Build Debug: linha "parede:" no F3 e log `[parede]` com a peça da colisão ou o corpo que está segurando.
+
+## Correção no arquivo exportado (2026-11-02, teste sem janela)
+
+- **FATO:** nos `colisao.gltf` exportados o nome `limit_Circle` não aparece; o cilindro é o nó `colisao-colonly` (a malha do
+  nó raiz da colisão): 32 triângulos na caixa 403..517 × 0..250 × 93..207 em 83 fases (403..517 × 20..220 × 93..207 em
+  stagis08/10/20). Com o teste só pelo nome, o bot ainda parava em (461, 47, 96) na ponte da stag0101.
+- O cliente reconhece também pela caixa (`IsLimitCircle`, Fatia.cs). Os outros `colisao-colonly` ficam: stag0203 (420
+  triângulos de −2500 a 4300) e as telas stagis07/09/11/12/13 e stagml14 (caixa de 24 triângulos).
+- Bot sem janela (DW4_ANDAR=462,40 a partir da entrada 0): z 230 → 40 sem parede.

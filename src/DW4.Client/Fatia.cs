@@ -989,6 +989,13 @@ public partial class Fatia : Node3D
     // (doorwall01..03 da dng1, Fatia.Scripts.cs).
     readonly List<(string Path, CollisionShape3D Shape)> _collisionShapes = [];
 
+    static bool IsLimitCircle(MeshInstance3D mi, Node3D collision)
+    {
+        var box = mi.GlobalTransformIn(collision) * mi.Mesh.GetAabb();
+        bool Near(float v, float want) => Math.Abs(v - want) < 2f;
+        return Near(box.Position.X, 403) && Near(box.End.X, 517) && Near(box.Position.Z, 93) && Near(box.End.Z, 207) && box.Size.Y > 150;
+    }
+
     StaticBody3D MakeStaticBody(Node3D collision)
     {
         var body = new StaticBody3D();
@@ -1005,7 +1012,11 @@ public partial class Fatia : Node3D
             // cilindro de 32 triângulos com a mesma caixa (403..517, 0..250, 93..207) em dng101b1, dng101b2, stag0001, stag0101 e
             // até na tela stagis10, sem nada visível, e corta a ponte da stag0101 onde o jogador parava. HIPÓTESE: é um limite
             // que o jogo só liga por script (HITLANDMODEL limit_Circle ONHIT, tratado em Fatia.Scripts.cs); começa desligado.
-            if (path.Any(p => p.Contains("limit_Circle", StringComparison.Ordinal))) shape.Disabled = true;
+            // FATO (colisao.gltf exportados, 2026-11-02): o nome limit_Circle não chega ao arquivo; o cilindro é o nó "colisao-colonly"
+            // (a malha do próprio nó raiz da colisão), 32 triângulos na caixa 403..517 × 0..250 × 93..207 em 83 das 98 fases (e
+            // 403..517 × 20..220 × 93..207 em stagis08/10/20). Reconhecido pela caixa, sem desligar o "colisao-colonly" das outras
+            // fases (stag0203: 420 triângulos de −2500 a 4300; telas stagis: caixa de 24 triângulos).
+            if (path.Any(p => p.Contains("limit_Circle", StringComparison.Ordinal)) || IsLimitCircle(mi, collision)) shape.Disabled = true;
             _collisionShapes.Add((string.Join("/", path), shape));
         }
         collision.QueueFree();
