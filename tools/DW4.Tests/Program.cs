@@ -193,15 +193,17 @@ Test("Online: chat com canais (geral, grupo, privada), comandos /g /p /w /r e an
     True(f.Allow("a", t.AddSeconds(5)), "janela passou");
 });
 
-Test("Online: grupo de até 4 (convite com validade, aceite, cheio, saída do líder, expulsar)", () =>
+Test("Online: grupo de até 4 como na DMO.API (só o líder, só amigos, convite de 60 s, acaba quando sobra 1)", () =>
 {
     var now = new DateTime(2026, 11, 2, 0, 0, 0, DateTimeKind.Utc);
     var p = new DW4.Gameplay.Online.PartyGroup("p1", "Gui");
+    Equal("NaoAmigo", p.Invite("Gui", "Zé", now, out _, mutualFriends: false).Code, "só amigos");
     True(p.Invite("Gui", "Ana", now, out var i1).Ok && i1 != null, "convite");
     True(!p.Invite("Gui", "ana", now, out _).Ok, "convite repetido");
     True(p.Accept(i1!.Id, "Ana", now.AddSeconds(10)).Ok && p.Count == 2, "Ana entrou");
+    Equal("NaoLider", p.Invite("Ana", "Bia", now, out _).Code, "só o líder convida");
     p.Invite("Gui", "Bia", now, out var i2);
-    p.Invite("Ana", "Caio", now, out var i3);
+    p.Invite("Gui", "Caio", now, out var i3);
     Equal("GrupoCheio", p.Invite("Gui", "Duda", now, out _).Code, "2 membros + 2 convites = cheio");
     True(p.Accept(i3!.Id, "Caio", now.AddSeconds(20)).Ok, "Caio entrou");
     True(!p.Accept(i2!.Id, "Bia", now.AddSeconds(61)).Ok, "convite vencido");
@@ -210,9 +212,9 @@ Test("Online: grupo de até 4 (convite com validade, aceite, cheio, saída do l�
     Equal("GrupoCheio", p.Invite("Gui", "Edu", now.AddSeconds(72), out _).Code, "não passa de 4");
     Equal("NaoLider", p.Kick("Ana", "Caio").Code, "só o líder expulsa");
     True(p.Kick("Gui", "Caio").Ok && p.Count == 3, "líder expulsa");
-    True(p.Leave("Gui").Ok && p.Leader == "Ana", "líder saiu: próximo vira líder");
-    p.Leave("Ana"); p.Leave("Duda");
-    True(p.IsDisbanded, "grupo acaba vazio");
+    True(p.Leave("Gui").Ok && p.Leader == "Ana" && !p.IsDisbanded, "líder saiu: o mais antigo vira líder");
+    p.Leave("Duda");
+    True(p.IsDisbanded && p.Count == 0, "sobrou 1: o grupo acaba");
 });
 
 Test("Online: XP dividida como no original, BIT dividido no grupo e NINZU pelos membros na fase", () =>
@@ -245,7 +247,9 @@ Test("Online: menu do F (jogador mais perto e opções conforme grupo e amizade)
     True(!o[0].Enabled && o[0].Reason == "Só o líder convida.", "não líder");
     True(!o[1].Enabled && o[2].Enabled, "já amigo; troca livre");
     o = DW4.Gameplay.Online.PlayerInteraction.Options("Bia", new(null, "Gui", false, false, false, false));
-    True(o.All(x => x.Enabled), "sem grupo: tudo liberado");
+    True(!o[0].Enabled && o[0].Reason!.StartsWith("Só amigos"), "não amigo não é convidado");
+    o = DW4.Gameplay.Online.PlayerInteraction.Options("Bia", new(null, "Gui", true, false, false, false));
+    True(o[0].Enabled && o[2].Enabled, "amigo e sem grupo: convida e troca");
     var b = new InputBindings();
     True(b.Get(InputBindings.Keyboard, "interagir").SequenceEqual(new[] { "tecla:F" }), "F no teclado");
 });

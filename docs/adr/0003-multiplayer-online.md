@@ -1,6 +1,6 @@
 # ADR 0003: multiplayer online (chat, grupos, amigos, troca)
 
-Status: **proposta** (2026-11-02), aguardando aprovação do responsável. Nenhum código de rede antes disso (roadmap, F6).
+Status: **aprovada** pelo responsável em 2026-11-02 ("Aprovo sim"), incluindo o pacote LiteNetLib para o servidor do DW4.
 
 ## Pedido (feelipe, 2026-11-02)
 
@@ -20,7 +20,14 @@ grupo; dificuldade da fase sobe com o número de jogadores.
   `PresenceChanged` (com `inDw4`, `inDmo`, `inLauncher`), `PartyUpdated`, `PartyInviteReceived`, `PartyLeft` etc.
   Party com `maxSize` 4. O catálogo já marca o jogo `dw4` com `"party": true`.
 - O jogo `dw4` do catálogo ainda abre o Dolphin com o disco; o port vai substituir essa entrada.
-- **DESCONHECIDO**: onde está o código-fonte da DMO.API (não está em `Digital UniServer atual 07`). Perguntado ao responsável.
+- Código da DMO.API: repositório `Feezones/privateDmoSite` (`backend/src/DMO.API`), em produção na VPS do responsável.
+  Ela **já prevê o servidor do DW4** (`Dw4Controller`, na mesma VPS, chave `X-Service-Key` e só localhost):
+  `POST dw4/introspect` (valida o token do launcher e devolve conta, Tamer e party), `POST dw4/presence` (heartbeat a cada
+  ≤ 30 s, vence em 90 s; liga o "no DW4" dos amigos) e `GET dw4/party/{accountId}`.
+- Regras da party na API (`PartyService`, decisões do responsável de 2026-10-18): até 4; **só o líder convida**; **só amigos
+  mútuos sem bloqueio**; o convidado precisa estar no launcher ou no DW4; convite vale 60 s; líder que sai ou fica 30 s
+  offline passa a liderança ao membro mais antigo; a party acaba quando sobra 1. `PartyGroup` segue essas regras.
+- O hub social ainda **não tem chat**. O ticket de jogo (`RDT1…`, uso único, 2 min) hoje só é consumido pelo servidor do DMO.
 
 **Original** (`docs/gameplay/fase4-levantamento-grupo.md`): até 4 jogadores; progresso da missão é do grupo, nível, EXP, BIT e
 inventário de cada um; NINZU escala a quantidade de inimigos (PlayerData), não o HP; EXP pelo P2EEXPUP; BIT para quem pega.
@@ -42,9 +49,10 @@ Três peças, cada uma com um papel:
    lista valerem no launcher, no DMO e no DW4. Acrescentar no hub social:
    - `SendChat(canal, para, texto)` e o evento `ChatReceived` (geral, grupo e privada), com anti-spam no servidor
      (`ChatFlood`: 5 mensagens a cada 5 s) e respeitando os bloqueios que já existem;
-   - presença "no DW4" vinda do próprio jogo (hoje a API não sabe quando alguém entra ou sai).
+   - consumo do ticket de jogo pelo servidor do DW4 (hoje só o do DMO consome); a presença e a introspecção já existem.
    O chat geral e o privado funcionam também no launcher, de graça.
-2. **Servidor do DW4 (novo, `src/DW4.Server`).** Processo sem janela, autoritativo, roda as mesmas regras do cliente
+2. **Servidor do DW4 (novo, `src/DW4.Server`, na mesma VPS da API).** Processo sem janela, autoritativo, usa os
+   endpoints `dw4/*` que a API já tem, roda as mesmas regras do cliente
    (`DW4.Gameplay` e a VM Lua) e lê os dados do jogo da cópia que estiver na máquina do servidor (nada extraído vai para o
    Git nem é distribuído). Uma **sala por party** na fase: inimigos, dano, drops, EXP, BIT e troca são decididos lá.
    Os **saves passam a ficar no servidor** (as 4 vagas por conta): sem isso a troca de itens vira porta para trapaça.
@@ -57,12 +65,12 @@ Três peças, cada uma com um papel:
 
 | Regra | Origem | Onde |
 |---|---|---|
-| Grupo de até 4, líder, convite que vence em 60 s, aceitar, recusar, sair, expulsar, passar liderança; convites pendentes ocupam vaga | 4 = FATO; resto = port, igual ao hub | `PartyGroup` |
+| Grupo de até 4; só o líder convida e só amigos; convite vence em 60 s; acaba quando sobra 1; expulsar, passar liderança; convites pendentes ocupam vaga | 4 = FATO; resto = port, igual à DMO.API | `PartyGroup` |
 | NINZU = membros do grupo na mesma fase (1..4): mais inimigos no total, mesmo máximo vivo; HP/força iguais | FATO (já ligado em `GameRam.Ninzu`) | `PartyRewards.Ninzu` |
 | EXP: cada membro vivo na fase recebe a parte do P2EEXPUP (sozinho 100%; em 4, quem mata 80% e os outros 40%) | FATO | `PartyRewards.Exp` |
 | BIT: quantia como no original (nível e BITRITSU de quem pegou), dividida igual entre os membros vivos na fase; o resto fica com quem pegou | port (no original vai inteiro para quem pega) | `PartyRewards.Bit` |
 | Chat: canais geral, grupo e privada; `/g`, `/p`, `/w nome`, `/r`; prefixos `[Grupo]`, `[De X]`, `[Para X]` | port | `ChatChannel`, `ChatCommand`, `ChatFlood` |
-| F perto de outro jogador (até 128 unidades): convidar (só o líder; não se cheio ou em outro grupo), adicionar amigo (não se já é ou já pediu), trocar | port | `PlayerInteraction`, ação `interagir` |
+| F perto de outro jogador (até 128 unidades): convidar (só o líder, só amigos; não se cheio ou em outro grupo), adicionar amigo (não se já é ou já pediu), trocar | port | `PlayerInteraction`, ação `interagir` |
 | Troca: até 8 itens + BIT de cada lado; travar, depois confirmar; mudar algo destrava os dois; tudo ou nada, conferindo posse e espaço na hora; itens de enredo (impItem) fora | port | `TradeSession` |
 
 ## Etapas depois da aprovação
@@ -75,7 +83,6 @@ Três peças, cada uma com um papel:
 
 ## Questões em aberto
 
-- Código da DMO.API (para os itens 1 e 2).
 - ~~Nome online~~ **decidido (feelipe, 2026-11-02)**: placa sobre a cabeça com o nome do personagem do DW4; amigos,
   convites, party e `/w` pelo nome do **Tamer** da conta (a mesma lista do launcher). O servidor sabe qual conta está por trás
   de cada personagem, então o menu do F usa o Tamer do alvo sem mostrar.

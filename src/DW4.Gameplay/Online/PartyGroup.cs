@@ -13,10 +13,11 @@ public sealed record PartyInvite(string Id, string From, string To, DateTime Exp
 /// <summary>
 /// Grupo (party) de até 4 jogadores. FATO do original: até 4 jogadores por partida (Party.MaxPlayers, lobby callshop.lua);
 /// progresso da missão é do grupo, nível/EXP/BIT/inventário de cada um (docs/gameplay/fase4-levantamento-grupo.md).
-/// DECISÃO DO PORT: líder, convite com validade, expulsar e passar a liderança são do online (o GameCube não tinha convite);
-/// seguem a party do hub social do launcher RE:DIGITAL (maxSize 4, convite com validade, "PartyLeft" com motivo), para o mesmo
-/// grupo valer no launcher e no jogo. Sem rede aqui: o servidor (ou o hub) guarda um <see cref="PartyGroup"/> e aplica estas regras.
-/// Nomes comparados sem diferenciar maiúsculas, como no hub.
+/// DECISÃO DO PORT: líder, convite com validade, expulsar e passar a liderança são do online (o GameCube não tinha convite).
+/// A fonte da verdade é a party da DMO.API (PartyService, decisões do responsável de 2026-10-18), que vale no launcher e no
+/// jogo: até 4; convite só do líder e só entre amigos mútuos sem bloqueio; convite vale 60 s; se o líder sai, o membro mais
+/// antigo vira líder; a party acaba quando sobra 1. Esta classe repete essas regras para o cliente e o servidor do DW4
+/// avisarem antes de chamar a API e para os testes. Nomes comparados sem diferenciar maiúsculas, como no hub.
 /// </summary>
 public sealed class PartyGroup
 {
@@ -33,7 +34,8 @@ public sealed class PartyGroup
     public IReadOnlyList<PartyInvite> PendingInvites => _invites;
     public int Count => _members.Count;
     public bool IsFull => _members.Count >= Party.MaxPlayers;
-    public bool IsDisbanded => _members.Count == 0;
+    /// <summary>Acabou: sobrou um só depois de alguém sair (o líder sozinho com convites pendentes ainda não acabou).</summary>
+    public bool IsDisbanded { get; private set; }
 
     public PartyGroup(string id, string leader)
     {
@@ -45,14 +47,18 @@ public sealed class PartyGroup
     public bool Contains(string name) => _members.Contains(name, Names);
 
     /// <summary>
-    /// Convite de <paramref name="from"/> (membro) para <paramref name="to"/>. Vagas = 4 − membros − convites ainda válidos,
-    /// para quatro aceites seguidos nunca passarem de 4.
+    /// Convite do líder <paramref name="from"/> para <paramref name="to"/>, que precisa ser amigo mútuo sem bloqueio
+    /// (<paramref name="mutualFriends"/>, a API confere). Vagas = 4 − membros − convites ainda válidos, para quatro aceites
+    /// seguidos nunca passarem de 4.
     /// </summary>
-    public SocialResult Invite(string from, string to, DateTime nowUtc, out PartyInvite? invite)
+    public SocialResult Invite(string from, string to, DateTime nowUtc, out PartyInvite? invite, bool mutualFriends = true)
     {
         invite = null;
         Prune(nowUtc);
+        if (IsDisbanded) return SocialResult.Fail("SemParty", "O grupo acabou.");
         if (!Contains(from)) return SocialResult.Fail("NaoMembro", "Você não está neste grupo.");
+        if (!Names.Equals(from, Leader)) return SocialResult.Fail("NaoLider", "Só o líder convida.");
+        if (!mutualFriends) return SocialResult.Fail("NaoAmigo", "Só amigos entram no grupo. Adicione como amigo primeiro.");
         if (Names.Equals(from, to)) return SocialResult.Fail("Proprio", "Você já está no grupo.");
         if (Contains(to)) return SocialResult.Fail("JaMembro", $"{to} já está no grupo.");
         if (_invites.Any(i => Names.Equals(i.To, to))) return SocialResult.Fail("JaConvidado", $"{to} já foi convidado.");
@@ -67,7 +73,7 @@ public sealed class PartyGroup
     {
         Prune(nowUtc);
         var inv = _invites.FirstOrDefault(i => i.Id == inviteId && Names.Equals(i.To, who));
-        if (inv == null) return SocialResult.Fail("ConviteVencido", "O convite não vale mais.");
+        if (inv == null || IsDisbanded) return SocialResult.Fail("ConviteVencido", "O convite não vale mais.");
         _invites.Remove(inv);
         if (IsFull) return SocialResult.Fail("GrupoCheio", $"O grupo já tem {Party.MaxPlayers} jogadores.");
         _members.Add(who);
@@ -80,15 +86,23 @@ public sealed class PartyGroup
         return n > 0 ? SocialResult.Success : SocialResult.Fail("ConviteVencido", "O convite não vale mais.");
     }
 
-    /// <summary>Saída (ou queda da conexão). Se o líder sai, o próximo da lista vira líder; sem ninguém, o grupo acaba.</summary>
+    /// <summary>
+    /// Saída (ou 30 s offline, na API). Se o líder sai, o membro mais antigo vira líder e os convites dele caem; se sobra um
+    /// só, o grupo acaba.
+    /// </summary>
     public SocialResult Leave(string who)
     {
         int i = _members.FindIndex(m => Names.Equals(m, who));
         if (i < 0) return SocialResult.Fail("NaoMembro", "Você não está neste grupo.");
         _members.RemoveAt(i);
-        if (Names.Equals(Leader, who) && _members.Count > 0) Leader = _members[0];
-        if (_members.Count == 0) _invites.Clear();
-        else _invites.RemoveAll(inv => Names.Equals(inv.From, who));
+        if (_members.Count <= 1)
+        {
+            _members.Clear();
+            _invites.Clear();
+            IsDisbanded = true;
+            return SocialResult.Success;
+        }
+        if (Names.Equals(Leader, who)) { Leader = _members[0]; _invites.Clear(); }
         return SocialResult.Success;
     }
 

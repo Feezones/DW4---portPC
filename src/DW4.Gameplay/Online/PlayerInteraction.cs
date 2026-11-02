@@ -15,7 +15,8 @@ public sealed record InteractContext(PartyGroup? MyParty, string Me, bool Target
 
 /// <summary>
 /// Interagir com outro jogador (DECISÃO DO PORT, pedido do responsável em 2026-11-02; não existe no original): perto de alguém,
-/// F abre o menu com convidar para o grupo, adicionar amigo e trocar itens. Alcance em unidades do jogo; a coleta de itens do
+/// F abre o menu com convidar para o grupo, adicionar amigo e trocar itens. Convidar segue a party da DMO.API: só o líder, só
+/// amigos mútuos (ver <see cref="PartyGroup"/>). Alcance em unidades do jogo; a coleta de itens do
 /// original é a menos de 64 unidades (Drops), e o menu usa o dobro (HIPÓTESE de conforto, ajustar jogando).
 /// </summary>
 public static class PlayerInteraction
@@ -40,6 +41,7 @@ public static class PlayerInteraction
         InteractOption invite;
         if (c.MyParty?.Contains(target) == true) invite = new(InteractAction.InviteToParty, "Convidar para o grupo", false, "Já está no seu grupo.");
         else if (c.TargetInOtherParty) invite = new(InteractAction.InviteToParty, "Convidar para o grupo", false, "Já está em outro grupo.");
+        else if (!c.TargetIsFriend) invite = new(InteractAction.InviteToParty, "Convidar para o grupo", false, "Só amigos entram no grupo. Adicione como amigo primeiro.");
         else if (c.MyParty != null && !PartyGroup.Names.Equals(c.MyParty.Leader, c.Me))
             invite = new(InteractAction.InviteToParty, "Convidar para o grupo", false, "Só o líder convida.");
         else if (c.MyParty != null && c.MyParty.Count + c.MyParty.PendingInvites.Count >= Party.MaxPlayers)
