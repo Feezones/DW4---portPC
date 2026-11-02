@@ -30,7 +30,10 @@ public partial class Fatia
     // Avanço do golpe carregado pelos canais de movimento do jogo (MotionChannels: "Push" = Z modo 4, começa no máximo e freia até 0;
     // "Stop" = Z modo 2). Unidades por quadro de 30 Hz, como os dos inimigos.
     readonly MotionChannels _dash = new();
-    bool Dashing => _runner is { Running: true, Sequence: SequenceRunner.ChargedSequence } && _dash.AnyActive;
+    // FATO (MOVE 0x8030AA1C): "Push" = Z modo 4, "Back" = Z modo 5, "Move" = Z modo 0, "Stop" = Z modo 2, em todas as sequências do
+    // jogador (o "Back" 0,5 2 do tiro da Shot Pistol é um recuo de meia unidade; antes o port andava para trás na metade da
+    // velocidade de andar até o próximo MOVE, e o recuo ficava enorme).
+    bool Dashing => _runner is { Running: true } && _dash.AnyActive;
 
     void SetupJump(SequenceRunner runner)
     {
@@ -44,11 +47,11 @@ public partial class Fatia
         });
         runner.MoveStarted = m =>
         {
+            if (_runner?.Running == true && m.S(0) is "Push" or "Back" or "Move" or "Stop") _dash.Apply(m);
             if (!InAirSequence) return;
             // O "Push" (canal Z) não mexe no pulo: antes ele desligava o JumpMotion logo depois do "Jump", a velocidade vertical ficava
             // em 30 e o WCHECK "TurnY" do golpe carregado nunca passava (o jogador ficava preso, relato de 2026-11-02).
             if (m.S(0) is not "Push" and not "Back" and not "Move") _jump.Apply(m, _player.Velocity.Y);
-            if (_runner?.Sequence == SequenceRunner.ChargedSequence && m.S(0) is "Push" or "Stop") _dash.Apply(m);
         };
         // PDMOVE "Move" 0,7 6 no começo do SQ_JUMP: HIPÓTESE = controle no ar a 70% da velocidade de andar.
         runner.Command = c =>

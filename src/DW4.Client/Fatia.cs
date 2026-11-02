@@ -407,18 +407,13 @@ public partial class Fatia : Node3D
         }
 
         var v = _move.Step(new NVector2(dir.X, dir.Z), dt);
-        // MOVE da sequência em andamento (recuo do dano: "Back"), na velocidade proporcional ao "Move" 0,7 (HIPÓTESE).
-        if (attacking && _runner!.Move is { } mv && mv.S(0) is "Back" or "Move")
-        {
-            float sign = mv.S(0) == "Back" ? -1 : 1;
-            v = new NVector2(MathF.Sin(_move.Facing), MathF.Cos(_move.Facing)) * (sign * _move.MaxSpeed * mv.F(1) / GuilmonMove);
-        }
+        // MOVE da sequência em andamento (avanço, recuo do dano e do tiro) pelos canais do jogo (Fatia.Jump.cs, _dash).
         if (Dashing)
         {
             float step = _dash.Step(2, dt * SequenceRunner.FramesPerSecond) / Math.Max(dt, 1e-4f);
             v = new NVector2(MathF.Sin(_move.Facing), MathF.Cos(_move.Facing)) * step;
         }
-        else if (_runner?.Sequence != SequenceRunner.ChargedSequence) _dash.Stop();
+        else if (_runner?.Running != true) _dash.Stop();
         var vel = _player.Velocity;
         vel.X = v.X;
         vel.Z = v.Y;
@@ -712,14 +707,18 @@ public partial class Fatia : Node3D
 
     // Sorteio do drop (0x802FCC48) na posição do inimigo morto. HIPÓTESE da fatia: só a lista do Numemon (nZ1nume1) é
     // conhecida; a ligação inimigo → lista de drop dos outros ainda não foi lida.
-    void DropItem(Enemy e)
+    void DropItem(Enemy e) => DropAt(e.Gen, e.Body.GlobalPosition, e.Gen == null);
+
+    // FATO (drops.json da stag0101): os geradores de caixa, barril e caixote (GBOX-01, GBRL-01/02, GWCS-01..04) têm listas de drop
+    // como os de inimigo (nZ1cont1, nZ1bit, nZ1reizu, nZ1gate, nZ1obje1…); o sorteio do gerador (0x802FCC44) vale para tudo que ele
+    // gera. Antes só os inimigos soltavam item; agora as caixas quebradas também.
+    void DropAt(Generator? gen, Vector3 at, bool fallback = false)
     {
-        // Lista do gerador do inimigo: [jogadores − 1][dificuldade].
-        string? listName = e.Gen != null && _dropOfGenerator.TryGetValue(e.Gen.Name, out var perPlayers) && perPlayers.Length > 0
-            ? perPlayers[Math.Clamp(Ram.Ninzu, 1, perPlayers.Length) - 1].ElementAtOrDefault(Math.Clamp(Ram.Difficulty, 0, 2)) : e.Gen == null ? DropList : null;
+        // Lista do gerador: [jogadores − 1][dificuldade].
+        string? listName = gen != null && _dropOfGenerator.TryGetValue(gen.Name, out var perPlayers) && perPlayers.Length > 0
+            ? perPlayers[Math.Clamp(Ram.Ninzu, 1, perPlayers.Length) - 1].ElementAtOrDefault(Math.Clamp(Ram.Difficulty, 0, 2)) : fallback ? DropList : null;
         var drops = listName != null ? _dropLists.GetValueOrDefault(listName) : null;
         if (drops == null && OS.GetEnvironment("DW4_DROP").Length == 0) return;
-        var at = e.Body.GlobalPosition;
         // DW4_DROP="tabela:linha" (ex.: insItem:0): força o item, para conferir a coleta sem depender do sorteio.
         DropEntry? d = OS.GetEnvironment("DW4_DROP").Split(':') is [var tb, var rw] && int.TryParse(rw, out int forced)
             ? new DropEntry(new ItemRef(tb, forced), 0, 0) : drops != null ? Drops.Roll(drops, _mt) : null;
@@ -734,6 +733,7 @@ public partial class Fatia : Node3D
         node.GlobalPosition = at;
         _ground.Add((node, d.Item));
         _lastEvent += $"  caiu {name}";
+        ScriptLog($"caiu {name} ({gen?.Name ?? "sem gerador"})");
     }
 
     // Coleta a menos de 64 unidades (FATO). insItem tem efeito na hora; o resto vai para o inventário. HIPÓTESE da fatia:

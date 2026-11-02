@@ -201,7 +201,9 @@ public partial class Fatia
             }
             if (s.Seq.Motion.AnyActive && dt > 0)
             {
-                var (local, yawDeg) = s.Seq.Motion.Step(dt * SequenceRunner.FramesPerSecond);
+                // HIPÓTESE (relato "o tiro da Shot Pistol é lento"): o tiro do jogador anda no relógio do sequenciador de objetos (60 Hz, o
+                // mesmo dos WAITCHECK "Frame" dele); os de inimigo continuam a 30 Hz.
+                var (local, yawDeg) = s.Seq.Motion.Step(dt * (s.FromPlayer ? ObjectSequencer.FramesPerSecond : SequenceRunner.FramesPerSecond));
                 s.Root.RotateY(yawDeg * MathF.PI / 180);
                 s.Root.TranslateObjectLocal(new Vector3(local.X, local.Y, local.Z));
             }

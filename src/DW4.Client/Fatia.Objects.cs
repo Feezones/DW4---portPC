@@ -319,6 +319,7 @@ public partial class Fatia
         o.Body?.QueueFree();
         o.Body = null;
         ScriptLog($"{o.Gen?.Name}: {o.Name} destruída");
+        if (o.Gen != null) DropAt(o.Gen, o.Actor.Root.GlobalPosition);
         GeneratedDied(o.Gen, o);
     }
 

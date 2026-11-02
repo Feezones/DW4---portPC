@@ -41,3 +41,19 @@ Relatos do usuário jogando com o Veemon.
   HP e MP, os atributos seguem as curvas do RECALCPLAYER, e a EXP é dividida por NINZU (P2EEXPUP).
 - Corrigido: o EXPRITSU do jogador (bônus de EXP de itens) ia como 0 no P2EEXPUP.
 - **DESCONHECIDO:** o efeito e o som de subida de nível do original (o port mostra "NÍVEL n").
+
+## Rodada 2 (2026-11-02, noite)
+
+- **Recuo da Shot Pistol.** FATO: o bloco "gun" do SQ_ATCK1 tem MOVE "Back" 0,5 2 na VATCG2 (canal Z modo 5: começa em −0,5 por
+  quadro e para em 2 quadros, menos de 1 unidade). O port andava para trás na metade da velocidade de andar até o próximo MOVE.
+  Agora todos os MOVE do jogador (Push, Back, Move, Stop) passam pelos canais de movimento do jogo.
+- **Velocidade do tiro.** O x_100gunv01 tem "Push" 2 20. **HIPÓTESE:** o tiro do jogador anda no relógio de 60 Hz do sequenciador de
+  objetos (o mesmo dos WAITCHECK "Frame" dele), o dobro do que o port usava. Os tiros de inimigo continuam a 30 Hz.
+- **Baús e caixas soltam item.** FATO (drops.json da stag0101): GBOX-01, GBRL-01/02 e GWCS-01..04 têm listas de drop como os
+  geradores de inimigo. Bot: barril GBRL-01 → BIT, caixote GWCS-01 → Gate Disk.
+- **Barril e caixote encostados.** FATO: os pontos dos geradores são globais, numa grade de 10 (GBRL-01 em (415, 71,25, −127,5),
+  GWCS-01 em (425, 71,25, −126,25)), e as caixas de corpo do jogo têm 12 e 14 de largura: no próprio dado eles ficam encostados.
+  Nada mudou aqui.
+- **Canhões de Numemon (g_numez01, 3 na stag0101).** FATO: o mapa de IA sorteia SQ_TIME1..4 → SQ_FIRE → fir_g_numez01.lua →
+  GENERATER RESTART "GENE-54"/"GENE-16"/"GENE-19" (um Numemon cada, máximo 1 vivo por gerador). Com a IA dos objetos g_* (desde
+  07fadf4), o bot vê os três geradores soltando e_nume.
