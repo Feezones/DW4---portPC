@@ -203,6 +203,11 @@ public partial class Fatia
                     MakeHittable(child);
                 }
             }
+            // FATO (hit_g_boxfield.lua da stag0001, 3ª etapa do tutorial): MODELCTRL g_tcounter00 GENERATE sem argumentos. O g_tcounter00
+            // é o relógio da etapa: SQ_WAIT espera 180 quadros, SQ_FINISH faz LUACALL "ded" (ded_g_tcounter00.lua: demo "stageend",
+            // apaga o que sobrou e START GENE-a03, a 4ª etapa). Sem posição o port não gerava nada e a etapa nunca acabava (relato
+            // de 2026-11-02). HIPÓTESE: sem posição, nasce na origem.
+            else if (m.Args.Count == 0) Spawn(m.Name, m.Index, Vector3.Zero, Vector3.Zero); // relógio: sem corpo para golpe
             return false;
         }
         var targets = _objects.Where(o => o.Name == m.Name && (m.Index < 0 || o.Index == m.Index)).ToList();

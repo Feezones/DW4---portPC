@@ -45,8 +45,13 @@ public partial class Fatia
         }
     }
 
+    // DEPURAÇÃO: DW4_GERAR=g_tcounter00 manda MODELCTRL <nome> 0 GENERATE (sem argumentos) aos 5 s, como o script faria.
+    float _debugGenClock;
+
     void TickPrints(float dt)
     {
+        if (OS.IsDebugBuild() && _debugGenClock < 5 && OS.GetEnvironment("DW4_GERAR") is { Length: > 0 } gen && (_debugGenClock += dt) >= 5)
+            Deliver(new DW4.Script.Be.BeMessage("MODELCTRL", gen, 0, "GENERATE", [], null));
         if (_printAt.Count == 0) return;
         if (!_opened && _printClock >= 3 && OS.GetEnvironment("DW4_ABRIR").Length > 0) { _opened = true; OpenForPrint(); }
         _printClock += dt;
