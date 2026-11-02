@@ -109,13 +109,9 @@ public partial class Fatia
         : _shopKind == ShopStock.Disk ? _inventory.DiskCounts.Where(kv => kv.Value > 0).OrderBy(kv => kv.Key).Select(kv => (ItemRef?)new ItemRef("conItem", kv.Key)).ToList()
         : _inventory.Devices.Select(d => (ItemRef?)d).ToList();
 
-    bool Equipped(ItemRef item) => _equip != null && item.Table switch
-    {
-        "weapon" => item.Row == _equip.WeaponRow,
-        "armor1" => item.Row == _equip.Armor1Row,
-        "armor2" => item.Row == _equip.Armor2Row,
-        _ => false,
-    };
+    // Equipado = nenhuma cópia livre (soquetes da arma, armaduras e chips contam: EquipRules).
+    bool Equipped(ItemRef item) => item.Table is "weapon" or "armor1" or "armor2" or "abChip" && EquipRules.InUse(_equip, item) > 0
+        && EquipRules.Free(_inventory, _equip, item) <= 0;
 
     void ShopAct(List<ItemRef?> list)
     {

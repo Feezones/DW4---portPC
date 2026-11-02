@@ -15,7 +15,8 @@ public partial class Fatia
     LineEdit? _chatInput;
     Control? _chatBox;
     Nameplate? _plate;
-    bool ChatOpen => _chat.Typing;
+    // A janela de itens rápida (Fatia.QuickItems) também segura os comandos do jogo, como o chat.
+    bool ChatOpen => _chat.Typing || _quickOpen;
 
     string PlayerName => Session.Character?.Name is { Length: > 0 } n ? n : FormName;
 
@@ -55,7 +56,7 @@ public partial class Fatia
     // Enter abre o chat só quando nenhuma janela usa o Enter (menu de status, loja, janelas do port, lista de escolha).
     bool ChatInput(InputEvent e)
     {
-        if (ChatOpen) return true; // a caixa de texto consome o que precisa; o resto não chega ao jogo
+        if (_chat.Typing) return true; // a caixa de texto consome o que precisa; o resto não chega ao jogo
         if (!PortInput.Pressed(e, "chat") && e is not InputEventKey { Pressed: true, Echo: false, Keycode: Key.KpEnter }) return false;
         if (_menuOpen || ShopOpen || SubWindowOpen || _choice >= 0) return false;
         _chat.Open();

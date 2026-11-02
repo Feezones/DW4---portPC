@@ -148,6 +148,7 @@ public partial class Fatia : Node3D
 
     public override void _Ready()
     {
+        PortSettings.ApplyLanguage(PortSettings.Current); // a fase pode abrir direto (DW4_FASE), sem passar pelo menu inicial
         ChooseStage();
         var env = new Godot.Environment { AmbientLightSource = Godot.Environment.AmbientSource.Color, AmbientLightColor = new Color(0.6f, 0.6f, 0.65f), BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black };
         // FATO (stag0102 #621): igFogAttr 60..300 com cor (0,8 0,7 0,8). Fundo na cor da neblina e neblina por profundidade.
@@ -239,6 +240,7 @@ public partial class Fatia : Node3D
         SetupChat();
         SetupPrints();
         SetupTechBar();
+        SetupQuickItems();
         // Som da dng1 (FATO: first.lua toca "AM_DUNGE" e "DG_CAVE1"; beSoundInfo da fase → ndmw #6 e #35), com o loop do
         // cabeçalho ADX. Gerado por: dw4 adx-wav ndmw.afs <fatia>\audio 6 35. Volume do beSoundData (S8): unidade
         // desconhecida, por isso os dois tocam a 0 dB.
@@ -277,6 +279,7 @@ public partial class Fatia : Node3D
         if (ChatInput(e)) { GetViewport().SetInputAsHandled(); return; } // chat aberto: nada chega ao jogo
         if (TechBarInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (MenuInput(e)) { GetViewport().SetInputAsHandled(); return; }
+        if (QuickItemInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (e is InputEventKey { Pressed: true, Echo: false } k)
         {
             if (k.Keycode == Key.F1 && _cameraSets.Length > 1) _cameraSet = (_cameraSet + 1) % _cameraSets.Length;
@@ -288,7 +291,9 @@ public partial class Fatia : Node3D
         }
         // Ações do mapa de controles (PortInput, configurável nas Configurações).
         for (int i = 0; i < 6; i++) if (PortInput.Pressed(e, $"tecnica{i + 1}")) _techKey = i;
-        if (PortInput.Pressed(e, "equipar")) EquipLast();
+        // DEPURAÇÃO (só no build Debug, com o F3 ligado): F7 equipa o último item pego. No jogo, equipar é só pelo menu de status e
+        // pelas lojas, como no original (o atalho "equipar" do port, E/Y, saiu: trocava de arma sem querer e briga com o Q/E do menu).
+        if (OS.IsDebugBuild() && _hud.Visible && e is InputEventKey { Pressed: true, Echo: false, Keycode: Key.F7 }) EquipLast();
         if (PortInput.Pressed(e, "guarda")) _guardPressed = true;
         if (PortInput.Pressed(e, "salvar_rapido")) QuickSave();
         if (PortInput.Pressed(e, "pausa")) { if (SubWindowOpen) CloseSaveWindow(); else if (!_menuOpen && !ShopOpen) OpenPause(); }
@@ -327,6 +332,8 @@ public partial class Fatia : Node3D
         TickStageChange(dt);
         if (_leaving) return;
         TickObjects(dt);
+        TickFlashes(dt);
+        TickQuickItems();
         var input = Input.GetVector(PortInput.Name("esquerda"), PortInput.Name("direita"), PortInput.Name("cima"), PortInput.Name("baixo"));
         input = input.LimitLength(1);
 
@@ -394,7 +401,7 @@ public partial class Fatia : Node3D
         _techKey = -1;
         _panel.Tick(dt);
         if (_wazaPending is { } waza && _runner?.Running != true) { _wazaPending = null; ReleaseTechnique(waza); }
-        if (InAirSequence) dir *= _airControl;
+        if (InAirSequence && _runner!.Sequence != SequenceRunner.ChargedSequence) dir *= _airControl;
         else if (attacking) { dir = Vector3.Zero; _move.Stop(); }
         if (_demo && _tick < 30 && _enemies.FirstOrDefault() is { } first)
         {
@@ -403,18 +410,21 @@ public partial class Fatia : Node3D
         }
 
         var v = _move.Step(new NVector2(dir.X, dir.Z), dt);
-        // MOVE da sequência em andamento (recuo do dano: "Back"), na velocidade proporcional ao "Move" 0,7 (HIPÓTESE).
-        if (attacking && _runner!.Move is { } mv && mv.S(0) is "Back" or "Move")
+        // MOVE da sequência em andamento (avanço, recuo do dano e do tiro) pelos canais do jogo (Fatia.Jump.cs, _dash).
+        if (Dashing)
         {
-            float sign = mv.S(0) == "Back" ? -1 : 1;
-            v = new NVector2(MathF.Sin(_move.Facing), MathF.Cos(_move.Facing)) * (sign * _move.MaxSpeed * mv.F(1) / GuilmonMove);
+            float step = _dash.Step(2, dt * SequenceRunner.FramesPerSecond) / Math.Max(dt, 1e-4f);
+            v = new NVector2(MathF.Sin(_move.Facing), MathF.Cos(_move.Facing)) * step;
         }
+        else if (_runner?.Running != true) _dash.Stop();
         var vel = _player.Velocity;
         vel.X = v.X;
         vel.Z = v.Y;
         vel.Y = VerticalVelocity(vel.Y, dt);
         _player.Velocity = vel;
         _player.MoveAndSlide();
+        StepUp(new Vector3(v.X, 0, v.Y), dt); // degraus baixos (Fatia.Step.cs)
+        NoteWall();
         // DECISÃO DO PORT PC: rede de segurança. Se atravessar o chão (empurrão forte numa borda, ponto inicial dentro de
         // uma parede), volta ao último ponto em que estava no chão em vez de cair para sempre.
         _airTime = _player.IsOnFloor() ? 0 : _airTime + dt;
@@ -485,6 +495,7 @@ public partial class Fatia : Node3D
         }
         _hud.Text = $"pos ({p.X:0.0}, {p.Y:0.0}, {p.Z:0.0})  vel {_move.Velocity.Length():0.0} u/s\n" +
             $"câmera {(_cameraSet < _cameraFiles.Length ? _cameraFiles[_cameraSet].Replace("_camera.json", "") : "-")}{(_cameraSet == 1 ? " (afastada)" : "")} volume {_zone}  [F1 troca, F5 reinicia, Esc sai]\n" +
+            $"parede: {_wallInfo}\n" +
             $"animações: parado = {_animWait ?? "-"}, correndo = {_animRun ?? "-"}\n" +
             $"ataque [J, clique ou X]: {(_runner?.Running == true ? $"{_runner.Action} → {(_runner.Action == null ? "-" : AnimName(_runner.Action) ?? "sem animação")} quadro {_runner.ActionFrame:0}/{_runner.ActionLength:0}" : "-")}  acertos no Numemon: {_hits}  [F2 caixas]\n" +
             $"Numemon: {(_lastEnemy?.Brain is not { } br ? "-" : $"{br.Map.Name}, {(br.External ?? br.Current?.Sequence ?? "-")}")}{(_lastEnemy?.Runner?.Running == true ? $" ({_lastEnemy.Runner.Action})" : "")}  golpes no Guilmon: {_hitsTaken}\n" +
@@ -550,6 +561,10 @@ public partial class Fatia : Node3D
             Array.Fill(_skill, Math.Min(9999, debugLevel * 10));
         }
         _equip = Ram.Players[0].Equipment; // equipamento da vaga (sem vaga: a w_sword01 da fatia, no Recalc)
+        // DEPURAÇÃO (só no build Debug): DW4_ARMA=w_arm01 começa com essa arma (conferir modelo na mão, estilo e tiro).
+        if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_ARMA") is { Length: > 0 } debugWeapon
+            && _db["weapon"].RowsWhere("MODEL", debugWeapon).DefaultIfEmpty(-1).First() is int debugRow and >= 0)
+            _equip = new Equipment(debugRow);
         Recalc();
         _hp = _pf!.MaxHp;
         _mp = _pf.MaxMp;
@@ -695,14 +710,18 @@ public partial class Fatia : Node3D
 
     // Sorteio do drop (0x802FCC48) na posição do inimigo morto. HIPÓTESE da fatia: só a lista do Numemon (nZ1nume1) é
     // conhecida; a ligação inimigo → lista de drop dos outros ainda não foi lida.
-    void DropItem(Enemy e)
+    void DropItem(Enemy e) => DropAt(e.Gen, e.Body.GlobalPosition, e.Gen == null);
+
+    // FATO (drops.json da stag0101): os geradores de caixa, barril e caixote (GBOX-01, GBRL-01/02, GWCS-01..04) têm listas de drop
+    // como os de inimigo (nZ1cont1, nZ1bit, nZ1reizu, nZ1gate, nZ1obje1…); o sorteio do gerador (0x802FCC44) vale para tudo que ele
+    // gera. Antes só os inimigos soltavam item; agora as caixas quebradas também.
+    void DropAt(Generator? gen, Vector3 at, bool fallback = false)
     {
-        // Lista do gerador do inimigo: [jogadores − 1][dificuldade].
-        string? listName = e.Gen != null && _dropOfGenerator.TryGetValue(e.Gen.Name, out var perPlayers) && perPlayers.Length > 0
-            ? perPlayers[Math.Clamp(Ram.Ninzu, 1, perPlayers.Length) - 1].ElementAtOrDefault(Math.Clamp(Ram.Difficulty, 0, 2)) : e.Gen == null ? DropList : null;
+        // Lista do gerador: [jogadores − 1][dificuldade].
+        string? listName = gen != null && _dropOfGenerator.TryGetValue(gen.Name, out var perPlayers) && perPlayers.Length > 0
+            ? perPlayers[Math.Clamp(Ram.Ninzu, 1, perPlayers.Length) - 1].ElementAtOrDefault(Math.Clamp(Ram.Difficulty, 0, 2)) : fallback ? DropList : null;
         var drops = listName != null ? _dropLists.GetValueOrDefault(listName) : null;
         if (drops == null && OS.GetEnvironment("DW4_DROP").Length == 0) return;
-        var at = e.Body.GlobalPosition;
         // DW4_DROP="tabela:linha" (ex.: insItem:0): força o item, para conferir a coleta sem depender do sorteio.
         DropEntry? d = OS.GetEnvironment("DW4_DROP").Split(':') is [var tb, var rw] && int.TryParse(rw, out int forced)
             ? new DropEntry(new ItemRef(tb, forced), 0, 0) : drops != null ? Drops.Roll(drops, _mt) : null;
@@ -717,6 +736,7 @@ public partial class Fatia : Node3D
         node.GlobalPosition = at;
         _ground.Add((node, d.Item));
         _lastEvent += $"  caiu {name}";
+        ScriptLog($"caiu {name} ({gen?.Name ?? "sem gerador"})");
     }
 
     // Coleta a menos de 64 unidades (FATO). insItem tem efeito na hora; o resto vai para o inventário. HIPÓTESE da fatia:
@@ -781,16 +801,32 @@ public partial class Fatia : Node3D
 
     void GainExp(Enemy e)
     {
-        int gain = DamageFormula.ExpShare(_db!["enemy"].Int(e.Kind.Row, "EXP"), 0, players: 1, killer: true);
+        // FATO (P2EEXPUP 0x80373B48): EXP do inimigo × (EXPRITSU + 100)/100, com o EXPRITSU do jogador (equipamento e chips);
+        // antes ia 0 e o bônus de EXP dos itens não valia.
+        AddExp(DamageFormula.ExpShare(_db!["enemy"].Int(e.Kind.Row, "EXP"), _pf?.Expritsu ?? 0, players: 1, killer: true));
+    }
+
+    void AddExp(int gain)
+    {
         _exp += gain;
         _lastEvent += $"  +{gain} EXP";
+        if (gain > 0) _damageNumbers?.ShowExp(WindowsReady() ? _winData : null, gain, _player.GlobalPosition + new Vector3(0, 22, 0));
         bool up = false;
         while (_level < PlayerGrowth.MaxLevel && PlayerGrowth.NextExp(_level) <= _exp) { _level++; up = true; }
         if (!up) return;
         Recalc();
         _hp = _pf!.MaxHp; // P2EEXPUP: sobe de nível com HP e MP cheios
         _mp = _pf.MaxMp;
-        Float(_player, $"NÍVEL {_level}", Colors.Yellow);
+        // FATO (P2EEXPUP 0x80373DE0..0x80373DF8, textos em 0x80458F30 + 0x898/0x8A4/0x8C0): depois do RECALCPLAYER o jogo manda
+        // MODELCTRL "i_getitempnl01" … "SQ_LVUP": o painel "LEVEL UP" (ação LVUP: FADESET IN 12, JOINTSET 290..360, FADESET OUT 40,
+        // depois SQ_ERAS). Sem a arte das janelas, o texto de antes.
+        // O i_getitempnl01 é um billboard de mundo (Hud.cs, DamageNumbers.ShowLevelUp), não uma janela da tela.
+        if (_damageNumbers?.ShowLevelUp(WindowsReady() ? _winData : null, _player) != true)
+            Float(_player, $"NÍVEL {_level}", Colors.Yellow);
+        // FATO (0x80373E3C..0x80373E4C): depois do painel, o P2EEXPUP manda SETEFFECT no jogador; o nome sai de um buffer montado em
+        // tempo de execução (0x80508AE0) e não foi lido. Perto dele estão "SQ_UPEFONLY", "SQ_HEALEFONLY" e "SQ_CUREEFONLY".
+        // HIPÓTESE: o efeito de subida (x_250uphit01, o brilho dos aumentos de status) no jogador, sem caixa de golpe.
+        PlayerEffect("x_250uphit01", "SQ_ATCK01");
     }
 
     // Golpe de inimigo ou objeto: código do HITBOX (70004 no Numemon) → linha da eneatk (HIPÓTESE forte), E2PISHITCHECK e
@@ -986,6 +1022,13 @@ public partial class Fatia : Node3D
     // (doorwall01..03 da dng1, Fatia.Scripts.cs).
     readonly List<(string Path, CollisionShape3D Shape)> _collisionShapes = [];
 
+    static bool IsLimitCircle(MeshInstance3D mi, Node3D collision)
+    {
+        var box = mi.GlobalTransformIn(collision) * mi.Mesh.GetAabb();
+        bool Near(float v, float want) => Math.Abs(v - want) < 2f;
+        return Near(box.Position.X, 403) && Near(box.End.X, 517) && Near(box.Position.Z, 93) && Near(box.End.Z, 207) && box.Size.Y > 150;
+    }
+
     StaticBody3D MakeStaticBody(Node3D collision)
     {
         var body = new StaticBody3D();
@@ -997,6 +1040,16 @@ public partial class Fatia : Node3D
             body.AddChild(shape);
             var path = new List<string>();
             for (Node? n = mi; n != null && n != collision; n = n.GetParent()) path.Add(n.Name);
+            // Parede invisível (relato do usuário, 2026-11-02: ponte da stag0101, parado em (462, 47, 96)). FATO (dw4
+            // colisao-auditoria): a peça "limit_Circle" (beHitLandModelInfo com @10 = 4; chão = 1, paredes e portas = 2) é um
+            // cilindro de 32 triângulos com a mesma caixa (403..517, 0..250, 93..207) em dng101b1, dng101b2, stag0001, stag0101 e
+            // até na tela stagis10, sem nada visível, e corta a ponte da stag0101 onde o jogador parava. HIPÓTESE: é um limite
+            // que o jogo só liga por script (HITLANDMODEL limit_Circle ONHIT, tratado em Fatia.Scripts.cs); começa desligado.
+            // FATO (colisao.gltf exportados, 2026-11-02): o nome limit_Circle não chega ao arquivo; o cilindro é o nó "colisao-colonly"
+            // (a malha do próprio nó raiz da colisão), 32 triângulos na caixa 403..517 × 0..250 × 93..207 em 83 das 98 fases (e
+            // 403..517 × 20..220 × 93..207 em stagis08/10/20). Reconhecido pela caixa, sem desligar o "colisao-colonly" das outras
+            // fases (stag0203: 420 triângulos de −2500 a 4300; telas stagis: caixa de 24 triângulos).
+            if (path.Any(p => p.Contains("limit_Circle", StringComparison.Ordinal)) || IsLimitCircle(mi, collision)) shape.Disabled = true;
             _collisionShapes.Add((string.Join("/", path), shape));
         }
         collision.QueueFree();

@@ -33,7 +33,16 @@ public static class PortSettings
     public static void Apply(Window root)
     {
         var c = Current;
+        ApplyLanguage(c);
         if (DisplayServer.GetName() == "headless") { PortInput.Apply(c.Bindings); return; } // sem janela: só o mapa de controles
+        // DEPURAÇÃO (só no build Debug): DW4_JANELA=1024x768 abre em janela desse tamanho (capturas em outras proporções).
+        if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_JANELA").Split("x") is [var jw, var jh] && int.TryParse(jw, out int dw) && int.TryParse(jh, out int dh))
+        {
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+            DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.Borderless, false);
+            DisplayServer.WindowSetSize(new Vector2I(dw, dh));
+        }
+        else
         switch (c.WindowMode)
         {
             case 1:
@@ -69,6 +78,27 @@ public static class PortSettings
         AudioServer.SetBusVolumeDb(Bus(EffectsBus), PortConfig.ToDb(c.EffectsVolume));
         AudioServer.SetBusVolumeDb(Bus(VoiceBus), PortConfig.ToDb(c.VoiceVolume));
         PortInput.Apply(c.Bindings);
+    }
+
+    static bool s_translationTried;
+
+    /// <summary>
+    /// Idioma dos textos do jogo. A tradução vem de &lt;fatia&gt;\idioma\pt-br.json (DataPaths.Fatia), fora do
+    /// repositório como os textos originais; sem o arquivo, o português mostra o inglês.
+    /// </summary>
+    public static void ApplyLanguage(PortConfig c)
+    {
+        GameText.Language = (GameLanguage)c.Language;
+        if (GameText.Language == GameLanguage.English || s_translationTried) return;
+        s_translationTried = true;
+        string fatia = DataPaths.Fatia;
+        var file = Path.Combine(fatia, "idioma", "pt-br.json");
+        try
+        {
+            if (!System.IO.File.Exists(file)) GD.PushWarning($"falta {file}: o português mostra o inglês");
+            else if (!GameText.Load(System.IO.File.ReadAllText(file))) GD.PushWarning($"{file} não é um JSON válido");
+        }
+        catch (IOException e) { GD.PushWarning($"{file}: {e.Message}"); }
     }
 
     /// <summary>Índice do barramento (cria com saída no Master se ainda não existe).</summary>

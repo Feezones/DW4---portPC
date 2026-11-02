@@ -53,6 +53,7 @@ try
         "igb-textos" when args.Length == 4 => IgbTextos(args[1], args[2], args[3]),
         "igb-entradas" when args.Length == 4 => IgbEntradas(args[1], args[2], args[3]),
         "fase-exportar" when args.Length == 5 => FaseExportar(args[1], args[2], args[3], args[4]),
+        "colisao-auditoria" when args.Length >= 4 => ColisaoAuditoria.Run(args[1], args[2], args[3], args[4..]),
         "igb-db" when args.Length == 4 => IgbDb(args[1], args[2], args[3]),
         "fonte-exportar" when args.Length == 4 => FonteExportar(args[1], args[2], args[3]),
         "fonte-caixas" when args.Length == 4 => FonteCaixas(args[1], args[2], args[3]),
@@ -119,6 +120,7 @@ static int Usage()
           dw4 igb-camera-demo <arquivo.afs> <indice> <pasta-de-trabalho>   (câmeras de demo do acmr_pack, amostradas a 60 Hz, em JSON, fora do repositório)
           dw4 igb-textos   <arquivo.afs> <indice> <pasta-de-trabalho>   (textos de um *_pack: índice na lista, chave e texto, em textos.json, fora do repositório)
           dw4 igb-entradas <arquivo.afs> <indice> <pasta-de-trabalho>   (pontos de entrada do jogador, bePoint01Info, em pontos_entrada.json, fora do repositório)
+          dw4 colisao-auditoria <ndmw.afs> <pasta-das-fases> <pasta-saída> [fase...]   (paredes sem cenário, switches desligados, beHitLand*, degraus; só lê)
           dw4 fase-exportar <ndmw.afs> <area.afs> <fase> <pasta-saída>   (uma fase inteira no layout da fatia + fase.json, pelo índice do ndmw.igb; fora do repositório)
           dw4 igb-db       <arquivo.afs> <indice> <pasta-de-trabalho>   (as 12 tabelas beDataBase em CSV e JSON, fora do repositório)
           dw4 fonte-exportar <ndmw.afs> <indice> <pasta-de-trabalho>   (fontes beFontImage: textura PNG e métricas dos caracteres em fonte.json; a do jogo é o #79)
@@ -1284,6 +1286,9 @@ int IgbCena(string path, string which, string rootArg, string outDir, string? pa
         g.AddRootNode(g.AddNode(new JsonObject { ["name"] = name, ["mesh"] = mesh }));
     }
     g.Save(dir, "cena");
+    // Arma dupla: lado de cada superfície da malha "cena", na ordem (o cliente prende "right" na mão direita e "left" na esquerda).
+    if (parts.Any(p => p.Hand == "left"))
+        File.WriteAllText(Path.Combine(dir, "maos.json"), new JsonArray(parts.Select(p => (JsonNode?)(p.Hand ?? "right")).ToArray()).ToJsonString());
     var byImage = parts.GroupBy(p => p.ImageIndex).OrderByDescending(x => x.Count()).Select(x => $"#{x.Key}: {x.Count()}");
     report.AppendLine($"geometrias por imagem: {string.Join(", ", byImage)}");
     File.WriteAllText(Path.Combine(dir, "relatorio.txt"), report.ToString());
@@ -1688,6 +1693,7 @@ int IgbGeradores(string path, string which, string outDir)
         ["enemyRow"] = g.EnemyRow,
         ["callLua"] = g.CallLua,
         ["global"] = g.Global,
+        ["point"] = V([g.Point.X, g.Point.Y, g.Point.Z]),
         ["startMode"] = g.StartMode, ["startData"] = g.StartData, ["fillMode"] = g.FillMode, ["fillData"] = g.FillData,
     }).ToArray());
     Directory.CreateDirectory(full);

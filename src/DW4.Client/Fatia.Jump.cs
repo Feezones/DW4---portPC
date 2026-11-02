@@ -1,3 +1,4 @@
+using System;
 using Godot;
 using DW4.Gameplay;
 
@@ -18,24 +19,51 @@ public partial class Fatia
 
     readonly JumpMotion _jump = new();
     bool _jumpHeld;
+    float _airStill, _airLastY, _chargedTime;
     float _airTime, _airControl = 1;
 
-    bool InAirSequence => _runner is { Running: true, Sequence: "SQ_JUMP" or "SQ_FALL" };
+    // FATO (SQ_ATCKTM de cada estilo: MOVE "Jump" 1 3,9, "Push" 2,3 11, WCHECK "TurnY", MOVE "Fall" 1,44 6,3, WCHECK "Landing",
+    // MOVE "Stop" 1 4): o golpe carregado é um salto com avanço. Antes só o SQ_JUMP/SQ_FALL aplicavam os MOVE, e o carregado saía
+    // parado no lugar (relato de 2026-11-02).
+    bool InAirSequence => _runner is { Running: true, Sequence: "SQ_JUMP" or "SQ_FALL" or SequenceRunner.ChargedSequence };
+
+    // Avanço do golpe carregado pelos canais de movimento do jogo (MotionChannels: "Push" = Z modo 4, começa no máximo e freia até 0;
+    // "Stop" = Z modo 2). Unidades por quadro de 30 Hz, como os dos inimigos.
+    readonly MotionChannels _dash = new();
+    // FATO (MOVE 0x8030AA1C): "Push" = Z modo 4, "Back" = Z modo 5, "Move" = Z modo 0, "Stop" = Z modo 2, em todas as sequências do
+    // jogador (o "Back" 0,5 2 do tiro da Shot Pistol é um recuo de meia unidade; antes o port andava para trás na metade da
+    // velocidade de andar até o próximo MOVE, e o recuo ficava enorme).
+    bool Dashing => _runner is { Running: true } && _dash.AnyActive;
 
     void SetupJump(SequenceRunner runner)
     {
-        runner.Condition = w => w switch
+        runner.Condition = w => DiagCondition(w, w switch
         {
             "TurnY" => _jump.VelocityY <= 0,
-            "Landing" => _player.IsOnFloor() && _jump.VelocityY <= 0,
+            // DECISÃO DO PORT (segurança, relato de 2026-11-02: Dorumon preso no ar encostado numa mureta depois do carregado): parado
+            // no ar sem descer por 0,25 s (apoiado numa borda que a física não chama de chão) também conta como pouso.
+            "Landing" => (_player.IsOnFloor() || _airStill >= 0.25f) && _jump.VelocityY <= 0,
             _ => true,
+        });
+        runner.MoveStarted = m =>
+        {
+            if (_runner?.Running == true && m.S(0) is "Push" or "Back" or "Move" or "Stop") _dash.Apply(m);
+            if (!InAirSequence) return;
+            // O "Push" (canal Z) não mexe no pulo: antes ele desligava o JumpMotion logo depois do "Jump", a velocidade vertical ficava
+            // em 30 e o WCHECK "TurnY" do golpe carregado nunca passava (o jogador ficava preso, relato de 2026-11-02).
+            if (m.S(0) is not "Push" and not "Back" and not "Move") _jump.Apply(m, _player.Velocity.Y);
         };
-        runner.MoveStarted = m => { if (InAirSequence) _jump.Apply(m, _player.Velocity.Y); };
         // PDMOVE "Move" 0,7 6 no começo do SQ_JUMP: HIPÓTESE = controle no ar a 70% da velocidade de andar.
         runner.Command = c =>
         {
             if (c.Kind == "PDMOVE") _airControl = c.S(0) == "Move" ? c.F(1) : 0;
         };
+    }
+
+    bool DiagCondition(string w, bool ok)
+    {
+        if (DiagNpc && !ok && _tick % 30 == 0) GD.Print($"[espera] {_runner?.Sequence} {_runner?.Action} WCHECK {w}: chão {_player.IsOnFloor()} vy {_jump.VelocityY:0.0} ativo {_jump.Active} parado {_airStill:0.00}");
+        return ok;
     }
 
     static bool JumpDown() => PortInput.Down("pulo");
@@ -54,6 +82,13 @@ public partial class Fatia
     // Velocidade vertical do quadro: MOVE "Jump"/"Fall" da sequência no ar, senão a gravidade da fatia.
     float VerticalVelocity(float vy, float dt)
     {
+        // Preso no ar: quanto tempo a sequência de ar ficou sem descer (o "Landing" acima usa) e tempo-limite do golpe carregado
+        // (o original dura menos de 1,5 s; com 3 s, volta ao controle livre em vez de prender o jogador).
+        float y = _player.GlobalPosition.Y;
+        _airStill = InAirSequence && !_player.IsOnFloor() && Math.Abs(y - _airLastY) < 0.02f ? _airStill + dt : 0;
+        _airLastY = y;
+        _chargedTime = _runner is { Running: true, Sequence: SequenceRunner.ChargedSequence } ? _chargedTime + dt : 0;
+        if (_chargedTime > 3f) { _runner!.Stop(); _jump.Stop(); _dash.Stop(); _chargedTime = 0; }
         if (!InAirSequence && _jump.Active) _jump.Stop(); // golpe, dano ou cena interromperam o pulo
         if (_jump.Active)
         {

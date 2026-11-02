@@ -23,7 +23,9 @@ public sealed class InputBindings
         new("tecnica_anterior", "Técnica anterior"), new("tecnica_proxima", "Próxima técnica"),
         new("tecnica1", "Técnica 1"), new("tecnica2", "Técnica 2"), new("tecnica3", "Técnica 3"), new("tecnica4", "Técnica 4"),
         new("tecnica5", "Técnica 5"), new("tecnica6", "Técnica 6"),
-        new("status", "Menu de status"), new("confirmar", "Confirmar"), new("cancelar", "Cancelar"), new("equipar", "Equipar o último item"),
+        new("item1", "Item rápido 1"), new("item2", "Item rápido 2"), new("item3", "Item rápido 3"), new("item4", "Item rápido 4"),
+        new("item5", "Item rápido 5"), new("itens", "Janela de itens"),
+        new("status", "Menu de status"), new("confirmar", "Confirmar"), new("cancelar", "Cancelar"),
         new("chat", "Abrir o chat"), new("pausa", "Pausa (menu)"),
         new("salvar_rapido", "Salvar rápido"), new("acelerar", "Acelerar cenas (segurar)"),
     ];
@@ -31,11 +33,13 @@ public sealed class InputBindings
     static readonly Dictionary<string, string[]> KeyboardDefaults = new()
     {
         ["cima"] = ["tecla:W", "tecla:Up"], ["baixo"] = ["tecla:S", "tecla:Down"], ["esquerda"] = ["tecla:A", "tecla:Left"], ["direita"] = ["tecla:D", "tecla:Right"],
-        ["ataque"] = ["tecla:J", "mouse:1"], ["tecnica"] = ["tecla:K", "mouse:2"], ["pulo"] = ["tecla:Space"], ["guarda"] = ["tecla:L"],
+        // Pedido do usuário (2026-11-02): técnica no E, defesa no clique direito, 1–5 para os itens rápidos (as técnicas diretas ficam
+        // sem tecla padrão; a técnica escolhida troca pela roda do mouse).
+        ["ataque"] = ["tecla:J", "mouse:1"], ["tecnica"] = ["tecla:E", "tecla:K"], ["pulo"] = ["tecla:Space"], ["guarda"] = ["mouse:2", "tecla:L"],
         ["tecnica_anterior"] = ["mouse:4"], ["tecnica_proxima"] = ["mouse:5"],
-        ["tecnica1"] = ["tecla:Key1"], ["tecnica2"] = ["tecla:Key2"], ["tecnica3"] = ["tecla:Key3"], ["tecnica4"] = ["tecla:Key4"],
-        ["tecnica5"] = ["tecla:Key5"], ["tecnica6"] = ["tecla:Key6"],
-        ["status"] = ["tecla:Tab"], ["confirmar"] = ["tecla:Enter", "tecla:J"], ["cancelar"] = ["tecla:Backspace", "tecla:K"], ["equipar"] = ["tecla:E"],
+        ["tecnica1"] = [], ["tecnica2"] = [], ["tecnica3"] = [], ["tecnica4"] = [], ["tecnica5"] = [], ["tecnica6"] = [],
+        ["item1"] = ["tecla:Key1"], ["item2"] = ["tecla:Key2"], ["item3"] = ["tecla:Key3"], ["item4"] = ["tecla:Key4"], ["item5"] = ["tecla:Key5"], ["itens"] = ["tecla:I"],
+        ["status"] = ["tecla:Tab"], ["confirmar"] = ["tecla:Enter", "tecla:J"], ["cancelar"] = ["tecla:Backspace", "tecla:K"],
         ["chat"] = ["tecla:Enter"], ["pausa"] = ["tecla:Escape"],
         ["salvar_rapido"] = ["tecla:F5"], ["acelerar"] = ["tecla:Shift"],
     };
@@ -48,7 +52,10 @@ public sealed class InputBindings
         ["ataque"] = ["botao:0"], ["tecnica"] = ["botao:2"], ["pulo"] = ["botao:10"], ["guarda"] = ["eixo:4+"],
         ["tecnica_anterior"] = ["botao:13"], ["tecnica_proxima"] = ["botao:14"],
         ["tecnica1"] = [], ["tecnica2"] = [], ["tecnica3"] = [], ["tecnica4"] = [], ["tecnica5"] = [], ["tecnica6"] = [],
-        ["status"] = ["botao:6"], ["confirmar"] = ["botao:0"], ["cancelar"] = ["botao:1"], ["equipar"] = ["botao:3"],
+        // FATO (textos mswk201984/204308): o √ do controle abre a Item Window; aqui o B (o √ dos textos é o B do GameCube, HIPÓTESE
+        // pela tradução dos ícones da fonte).
+        ["item1"] = [], ["item2"] = [], ["item3"] = [], ["item4"] = [], ["item5"] = [], ["itens"] = ["botao:1"],
+        ["status"] = ["botao:6"], ["confirmar"] = ["botao:0"], ["cancelar"] = ["botao:1"],
         ["chat"] = [], ["pausa"] = ["botao:4"],
         ["salvar_rapido"] = [], ["acelerar"] = ["eixo:5+"],
     };
@@ -98,6 +105,22 @@ public sealed class InputBindings
     }
 
     public void Clear(string device, string action) => _maps[device][action] = [];
+
+    /// <summary>
+    /// Migração única dos padrões do teclado de 2026-11-02 (técnica no E, defesa no clique direito, itens 1–5): só troca a ação que
+    /// ainda está igual ao padrão antigo; o que o jogador mudou fica.
+    /// </summary>
+    public void MigrateKeyboard2()
+    {
+        var map = _maps[Keyboard];
+        void From(string action, params string[] old)
+        {
+            if (map.TryGetValue(action, out var cur) && cur.SequenceEqual(old)) map[action] = [.. KeyboardDefaults[action]];
+        }
+        From("tecnica", "tecla:K", "mouse:2");
+        From("guarda", "tecla:L");
+        for (int i = 1; i <= 6; i++) From($"tecnica{i}", $"tecla:Key{i}");
+    }
 
     /// <summary>Linhas "id=\"a,b\"" de um aparelho, para a seção dele no config.cfg.</summary>
     public IEnumerable<(string Key, string Value)> Save(string device) =>

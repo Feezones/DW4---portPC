@@ -8,18 +8,27 @@ namespace DW4.Gameplay;
 /// </summary>
 public sealed class GameTables
 {
-    public sealed class Table(int rows, Dictionary<string, object?[]> columns)
+    public sealed class Table(int rows, Dictionary<string, object?[]> columns, string name = "")
     {
         public int Rows { get; } = rows;
+        public string Name { get; } = name;
         public bool Has(string column) => columns.ContainsKey(column);
 
         public int Int(int row, string column) =>
             columns.TryGetValue(column, out var c) && row >= 0 && row < c.Length ? c[row] switch { int i => i, bool b => b ? 1 : 0, float f => (int)f, _ => 0 } : 0;
 
-        public string Text(int row, string column) =>
+        /// <summary>Texto da célula; NAME e TXT passam pelo idioma escolhido (<see cref="GameText.Cell"/>).</summary>
+        public string Text(int row, string column)
+        {
+            string s = Raw(row, column);
+            return column is "NAME" or "TXT" ? GameText.Cell(Name, column, s) : s;
+        }
+
+        /// <summary>Texto da célula como no disco (para comparar; nunca traduzido).</summary>
+        public string Raw(int row, string column) =>
             columns.TryGetValue(column, out var c) && row >= 0 && row < c.Length ? c[row] as string ?? "" : "";
 
-        public IEnumerable<int> RowsWhere(string column, string value) => Enumerable.Range(0, Rows).Where(r => Text(r, column) == value);
+        public IEnumerable<int> RowsWhere(string column, string value) => Enumerable.Range(0, Rows).Where(r => Raw(r, column) == value);
     }
 
     readonly Dictionary<string, Table> _tables;
@@ -45,7 +54,7 @@ public sealed class GameTables
                     JsonValueKind.String => v.GetString(),
                     _ => null,
                 }).ToArray();
-            tables[t.Name] = new Table(t.Value.GetProperty("rows").GetInt32(), cols);
+            tables[t.Name] = new Table(t.Value.GetProperty("rows").GetInt32(), cols, t.Name);
         }
         return new GameTables(tables);
     }
@@ -154,12 +163,14 @@ public sealed class GameTables
 }
 
 /// <summary>
-/// Equipamento de um jogador: arma ativa (POWERSOCKET[0]), armaduras (MAINSLOT = armor1, SUBSLOT = armor2; −1 = vazio) e
-/// linhas da abChip encaixadas na arma (POWERPOCKET) e na armadura (MAINPOCKET). Na digievolução o jogo desequipa
-/// armaduras e chips e re-escolhe a arma (0x8039CA4C).
+/// Equipamento de um jogador: arma ativa (POWERSOCKET[0]), armas de reserva (POWERSOCKET[1..2]), armaduras (MAINSLOT = armor1,
+/// SUBSLOT = armor2; −1 = vazio) e linhas da abChip encaixadas na arma (POWERPOCKET) e na armadura (MAINPOCKET). Na digievolução
+/// o jogo desequipa armaduras e chips, desmarca o POWERSOCKET e re-escolhe a arma só no [0] (0x8039CA4C).
 /// </summary>
 public sealed record Equipment(int WeaponRow, int Armor1Row = -1, int Armor2Row = -1)
 {
     public IReadOnlyList<int> WeaponChips { get; init; } = [];
     public IReadOnlyList<int> ArmorChips { get; init; } = [];
+    /// <summary>POWERSOCKET[1] e [2] (−1 = vazio). FATO: o personagem novo começa com INI_WEAPON2/3 neles (GAMEDATAINIT).</summary>
+    public IReadOnlyList<int> ReserveWeapons { get; init; } = [];
 }

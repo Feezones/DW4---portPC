@@ -178,10 +178,74 @@ Test("Port: personagem novo com as armas iniciais (INI_WEAPON1..3), a primeira e
     var p = ram.Players[0];
     True(p.Items.Has(new ItemRef("weapon", 268)) && p.Items.Has(new ItemRef("weapon", 275)) && p.Items.Has(new ItemRef("weapon", 274)), "as 3 na pasta");
     Equal(268, p.Equipment?.WeaponRow, "a primeira equipada");
+    Equal("275,274", string.Join(",", p.Equipment!.ReserveWeapons), "as outras nos soquetes de reserva (POWERSOCKET[1..2])");
     p.Equipment = new Equipment(275, 3) { WeaponChips = [7] };
     var back = new GameRam();
     DW4.Script.Save.CharacterSave.FromJson(DW4.Script.Save.CharacterSave.Capture(ram, 0, "Gui", "s", 0).ToJson())!.Apply(back, 0);
     Equal((275, 3, 7), (back.Players[0].Equipment!.WeaponRow, back.Players[0].Equipment!.Armor1Row, back.Players[0].Equipment!.WeaponChips[0]), "arma, armadura e chip gravados");
+});
+
+Test("Port: menu de status (TAB): soquetes, armaduras, pockets, chips, marcas (E), Break, Give e Sort", () =>
+{
+    // Tabelas mínimas: armas 0 (com pockets, SOUBI de todos, skill 1 ≥ 0) e 1 (sem pockets, ISHAKAI 0), 2 (SOUBI só da Digimon 5);
+    // armaduras ∋ 0 (Lv 1) e 1 (Lv 50); ∨ 0; chips 0 (arma e armadura), 1 (só arma), 2 (só armadura).
+    string Col(string n, params object[] v) => $"{{\"name\":\"{n}\",\"cells\":[{string.Join(",", v.Select(x => x is string t ? $"\"{t}\"" : x.ToString()))}]}}";
+    var db = GameTables.FromJson("{" +
+        $"\"weapon\":{{\"rows\":3,\"columns\":[{Col("SKILL", 1, 1, 1)},{Col("SKILLPOINT", 0, 0, 0)},{Col("SOUBI", 65535, 65535, 32)},{Col("ISPOCKET", 1, 0, 1)},{Col("ISHAKAI", 1, 0, 1)},{Col("ISJYOUDO", 1, 0, 1)},{Col("TSUYOSA", 10, 20, 30)},{Col("NAME", "a", "b", "c")}]}}," +
+        $"\"armor1\":{{\"rows\":2,\"columns\":[{Col("LVPOINT", 1, 50)},{Col("ISJYOUDO", 1, 1)}]}}," +
+        $"\"armor2\":{{\"rows\":1,\"columns\":[{Col("LVPOINT", 1)}]}}," +
+        $"\"abChip\":{{\"rows\":3,\"columns\":[{Col("WU", 1, 1, 0)},{Col("BLUEAB", 1, 0, 1)},{Col("ISJYOUDO", 1, 1, 1)}]}}}}");
+    int[] skill = [1, 1, 1, 1, 1, 1, 1, 1, 1];
+    var inv = new Inventory();
+    foreach (var it in new[] { ("weapon", 0), ("weapon", 1), ("weapon", 0), ("armor1", 0), ("armor1", 1), ("armor2", 0), ("abChip", 0), ("abChip", 1), ("abChip", 2) })
+        inv.Add(new ItemRef(it.Item1, it.Item2));
+    var eq = new Equipment(0);
+    Equal(2, EquipRules.Pockets(db, "weapon", 0), "arma com ISPOCKET: 2 pockets (decisão do port)");
+    Equal(0, EquipRules.Pockets(db, "weapon", 1), "arma sem ISPOCKET");
+    True(EquipRules.CanEquip(db, new ItemRef("weapon", 0), 2, 10, skill) && !EquipRules.CanEquip(db, new ItemRef("weapon", 2), 2, 10, skill), "SOUBI da arma");
+    True(EquipRules.CanEquip(db, new ItemRef("armor1", 0), 2, 10, skill) && !EquipRules.CanEquip(db, new ItemRef("armor1", 1), 2, 10, skill), "LVPOINT da armadura");
+    // Soquetes: a segunda cópia da arma 0 vai para o soquete 2; o 0 não fica vazio; Exchange troca com a ativa.
+    eq = EquipRules.SetSocket(db, eq, 1, 0)!;
+    Equal("0,0,-1", string.Join(",", EquipRules.SocketRows(eq)), "soquetes");
+    Equal(0, EquipRules.Free(inv, eq, new ItemRef("weapon", 0)), "as duas cópias em uso");
+    Equal(0, EquipRules.Candidates(inv, eq, "weapon").Count(c => c.Row == 0), "sem cópia livre não é candidata");
+    True(EquipRules.SetSocket(db, eq, 0, -1) == null, "soquete 0 não esvazia");
+    eq = EquipRules.SetSocket(db, eq, 2, 1)!;
+    // Chips: o 2 só serve na armadura; na arma 0 cabem 2; trocar a ativa pela arma 1 (sem pockets) tira os chips da arma.
+    True(EquipRules.SetChip(db, eq, weapon: true, 0, 2) == null, "chip de armadura na arma recusado");
+    eq = EquipRules.SetChip(db, eq, weapon: true, 0, 1)!;
+    True(EquipRules.SetChip(db, eq, weapon: true, 2, 0) == null, "pocket 3 não existe");
+    var swapped = EquipRules.Exchange(db, eq, 2)!;
+    Equal(1, swapped.WeaponRow, "Exchange: a reserva vira a ativa");
+    Equal("1,0,0", string.Join(",", EquipRules.SocketRows(swapped)), "Exchange: a ativa vai para o soquete");
+    Equal(0, swapped.WeaponChips.Count, "arma sem pockets: chips saem");
+    // Armadura ∋ com chip; tirar a armadura tira o chip.
+    eq = EquipRules.SetArmor(db, eq, EquipSlot.Armor, 0);
+    eq = EquipRules.SetChip(db, eq, weapon: false, 0, 2)!;
+    eq = EquipRules.SetArmor(db, eq, EquipSlot.Sub, 0);
+    Equal((0, 0, 1), (eq.Armor1Row, eq.Armor2Row, eq.ArmorChips.Count), "armaduras e chip");
+    Equal(0, EquipRules.SetArmor(db, eq, EquipSlot.Armor, -1).ArmorChips.Count, "sem a ∋, o chip dela sai");
+    // Marcas (E) na pasta: arma 0 duas vezes, arma 1, ∋ 0, ∨ 0, chips 1 e 2 em uso; ∋ 1 e chip 0 livres.
+    Equal("EEEE-E-EE", string.Concat(EquipRules.EquippedMarks(inv, eq).Select(m => m ? 'E' : '-')), "marcas (E) por posição");
+    // Break: equipada recusa (107); ISHAKAI 0 recusa (108); livre deixa. Give: sem grupo, 111; ISJYOUDO 0, 110.
+    Equal((int?)EquipRules.TextEquippedNoBreak, EquipRules.CannotBreak(db, inv, eq, new ItemRef("armor2", 0)), "Break de equipada");
+    Equal((int?)EquipRules.TextNoBreak, EquipRules.CannotBreak(db, inv, eq, new ItemRef("weapon", 1)), "Break de ISHAKAI 0");
+    Equal((int?)null, EquipRules.CannotBreak(db, inv, eq, new ItemRef("armor1", 1)), "Break de livre");
+    Equal((int?)EquipRules.TextNoOneToGive, EquipRules.CannotGive(db, inv, eq, new ItemRef("armor1", 1), 0), "Give sem grupo");
+    Equal((int?)EquipRules.TextNoGive, EquipRules.CannotGive(db, inv, eq, new ItemRef("weapon", 1), 1), "Give de ISJYOUDO 0");
+    Equal((int?)null, EquipRules.CannotGive(db, inv, eq, new ItemRef("armor1", 1), 1), "Give com grupo");
+    // Sort: ∈ ∋ ∨ ∧ e linha; Break tira da pasta; discos saem um por vez.
+    inv.SortDevices(EquipRules.SortKey);
+    Equal("weapon0,weapon0,weapon1,armor10,armor11,armor20,abChip0,abChip1,abChip2", string.Join(",", inv.Devices.Select(d => d.Table + d.Row)), "Sort");
+    True(inv.RemoveDeviceAt(4) && inv.Devices.Count == 8 && !inv.Has(new ItemRef("armor1", 1)), "Break tira o item");
+    inv.Add(new ItemRef("conItem", 3)); inv.Add(new ItemRef("conItem", 3));
+    True(inv.RemoveDisks(3, 1) && inv.Disks(3) == 1 && !inv.RemoveDisks(3, 2), "discos");
+    // Soquetes de reserva vão para o save.
+    var ram = new GameRam();
+    ram.Players[0].Equipment = eq;
+    var back = new GameRam();
+    DW4.Script.Save.CharacterSave.FromJson(DW4.Script.Save.CharacterSave.Capture(ram, 0, "Gui", "s", 0).ToJson())!.Apply(back, 0);
+    Equal("0,0,1", string.Join(",", EquipRules.SocketRows(back.Players[0].Equipment!)), "soquetes no save");
 });
 
 Test("Port: X-data nos atributos (custo ⌈(valor − 45)/5⌉, teto 400, mínimo 1; UPCNT 2..6, 0, 1)", () =>
@@ -219,6 +283,44 @@ Test("Port: configurações em texto do ConfigFile (ida e volta, padrão e faixa
     Equal((1f, 0.8f, "local", 2f), (odd.MasterVolume, odd.MusicVolume, odd.Account, odd.UiScale), "fora da faixa ou inválido");
     Equal(-80f, PortConfig.ToDb(0), "volume 0 = silêncio");
     True(Math.Abs(PortConfig.ToDb(0.5f) + 6.02f) < 0.01f, "0,5 ≈ −6 dB");
+});
+
+Test("Idioma: inglês original, português e português com nomes originais", () =>
+{
+    True(GameText.Load("""
+        { "textos": { "mswk1": "Obteve {Long Sword}!\nParabéns.", "mswk2": "Olá" },
+          "nomes": { "Long Sword": "Espada Longa", "Pyro Sphere": "Esfera de Fogo", "Guilmon": "X" },
+          "descricoes": { "A long sword.\nSharp.": "Uma espada longa {Long Sword}." } }
+        """), "JSON lido");
+    var weapon = new GameTables.Table(1, new() { ["NAME"] = ["Long Sword"], ["TXT"] = ["A long sword.\r\nSharp. "], ["MODEL"] = ["w_sword01"] }, "weapon");
+    var shinka = new GameTables.Table(1, new() { ["NAME"] = ["Guilmon"] }, "shinka");
+    try
+    {
+        GameText.Language = GameLanguage.English;
+        Equal("Obtained Long Sword!", GameText.Text("mswk1", "Obtained Long Sword!"), "inglês: o texto da fase");
+        Equal("Long Sword", weapon.Text(0, "NAME"), "inglês: nome do disco");
+        GameText.Language = GameLanguage.Portuguese;
+        Equal("Obteve Espada Longa!\r\nParabéns.", GameText.Text("mswk1", "x"), "português: nome traduzido e quebra \\r\\n");
+        Equal("Espada Longa", weapon.Text(0, "NAME"), "português: NAME traduzido");
+        Equal("Uma espada longa Espada Longa.", weapon.Text(0, "TXT"), "português: TXT pela descrição normalizada");
+        Equal("Guilmon", shinka.Text(0, "NAME"), "Digimon não se traduz");
+        Equal("w_sword01", weapon.Text(0, "MODEL"), "outras colunas intactas");
+        Equal("∈Espada Longa β", GameText.Name("∈Long Sword β"), "ícone e grau mantidos");
+        Equal("∧⊂Esfera de Fogo α+120", GameText.Name("∧⊂Pyro Sphere α+120"), "chip com elemento e +120");
+        Equal("∈Desconhecida α", GameText.Name("∈Desconhecida α"), "sem tradução fica igual");
+        Equal(1, weapon.RowsWhere("NAME", "Long Sword").Count(), "busca pelo valor do disco");
+        Equal("Sem tradução", GameText.Text("mswk999", "Sem tradução"), "chave sem tradução fica no inglês");
+        Equal("Untitled", GameText.Text(null, "Untitled"), "sem chave fica no inglês");
+        GameText.Language = GameLanguage.PortugueseOriginalNames;
+        Equal("Obteve Long Sword!\r\nParabéns.", GameText.Text("mswk1", "x"), "misto: fala em português, nome original");
+        Equal("Long Sword", weapon.Text(0, "NAME"), "misto: NAME original");
+        Equal("Uma espada longa Long Sword.", weapon.Text(0, "TXT"), "misto: descrição em português com nome original");
+        True(!GameText.Load("{ quebrado"), "JSON inválido");
+        var cfg = PortConfig.FromIni(new PortConfig { Language = 2 }.ToIni());
+        Equal(2, cfg.Language, "idioma gravado na config");
+        Equal(2, PortConfig.FromIni("[jogo]\nidioma=9").Language, "idioma fora da faixa vai para o limite");
+    }
+    finally { GameText.Language = GameLanguage.English; GameText.Clear(); }
 });
 
 Test("AFS: tabela, nomes, datas e cópia de entrada", () =>
@@ -426,7 +528,7 @@ Test("Port: mapa de controles (padrão, salvar e carregar no config, conflito, r
     var taken = b.Set(InputBindings.Keyboard, "pulo", "tecla:K");
     True(taken.SequenceEqual(new[] { "tecnica" }), "Set devolve de quem tirou");
     Equal("tecla:K", b.Get(InputBindings.Keyboard, "pulo")[0], "pulo agora em K");
-    True(!b.Get(InputBindings.Keyboard, "tecnica").Contains("tecla:K") && b.Get(InputBindings.Keyboard, "tecnica").Contains("mouse:2"), "técnica perdeu o K e manteve o mouse");
+    True(!b.Get(InputBindings.Keyboard, "tecnica").Contains("tecla:K") && b.Get(InputBindings.Keyboard, "tecnica").Contains("tecla:E"), "técnica perdeu o K e manteve o E");
     True(b.Get(InputBindings.Keyboard, "cancelar").Contains("tecla:K"), "cancelar (menus) continua com K");
     b.Set(InputBindings.Pad, "ataque", "botao:2");
     // Salvar e carregar pelo texto do config.cfg.
@@ -434,7 +536,13 @@ Test("Port: mapa de controles (padrão, salvar e carregar no config, conflito, r
     Equal((2, 144, 0.5f, false), (back.WindowMode, back.FpsLimit, back.VoiceVolume, back.Fullscreen), "modo sem borda, FPS e vozes voltam");
     True(back.Bindings.Get(InputBindings.Keyboard, "pulo").SequenceEqual(b.Get(InputBindings.Keyboard, "pulo")), "pulo trocado volta do arquivo");
     True(back.Bindings.Get(InputBindings.Pad, "ataque").SequenceEqual(new[] { "botao:2" }), "ataque do controle trocado volta do arquivo");
-    True(back.Bindings.Get(InputBindings.Keyboard, "tecnica").SequenceEqual(new[] { "mouse:2" }), "técnica sem o K volta do arquivo");
+    True(back.Bindings.Get(InputBindings.Keyboard, "tecnica").SequenceEqual(new[] { "tecla:E" }), "técnica sem o K volta do arquivo");
+    // Migração única dos padrões antigos do teclado (técnica K + clique direito, defesa L, técnicas 1–6): o que o jogador mudou fica.
+    var old = PortConfig.FromIni("[teclado]\ntecnica=\"tecla:K,mouse:2\"\nguarda=\"tecla:L\"\ntecnica1=\"tecla:Key1\"\ntecnica2=\"tecla:Q\"\n");
+    True(old.Bindings.Get(InputBindings.Keyboard, "tecnica").SequenceEqual(new[] { "tecla:E", "tecla:K" }) && old.Bindings.Get(InputBindings.Keyboard, "guarda").SequenceEqual(new[] { "mouse:2", "tecla:L" })
+        && old.Bindings.Get(InputBindings.Keyboard, "tecnica1").Count == 0 && old.Bindings.Get(InputBindings.Keyboard, "tecnica2").SequenceEqual(new[] { "tecla:Q" })
+        && old.Bindings.Get(InputBindings.Keyboard, "item1").SequenceEqual(new[] { "tecla:Key1" }) && old.ControlsVersion == 2, "migração dos padrões do teclado");
+    True(PortConfig.FromIni(old.ToIni()).Bindings.Get(InputBindings.Keyboard, "tecnica2").SequenceEqual(new[] { "tecla:Q" }), "migração não roda de novo");
     // Restaurar o padrão de um aparelho não mexe no outro.
     back.Bindings.RestoreDefaults(InputBindings.Keyboard);
     True(back.Bindings.Get(InputBindings.Keyboard, "pulo").SequenceEqual(new[] { "tecla:Space" }), "teclado de volta ao padrão");

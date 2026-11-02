@@ -44,7 +44,7 @@ public partial class Fatia
                     if (t.TryGetProperty("key", out var k) && k.GetString() is { } ks) _textByKey[ks] = t.GetProperty("text").GetString() ?? "";
             }
         }
-        return _textByKey.TryGetValue(key, out var s) && s.Trim().Length > 0 ? s.Trim() : fallback;
+        return _textByKey.TryGetValue(key, out var s) && s.Trim().Length > 0 ? DW4.Gameplay.GameText.Text(key, s).Trim() : DW4.Gameplay.GameText.Text(key, fallback);
     }
 
     /// <summary>

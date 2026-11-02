@@ -53,6 +53,12 @@ public partial class SettingsPanel : VBoxContainer
         var tabs = new TabContainer();
         AddChild(tabs);
 
+        // Idioma dos textos do jogo (DECISÃO DO PORT: o disco NTSC-U só tem inglês). O misto deixa nomes de itens, armas, técnicas
+        // etc. no original; Digimon e lugares não se traduzem em nenhum. As telas próprias do port já são em português.
+        var game = Page(tabs, "Jogo");
+        Choice(game, "Idioma", ["English (original)", "Português", "Português (nomes originais em inglês)"], c.Language, v => c.Language = v);
+        Note(game, "Português: falas, interface, itens e técnicas traduzidos.\nNomes originais: só falas e interface; nomes de itens,\ntécnicas, armas etc. ficam como no jogo.");
+
         var video = Page(tabs, "Gráfico");
         var res = PortConfig.Resolutions.ToList();
         int cur = res.FindIndex(r => r.W == c.Width && r.H == c.Height);
