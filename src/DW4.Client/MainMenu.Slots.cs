@@ -223,11 +223,29 @@ public partial class MainMenu
             $"Área: {AreaName(c.Stage)}\nGravado em {c.SavedAt.ToLocalTime():dd/MM/yyyy HH:mm}";
     }
 
-    // Nome legível da fase gravada (a tabela de nomes de área não foi lida: o código da fase com o tipo).
+    // Nome da área gravada, com os nomes do jogo (textos mswk7xxxx). FATO: as saídas (matz*.lua) mandam o nome do destino na
+    // janela de troca (STCHGFONT00) junto com a fase de destino, e o mesmo destino tem o mesmo nome vindo de saídas diferentes
+    // (dng307b1 e dng309b1 → stag0301 "Gekogeko Land"). As fases sem saída nomeada para elas ficam com o código.
+    // HIPÓTESE: masmorras pela saída da fase que leva a elas, na ordem matz00, matz01 (stag0301 → dng307 "Geko Path" e dng309
+    // "Vein"; stag0401 → dng411 "Mecha Nest" e dng412 "Electro Mine"). Lobby: a fase que nenhuma saída dela nomeia.
+    // DECISÃO DO PORT: stag0000/0001 aparecem como "Tutorial".
+    static readonly Dictionary<string, string> AreaNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["stag0101"] = "Goblin Pass", ["stag0102"] = "Abyss of Grief", ["stag0104"] = "Doom Dome",
+        ["stag0201"] = "Mummy Desert", ["stag0202"] = "Grief Wasteland", ["stag0204"] = "Station X", ["stag0205"] = "Power Plant",
+        ["stag0301"] = "Gekogeko Land", ["stag0302"] = "Mangrove Forest", ["stag0303"] = "Venom Swamp", ["stag0304"] = "Dread Note",
+        ["stag0401"] = "Battle Arena", ["stag0404"] = "Core Area",
+        ["stagml11"] = "Terminal Area", ["stagml12"] = "Central Area", ["stagml13"] = "Shop Area",
+        ["dng101"] = "Humid Cave", ["dng102"] = "Cliff Dungeon", ["dng103"] = "Dome Base",
+        ["dng204"] = "Sand Labyrinth", ["dng205"] = "Ancient Ruins", ["dng206"] = "Virus Lab",
+        ["dng307"] = "Geko Path", ["dng308"] = "Vine Tunnel", ["dng309"] = "Vein", ["dng310"] = "Dread Bridge",
+        ["dng411"] = "Mecha Nest", ["dng412"] = "Electro Mine",
+    };
+
     static string AreaName(string stage) => stage.Length == 0 ? "—"
-        : stage.StartsWith("stag00", StringComparison.OrdinalIgnoreCase) ? $"Tutorial ({stage})"
-        : stage.StartsWith("stagml", StringComparison.OrdinalIgnoreCase) ? $"Lobby ({stage})"
-        : stage.StartsWith("dng", StringComparison.OrdinalIgnoreCase) ? $"Dungeon ({stage})"
+        : stage.StartsWith("stag00", StringComparison.OrdinalIgnoreCase) ? "Tutorial"
+        : AreaNames.TryGetValue(stage, out var n) ? n
+        : stage.Length > 6 && AreaNames.TryGetValue(stage[..6], out var d) ? d
         : stage;
 
     // ---------- criação ----------
