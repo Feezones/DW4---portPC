@@ -28,3 +28,7 @@ Pedido do usuário: segurar o ataque deve dar um golpe carregado com avanço, co
 - Bot sem janela (DW4_ALVO=carregado, stag0101): Guilmon com espada avançou 61,5; Veemon com Shot Pistol, 64,8. Antes: 0.
   As medidas variam com os inimigos por perto, que interrompem o golpe.
 - **HIPÓTESE:** a escala do "Push" em unidades por quadro de 30 Hz (a mesma dos inimigos).
+- Correção (2026-11-02, relato "Dorumon preso no ar"): o MOVE "Push" passava pelo JumpMotion e desligava o pulo logo depois do
+  "Jump"; a velocidade vertical ficava em 30 e o WCHECK "TurnY" nunca passava. Agora "Push", "Back" e "Move" não mexem no pulo.
+  Segurança: "Landing" também passa com 0,25 s parado no ar, e o SQ_ATCKTM tem tempo-limite de 3 s. Bot: salto → golpe → pouso
+  → controle livre com Guilmon, Veemon e Dorumon, em chão plano (stag0101) e contra a mureta da stagML02.
