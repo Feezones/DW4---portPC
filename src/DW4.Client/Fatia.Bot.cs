@@ -15,17 +15,29 @@ public partial class Fatia
     int _botFrames;
 
     Vector3? _walkTarget;
+    Vector3 _dashFrom;
 
     void BotInput(ref Vector3 dir, ref bool attackDown)
     {
         // DW4_ANDAR="x,z": anda até esse ponto do mundo (conferir colisão), avisando a posição a cada segundo.
         // DW4_ANDAR=frente: anda 40 unidades para a frente a partir do ponto inicial (varredura das fases).
+        // DW4_ALVO=carregado: segura o ataque 5 s, solta e mede o avanço do golpe carregado (log [carregado]).
+        if (OS.GetEnvironment("DW4_ALVO") == "carregado")
+        {
+            if (!_padEnabled || !_playerCtrl || TalkWindowOpen) { attackDown = _tick % 30 < 2; return; }
+            int phase = _tick % 480;
+            attackDown = phase < 300;
+            if (phase == 300) _dashFrom = _player.GlobalPosition;
+            if (phase == 479) GD.Print($"[carregado] avanço {new Vector2(_player.GlobalPosition.X - _dashFrom.X, _player.GlobalPosition.Z - _dashFrom.Z).Length():0.0} (de {_dashFrom.Round()} a {_player.GlobalPosition.Round()}), sequência {_runner?.Sequence}");
+            if (phase > 300 && _tick % 15 == 0) GD.Print($"[carregado] q{phase - 300} {_runner?.Sequence} {_runner?.Action} {_runner?.ActionFrame:0}/{_runner?.ActionLength:0} pos {_player.GlobalPosition.Round()}");
+            return;
+        }
         if (OS.GetEnvironment("DW4_ANDAR") == "frente")
         {
             _walkTarget ??= _spawn + new Vector3(System.MathF.Sin(_move.Facing), 0, System.MathF.Cos(_move.Facing)) * 40;
             var go2 = new Vector3(_walkTarget.Value.X - _player.GlobalPosition.X, 0, _walkTarget.Value.Z - _player.GlobalPosition.Z);
             dir = go2.Length() > 2 ? go2.Normalized() : Vector3.Zero;
-            attackDown = _tick % 30 < 2 && (TalkWindowOpen || _choice >= 0 || _listChoice >= 0);
+            attackDown = _tick % 30 < 2 && (TalkWindowOpen || _choice >= 0 || _listChoice >= 0 || !_padEnabled);
             if (_tick % 60 == 0) GD.Print($"[andar] {_player.GlobalPosition.Round()} chão {_player.IsOnFloor()} parede {_player.IsOnWall()} início {_spawn.Round()}");
             return;
         }
@@ -35,13 +47,26 @@ public partial class Fatia
         {
             var go = new Vector3(wx, 0, wz) - new Vector3(_player.GlobalPosition.X, 0, _player.GlobalPosition.Z);
             dir = go.Length() > 2 ? go.Normalized() : Vector3.Zero;
-            attackDown = _tick % 30 < 2 && (TalkWindowOpen || _choice >= 0 || _listChoice >= 0);
+            attackDown = _tick % 30 < 2 && (TalkWindowOpen || _choice >= 0 || _listChoice >= 0 || !_padEnabled);
             if (_tick % 60 == 0) GD.Print($"[andar] {_player.GlobalPosition.Round()} chão {_player.IsOnFloor()} parede {_player.IsOnWall()}");
             return;
         }
         var target = _enemies.Where(e => !e.Dead && !e.Killed && e.Body.IsInsideTree())
             .OrderBy(e => e.Body.GlobalPosition.DistanceSquaredTo(_player.GlobalPosition)).FirstOrDefault();
         bool tap = _tick % 30 < 2;
+        // DW4_ALVO=objetos: bate nos objetos quebráveis mais perto (contar golpes até quebrar), um golpe por segundo.
+        if (OS.GetEnvironment("DW4_ALVO") == "objetos"
+            && _objects.Where(o => o.Body != null && !o.Dead).OrderBy(o => o.Actor.Root.GlobalPosition.DistanceSquaredTo(_player.GlobalPosition)).FirstOrDefault() is { } obj)
+        {
+            if (!_padEnabled || !_playerCtrl || TalkWindowOpen || _choice >= 0 || _listChoice >= 0) { attackDown = _tick % 30 < 2; return; }
+            var toObj = obj.Actor.Root.GlobalPosition - _player.GlobalPosition;
+            if (_tick % 60 == 0) GD.Print($"[alvo-obj] {obj.Name}/{obj.Index} HP {obj.Hp} a {toObj.Length():0} (jogador {_player.GlobalPosition.Round()})");
+            toObj.Y = 0;
+            if (toObj.Length() > 12) { dir = toObj.Normalized(); return; } // o corpo do objeto (14 de largura) segura o jogador a ~10
+            if (_runner?.Running != true) _move.Face(Mathf.Atan2(toObj.X, toObj.Z));
+            attackDown = _tick % 60 < 2;
+            return;
+        }
         if (target == null) { attackDown = tap; return; } // sem inimigo: só confirma as falas
         var to = target.Body.GlobalPosition - _player.GlobalPosition;
         to.Y = 0;

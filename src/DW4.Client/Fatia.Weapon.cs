@@ -9,12 +9,15 @@ namespace DW4.Client;
 /// Arma na mão e blocos de sequência pela arma equipada (<see cref="WeaponStyles"/>). Modelos e estilos lidos de
 /// &lt;fatia&gt;\armas\&lt;MODEL&gt; (dw4 igb-cena e igb-dump beWeaponSeqData dos w_*.igb, ndmw #899..#972; fora do repositório).
 /// Sem a pasta da arma, fica a pasta antiga &lt;fatia&gt;\arma (w_sword01) e o estilo "slash".
-/// HIPÓTESE: o osso da mão direita (RArm04) segura todas as armas, inclusive as duplas (o beWeaponAttachData não foi lido).
+/// HIPÓTESE: o osso da mão direita (RArm04) segura a arma (o beWeaponAttachData não foi lido). Armas duplas (Crush Arm e as
+/// outras 32 com nó "left" no IGB, maos.json do igb-cena): as superfícies "left" vão para a mão esquerda (LArm04), já com o
+/// igTransform "Rot180" do jogo aplicado pelo exportador.
 /// </summary>
 public partial class Fatia
 {
     WeaponStyles _styles = WeaponStyles.Fallback;
-    BoneAttachment3D? _weaponAttach;
+    BoneAttachment3D? _weaponAttach, _weaponAttachLeft;
+    const string WeaponBoneLeft = "LArm04";
     int _weaponShown = -1;
 
     string StyleOf(string sequence) => _styles.Of(sequence);
@@ -34,13 +37,43 @@ public partial class Fatia
         if (_model == null || FindAll<Skeleton3D>(_model).FirstOrDefault() is not { } skeleton) return;
         _weaponAttach?.QueueFree();
         _weaponAttach = null;
+        _weaponAttachLeft?.QueueFree();
+        _weaponAttachLeft = null;
         var mesh = dir != null && Directory.Exists(dir) ? Load(Path.Combine("armas", model!), "cena.gltf") : Load("arma", "cena.gltf");
         if (mesh == null) return;
         if (skeleton.FindBone(WeaponBone) < 0) _problems.Add($"osso {WeaponBone} não existe para a arma");
         _weaponAttach = new BoneAttachment3D { BoneName = WeaponBone };
         skeleton.AddChild(_weaponAttach);
         _weaponAttach.AddChild(mesh);
+        if (dir != null && SplitLeftHand(dir, mesh) is { } left && skeleton.FindBone(WeaponBoneLeft) >= 0)
+        {
+            _weaponAttachLeft = new BoneAttachment3D { BoneName = WeaponBoneLeft };
+            skeleton.AddChild(_weaponAttachLeft);
+            _weaponAttachLeft.AddChild(left);
+        }
         SetupStyleAnims();
+    }
+
+    // Tira da malha da arma as superfícies do lado esquerdo (maos.json: um lado por superfície da malha "cena", na ordem) e
+    // devolve-as numa malha própria; sem o arquivo (arma de uma mão), null.
+    static Node3D? SplitLeftHand(string dir, Node3D scene)
+    {
+        var file = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "maos.json", SearchOption.AllDirectories).FirstOrDefault() : null;
+        if (file == null || FindAll<MeshInstance3D>(scene).FirstOrDefault(m => m.Mesh is ArrayMesh) is not { } mi) return null;
+        var sides = System.Text.Json.JsonSerializer.Deserialize<string[]>(File.ReadAllText(file)) ?? [];
+        var src = (ArrayMesh)mi.Mesh;
+        if (sides.Length != src.GetSurfaceCount()) return null;
+        var right = new ArrayMesh();
+        var left = new ArrayMesh();
+        for (int s = 0; s < sides.Length; s++)
+        {
+            var target = sides[s] == "left" ? left : right;
+            target.AddSurfaceFromArrays(src.SurfaceGetPrimitiveType(s), src.SurfaceGetArrays(s));
+            target.SurfaceSetMaterial(target.GetSurfaceCount() - 1, src.SurfaceGetMaterial(s));
+        }
+        mi.Mesh = right;
+        var leftNode = new MeshInstance3D { Mesh = left, Transform = mi.Transform, Name = "arma_esquerda" };
+        return leftNode;
     }
 
     // Parado e andando pelo bloco da arma: SQ_WAIT / SQ_WALK → ações do bloco → MOTIONSET (o andar é o último movimento).

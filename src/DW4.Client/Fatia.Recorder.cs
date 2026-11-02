@@ -28,7 +28,7 @@ public partial class Fatia
 
     bool _playerCtrl = true, _enemiesFrozen, _generatorsFrozen;
     bool _confirmDown, _confirmArmed, _selectEnded;
-    List<string>? _texts;
+    List<(string? Key, string Text)>? _texts;
     bool _textsTried;
     Label? _message;
     PanelContainer? _messagePanel;
@@ -129,10 +129,12 @@ public partial class Fatia
             {
                 using var doc = JsonDocument.Parse(File.ReadAllText(file));
                 _texts = doc.RootElement.GetProperty("texts").EnumerateArray()
-                    .OrderBy(t => t.GetProperty("index").GetInt32()).Select(t => t.GetProperty("text").GetString() ?? "").ToList();
+                    .OrderBy(t => t.GetProperty("index").GetInt32())
+                    .Select(t => (t.TryGetProperty("key", out var k) ? k.GetString() : null, t.GetProperty("text").GetString() ?? "")).ToList();
             }
         }
-        return _texts != null && index >= 0 && index < _texts.Count ? _texts[index] : $"(texto {index})";
+        // Idioma (Configurações > Jogo): a chave do texto (mswk…) acha a tradução; sem ela, fica o inglês da fase.
+        return _texts != null && index >= 0 && index < _texts.Count ? GameText.Text(_texts[index].Key, _texts[index].Text) : $"(texto {index})";
     }
 
     // DECISÃO DA FATIA: a janela i_messwn e a fonte do jogo ainda não foram exportadas; o texto sai numa caixa da Godot embaixo.

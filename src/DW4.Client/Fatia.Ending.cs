@@ -39,7 +39,7 @@ public partial class Fatia
         _ending.AddChild(text);
         AddChild(_ending);
         foreach (var m in _music.Values) m.Stop();
-        var stages = OS.GetEnvironment("DW4_FASES") is { Length: > 0 } s ? s : @"D:\dw4-work\fases";
+        var stages = DataPaths.Fases;
         var wav = Path.Combine(stages, "stagis20", "audio", "ndmw_0063.wav");
         if (LoadWav(wav) is { } stream)
         {

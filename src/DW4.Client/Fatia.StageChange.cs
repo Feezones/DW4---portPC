@@ -231,7 +231,7 @@ public partial class Fatia
         ScriptLog($"troca de fase: {stage}, entrada {_nextEntry}");
         _choice = -1;
         if (_choicePanel != null) _choicePanel.Visible = false;
-        var stages = OS.GetEnvironment("DW4_FASES") is { Length: > 0 } s ? s : @"D:\dw4-work\fases";
+        var stages = DataPaths.Fases;
         if (stage == _stageName || System.IO.Directory.Exists(System.IO.Path.Combine(stages, stage)))
         {
             // Recarrega a cena com a fase e a entrada pedidas (o first.lua decide a demo pela entrada). A GAMERAM continua.

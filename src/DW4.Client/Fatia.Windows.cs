@@ -57,7 +57,8 @@ public partial class Fatia
         if (!Directory.Exists(dir)) return false;
         _winData = HudData.Load(dir, _problems, "*_hud.json", null);
         if (_winData == null) return false;
-        var vp = new SubViewport { Size = new Vector2I(640, 480), TransparentBg = true, OwnWorld3D = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Always };
+        var vp = _winViewport = new SubViewport { Size = new Vector2I(640, 480), TransparentBg = true, OwnWorld3D = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Always };
+        FitWindowLayer();
         vp.AddChild(new Camera3D { Projection = Camera3D.ProjectionType.Orthogonal, Size = 480, KeepAspect = Camera3D.KeepAspectEnum.Height, Near = 1, Far = 20000, Current = true, Position = new Vector3(0, 0, 10000) });
         _winRoot = new Node3D();
         vp.AddChild(_winRoot);
@@ -69,6 +70,29 @@ public partial class Fatia
         AddChild(layer);
         return true;
     }
+
+    // DECISÃO DO PORT (tela larga, pedido do usuário em 2026-11-02): a tela das janelas tem a proporção da janela do jogo (480 linhas,
+    // 640 em 4:3, mais em telas largas), para o escurecido cobrir a tela toda e a caixa de fala esticar pelo meio (HudActor widen).
+    // A caixa, os rostos e os textos param na largura de 16:9 (853); só o escurecido vai até as bordas de telas mais largas.
+    SubViewport? _winViewport;
+    float _winExtra, _winExtraFull; // metade da largura além de 640: até 16:9 / a tela toda
+
+    void FitWindowLayer()
+    {
+        if (_winViewport == null) return;
+        var size = GetViewport().GetVisibleRect().Size;
+        float width = Math.Clamp(480f * size.X / Math.Max(1f, size.Y), 640f, 480f * 32f / 9f);
+        var want = new Vector2I((int)MathF.Round(width), 480);
+        if (_winViewport.Size != want) _winViewport.Size = want;
+        _winExtraFull = (want.X - 640) / 2f;
+        _winExtra = (Math.Min(want.X, 480f * 16f / 9f) - 640) / 2f;
+    }
+
+    // Posição pedida pelo script (GENERATE "V<x,y,z>…") na tela 640 × 480: fora do centro, anda com a borda da tela larga.
+    float WidenX(float x) => Math.Abs(x) is > 150 and < 480 ? x + MathF.Sign(x) * _winExtra : x;
+
+    // Limite do texto dentro da tela das janelas (300 na tela 640).
+    float TextEdge => 300 + _winExtra;
 
     bool TalkWindowOpen => _windows.Keys.Any(k => k.Item1 is "i_talkwn" or "i_messwn" or "i_messwnsp");
 
@@ -103,7 +127,7 @@ public partial class Fatia
             var w = _windows.GetValueOrDefault(id) ?? SpawnWindow(m.Name, id.Item2);
             if (w == null) return false;
             var args = m.RawArgs ?? "";
-            if (m.Arg(0) is { Kind: 'V', Numbers.Length: 3 } p) w.Actor.Root.Position = new Vector3((float)p.Numbers[0], (float)p.Numbers[1], (float)p.Numbers[2]);
+            if (m.Arg(0) is { Kind: 'V', Numbers.Length: 3 } p) w.Actor.Root.Position = new Vector3(WidenX((float)p.Numbers[0]), (float)p.Numbers[1], (float)p.Numbers[2]);
             var seq = args.Split('/').LastOrDefault(s => s.StartsWith("SQ_", StringComparison.Ordinal)) ?? (m.Class == "SELECTCTRL" ? "SQ_OPEN" : "SQ_WAIT");
             w.Seq?.Start(seq);
             return m.Class == "MODELCTRL"; // SELECTCTRL segue para quem trata a escolha/confirmação
@@ -119,7 +143,8 @@ public partial class Fatia
     WindowActor? SpawnWindow(string name, int index)
     {
         if (_winData == null || _winRoot == null || !_winData.Actors.TryGetValue(name, out int root)) return null;
-        var actor = new HudActor(_winData, root, slot: 0, drawOrder: 10 + _windows.Count * 8);
+        FitWindowLayer();
+        var actor = new HudActor(_winData, root, slot: 0, drawOrder: 10 + _windows.Count * 8, widen: _winExtra, widenFull: _winExtraFull);
         _winRoot.AddChild(actor.Root);
         var seqDir = Path.Combine(_dir, "janelas", name);
         var seqFile = Directory.Exists(seqDir) ? Directory.EnumerateFiles(seqDir, "*_seq.json").FirstOrDefault() : null;
@@ -151,6 +176,7 @@ public partial class Fatia
     void TickWindows(float dt)
     {
         if (_winData == null) return;
+        FitWindowLayer();
         foreach (var (id, w) in _windows.ToList())
         {
             if (w.Seq != null)
@@ -191,10 +217,10 @@ public partial class Fatia
             label.Text = t.Text.Replace("\r\n", "\n");
             label.Modulate = t.Color;
             // Dentro da tela 640 × 480 (−320..320, −240..240): a caixa medida passa da tela pelas bordas da moldura.
-            float left = face is { } f ? f.End.X + 14 : Math.Max(-300, b.Position.X + 24);
-            float right = Math.Min(300, b.End.X - 16);
+            float left = face is { } f ? f.End.X + 14 : Math.Max(-TextEdge, b.Position.X + 24);
+            float right = Math.Min(TextEdge, b.End.X - 16);
             float top = face is { } f2 ? f2.End.Y : Math.Min(220, b.End.Y - 12);
-            left = Math.Clamp(left, -300, 200);
+            left = Math.Clamp(left, -TextEdge, TextEdge - 100);
             label.Width = Math.Max(120, right - left);
             label.Position = new Vector3(left, name ? top : top - (hasName ? 26 : 0), 50);
         }
@@ -255,10 +281,10 @@ public partial class Fatia
         bool visible = t.On && box.HasValue && (name || main);
         if (!visible) { if (g.Node != null) g.Node.Visible = false; return; }
         var b = box!.Value;
-        float left = face is { } f ? f.End.X + 14 : Math.Max(-300, b.Position.X + 24);
-        float right = Math.Min(300, b.End.X - 16);
+        float left = face is { } f ? f.End.X + 14 : Math.Max(-TextEdge, b.Position.X + 24);
+        float right = Math.Min(TextEdge, b.End.X - 16);
         float top = face is { } f2 ? f2.End.Y : Math.Min(220, b.End.Y - 12);
-        left = Math.Clamp(left, -300, 200);
+        left = Math.Clamp(left, -TextEdge, TextEdge - 100);
         float width = Math.Max(120, right - left);
         string text = DeviceIcons.GameText(t.Text.Replace("\r\n", "\n")); // ícones do GameCube → botões do aparelho atual
         if (g.Node == null)

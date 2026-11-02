@@ -20,6 +20,12 @@ public sealed class Inventory
     public IReadOnlyList<ItemRef> Devices => _devices;
     public int Bit { get; set; }
 
+    /// <summary>
+    /// DECISÃO DO PORT (PC, pedido do usuário em 2026-11-02): 5 atalhos de disco (linha da conItem, −1 = vazio) para as teclas 1–5.
+    /// No original o disco é usado pela Item Window (botão √ do controle, textos mswk201984/204308). Gravados na vaga.
+    /// </summary>
+    public int[] QuickItems { get; } = [-1, -1, -1, -1, -1];
+
     /// <summary>XDATA do jogador. FATO: o GETSHOPDATA (0x803518F8) limita a soma a 9999 (0x270F). HIPÓTESE: o mesmo teto por jogador.</summary>
     public const int XDataMax = 9999;
     int _xdata;
@@ -143,6 +149,30 @@ public sealed class Inventory
             default:
                 return _devices.Remove(item);
         }
+    }
+
+    /// <summary>Tira o item na posição <paramref name="index"/> da DEVICEFOLDER ("Break" do menu). false fora da pasta.</summary>
+    public bool RemoveDeviceAt(int index)
+    {
+        if (index < 0 || index >= _devices.Count) return false;
+        _devices.RemoveAt(index);
+        return true;
+    }
+
+    /// <summary>"Sort" da Device Folder: ordem pela chave dada (estável).</summary>
+    public void SortDevices(Func<ItemRef, int> key)
+    {
+        var sorted = _devices.OrderBy(key).ToList();
+        _devices.Clear();
+        _devices.AddRange(sorted);
+    }
+
+    /// <summary>Joga fora discos ("Break" da Disk Folder). false sem essa quantidade.</summary>
+    public bool RemoveDisks(int conItemRow, int count)
+    {
+        if (count <= 0 || Disks(conItemRow) < count) return false;
+        _disks[conItemRow] -= count;
+        return true;
     }
 
     /// <summary>

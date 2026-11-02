@@ -57,7 +57,7 @@ public partial class Fatia : IBeEngine
     void RunGameStart(BeHost host)
     {
         Session.PendingGameStart = false;
-        var stages = OS.GetEnvironment("DW4_FASES") is { Length: > 0 } s ? s : @"D:\dw4-work\fases";
+        var stages = DataPaths.Fases;
         var file = Path.Combine(stages, "stagis10", "lua", "gameStart.lua");
         if (!File.Exists(file)) { _problems.Add($"falta {file} (dw4 fase-exportar … stagIS10): flags do começo de jogo não refeitas"); return; }
         var gs = new StageScripts(new Dictionary<string, byte[]> { ["gameStart.lua"] = File.ReadAllBytes(file) }, host) { Error = (n, m) => ScriptLog($"ERRO {n}: {m}") };
@@ -132,6 +132,9 @@ public partial class Fatia : IBeEngine
         // Sem a demo exportada: sem resposta (a espera passa).
         "ISDEMOCAMERA" => _cameraDemo is { } d ? (_cameraDemoT < d.Duration ? 1 : 0) : (double?)null,
         // Projéteis x_* (gl2_f_luce.lua espera os 4 mísseis sumirem) e inimigos pelo modelo (o índice dos inimigos é 0 na fatia).
+        // FATO (lua-trace do matx01.lua, Security Hole da stag0101): MDLisLive(SYSgetPlayerName(p), 0) decide entre SQ_SWON (liga o
+        // símbolo e mostra o aviso na primeira vez) e SQ_SWOF; o jogador vivo responde 1 (antes 0: o símbolo apagava ao entrar).
+        "ISLIVE" when m.Name == PlayerModel && m.Index == 0 => _hp > 0 ? 1 : 0,
         "ISLIVE" => (m.Name == "i_bosshp01" && _bossBarOpen) || _minimap?.Has(m.Name ?? "", m.Index) == true || _objects.Any(o => o.Name == m.Name && o.Index == m.Index && !o.Dead && !o.Erased)
             || _enemyShots.Any(s => s.Name == m.Name && s.Index == m.Index && !s.Seq.Erased) || _enemies.Any(e => e.Kind.Model == m.Name && m.Index <= 0 && !e.Dead) ? 1 : 0,
         _ => null,

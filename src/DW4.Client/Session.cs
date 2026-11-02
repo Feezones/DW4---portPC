@@ -30,11 +30,14 @@ public static class Session
 {
     public const string MenuScene = "res://MainMenu.tscn", GameScene = "res://Fatia.tscn";
     /// <summary>
-    /// FATO: a gatedisc.lua da stagIS10 (título, onde começa o jogo) e a da stagIS13 (criar/chamar Digimon) saem com
-    /// SETGENERATEPOS I&lt;3&gt; e NEXTSTAGE "stagML11". Personagem novo começa ali: lobby, entrada 3.
+    /// Começo do jogo vindo do menu: lobby, entrada 0. FATO: a gatedisc.lua (em toda fase, inclusive nas stagIS*) é o uso do
+    /// Gate Disk, que sai com SETGENERATEPOS I&lt;3&gt; para o Emergency Gate do lobby (entrada 3, em (210, 40, 120)); o
+    /// hostLoad.lua e o gameStart.lua da stagIS10 não escolhem entrada. FATO (relato do usuário com o original, 2026-11-02): ao
+    /// entrar, o Digimon aparece em (60,9, 10, −43), dentro da caixa da entrada 0 da stagml11 (41..79 × −55..−20; vagas em
+    /// (60, −30), (60, −50), (70, −40), (50, −40)). HIPÓTESE: sem SETGENERATEPOS o jogo usa a entrada 0.
     /// </summary>
     public const string NewGameStage = "stagml11";
-    public const int NewGameEntry = 3;
+    public const int NewGameEntry = 0;
 
     static ICharacterStore? s_store;
     public static ICharacterStore Store
@@ -55,7 +58,40 @@ public static class Session
         c.Received += m => { s_history.Add(m); if (s_history.Count > 50) s_history.RemoveAt(0); };
         return c;
     }
-    public static string Account => PortSettings.Current.Account;
+    /// <summary>
+    /// Conta dona das vagas. Pelo launcher RE:DIGITAL (integração "dw4"): DW4.exe -- --conta &lt;usuário&gt; --ticket &lt;ticket&gt;,
+    /// e as vagas ficam em user://accounts/&lt;usuário&gt;. Pela Godot (editor) sem --conta: a conta da configuração ("local").
+    /// Exportado e aberto sem o launcher: null, e o menu não mostra vagas (pede para abrir pelo launcher).
+    /// PONTO DA FASE 6: o servidor confere o ticket e passa a guardar as vagas da conta.
+    /// </summary>
+    public static string? Account { get { ReadLauncherArgs(); return s_account; } }
+    /// <summary>Ticket de uso único (2 min) que o launcher pediu à DMO.API para esta abertura; null fora do launcher.</summary>
+    public static string? LauncherTicket { get { ReadLauncherArgs(); return s_ticket; } }
+    static string? s_account, s_ticket;
+    static bool s_argsRead;
+
+    static void ReadLauncherArgs()
+    {
+        if (s_argsRead) return;
+        s_argsRead = true;
+        string? conta = null;
+        // Os argumentos depois de "--" vão para o jogo (GetCmdlineUserArgs); os outros são da Godot.
+        var args = OS.GetCmdlineUserArgs();
+        for (int i = 0; i + 1 < args.Length; i++)
+        {
+            if (args[i] == "--conta") conta = args[i + 1];
+            else if (args[i] == "--ticket") s_ticket = args[i + 1];
+        }
+        if (conta != null)
+        {
+            conta = conta.Trim().ToLowerInvariant();
+            bool ok = conta.Length is > 0 and <= 64 && conta is not ("." or "..") && conta.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) < 0;
+            s_account = ok ? conta : null;
+            if (!ok) GD.PushWarning("[conta] nome de conta inválido vindo do launcher");
+        }
+        else s_account = OS.HasFeature("editor") ? PortSettings.Current.Account : null;
+        GD.Print($"[conta] {(s_account == null ? "sem conta (abra pelo launcher)" : conta != null ? "conta do launcher" : "conta local da configuração")}");
+    }
 
     public static int Slot { get; private set; } = -1;
     public static CharacterSave? Character { get; private set; }
@@ -69,7 +105,8 @@ public static class Session
     /// <summary>Entra com o personagem da vaga: GAMERAM nova com o save e a fase gravada.</summary>
     public static bool Begin(SceneTree tree, int slot, CharacterSave character, out string? error)
     {
-        if (!Gate.Enter(Account, slot, character, out error)) return false;
+        if (Account is not { } account) { error = "Abra o Digimon World 4 pelo launcher RE:DIGITAL, com a sua conta conectada."; return false; }
+        if (!Gate.Enter(account, slot, character, out error)) return false;
         Slot = slot;
         Character = character;
         var ram = new GameRam();
@@ -80,8 +117,9 @@ public static class Session
         Fatia.UseRam(ram);
         PendingGameStart = true;
         Fatia.PlayerModel = character.Model.Length > 0 ? character.Model : "p_girumon";
-        // Vaga gravada numa fase de menu (stagIS*, sem cenário no port) ou sem fase: volta ao lobby, entrada 3.
-        bool lobby = character.Stage.Length == 0 || Fatia.IsMenuStage(character.Stage);
+        // Vaga gravada numa fase de menu (stagIS*, sem cenário no port), sem fase ou no próprio lobby: começa no lobby, entrada 0
+        // (a 3 das vagas antigas era a do Gate Disk).
+        bool lobby = character.Stage.Length == 0 || Fatia.IsMenuStage(character.Stage) || character.Stage.Equals(NewGameStage, System.StringComparison.OrdinalIgnoreCase);
         // Vaga gravada no meio do tutorial: volta ao começo dele, como o restart.lua (ResumePoint).
         var (stage, entry) = lobby ? (NewGameStage, NewGameEntry) : DW4.Script.Save.ResumePoint.Adjust(ram, character.Stage, character.Entry);
         OS.SetEnvironment("DW4_FASE", stage);
@@ -102,7 +140,8 @@ public static class Session
         var s = CharacterSave.Capture(ram, 0, c.Name, stage, entry);
         s.Starter = c.Starter;
         s.Model = Fatia.PlayerModel; // muda na evolução
-        Store.Save(Account, Slot, s);
+        if (Account is not { } account) return;
+        Store.Save(account, Slot, s);
         Character = s;
     }
 

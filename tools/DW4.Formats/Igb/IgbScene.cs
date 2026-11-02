@@ -13,6 +13,9 @@ public sealed class IgbMeshPart
     /// igColorAttr (0,4 0,4 0,4 1).</summary>
     public float[]? Color { get; set; }
     public int GeometryIndex { get; init; }
+    /// <summary>Lado da arma dupla: "right" ou "left" quando há um nó com esse nome acima (FATO: w_arm01 = igSwitch "PC01" →
+    /// igAttrSet "right" → geometria e igAttrSet "left" → igTransform "Rot180" → a mesma geometria); null fora disso.</summary>
+    public string? Hand { get; init; }
     public int ImageIndex { get; set; } = -1;
     /// <summary>Textura por nome (beTextureCtrlAttr sobre um igAttrSet acima da geometria), resolvida num pacote; null sem.</summary>
     public string? TextureName { get; set; }
@@ -127,6 +130,8 @@ public sealed class IgbScene
         var savedName = _textureName;
         var savedBlend = _blendDst;
         var savedColor = _color;
+        var savedHand = _hand;
+        if (node.Fields.FirstOrDefault(v => v.Desc.ShortName == "String")?.Text is { } side && side is "right" or "left") _hand = side;
         if (_textureNameOf.TryGetValue(node.Index, out var tn)) _textureName = tn;
         var world = parent;
         if (_f.Is(node, "igTransform"))
@@ -165,7 +170,10 @@ public sealed class IgbScene
         _textureName = savedName;
         _blendDst = savedBlend;
         _color = savedColor;
+        _hand = savedHand;
     }
+
+    string? _hand;
 
     // Filhos de um igGroup: igNodeList (igObjectList) ou referência direta a igNode.
     IEnumerable<IgbObject> Children(IgbObject node)
@@ -240,7 +248,7 @@ public sealed class IgbScene
 
     IgbMeshPart BuildPart(IgbObject geom, float[]? world, int image)
     {
-        var part = new IgbMeshPart { GeometryIndex = geom.Index, ImageIndex = image, SceneRoot = _root, TextureName = image < 0 ? _textureName : null, BlendDst = _blendDst, Color = _color };
+        var part = new IgbMeshPart { GeometryIndex = geom.Index, ImageIndex = image, SceneRoot = _root, TextureName = image < 0 ? _textureName : null, BlendDst = _blendDst, Color = _color, Hand = _hand };
         IgbObject? va = null, ia = null, pla = null;
         foreach (var r in Refs(geom))
         {

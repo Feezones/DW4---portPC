@@ -135,7 +135,7 @@ public partial class MainMenu
     bool ShowSlotsUi()
     {
         IReadOnlyList<CharacterSave?> slots;
-        try { slots = Session.Store.List(Session.Account); }
+        try { slots = Session.Store.List(Session.Account!); }
         catch (Exception e) when (e is IOException or ArgumentException) { GD.PrintErr($"[menu] vagas: {e.Message}"); slots = new CharacterSave?[ICharacterStore.Slots]; }
         _slots = slots;
         var column = NewScreen("Seus Digimon");
@@ -316,7 +316,7 @@ public partial class MainMenu
         if (!Playable(FormModel(_createFormUi))) { _createStatus!.Text = "Esse Digimon ainda não tem modelo no cliente."; return; }
         var save = CharacterSave.New(n, _createFormUi, FormModel(_createFormUi), 0, Session.NewGameStage, Session.NewGameEntry,
             _createFormUi < _shinka.Count ? _shinka[_createFormUi].Weapons : null);
-        Session.Store.Save(Session.Account, _createSlotUi, save);
+        Session.Store.Save(Session.Account!, _createSlotUi, save);
         _slotCursor = _createSlotUi;
         ShowSlots();
     }

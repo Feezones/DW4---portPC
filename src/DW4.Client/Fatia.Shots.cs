@@ -43,6 +43,8 @@ public partial class Fatia
         public bool SeqDead { get; init; }
         public bool Lock { get; init; }
         public Vector3 Offset { get; init; }
+        /// <summary>Projétil do jogador (caixa 10000, ex. x_100gunv01 da pistola): acerta inimigos, não o jogador.</summary>
+        public bool FromPlayer { get; init; }
     }
 
     Dictionary<string, List<Starter>>? _starters;
@@ -88,20 +90,26 @@ public partial class Fatia
 
     // Dispara o que a ação atual de um modelo pede: chamado a cada quadro com a ação e o quadro (nas unidades do sequenciador dele).
     void FireStarters(string model, string? action, float frame, ref string? lastAction, ref float lastFrame, Transform3D at, Fighter? owner, string ownerName,
-        Func<Transform3D?> source, Func<string?> sourceSequence)
+        Func<Transform3D?> source, Func<string?> sourceSequence, bool fromPlayer = false)
     {
         if (action == null) { lastAction = null; return; }
         if (!Starters().TryGetValue(model, out var list)) { lastAction = action; lastFrame = frame; return; }
         float from = action == lastAction ? lastFrame : -1;
         foreach (var s in list)
-            if (s.Action == action && s.Frame > from && s.Frame <= frame)
-                SpawnShot(s, at, owner, ownerName, source, sourceSequence);
+            if (s.Action == action && s.Frame > from && s.Frame <= frame && (!fromPlayer || PlayerBullet(s.Effect)))
+                SpawnShot(s, at, owner, ownerName, source, sourceSequence, fromPlayer);
         lastAction = action;
         lastFrame = frame;
     }
 
-    void SpawnShot(Starter s, Transform3D at, Fighter? owner, string ownerName, Func<Transform3D?> source, Func<string?> sourceSequence)
+    // Do jogador só saem os x_* com caixa de golpe dele (FATO: entre os x_100*, só o x_100gunv01 tem HITBOX 10000; os outros são
+    // rastros de golpe, e as técnicas x_200* já saem pelo ReleaseTechnique).
+    bool PlayerBullet(string effect) =>
+        ShotSeqs(effect) is { } seqs && seqs.Seqs.Values.Any(cmds => cmds.Any(c => c.Kind == "HITBOX" && c.I(1) == 10000));
+
+    void SpawnShot(Starter s, Transform3D at, Fighter? owner, string ownerName, Func<Transform3D?> source, Func<string?> sourceSequence, bool fromPlayer = false)
     {
+        if (DiagNpc) GD.Print($"[tiro] {ownerName}: {s.Effect} ({s.Action})");
         if (_enemyShots.Count > 200 || ShotSeqs(s.Effect) is not { } seqs) return;
         var seq = new ObjectSequencer(seqs.Seqs, seqs.Acts);
         if (!seq.Start(s.Sequence) && !seq.Start(seqs.Seqs.Keys.FirstOrDefault(k => k.StartsWith("SQ_ATCK", StringComparison.Ordinal)) ?? "")) return;
@@ -129,7 +137,7 @@ public partial class Fatia
         int index = 0;
         while (_enemyShots.Any(o => o.Name == s.Effect && o.Index == index)) index++;
         _enemyShots.Add(new Shot { Name = s.Effect, Root = root, Seq = seq, Owner = owner, OwnerName = ownerName, Index = index, Actor = actor,
-            Source = source, SourceSequence = sourceSequence, SourceSequenceAtSpawn = sourceSequence(), SeqDead = s.SeqDead, Lock = s.Lock, Offset = s.Offset });
+            Source = source, SourceSequence = sourceSequence, SourceSequenceAtSpawn = sourceSequence(), SeqDead = s.SeqDead, Lock = s.Lock, Offset = s.Offset, FromPlayer = fromPlayer });
     }
 
     HudData? _shotModels;
@@ -157,6 +165,27 @@ public partial class Fatia
                 () => src.Dead || !src.Started ? null : src.Runner?.Sequence);
             e.ShotAction = la; e.ShotFrame = lf;
         }
+        // Jogador: tiro da arma pela ação (FATO: x_100gunv01 na VATCG1 do p_vmon, quadro 10, deslocamento (0, 6,5, 1); quadros do
+        // SequenceRunner, como os dos inimigos).
+        if (_runner?.Running == true && _hp > 0)
+        {
+            string? la = _playerShotAction; float lf = _playerShotFrame;
+            var at = new Transform3D(new Basis(Vector3.Up, _move.Facing), _player.GlobalPosition);
+            // HIPÓTESE: o quadro do disparador do jogador é de 60 Hz (a VATCG1 dura 0,217 s = 6,5 quadros de 30 Hz e o x_100gunv01
+            // sai no quadro 10; em 60 Hz, 0,167 s, dentro da ação).
+            FireStarters(PlayerModel, _runner.Action, _runner.ActionFrame * 2, ref la, ref lf, at, _pf, PlayerModel,
+                () => new Transform3D(new Basis(Vector3.Up, _move.Facing), _player.GlobalPosition), () => _runner?.Sequence, fromPlayer: true);
+            _playerShotAction = la; _playerShotFrame = lf;
+        }
+        // Objetos também disparam pela ação (FATO: x_bltcannon01 na BLST01 do g_cannon01, deslocamento (0, 7,5, 1)).
+        foreach (var o in _objects.Where(o => !o.Dead && o.Seq != null && !o.Erased).ToList())
+        {
+            string? la = o.ShotAction; float lf = o.ShotFrame;
+            var src = o;
+            FireStarters(o.Name, o.Seq!.Action, o.Seq.ActionTime, ref la, ref lf, o.Actor.Root.GlobalTransform, o.Owner?.Kind.Stats, o.Name,
+                () => src.Dead || src.Erased ? null : src.Actor.Root.GlobalTransform, () => src.Dead || src.Erased ? null : src.Seq?.Sequence);
+            o.ShotAction = la; o.ShotFrame = lf;
+        }
         for (int i = _enemyShots.Count - 1; i >= 0; i--)
         {
             var s = _enemyShots[i];
@@ -172,7 +201,9 @@ public partial class Fatia
             }
             if (s.Seq.Motion.AnyActive && dt > 0)
             {
-                var (local, yawDeg) = s.Seq.Motion.Step(dt * SequenceRunner.FramesPerSecond);
+                // HIPÓTESE (relato "o tiro da Shot Pistol é lento"): o tiro do jogador anda no relógio do sequenciador de objetos (60 Hz, o
+                // mesmo dos WAITCHECK "Frame" dele); os de inimigo continuam a 30 Hz.
+                var (local, yawDeg) = s.Seq.Motion.Step(dt * (s.FromPlayer ? ObjectSequencer.FramesPerSecond : SequenceRunner.FramesPerSecond));
                 s.Root.RotateY(yawDeg * MathF.PI / 180);
                 s.Root.TranslateObjectLocal(new Vector3(local.X, local.Y, local.Z));
             }
@@ -181,13 +212,65 @@ public partial class Fatia
             FireStarters(s.Name, s.Seq.Action, s.Seq.ActionTime, ref la, ref lf, s.Root.GlobalTransform, s.Owner, s.OwnerName,
                 () => me.Seq.Erased ? null : me.Root.GlobalTransform, () => me.Seq.Erased ? null : me.Seq.Sequence);
             s.LastAction = la; s.LastFrame = lf;
-            if (!s.Hit) CheckShotHit(s);
+            if (!s.Hit) { if (s.FromPlayer) CheckPlayerShotHit(s); else CheckShotHit(s); }
             if (s.Lock && s.Source?.Invoke() is { } t) s.Root.GlobalTransform = new Transform3D(t.Basis, t * s.Offset);
             bool orphan = s.SeqDead && s.SourceSequence?.Invoke() != s.SourceSequenceAtSpawn;
             if (s.Seq.Erased || !s.Seq.Running || orphan)
             {
                 s.Root.QueueFree();
                 _enemyShots.RemoveAt(i);
+            }
+        }
+    }
+
+    // Efeito x_* preso ao jogador (sem caixa de golpe), como os disparadores fazem: ex. o brilho de subida no level up.
+    void PlayerEffect(string effect, string sequence)
+    {
+        var at = new Transform3D(new Basis(Vector3.Up, _move.Facing), _player.GlobalPosition);
+        SpawnShot(new Starter(effect, "", sequence, 0, new Vector3(0, 1, 0), false, true), at, _pf, PlayerModel,
+            () => new Transform3D(new Basis(Vector3.Up, _move.Facing), _player.GlobalPosition), () => _runner?.Sequence);
+    }
+
+    string? _playerShotAction;
+    float _playerShotFrame;
+
+    // Tiro do jogador contra os inimigos: mesma conta do golpe físico (PlayerStrikes, código 10000) e some no primeiro acerto
+    // (HIPÓTESE: o bht do x_100gunv01 apaga o tiro ao acertar, como o SQ_BREK/SQ_ERAS dos tiros de inimigo).
+    void CheckPlayerShotHit(Shot s)
+    {
+        foreach (var h in s.Seq.ActiveHitBoxes.Where(h => h.Type == 10000))
+        {
+            var c = s.Root.GlobalTransform * new Vector3(h.Position.X, h.Position.Y, h.Position.Z);
+            foreach (var e in _enemies.ToList())
+            {
+                if (e.Dead || e.Killed || (e.Started && e.Runner?.Invincible == true)) continue;
+                var p = e.Body.GlobalPosition;
+                bool touch = e.Kind.BodyBoxes.Count > 0
+                    ? HitBody.Hits(N(c), h.Size, s.Root.GlobalRotation.Y, N(p), e.Yaw, e.Model?.Scale.X ?? 1, e.Kind.BodyBoxes)
+                    : Math.Abs(c.X - p.X) <= h.Size.X / 2 + e.HitHalf && Math.Abs(c.Z - p.Z) <= h.Size.Z / 2 + e.HitHalf && c.Y + h.Size.Y / 2 >= p.Y && c.Y - h.Size.Y / 2 <= p.Y + e.HitHeight;
+                if (!touch) continue;
+                s.Hit = true;
+                _hits++;
+                _lastEnemy = e;
+                if (UsesHitScript(e)) StrikeWithScript(e, h.Type);
+                else
+                {
+                    string reaction = PlayerStrikes(e, h.Type);
+                    if (e.Brain != null && e.Runner != null) { e.Brain.Force(reaction); e.Started = false; }
+                }
+                s.Seq.Start("SQ_ERAS");
+                return;
+            }
+            // Objetos também levam o tiro (FATO: hit_g_rock01z01.lua pergunta BLTisPlayerBullet).
+            foreach (var o in _objects.Where(o => o.Body != null && !o.Dead).ToList())
+            {
+                var p = o.Actor.Root.GlobalPosition;
+                if (Math.Abs(c.X - p.X) > h.Size.X / 2 + GboxSize.X / 2 || Math.Abs(c.Z - p.Z) > h.Size.Z / 2 + GboxSize.Z / 2
+                    || c.Y + h.Size.Y / 2 < p.Y || c.Y - h.Size.Y / 2 > p.Y + GboxSize.Y) continue;
+                s.Hit = true;
+                StrikeObject(o, h.Type);
+                s.Seq.Start("SQ_ERAS");
+                return;
             }
         }
     }

@@ -5,7 +5,7 @@ namespace DW4.Formats.Igb;
 /// <summary>Um gerador (beGeneraterData) com as posições já absolutas, uma por vaga, e a contagem por nº de jogadores 1..4.</summary>
 public sealed record IgbGenerator(string Name, IReadOnlyList<(float X, float Y, float Z)> Positions, IReadOnlyList<float> RotYDeg,
     IReadOnlyList<int> Count, IReadOnlyList<int> MaxCount, int EnemyRow, string StartMode, float StartData, string FillMode,
-    float FillData, string CallLua, bool Global);
+    float FillData, string CallLua, bool Global, (float X, float Y, float Z) Point = default);
 
 /// <summary>Um volume de gatilho de área (beMatCtrlData): nome do script sem ".lua" e a caixa.</summary>
 public sealed record IgbTriggerVolume(string Name, (float X, float Y, float Z) Min, (float X, float Y, float Z) Max);
@@ -45,7 +45,7 @@ public static class IgbGenerators
                     maxCounts.Add(r.Int(p, 3));
                 }
             list.Add(new IgbGenerator(r.Text(g, 2) ?? $"#{g.Index}", positions, rotDeg, counts, maxCounts, r.Int(g, 7),
-                r.Text(g, 9) ?? "", r.Float(g, 10), r.Text(g, 11) ?? "", r.Float(g, 12), r.Text(g, 13) ?? "", global));
+                r.Text(g, 9) ?? "", r.Float(g, 10), r.Text(g, 11) ?? "", r.Float(g, 12), r.Text(g, 13) ?? "", global, point));
         }
         return list;
     }
