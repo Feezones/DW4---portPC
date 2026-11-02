@@ -73,7 +73,7 @@ public partial class Fatia
             ShinkaRow = _shinkaRow,
             Skill = () => _skill,
             Forms = Ram.Players[0].Forms.Current >= 0 ? Ram.Players[0].Forms : null,
-            Text = Text,
+            TextByKey = k => TextKey(k, "") is { Length: > 0 } t ? t : null,
             Font = GameFont(),
             Faces = Faces(),
             PartyOthers = 0, // grupo online: Fase 6
