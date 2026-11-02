@@ -73,6 +73,11 @@ Três peças, cada uma com um papel:
 | F perto de outro jogador (até 128 unidades): convidar (só o líder, só amigos; não se cheio ou em outro grupo), adicionar amigo (não se já é ou já pediu), trocar | port | `PlayerInteraction`, ação `interagir` |
 | Troca: até 8 itens + BIT de cada lado; travar, depois confirmar; mudar algo destrava os dois; tudo ou nada, conferindo posse e espaço na hora; itens de enredo (impItem) fora | port | `TradeSession` |
 
+## Andamento
+
+- 2026-11-02: etapa 6c inicial no ar no código: `src/DW4.Net` (protocolo e salas), `src/DW4.Server` e o cliente vendo os outros
+  jogadores. Como rodar e o que falta em `docs/online/servidor.md`. A entrada pelo launcher (6a) foi feita junto do pacote.
+
 ## Etapas depois da aprovação
 
 1. **6a. Entrada pelo launcher.** Entrada `dw4` do catálogo abrindo o port; ticket → token; presença "no DW4". (precisa da DMO.API)

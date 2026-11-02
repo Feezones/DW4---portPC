@@ -238,6 +238,7 @@ public partial class Fatia : Node3D
             _damageNumbers = new DamageNumbers(hud, this);
         }
         SetupChat();
+        SetupOnline();
         SetupPrints();
         SetupTechBar();
         SetupQuickItems();
@@ -460,6 +461,7 @@ public partial class Fatia : Node3D
         if (!_generatorsFrozen) TickGenerators();
         if (!_enemiesFrozen) { UpdateEnemies(dt); TickShots(dt); }
         _minimap?.Update(dt, _player.GlobalPosition, GetViewport().GetVisibleRect().Size);
+        TickOnline(dt);
         UpdateFloaters(dt);
         _damageNumbers?.Update(dt);
         TickPlayerStatus(dt);
