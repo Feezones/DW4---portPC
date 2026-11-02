@@ -23,7 +23,7 @@ public sealed class InputBindings
         new("tecnica_anterior", "Técnica anterior"), new("tecnica_proxima", "Próxima técnica"),
         new("tecnica1", "Técnica 1"), new("tecnica2", "Técnica 2"), new("tecnica3", "Técnica 3"), new("tecnica4", "Técnica 4"),
         new("tecnica5", "Técnica 5"), new("tecnica6", "Técnica 6"),
-        new("status", "Menu de status"), new("confirmar", "Confirmar"), new("cancelar", "Cancelar"), new("equipar", "Equipar o último item"),
+        new("status", "Menu de status"), new("confirmar", "Confirmar"), new("cancelar", "Cancelar"),
         new("chat", "Abrir o chat"), new("pausa", "Pausa (menu)"),
         new("salvar_rapido", "Salvar rápido"), new("acelerar", "Acelerar cenas (segurar)"),
     ];
@@ -35,7 +35,7 @@ public sealed class InputBindings
         ["tecnica_anterior"] = ["mouse:4"], ["tecnica_proxima"] = ["mouse:5"],
         ["tecnica1"] = ["tecla:Key1"], ["tecnica2"] = ["tecla:Key2"], ["tecnica3"] = ["tecla:Key3"], ["tecnica4"] = ["tecla:Key4"],
         ["tecnica5"] = ["tecla:Key5"], ["tecnica6"] = ["tecla:Key6"],
-        ["status"] = ["tecla:Tab"], ["confirmar"] = ["tecla:Enter", "tecla:J"], ["cancelar"] = ["tecla:Backspace", "tecla:K"], ["equipar"] = ["tecla:E"],
+        ["status"] = ["tecla:Tab"], ["confirmar"] = ["tecla:Enter", "tecla:J"], ["cancelar"] = ["tecla:Backspace", "tecla:K"],
         ["chat"] = ["tecla:Enter"], ["pausa"] = ["tecla:Escape"],
         ["salvar_rapido"] = ["tecla:F5"], ["acelerar"] = ["tecla:Shift"],
     };
@@ -48,7 +48,7 @@ public sealed class InputBindings
         ["ataque"] = ["botao:0"], ["tecnica"] = ["botao:2"], ["pulo"] = ["botao:10"], ["guarda"] = ["eixo:4+"],
         ["tecnica_anterior"] = ["botao:13"], ["tecnica_proxima"] = ["botao:14"],
         ["tecnica1"] = [], ["tecnica2"] = [], ["tecnica3"] = [], ["tecnica4"] = [], ["tecnica5"] = [], ["tecnica6"] = [],
-        ["status"] = ["botao:6"], ["confirmar"] = ["botao:0"], ["cancelar"] = ["botao:1"], ["equipar"] = ["botao:3"],
+        ["status"] = ["botao:6"], ["confirmar"] = ["botao:0"], ["cancelar"] = ["botao:1"],
         ["chat"] = [], ["pausa"] = ["botao:4"],
         ["salvar_rapido"] = [], ["acelerar"] = ["eixo:5+"],
     };

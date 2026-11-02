@@ -288,7 +288,9 @@ public partial class Fatia : Node3D
         }
         // Ações do mapa de controles (PortInput, configurável nas Configurações).
         for (int i = 0; i < 6; i++) if (PortInput.Pressed(e, $"tecnica{i + 1}")) _techKey = i;
-        if (PortInput.Pressed(e, "equipar")) EquipLast();
+        // DEPURAÇÃO (só no build Debug, com o F3 ligado): F7 equipa o último item pego. No jogo, equipar é só pelo menu de status e
+        // pelas lojas, como no original (o atalho "equipar" do port, E/Y, saiu: trocava de arma sem querer e briga com o Q/E do menu).
+        if (OS.IsDebugBuild() && _hud.Visible && e is InputEventKey { Pressed: true, Echo: false, Keycode: Key.F7 }) EquipLast();
         if (PortInput.Pressed(e, "guarda")) _guardPressed = true;
         if (PortInput.Pressed(e, "salvar_rapido")) QuickSave();
         if (PortInput.Pressed(e, "pausa")) { if (SubWindowOpen) CloseSaveWindow(); else if (!_menuOpen && !ShopOpen) OpenPause(); }
