@@ -20,7 +20,15 @@ public partial class Fatia
     bool _jumpHeld;
     float _airTime, _airControl = 1;
 
-    bool InAirSequence => _runner is { Running: true, Sequence: "SQ_JUMP" or "SQ_FALL" };
+    // FATO (SQ_ATCKTM de cada estilo: MOVE "Jump" 1 3,9, "Push" 2,3 11, WCHECK "TurnY", MOVE "Fall" 1,44 6,3, WCHECK "Landing",
+    // MOVE "Stop" 1 4): o golpe carregado é um salto com avanço. Antes só o SQ_JUMP/SQ_FALL aplicavam os MOVE, e o carregado saía
+    // parado no lugar (relato de 2026-11-02).
+    bool InAirSequence => _runner is { Running: true, Sequence: "SQ_JUMP" or "SQ_FALL" or SequenceRunner.ChargedSequence };
+
+    // Avanço do golpe carregado pelos canais de movimento do jogo (MotionChannels: "Push" = Z modo 4, começa no máximo e freia até 0;
+    // "Stop" = Z modo 2). Unidades por quadro de 30 Hz, como os dos inimigos.
+    readonly MotionChannels _dash = new();
+    bool Dashing => _runner is { Running: true, Sequence: SequenceRunner.ChargedSequence } && _dash.AnyActive;
 
     void SetupJump(SequenceRunner runner)
     {
@@ -30,7 +38,12 @@ public partial class Fatia
             "Landing" => _player.IsOnFloor() && _jump.VelocityY <= 0,
             _ => true,
         };
-        runner.MoveStarted = m => { if (InAirSequence) _jump.Apply(m, _player.Velocity.Y); };
+        runner.MoveStarted = m =>
+        {
+            if (!InAirSequence) return;
+            _jump.Apply(m, _player.Velocity.Y);
+            if (_runner?.Sequence == SequenceRunner.ChargedSequence && m.S(0) is "Push" or "Stop") _dash.Apply(m);
+        };
         // PDMOVE "Move" 0,7 6 no começo do SQ_JUMP: HIPÓTESE = controle no ar a 70% da velocidade de andar.
         runner.Command = c =>
         {

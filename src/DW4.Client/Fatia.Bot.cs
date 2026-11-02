@@ -15,11 +15,23 @@ public partial class Fatia
     int _botFrames;
 
     Vector3? _walkTarget;
+    Vector3 _dashFrom;
 
     void BotInput(ref Vector3 dir, ref bool attackDown)
     {
         // DW4_ANDAR="x,z": anda até esse ponto do mundo (conferir colisão), avisando a posição a cada segundo.
         // DW4_ANDAR=frente: anda 40 unidades para a frente a partir do ponto inicial (varredura das fases).
+        // DW4_ALVO=carregado: segura o ataque 5 s, solta e mede o avanço do golpe carregado (log [carregado]).
+        if (OS.GetEnvironment("DW4_ALVO") == "carregado")
+        {
+            if (!_padEnabled || !_playerCtrl || TalkWindowOpen) { attackDown = _tick % 30 < 2; return; }
+            int phase = _tick % 480;
+            attackDown = phase < 300;
+            if (phase == 300) _dashFrom = _player.GlobalPosition;
+            if (phase == 479) GD.Print($"[carregado] avanço {new Vector2(_player.GlobalPosition.X - _dashFrom.X, _player.GlobalPosition.Z - _dashFrom.Z).Length():0.0} (de {_dashFrom.Round()} a {_player.GlobalPosition.Round()}), sequência {_runner?.Sequence}");
+            if (phase is > 300 and < 350 && _tick % 5 == 0) GD.Print($"[carregado] q{phase - 300} {_runner?.Sequence} {_runner?.Action} pos {_player.GlobalPosition.Round()}");
+            return;
+        }
         if (OS.GetEnvironment("DW4_ANDAR") == "frente")
         {
             _walkTarget ??= _spawn + new Vector3(System.MathF.Sin(_move.Facing), 0, System.MathF.Cos(_move.Facing)) * 40;

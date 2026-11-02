@@ -97,6 +97,7 @@ conferido na janela. O estado vem do repositório, dos testes (81 ok) e das jane
 - Geradores pelo modo de início (direct/radar), torretas g_cannon01 com IA e tiro, pisca vermelho do FLASHSET "Damage" e Security Hole da matx01 (2026-11-02, docs/gameplay/geradores-torretas-pisca.md). Telas de vagas e criação refeitas com layout próprio (2026-11-02, autorização do usuário): cartões 2 × 2, detalhes, modelo 3D girando.
 - Armas duplas nas duas mãos, tiro da Shot Pistol, spawn do lobby na entrada 0 e EXPRITSU na EXP (2026-11-02, docs/gameplay/armas-spawn-exp.md).
 - HP dos objetos pela tabela enemy e pelos hit_g_*.lua; relógio da 3ª etapa do tutorial (2026-11-02, docs/gameplay/hp-objetos.md).
+- Golpe carregado com salto e avanço (SQ_ATCKTM; 2026-11-02, docs/gameplay/golpe-carregado.md).
 - Evolução (16 formas), lojas de equipamento e discos, banco, X-data (atributos e chips), loja de cartas.
 - Chat e placa com nome e nível; NPCs com animação, conversa e passeio; Save Keeper removido.
 - Fonte do jogo (fonte-exportar) nas falas, no status e nas caixas; troca de área e teleporte com a arte do jogo.

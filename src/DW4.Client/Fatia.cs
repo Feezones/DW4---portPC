@@ -398,7 +398,7 @@ public partial class Fatia : Node3D
         _techKey = -1;
         _panel.Tick(dt);
         if (_wazaPending is { } waza && _runner?.Running != true) { _wazaPending = null; ReleaseTechnique(waza); }
-        if (InAirSequence) dir *= _airControl;
+        if (InAirSequence && _runner!.Sequence != SequenceRunner.ChargedSequence) dir *= _airControl;
         else if (attacking) { dir = Vector3.Zero; _move.Stop(); }
         if (_demo && _tick < 30 && _enemies.FirstOrDefault() is { } first)
         {
@@ -413,6 +413,12 @@ public partial class Fatia : Node3D
             float sign = mv.S(0) == "Back" ? -1 : 1;
             v = new NVector2(MathF.Sin(_move.Facing), MathF.Cos(_move.Facing)) * (sign * _move.MaxSpeed * mv.F(1) / GuilmonMove);
         }
+        if (Dashing)
+        {
+            float step = _dash.Step(2, dt * SequenceRunner.FramesPerSecond) / Math.Max(dt, 1e-4f);
+            v = new NVector2(MathF.Sin(_move.Facing), MathF.Cos(_move.Facing)) * step;
+        }
+        else if (_runner?.Sequence != SequenceRunner.ChargedSequence) _dash.Stop();
         var vel = _player.Velocity;
         vel.X = v.X;
         vel.Z = v.Y;
