@@ -93,7 +93,7 @@ conferido na janela. O estado vem do repositório, dos testes (81 ok) e das jane
 
 ## Já resolvido (referência)
 
-- Menu inicial com 4 vagas por conta, configurações, save automático por vaga, dificuldade pelo hostLoad.
+- Menu inicial com 4 vagas por conta, configurações, save automático por vaga, dificuldade pelo hostLoad. Telas de vagas e criação refeitas com layout próprio (2026-11-02, autorização do usuário): cartões 2 × 2, detalhes, modelo 3D girando.
 - Evolução (16 formas), lojas de equipamento e discos, banco, X-data (atributos e chips), loja de cartas.
 - Chat e placa com nome e nível; NPCs com animação, conversa e passeio; Save Keeper removido.
 - Fonte do jogo (fonte-exportar) nas falas, no status e nas caixas; troca de área e teleporte com a arte do jogo.
