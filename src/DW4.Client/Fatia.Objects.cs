@@ -156,6 +156,13 @@ public partial class Fatia
         actor.Root.RotationDegrees = rotDeg;
         AttachCharacter(o);
         o.SetSequence("SQ_WAIT");
+        // FATO (tabela enemy: g_box, g_boxfield, g_bbarrelsz01, g_woodencasez0x… com HPMAX 100; lua-trace dos hit_g_*.lua: golpe comum
+        // tira 34 da pedra, 50 do arbusto, 100 da caixa, e o script manda SQ_SDMG enquanto sobra HP). Antes só a caixa de gerador
+        // tinha HP; o resto começava com 0 e quebrava no primeiro golpe. HIPÓTESE: os g_* fora da tabela também têm 100 (as contas
+        // dos scripts, 3 golpes na pedra e 2 no arbusto, só fecham assim).
+        if (name.StartsWith("g_", StringComparison.Ordinal))
+            o.Hp = _db != null && _db.Contains("enemy") && _db["enemy"].RowsWhere("MODEL", name).DefaultIfEmpty(-1).First() is int hpRow and >= 0
+                ? _db["enemy"].Int(hpRow, "HPMAX") : GboxHp;
         _objects.Add(o);
         return o;
     }
@@ -282,7 +289,7 @@ public partial class Fatia
     void CheckObjectHits()
     {
         if (_runner == null || _stage == null) return;
-        foreach (var h in _runner.ActiveHitBoxes().Where(h => h.Type == 10000))
+        foreach (var h in _runner.ActiveHitBoxes().Where(h => h.Type is 10000 or 20000))
         {
             var c = BoxCenter(h);
             foreach (var o in _objects.Where(o => o.Body != null && !o.Dead && !_objectsHitThisAction.Contains(o)).ToList())
@@ -294,19 +301,25 @@ public partial class Fatia
                         || c.Y + h.Size.Y / 2 < p.Y || c.Y - h.Size.Y / 2 > p.Y + GboxSize.Y);
                 if (!touch) continue;
                 _objectsHitThisAction.Add(o);
-                o.BulletKind = h.Type;
-                var script = $"hit_{o.Name}.lua";
-                if (_stage.Has(script)) _stage.RunAs(script, o);
-                if (o.Hp <= 0)
-                {
-                    o.Dead = true;
-                    o.Body?.QueueFree();
-                    o.Body = null;
-                    ScriptLog($"{o.Gen?.Name}: {o.Name} destruída");
-                    GeneratedDied(o.Gen, o);
-                }
+                StrikeObject(o, h.Type);
             }
         }
+    }
+
+    // Golpe do jogador num objeto: o hit_<objeto>.lua tira o HP (MDLaddHp) e escolhe SQ_SDMG ou SQ_DDMG. FATO: o golpe carregado
+    // (20000) vai direto ao SQ_DDMG sem mexer no HP; o objeto quebra por ele também.
+    void StrikeObject(WorldObject o, int type)
+    {
+        o.BulletKind = type;
+        var script = $"hit_{o.Name}.lua";
+        if (_stage != null && _stage.Has(script)) _stage.RunAs(script, o);
+        if (DiagNpc) GD.Print($"[golpe-obj] {o.Name}/{o.Index}: tipo {type}, HP {o.Hp}, {o.Sequence}");
+        if (o.Hp > 0 && o.Sequence != "SQ_DDMG") return;
+        o.Dead = true;
+        o.Body?.QueueFree();
+        o.Body = null;
+        ScriptLog($"{o.Gen?.Name}: {o.Name} destruída");
+        GeneratedDied(o.Gen, o);
     }
 
     // IA de objeto (f_bit): parado em SQ_WAIT, o cérebro sorteia pelo mapa (MAP00: SQ_SMN01/02; MAP01, depois do SQ_PHASE2:

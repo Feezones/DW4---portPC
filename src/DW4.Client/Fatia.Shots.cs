@@ -251,6 +251,17 @@ public partial class Fatia
                 s.Seq.Start("SQ_ERAS");
                 return;
             }
+            // Objetos também levam o tiro (FATO: hit_g_rock01z01.lua pergunta BLTisPlayerBullet).
+            foreach (var o in _objects.Where(o => o.Body != null && !o.Dead).ToList())
+            {
+                var p = o.Actor.Root.GlobalPosition;
+                if (Math.Abs(c.X - p.X) > h.Size.X / 2 + GboxSize.X / 2 || Math.Abs(c.Z - p.Z) > h.Size.Z / 2 + GboxSize.Z / 2
+                    || c.Y + h.Size.Y / 2 < p.Y || c.Y - h.Size.Y / 2 > p.Y + GboxSize.Y) continue;
+                s.Hit = true;
+                StrikeObject(o, h.Type);
+                s.Seq.Start("SQ_ERAS");
+                return;
+            }
         }
     }
 

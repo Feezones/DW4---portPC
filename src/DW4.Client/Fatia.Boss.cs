@@ -195,7 +195,9 @@ public partial class Fatia
         bool owned = o.Name.StartsWith("f_", StringComparison.Ordinal);
         if (!(o.Name.StartsWith("g_", StringComparison.Ordinal) || owned) || o.Name == "g_box" || o.Body != null) return;
         if (_stage?.Has($"hit_{o.Name}.lua") != true) return;
-        o.Hp = ScriptedObjectHp; // f_bit: HIPÓTESE (hit_f_bit.lua tira 50 por golpe e passa a SQ_DDMG abaixo de 50)
+        // f_bit: HIPÓTESE (hit_f_bit.lua tira 50 por golpe e passa a SQ_DDMG abaixo de 50). Os g_* ficam com o HP do Spawn (HPMAX da
+        // tabela enemy ou 100; antes 50, e o arbusto, que perde 50 por golpe, quebrava no primeiro).
+        if (owned) o.Hp = ScriptedObjectHp;
         // A caixa vai presa ao ator (o f_bit acompanha o chefe); o f_bit não bloqueia o jogador (camada 0, só marca o alvo).
         var body = new StaticBody3D { Position = new Vector3(0, 20, 0) };
         if (owned) body.CollisionLayer = 0;
