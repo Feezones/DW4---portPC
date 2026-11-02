@@ -21,5 +21,6 @@
 
 - **FATO (textos mswk201984/204308 da stagML02):** o botão √ abre a Item Window, o direcional escolhe o disco e o ≪ usa. **FATO:** o
   jogador tem a SQ_ITEM; o x_250curehit01 sai na ação ITEMC1 (SQ_ATCK01); o disco cura pelo HP/MP da conItem (0x80349B0C).
-- Port: janela de itens (I / B no controle) e atalhos 1–5 (decisoes-port-pc.md). Capturas: D:\dw4-work\previas\hud_itens_16x9.png,
+- Port: janela de itens (I / B no controle) e atalhos 1–5 (decisoes-port-pc.md). Mouse: passar por cima escolhe o disco, 1–5
+  põe no atalho, clique usa. Correção: a janela crescia a cada seta (UseGameFont multiplicava a fonte por 1,3 a cada redesenho). Capturas: D:\dw4-work\previas\hud_itens_16x9.png,
   hud_itens_4x3.png e hud_nivel_16x9.png.

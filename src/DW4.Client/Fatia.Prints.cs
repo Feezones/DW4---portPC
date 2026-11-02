@@ -48,7 +48,10 @@ public partial class Fatia
                 for (int i = 0; i < 3; i++) _inventory.Add(new ItemRef("conItem", 0));
                 for (int i = 0; i < 2; i++) _inventory.Add(new ItemRef("conItem", 3));
                 _inventory.QuickItems[0] = 0; _inventory.QuickItems[1] = 3;
+                _inventory.Add(new ItemRef("conItem", 1)); _inventory.Add(new ItemRef("conItem", 4));
                 OpenQuickWindow(true);
+                // Cursor andando várias vezes (o relato da janela que crescia a cada seta).
+                for (int i = 0; i < 8; i++) { _quickCursor = i % 4; RefreshQuickWindow(); }
                 break;
             // EXP e subida de nível: EXP para passar do nível atual (mostra o +EXP, o painel LEVEL UP e o brilho).
             case "nivel" when _db != null:

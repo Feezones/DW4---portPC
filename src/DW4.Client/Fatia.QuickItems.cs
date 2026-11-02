@@ -140,11 +140,24 @@ public partial class Fatia
             int slot = Array.IndexOf(_inventory.QuickItems, row);
             var l = new Label { Text = $"{(i == _quickCursor ? "> " : "   ")}{DiskName(row)}  ×{_inventory.Disks(row)}{(slot >= 0 ? $"   [{slot + 1}]" : "")}" };
             l.AddThemeColorOverride("font_color", i == _quickCursor ? QuickGold : Colors.White);
+            // Mouse: passar por cima escolhe a linha (1–5 põe no atalho), clique esquerdo usa.
+            l.MouseFilter = Control.MouseFilterEnum.Stop;
+            int index = i;
+            l.MouseEntered += () => { if (_quickCursor != index) { _quickCursor = index; CallDeferred(MethodName.RefreshQuickWindow); } };
+            l.GuiInput += ev =>
+            {
+                if (ev is not InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) return;
+                l.AcceptEvent();
+                _quickCursor = index;
+                UseDisk(row);
+                CallDeferred(MethodName.RefreshQuickWindow);
+            };
             _quickRows.AddChild(l);
         }
         if (_quickWindow.FindChild("ajuda", true, false) is Label help)
-            help.Text = $"{DeviceIcons.Of("confirmar")}: usar   1–5: pôr no atalho   {DeviceIcons.Of("cancelar")}: fechar";
-        UseGameFont(_quickWindow);
+            help.Text = $"Clique ou {DeviceIcons.Of("confirmar")}: usar   1–5 com o mouse em cima: pôr no atalho   {DeviceIcons.Of("cancelar")}: fechar";
+        // Sem UseGameFont aqui: ele multiplica por 1,3 os tamanhos já pedidos a cada chamada, e a janela crescia a cada seta
+        // (relato de 2026-11-02). O tema com a fonte do jogo vem da janela (posto uma vez no SetupQuickItems).
     }
 
     // Janela aberta: consome as teclas. Fechada: I/B abre e 1–5 usam os atalhos.
