@@ -35,6 +35,14 @@ public static class PortSettings
         var c = Current;
         ApplyLanguage(c);
         if (DisplayServer.GetName() == "headless") { PortInput.Apply(c.Bindings); return; } // sem janela: só o mapa de controles
+        // DEPURAÇÃO (só no build Debug): DW4_JANELA=1024x768 abre em janela desse tamanho (capturas em outras proporções).
+        if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_JANELA").Split("x") is [var jw, var jh] && int.TryParse(jw, out int dw) && int.TryParse(jh, out int dh))
+        {
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+            DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.Borderless, false);
+            DisplayServer.WindowSetSize(new Vector2I(dw, dh));
+        }
+        else
         switch (c.WindowMode)
         {
             case 1:
