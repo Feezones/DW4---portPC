@@ -240,6 +240,7 @@ public partial class Fatia : Node3D
         SetupChat();
         SetupPrints();
         SetupTechBar();
+        SetupQuickItems();
         // Som da dng1 (FATO: first.lua toca "AM_DUNGE" e "DG_CAVE1"; beSoundInfo da fase → ndmw #6 e #35), com o loop do
         // cabeçalho ADX. Gerado por: dw4 adx-wav ndmw.afs <fatia>\audio 6 35. Volume do beSoundData (S8): unidade
         // desconhecida, por isso os dois tocam a 0 dB.
@@ -278,6 +279,7 @@ public partial class Fatia : Node3D
         if (ChatInput(e)) { GetViewport().SetInputAsHandled(); return; } // chat aberto: nada chega ao jogo
         if (TechBarInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (MenuInput(e)) { GetViewport().SetInputAsHandled(); return; }
+        if (QuickItemInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (e is InputEventKey { Pressed: true, Echo: false } k)
         {
             if (k.Keycode == Key.F1 && _cameraSets.Length > 1) _cameraSet = (_cameraSet + 1) % _cameraSets.Length;
@@ -331,6 +333,7 @@ public partial class Fatia : Node3D
         if (_leaving) return;
         TickObjects(dt);
         TickFlashes(dt);
+        TickQuickItems();
         var input = Input.GetVector(PortInput.Name("esquerda"), PortInput.Name("direita"), PortInput.Name("cima"), PortInput.Name("baixo"));
         input = input.LimitLength(1);
 
@@ -800,9 +803,14 @@ public partial class Fatia : Node3D
     {
         // FATO (P2EEXPUP 0x80373B48): EXP do inimigo × (EXPRITSU + 100)/100, com o EXPRITSU do jogador (equipamento e chips);
         // antes ia 0 e o bônus de EXP dos itens não valia.
-        int gain = DamageFormula.ExpShare(_db!["enemy"].Int(e.Kind.Row, "EXP"), _pf?.Expritsu ?? 0, players: 1, killer: true);
+        AddExp(DamageFormula.ExpShare(_db!["enemy"].Int(e.Kind.Row, "EXP"), _pf?.Expritsu ?? 0, players: 1, killer: true));
+    }
+
+    void AddExp(int gain)
+    {
         _exp += gain;
         _lastEvent += $"  +{gain} EXP";
+        if (gain > 0) _damageNumbers?.ShowExp(WindowsReady() ? _winData : null, gain, _player.GlobalPosition + new Vector3(0, 22, 0));
         bool up = false;
         while (_level < PlayerGrowth.MaxLevel && PlayerGrowth.NextExp(_level) <= _exp) { _level++; up = true; }
         if (!up) return;
@@ -812,8 +820,13 @@ public partial class Fatia : Node3D
         // FATO (P2EEXPUP 0x80373DE0..0x80373DF8, textos em 0x80458F30 + 0x898/0x8A4/0x8C0): depois do RECALCPLAYER o jogo manda
         // MODELCTRL "i_getitempnl01" … "SQ_LVUP": o painel "LEVEL UP" (ação LVUP: FADESET IN 12, JOINTSET 290..360, FADESET OUT 40,
         // depois SQ_ERAS). Sem a arte das janelas, o texto de antes.
-        if (!DeliverToWindows(new DW4.Script.Be.BeMessage("MODELCTRL", "i_getitempnl01", 0, "GENERATE", [], "SQ_LVUP")))
+        // O i_getitempnl01 é um billboard de mundo (Hud.cs, DamageNumbers.ShowLevelUp), não uma janela da tela.
+        if (_damageNumbers?.ShowLevelUp(WindowsReady() ? _winData : null, _player) != true)
             Float(_player, $"NÍVEL {_level}", Colors.Yellow);
+        // FATO (0x80373E3C..0x80373E4C): depois do painel, o P2EEXPUP manda SETEFFECT no jogador; o nome sai de um buffer montado em
+        // tempo de execução (0x80508AE0) e não foi lido. Perto dele estão "SQ_UPEFONLY", "SQ_HEALEFONLY" e "SQ_CUREEFONLY".
+        // HIPÓTESE: o efeito de subida (x_250uphit01, o brilho dos aumentos de status) no jogador, sem caixa de golpe.
+        PlayerEffect("x_250uphit01", "SQ_ATCK01");
     }
 
     // Golpe de inimigo ou objeto: código do HITBOX (70004 no Numemon) → linha da eneatk (HIPÓTESE forte), E2PISHITCHECK e

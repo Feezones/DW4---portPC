@@ -43,6 +43,8 @@ public sealed class CharacterSave
     /// <summary>POWERSOCKET[1..2] (armas de reserva, −1 = vazio).</summary>
     public List<int> ReserveWeapons { get; set; } = [];
     public Dictionary<int, int> Disks { get; set; } = [];
+    /// <summary>Atalhos de disco do port (teclas 1–5): linhas da conItem, −1 = vazio.</summary>
+    public int[] QuickItems { get; set; } = [];
     public List<int> ImportantItems { get; set; } = [];
     /// <summary>FLAG (1024 bytes) e CARDLIST (50 bytes) em base64; COUNTER (16 inteiros).</summary>
     public string Flags { get; set; } = "";
@@ -96,6 +98,7 @@ public sealed class CharacterSave
             XData = p.Items.XData, BankBit = p.Items.BankBit, BankDevices = p.Items.BankDevices.Select(d => new ItemSave(d.Table, d.Row)).ToList(),
             Devices = p.Items.Devices.Select(d => new ItemSave(d.Table, d.Row)).ToList(),
             Disks = p.Items.DiskCounts.Where(kv => kv.Value > 0).ToDictionary(kv => kv.Key, kv => kv.Value),
+            QuickItems = (int[])p.Items.QuickItems.Clone(),
             ImportantItems = p.Items.ImportantFlags.OrderBy(x => x).ToList(),
             Flags = Convert.ToBase64String(ram.Flags), Cards = Convert.ToBase64String(p.Cards), Counters = (int[])ram.Counters.Clone(),
         };
@@ -128,6 +131,7 @@ public sealed class CharacterSave
         foreach (var (row, n) in Disks) for (int i = 0; i < n; i++) inv.Add(new ItemRef("conItem", row));
         foreach (var row in ImportantItems) inv.Add(new ItemRef("impItem", row));
         inv.RestoreBank(BankBit, BankDevices.Select(d => new ItemRef(d.Table, d.Row)));
+        for (int i = 0; i < Math.Min(QuickItems.Length, inv.QuickItems.Length); i++) inv.QuickItems[i] = QuickItems[i];
         p.Items = inv;
         p.Equipment = WeaponRow >= 0 ? new Equipment(WeaponRow, Armor1Row, Armor2Row) { WeaponChips = WeaponChips.ToList(), ArmorChips = ArmorChips.ToList(), ReserveWeapons = ReserveWeapons.ToList() } : null;
         CopyBase64(Cards, p.Cards);

@@ -528,7 +528,7 @@ Test("Port: mapa de controles (padrão, salvar e carregar no config, conflito, r
     var taken = b.Set(InputBindings.Keyboard, "pulo", "tecla:K");
     True(taken.SequenceEqual(new[] { "tecnica" }), "Set devolve de quem tirou");
     Equal("tecla:K", b.Get(InputBindings.Keyboard, "pulo")[0], "pulo agora em K");
-    True(!b.Get(InputBindings.Keyboard, "tecnica").Contains("tecla:K") && b.Get(InputBindings.Keyboard, "tecnica").Contains("mouse:2"), "técnica perdeu o K e manteve o mouse");
+    True(!b.Get(InputBindings.Keyboard, "tecnica").Contains("tecla:K") && b.Get(InputBindings.Keyboard, "tecnica").Contains("tecla:E"), "técnica perdeu o K e manteve o E");
     True(b.Get(InputBindings.Keyboard, "cancelar").Contains("tecla:K"), "cancelar (menus) continua com K");
     b.Set(InputBindings.Pad, "ataque", "botao:2");
     // Salvar e carregar pelo texto do config.cfg.
@@ -536,7 +536,13 @@ Test("Port: mapa de controles (padrão, salvar e carregar no config, conflito, r
     Equal((2, 144, 0.5f, false), (back.WindowMode, back.FpsLimit, back.VoiceVolume, back.Fullscreen), "modo sem borda, FPS e vozes voltam");
     True(back.Bindings.Get(InputBindings.Keyboard, "pulo").SequenceEqual(b.Get(InputBindings.Keyboard, "pulo")), "pulo trocado volta do arquivo");
     True(back.Bindings.Get(InputBindings.Pad, "ataque").SequenceEqual(new[] { "botao:2" }), "ataque do controle trocado volta do arquivo");
-    True(back.Bindings.Get(InputBindings.Keyboard, "tecnica").SequenceEqual(new[] { "mouse:2" }), "técnica sem o K volta do arquivo");
+    True(back.Bindings.Get(InputBindings.Keyboard, "tecnica").SequenceEqual(new[] { "tecla:E" }), "técnica sem o K volta do arquivo");
+    // Migração única dos padrões antigos do teclado (técnica K + clique direito, defesa L, técnicas 1–6): o que o jogador mudou fica.
+    var old = PortConfig.FromIni("[teclado]\ntecnica=\"tecla:K,mouse:2\"\nguarda=\"tecla:L\"\ntecnica1=\"tecla:Key1\"\ntecnica2=\"tecla:Q\"\n");
+    True(old.Bindings.Get(InputBindings.Keyboard, "tecnica").SequenceEqual(new[] { "tecla:E", "tecla:K" }) && old.Bindings.Get(InputBindings.Keyboard, "guarda").SequenceEqual(new[] { "mouse:2", "tecla:L" })
+        && old.Bindings.Get(InputBindings.Keyboard, "tecnica1").Count == 0 && old.Bindings.Get(InputBindings.Keyboard, "tecnica2").SequenceEqual(new[] { "tecla:Q" })
+        && old.Bindings.Get(InputBindings.Keyboard, "item1").SequenceEqual(new[] { "tecla:Key1" }) && old.ControlsVersion == 2, "migração dos padrões do teclado");
+    True(PortConfig.FromIni(old.ToIni()).Bindings.Get(InputBindings.Keyboard, "tecnica2").SequenceEqual(new[] { "tecla:Q" }), "migração não roda de novo");
     // Restaurar o padrão de um aparelho não mexe no outro.
     back.Bindings.RestoreDefaults(InputBindings.Keyboard);
     True(back.Bindings.Get(InputBindings.Keyboard, "pulo").SequenceEqual(new[] { "tecla:Space" }), "teclado de volta ao padrão");

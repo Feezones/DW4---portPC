@@ -223,6 +223,14 @@ public partial class Fatia
         }
     }
 
+    // Efeito x_* preso ao jogador (sem caixa de golpe), como os disparadores fazem: ex. o brilho de subida no level up.
+    void PlayerEffect(string effect, string sequence)
+    {
+        var at = new Transform3D(new Basis(Vector3.Up, _move.Facing), _player.GlobalPosition);
+        SpawnShot(new Starter(effect, "", sequence, 0, new Vector3(0, 1, 0), false, true), at, _pf, PlayerModel,
+            () => new Transform3D(new Basis(Vector3.Up, _move.Facing), _player.GlobalPosition), () => _runner?.Sequence);
+    }
+
     string? _playerShotAction;
     float _playerShotFrame;
 

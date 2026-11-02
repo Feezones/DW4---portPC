@@ -20,6 +20,12 @@ public sealed class Inventory
     public IReadOnlyList<ItemRef> Devices => _devices;
     public int Bit { get; set; }
 
+    /// <summary>
+    /// DECISÃO DO PORT (PC, pedido do usuário em 2026-11-02): 5 atalhos de disco (linha da conItem, −1 = vazio) para as teclas 1–5.
+    /// No original o disco é usado pela Item Window (botão √ do controle, textos mswk201984/204308). Gravados na vaga.
+    /// </summary>
+    public int[] QuickItems { get; } = [-1, -1, -1, -1, -1];
+
     /// <summary>XDATA do jogador. FATO: o GETSHOPDATA (0x803518F8) limita a soma a 9999 (0x270F). HIPÓTESE: o mesmo teto por jogador.</summary>
     public const int XDataMax = 9999;
     int _xdata;

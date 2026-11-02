@@ -98,6 +98,7 @@ conferido na janela. O estado vem do repositório, dos testes (81 ok) e das jane
 - Armas duplas nas duas mãos, tiro da Shot Pistol, spawn do lobby na entrada 0 e EXPRITSU na EXP (2026-11-02, docs/gameplay/armas-spawn-exp.md).
 - HP dos objetos pela tabela enemy e pelos hit_g_*.lua; relógio da 3ª etapa do tutorial (2026-11-02, docs/gameplay/hp-objetos.md).
 - Golpe carregado com salto e avanço (SQ_ATCKTM; 2026-11-02, docs/gameplay/golpe-carregado.md).
+- EXP ganha (i_expnum), painel de subida de nível (i_getitempnl01 em billboard), atalhos de item 1–5 e controles novos (2026-11-02, docs/gameplay/exp-nivel-itens.md).
 - Evolução (16 formas), lojas de equipamento e discos, banco, X-data (atributos e chips), loja de cartas.
 - Chat e placa com nome e nível; NPCs com animação, conversa e passeio; Save Keeper removido.
 - Fonte do jogo (fonte-exportar) nas falas, no status e nas caixas; troca de área e teleporte com a arte do jogo.

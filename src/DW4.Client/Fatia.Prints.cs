@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using Godot;
+using DW4.Gameplay;
 
 namespace DW4.Client;
 
@@ -42,6 +43,17 @@ public partial class Fatia
             case "banco": if (ShopArtReady()) OpenBankArt(); else OpenBank(); break;
             case "xdata": OpenXDataMenu(); break;
             case "labo": OpenEvolve(); break;
+            // Atalhos de item: 3 discos de HP e 2 de MP nos atalhos 1 e 2, e a janela de itens aberta.
+            case "itens" when _db != null:
+                for (int i = 0; i < 3; i++) _inventory.Add(new ItemRef("conItem", 0));
+                for (int i = 0; i < 2; i++) _inventory.Add(new ItemRef("conItem", 3));
+                _inventory.QuickItems[0] = 0; _inventory.QuickItems[1] = 3;
+                OpenQuickWindow(true);
+                break;
+            // EXP e subida de nível: EXP para passar do nível atual (mostra o +EXP, o painel LEVEL UP e o brilho).
+            case "nivel" when _db != null:
+                AddExp((int)(PlayerGrowth.NextExp(_level) - _exp));
+                break;
         }
     }
 

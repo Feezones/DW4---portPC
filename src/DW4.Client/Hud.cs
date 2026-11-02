@@ -254,7 +254,14 @@ public sealed class HudActor
 
     public void Update()
     {
-        foreach (var a in _animated) a.Node.Transform = HudData.Evaluate(a.Data, TimeFor(a.Meter));
+        foreach (var a in _animated)
+        {
+            var tr = HudData.Evaluate(a.Data, TimeFor(a.Meter));
+            // FATO (i_getitempnl01): as peças 2D animam escala (x, y, 0). Em billboard de mundo a base com z = 0 é singular e a Godot não
+            // desenha a malha; o z vira 1 (as malhas são planas, o z não muda nada).
+            if (_billboard && tr.Basis.Z.LengthSquared() < 1e-8f && tr.Basis.X.LengthSquared() > 1e-8f) tr.Basis = new Basis(tr.Basis.X, tr.Basis.Y, new Vector3(0, 0, 1));
+            a.Node.Transform = tr;
+        }
         foreach (var (node, shift) in _shifted)
             if (_animated.Any(a => a.Node == node)) node.Position += new Vector3(shift, 0, 0);
         foreach (var tm in _texMapped)
@@ -442,8 +449,66 @@ public sealed class DamageNumbers
         return true;
     }
 
+    // FATO (tabela de números em 0x804DD2E0: "i_expnum", "expnm0", SQ_EXPNM01..04; seq do i_expnum: DELAY01 = 40 quadros escondido,
+    // OPEN01..04 = JOINTSET 10..30 / 40..60 / 70..90 / 100..120, FADESET IN 12, espera 20, OUT 20): a EXP ganha sobe como os números
+    // de dano. O ator fica nos dados das janelas (janelas/*_hud.json). HIPÓTESE: qual OPEN pelo número de dígitos (1..4).
+    static readonly (int A, int B)[] ExpOpen = [(10, 30), (40, 60), (70, 90), (100, 120)];
+    readonly List<(HudActor Actor, int Open, float Age)> _exp = [];
+
+    public bool ShowExp(HudData? win, int value, Vector3 at)
+    {
+        if (win == null || !win.Actors.TryGetValue("i_expnum", out int root) || win.Numbers.GetValueOrDefault("expnm0")?.FirstOrDefault() is not { } ram) return false;
+        var a = new HudActor(win, root, slot: 0, billboard: true);
+        _owner.AddChild(a.Root);
+        a.Root.GlobalPosition = at;
+        a.SetNumber(ram, value);
+        a.SetAlpha(0);
+        _exp.Add((a, Math.Clamp(value.ToString().Length, 1, 4) - 1, 0));
+        return true;
+    }
+
+    // FATO (i_getitempnl01 dos dados das janelas): o painel de subida é um igBillboard em unidades de mundo ("maintrans" y 10, anéis
+    // G_lvring, "lv", "up"), preso sobre o personagem; SQ_LVUP = DELAY01 (50 quadros escondido) → LVUP (FADESET IN 12, JOINTSET
+    // 290..320, depois 320..360 com FADESET OUT 40) → SQ_ERAS.
+    readonly List<(HudActor Actor, Node3D Follow, float Age)> _lvup = [];
+
+    public bool ShowLevelUp(HudData? win, Node3D follow)
+    {
+        if (win == null || !win.Actors.TryGetValue("i_getitempnl01", out int root)) return false;
+        var a = new HudActor(win, root, slot: 0, billboard: true);
+        _owner.AddChild(a.Root);
+        a.Root.GlobalPosition = follow.GlobalPosition;
+        a.SetAlpha(0);
+        _lvup.Add((a, follow, 0));
+        return true;
+    }
+
     public void Update(float dt)
     {
+        for (int i = _lvup.Count - 1; i >= 0; i--)
+        {
+            var (a, follow, age) = _lvup[i];
+            age += dt;
+            float frame = age * 60 - 50; // DELAY01
+            if (frame >= 70 || !GodotObject.IsInstanceValid(follow)) { a.Root.QueueFree(); _lvup.RemoveAt(i); continue; }
+            a.Root.GlobalPosition = follow.GlobalPosition;
+            a.Time = (290 + Math.Clamp(frame, 0, 70)) / 60f;
+            a.SetAlpha(frame < 0 ? 0 : frame < 12 ? frame / 12 : frame < 30 ? 1 : 1 - (frame - 30) / 40);
+            a.Update();
+            _lvup[i] = (a, follow, age);
+        }
+        for (int i = _exp.Count - 1; i >= 0; i--)
+        {
+            var (a, open, age) = _exp[i];
+            age += dt;
+            float frame = age * 60 - 40; // DELAY01
+            if (frame >= 52) { a.Root.QueueFree(); _exp.RemoveAt(i); continue; }
+            var (from, to) = ExpOpen[open];
+            a.Time = Math.Clamp(from + frame, from, to) / 60f;
+            a.SetAlpha(frame < 0 ? 0 : frame < 12 ? frame / 12 : frame < 32 ? 1 : 1 - (frame - 32) / 20);
+            a.Update();
+            _exp[i] = (a, open, age);
+        }
         for (int i = _live.Count - 1; i >= 0; i--)
         {
             var (a, open, age) = _live[i];
