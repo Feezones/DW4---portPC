@@ -76,8 +76,9 @@ Três peças, cada uma com um papel:
 ## Questões em aberto
 
 - Código da DMO.API (para os itens 1 e 2).
-- Nome que identifica o jogador online: o do **Tamer** da conta (o da lista de amigos) ou o do personagem do DW4.
-  Proposta: placa sobre a cabeça com o nome do personagem; amigos, convites e `/w` pelo nome do Tamer.
+- ~~Nome online~~ **decidido (feelipe, 2026-11-02)**: placa sobre a cabeça com o nome do personagem do DW4; amigos,
+  convites, party e `/w` pelo nome do **Tamer** da conta (a mesma lista do launcher). O servidor sabe qual conta está por trás
+  de cada personagem, então o menu do F usa o Tamer do alvo sem mostrar.
 - Hospedagem do servidor do DW4 (há pastas `deploy_aws` e `deploy_contabo`; a mesma máquina da API serve para começar).
 - Jurídico: o servidor lê os dados de uma cópia própria do jogo; nada extraído é distribuído; o repositório é público
   (recomendado privar antes de publicar o servidor).
