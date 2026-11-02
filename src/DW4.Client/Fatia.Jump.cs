@@ -1,3 +1,4 @@
+using System;
 using Godot;
 using DW4.Gameplay;
 
@@ -18,6 +19,7 @@ public partial class Fatia
 
     readonly JumpMotion _jump = new();
     bool _jumpHeld;
+    float _airStill, _airLastY, _chargedTime;
     float _airTime, _airControl = 1;
 
     // FATO (SQ_ATCKTM de cada estilo: MOVE "Jump" 1 3,9, "Push" 2,3 11, WCHECK "TurnY", MOVE "Fall" 1,44 6,3, WCHECK "Landing",
@@ -35,7 +37,9 @@ public partial class Fatia
         runner.Condition = w => w switch
         {
             "TurnY" => _jump.VelocityY <= 0,
-            "Landing" => _player.IsOnFloor() && _jump.VelocityY <= 0,
+            // DECISÃO DO PORT (segurança, relato de 2026-11-02: Dorumon preso no ar encostado numa mureta depois do carregado): parado
+            // no ar sem descer por 0,25 s (apoiado numa borda que a física não chama de chão) também conta como pouso.
+            "Landing" => (_player.IsOnFloor() || _airStill >= 0.25f) && _jump.VelocityY <= 0,
             _ => true,
         };
         runner.MoveStarted = m =>
@@ -67,6 +71,13 @@ public partial class Fatia
     // Velocidade vertical do quadro: MOVE "Jump"/"Fall" da sequência no ar, senão a gravidade da fatia.
     float VerticalVelocity(float vy, float dt)
     {
+        // Preso no ar: quanto tempo a sequência de ar ficou sem descer (o "Landing" acima usa) e tempo-limite do golpe carregado
+        // (o original dura menos de 1,5 s; com 3 s, volta ao controle livre em vez de prender o jogador).
+        float y = _player.GlobalPosition.Y;
+        _airStill = InAirSequence && !_player.IsOnFloor() && Math.Abs(y - _airLastY) < 0.02f ? _airStill + dt : 0;
+        _airLastY = y;
+        _chargedTime = _runner is { Running: true, Sequence: SequenceRunner.ChargedSequence } ? _chargedTime + dt : 0;
+        if (_chargedTime > 3f) { _runner!.Stop(); _jump.Stop(); _dash.Stop(); _chargedTime = 0; }
         if (!InAirSequence && _jump.Active) _jump.Stop(); // golpe, dano ou cena interromperam o pulo
         if (_jump.Active)
         {
