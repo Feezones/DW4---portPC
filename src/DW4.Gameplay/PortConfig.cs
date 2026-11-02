@@ -15,6 +15,8 @@ public sealed class PortConfig
     public int CameraMode { get; set; }
     public int LightMode { get; set; }
     public bool Vibration { get; set; } = true;
+    /// <summary>Idioma dos textos do jogo (<see cref="GameLanguage"/>): 0 inglês original, 1 português, 2 português com nomes originais.</summary>
+    public int Language { get; set; }
     // [grafico]
     public int Width { get; set; } = 1280;
     public int Height { get; set; } = 720;
@@ -56,6 +58,7 @@ public sealed class PortConfig
     {
         CameraMode = Math.Clamp(CameraMode, 0, 1);
         LightMode = Math.Clamp(LightMode, 0, 1);
+        Language = Math.Clamp(Language, 0, 2);
         Width = Math.Clamp(Width, 640, 7680);
         Height = Math.Clamp(Height, 360, 4320);
         UiScale = Math.Clamp(UiScale, 0.5f, 2f);
@@ -87,7 +90,7 @@ public sealed class PortConfig
             _ => Convert.ToString(value, CultureInfo.InvariantCulture),
         }).Append('\n');
         Section("jogo");
-        Put("camera", CameraMode); Put("luz", LightMode); Put("vibracao", Vibration);
+        Put("camera", CameraMode); Put("luz", LightMode); Put("vibracao", Vibration); Put("idioma", Language);
         Section("grafico");
         Put("largura", Width); Put("altura", Height); Put("tela_cheia", Fullscreen); Put("modo", WindowMode); Put("vsync", VSync); Put("fps", FpsLimit); Put("escala", UiScale);
         Put("aa", AntiAliasing); Put("sombras", Shadows); Put("fov", Fov); Put("resolucao_interna", RenderScale); Put("acelerar", FastForward);
@@ -121,6 +124,7 @@ public sealed class PortConfig
                 case ("jogo", "camera"): c.CameraMode = Int(value, c.CameraMode); break;
                 case ("jogo", "luz"): c.LightMode = Int(value, c.LightMode); break;
                 case ("jogo", "vibracao"): c.Vibration = Bool(value, c.Vibration); break;
+                case ("jogo", "idioma"): c.Language = Int(value, c.Language); break;
                 case ("grafico", "largura"): c.Width = Int(value, c.Width); break;
                 case ("grafico", "altura"): c.Height = Int(value, c.Height); break;
                 case ("grafico", "tela_cheia"): c.Fullscreen = Bool(value, c.Fullscreen); if (c.Fullscreen && c.WindowMode == 0) c.WindowMode = 1; break;
