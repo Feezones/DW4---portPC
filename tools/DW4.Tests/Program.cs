@@ -279,6 +279,45 @@ Test("Online: troca de itens (travar, confirmar, tudo ou nada, mudança destrava
     True(!t2.Confirm("Ana", a, b).Ok && t2.State == DW4.Gameplay.Online.TradeState.Cancelled && !a.Has(sword), "item sumiu antes: nada muda");
 });
 
+Test("Online: protocolo de rede (ida e volta de cada pacote, pacote quebrado recusado)", () =>
+{
+    var st = new DW4.Net.PlayerState("stagml11", 1.5f, 10, -43, 0.7f, "wait01", "p_girumon", 12);
+    object[] all = [new DW4.Net.Hello(DW4.Net.Protocol.Version, "RDT1abc", "Gui", "p_girumon", 12), st, new DW4.Net.Welcome(3, "Tamer"),
+        new DW4.Net.Reject("não"), new DW4.Net.Spawn(4, "Ana", "TamerAna", st), new DW4.Net.Despawn(4), new DW4.Net.RemoteState(4, st)];
+    foreach (var m in all) Equal(m, DW4.Net.Codec.Read(DW4.Net.Codec.Write(m)), m.GetType().Name);
+    var bytes = DW4.Net.Codec.Write(st);
+    bool threw = false;
+    try { DW4.Net.Codec.Read(bytes[..^2]); } catch (FormatException) { threw = true; }
+    True(threw, "pacote curto");
+    threw = false;
+    try { DW4.Net.Codec.Read([99]); } catch (FormatException) { threw = true; }
+    True(threw, "tipo desconhecido");
+});
+
+Test("Online: servidor (cidade aberta, dungeon por grupo, aparecer e sumir, conta repetida)", () =>
+{
+    var w = new DW4.Net.World();
+    DW4.Net.PlayerState S(string stage) => new(stage, 0, 0, 0, 0, "wait01", "p_girumon", 5);
+    w.Join(1, new(10, "Alfa", null), "Gui");
+    w.Join(2, new(20, "Bravo", null), "Ana");
+    True(w.Update(1, S("stagml11")).Count == 0, "sozinho na cidade");
+    var o = w.Update(2, S("stagml11"));
+    True(o.Any(x => x.To == 1 && x.Message is DW4.Net.Spawn { PlayerId: 2 }) && o.Any(x => x.To == 2 && x.Message is DW4.Net.Spawn { PlayerId: 1 }), "cidade: os dois se veem");
+    o = w.Update(2, S("stagml11"));
+    True(o.Count == 1 && o[0] is { To: 1, Reliable: false, Message: DW4.Net.RemoteState }, "estado repassado sem garantia");
+    o = w.Update(1, S("dng101b1"));
+    True(o.Any(x => x.To == 2 && x.Message is DW4.Net.Despawn { PlayerId: 1 }), "foi para a dungeon: some da cidade");
+    True(w.Update(2, S("dng101b1")).Count == 0, "dungeon sem grupo: instâncias separadas");
+    o = w.SetParty(1, "p1");
+    True(o.Count == 0, "grupo novo, ainda sozinho na instância");
+    o = w.SetParty(2, "p1");
+    True(o.Any(x => x.To == 1 && x.Message is DW4.Net.Spawn { PlayerId: 2 }), "mesmo grupo: mesma dungeon");
+    Equal("dng101b1#p:p1", DW4.Net.World.InstanceOf("DNG101B1", new(1, "x", "p1")), "nome da instância");
+    o = w.Leave(2);
+    True(o.Count == 1 && o[0].Message is DW4.Net.Despawn { PlayerId: 2 }, "saiu: some para o outro");
+    Equal<int?>(1, w.Join(5, new(10, "Alfa", null), "Gui"), "mesma conta de novo: derruba a antiga");
+});
+
 Test("Port: personagem novo com as armas iniciais (INI_WEAPON1..3), a primeira equipada, e o equipamento no save", () =>
 {
     var s = DW4.Script.Save.CharacterSave.New("Gui", 2, "p_girumon", 0, "stagml11", 3, [268, 275, 274]);

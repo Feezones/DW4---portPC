@@ -107,6 +107,7 @@ public static class Session
     {
         if (Account is not { } account) { error = "Abra o Digimon World 4 pelo launcher RE:DIGITAL, com a sua conta conectada."; return false; }
         if (!Gate.Enter(account, slot, character, out error)) return false;
+        Online.Disconnect(); // outra vaga: a conexão nova leva o personagem novo
         Slot = slot;
         Character = character;
         var ram = new GameRam();
