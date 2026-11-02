@@ -1000,6 +1000,12 @@ public partial class Fatia : Node3D
             body.AddChild(shape);
             var path = new List<string>();
             for (Node? n = mi; n != null && n != collision; n = n.GetParent()) path.Add(n.Name);
+            // Parede invisível (relato do usuário, 2026-11-02: ponte da stag0101, parado em (462, 47, 96)). FATO (dw4
+            // colisao-auditoria): a peça "limit_Circle" (beHitLandModelInfo com @10 = 4; chão = 1, paredes e portas = 2) é um
+            // cilindro de 32 triângulos com a mesma caixa (403..517, 0..250, 93..207) em dng101b1, dng101b2, stag0001, stag0101 e
+            // até na tela stagis10, sem nada visível, e corta a ponte da stag0101 onde o jogador parava. HIPÓTESE: é um limite
+            // que o jogo só liga por script (HITLANDMODEL limit_Circle ONHIT, tratado em Fatia.Scripts.cs); começa desligado.
+            if (path.Any(p => p.Contains("limit_Circle", StringComparison.Ordinal))) shape.Disabled = true;
             _collisionShapes.Add((string.Join("/", path), shape));
         }
         collision.QueueFree();
