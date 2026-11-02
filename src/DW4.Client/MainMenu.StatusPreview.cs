@@ -18,12 +18,12 @@ public partial class MainMenu
         var dbFile = Directory.Exists(Path.Combine(Common, "db")) ? Directory.EnumerateFiles(Path.Combine(Common, "db"), "*_db.json").FirstOrDefault() : null;
         if (dbFile == null) { GD.PrintErr("[status] falta o *_db.json"); return; }
         var db = GameTables.FromJson(File.ReadAllText(dbFile));
-        var texts = new System.Collections.Generic.List<string>();
+        var texts = new System.Collections.Generic.Dictionary<string, string>();
         var tf = Path.Combine(Common, "textos", "textos.json");
         if (File.Exists(tf))
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(tf));
-            texts = doc.RootElement.GetProperty("texts").EnumerateArray().OrderBy(t => t.GetProperty("index").GetInt32()).Select(t => t.GetProperty("text").GetString() ?? "").ToList();
+            foreach (var t in doc.RootElement.GetProperty("texts").EnumerateArray()) texts[t.GetProperty("key").GetString() ?? ""] = t.GetProperty("text").GetString() ?? "";
         }
         int shinka = 2, level = 30;
         var skill = new[] { 120, 340, 90, 60, 40, 30, 260, 150, 80 };
@@ -47,7 +47,7 @@ public partial class MainMenu
             Db = db, Inventory = () => inv, Equipment = () => eq, SetEquipment = e => eq = e,
             Preview = e => db.Player(shinka, level, e, skill), Player = () => db.Player(shinka, level, eq, skill),
             Numbers = () => (level, 1290, 210, PlayerGrowth.NextExp(level - 1) + 9000), Name = "Feelipe", ShinkaRow = shinka, Skill = () => skill,
-            Forms = forms, Text = i => i >= 0 && i < texts.Count ? texts[i] : null, Font = font,
+            Forms = forms, TextByKey = k => texts.TryGetValue(k, out var t) ? t : null, Font = font,
             Faces = faceImg != null && Image.LoadFromFile(faceImg) is { } img ? ImageTexture.CreateFromImage(img) : null,
         });
         _center.Visible = false;

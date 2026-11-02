@@ -22,8 +22,8 @@ public sealed class StatusContext
     public required int ShinkaRow { get; init; }
     public required Func<IReadOnlyList<int>> Skill { get; init; }
     public Evolution? Forms { get; init; }
-    /// <summary>Texto do jogo pelo índice da beUnicodeObjList (textos.json); null sem texto.</summary>
-    public required Func<int, string?> Text { get; init; }
+    /// <summary>Texto do jogo pela chave (mswkPRG0003…) no textos.json da fase; null sem texto.</summary>
+    public required Func<string, string?> TextByKey { get; init; }
     public BitmapFont? Font { get; init; }
     /// <summary>charaicon.png (rostos 64 × 64 em 4 × 4, na ordem da shinka); null sem a arte.</summary>
     public Texture2D? Faces { get; init; }
@@ -70,7 +70,12 @@ public partial class StatusScreen : Control
 
     // ---------- textos ----------
 
-    string T(int index, string fallback) => (_c.Text(index) is { Length: > 0 } t ? t : fallback).Replace("\r\n", "\n").Trim();
+    // Os números dos textos abaixo são os índices da dng1 (beUnicodeObjList do area #9), só como nome; o texto é buscado pela
+    // chave mswkPRG, porque cada fase tem o pacote de textos em outra ordem (FATO: no lobby o índice 26 é uma fala de NPC).
+    static readonly Dictionary<int, string> Keys = new() { [11] = "0000", [12] = "0001", [13] = "0002", [14] = "0003", [15] = "0004", [16] = "0005", [17] = "0006", [18] = "0007", [19] = "0008", [20] = "0009", [21] = "0010", [22] = "0011", [23] = "0012", [24] = "0013", [25] = "0014", [26] = "0015", [27] = "0016", [28] = "0017", [29] = "0031", [30] = "0032", [31] = "0033", [32] = "0034", [33] = "0035", [34] = "0036", [35] = "0037", [36] = "0039", [37] = "0043", [38] = "0044", [39] = "0045", [40] = "0046", [41] = "0047", [42] = "0048", [43] = "0049", [44] = "0061", [45] = "0062", [46] = "0063", [47] = "0064", [48] = "0085", [49] = "0065", [50] = "0066", [51] = "0067", [52] = "0073", [53] = "0075", [54] = "0077", [55] = "0078", [56] = "0079", [57] = "0080", [58] = "0081", [59] = "0082", [60] = "0083", [61] = "0084", [62] = "0087", [63] = "0088", [64] = "0091", [65] = "0093", [66] = "0094", [67] = "0096", [68] = "0098", [69] = "0099", [70] = "0100", [71] = "0101", [72] = "0102", [73] = "0103", [74] = "0104", [75] = "0105", [76] = "0106", [77] = "0107", [78] = "0108", [79] = "0109", [80] = "0111", [81] = "0112", [82] = "0113", [83] = "0114", [84] = "0115", [85] = "0116", [86] = "0117", [87] = "0118", [88] = "0119", [89] = "0120", [90] = "0124", [91] = "0127", [92] = "0128", [93] = "0130", [94] = "0131", [95] = "0132", [96] = "0133", [97] = "0134", [98] = "0135", [99] = "0136", [100] = "0137", [101] = "0138", [102] = "0139", [103] = "0140", [104] = "0141", [105] = "0142", [106] = "0143", [107] = "0144", [108] = "0145", [109] = "0146", [110] = "0147", [111] = "0148", [112] = "0149" };
+
+    string T(int index, string fallback) =>
+        (Keys.TryGetValue(index, out var key) && _c.TextByKey("mswkPRG" + key) is { Length: > 0 } t ? t : fallback).Replace("\r\n", "\n").Trim();
 
     // Os textos de ajuda começam com ícones do GameCube (≡∇, ≪, ≫): a barra de ajuda põe o botão do aparelho no lugar.
     string Help(int index, string fallback) => new(T(index, fallback).SkipWhile(ch => !char.IsAsciiLetter(ch)).ToArray());
@@ -150,6 +155,7 @@ public partial class StatusScreen : Control
         rightPanel.SizeFlagsVertical = SizeFlags.ExpandFill;
         var rightBox = (VBoxContainer)rightPanel.GetChild(0);
         _rightTitle = Text("", 20, Gold);
+        _rightTitle.ClipText = true;
         rightBox.AddChild(_rightTitle);
         _rightScroll = new ScrollContainer { SizeFlagsVertical = SizeFlags.ExpandFill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
         _right = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
@@ -164,6 +170,7 @@ public partial class StatusScreen : Control
         rightCol.AddChild(infoPanel);
 
         _message = Text("", 18, Pink);
+        _message.ClipText = true;
         page.AddChild(_message);
         page.AddChild(HelpBar());
         _message.HorizontalAlignment = HorizontalAlignment.Center;
@@ -234,6 +241,7 @@ public partial class StatusScreen : Control
         var row = new HBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
         var l = Text(label, size);
         l.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        l.ClipText = true;
         row.AddChild(l);
         row.AddChild(Text(value, size, valueColor, HorizontalAlignment.Right));
         box.AddChild(row);
@@ -280,7 +288,7 @@ public partial class StatusScreen : Control
         for (int i = 0; i < names.Length; i++)
         {
             int k = i;
-            var b = new Button { Text = names[i], CustomMinimumSize = new Vector2(150, 40), FocusMode = FocusModeEnum.None, Flat = false };
+            var b = new Button { Text = names[i], CustomMinimumSize = new Vector2(150, 40), FocusMode = FocusModeEnum.None, Flat = false, ClipText = true };
             b.AddThemeFontSizeOverride("font_size", 24);
             b.Pressed += () => SetTab(k);
             _tabs.AddChild(b);
