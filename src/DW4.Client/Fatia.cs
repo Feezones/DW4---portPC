@@ -415,6 +415,8 @@ public partial class Fatia : Node3D
         vel.Y = VerticalVelocity(vel.Y, dt);
         _player.Velocity = vel;
         _player.MoveAndSlide();
+        StepUp(new Vector3(v.X, 0, v.Y), dt); // degraus baixos (Fatia.Step.cs)
+        NoteWall();
         // DECISÃO DO PORT PC: rede de segurança. Se atravessar o chão (empurrão forte numa borda, ponto inicial dentro de
         // uma parede), volta ao último ponto em que estava no chão em vez de cair para sempre.
         _airTime = _player.IsOnFloor() ? 0 : _airTime + dt;
@@ -485,6 +487,7 @@ public partial class Fatia : Node3D
         }
         _hud.Text = $"pos ({p.X:0.0}, {p.Y:0.0}, {p.Z:0.0})  vel {_move.Velocity.Length():0.0} u/s\n" +
             $"câmera {(_cameraSet < _cameraFiles.Length ? _cameraFiles[_cameraSet].Replace("_camera.json", "") : "-")}{(_cameraSet == 1 ? " (afastada)" : "")} volume {_zone}  [F1 troca, F5 reinicia, Esc sai]\n" +
+            $"parede: {_wallInfo}\n" +
             $"animações: parado = {_animWait ?? "-"}, correndo = {_animRun ?? "-"}\n" +
             $"ataque [J, clique ou X]: {(_runner?.Running == true ? $"{_runner.Action} → {(_runner.Action == null ? "-" : AnimName(_runner.Action) ?? "sem animação")} quadro {_runner.ActionFrame:0}/{_runner.ActionLength:0}" : "-")}  acertos no Numemon: {_hits}  [F2 caixas]\n" +
             $"Numemon: {(_lastEnemy?.Brain is not { } br ? "-" : $"{br.Map.Name}, {(br.External ?? br.Current?.Sequence ?? "-")}")}{(_lastEnemy?.Runner?.Running == true ? $" ({_lastEnemy.Runner.Action})" : "")}  golpes no Guilmon: {_hitsTaken}\n" +
