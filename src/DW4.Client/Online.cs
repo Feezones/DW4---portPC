@@ -18,7 +18,8 @@ public sealed class RemotePlayer
 
 /// <summary>
 /// Conexão com o servidor do DW4 (ADR 0003), viva entre as trocas de fase. Liga só com o ticket do launcher e o endereço do
-/// servidor: DW4.exe -- --conta X --ticket Y --servidor host:porta (ou DW4_SERVIDOR e, para teste local, DW4_TICKET=dev:Nome).
+/// servidor: DW4.exe -- --conta X --ticket Y [--servidor host:porta] (ou DW4_SERVIDOR; sem nenhum, usa o oficial, DefaultServer;
+/// para teste local, DW4_TICKET=dev:Nome).
 /// Sem isso o jogo segue local, como antes. O cliente manda o próprio estado a 20 Hz e recebe os outros da mesma instância.
 /// </summary>
 public static class Online
@@ -46,7 +47,10 @@ public static class Online
         return null;
     }
 
-    public static string? ServerAddress => Arg("--servidor") ?? (OS.GetEnvironment("DW4_SERVIDOR") is { Length: > 0 } s ? s : null);
+    /// <summary>Servidor oficial (VPS da DMO.API). Usado quando o jogo abre pelo launcher (com ticket) sem --servidor nem DW4_SERVIDOR.</summary>
+    public const string DefaultServer = "209.126.83.192:7031";
+
+    public static string? ServerAddress => Arg("--servidor") ?? (OS.GetEnvironment("DW4_SERVIDOR") is { Length: > 0 } s ? s : DefaultServer);
     static string? Ticket => Session.LauncherTicket ?? (OS.IsDebugBuild() && OS.GetEnvironment("DW4_TICKET") is { Length: > 0 } t ? t : null);
 
     /// <summary>Conecta (uma vez por abertura do jogo) com o personagem da vaga. Sem ticket ou sem servidor, fica local.</summary>

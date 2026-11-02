@@ -13,7 +13,7 @@ Primeira etapa do coop (ADR 0003): os jogadores se veem e andam juntos. Combate,
 
 ## Como entra
 
-1. O launcher pede o ticket (`api/auth/game-ticket`) e abre `DW4.exe -- --conta <usuário> --ticket <ticket> --servidor <host:porta>`.
+1. O launcher pede o ticket (`api/auth/game-ticket`) e abre `DW4.exe -- --conta <usuário> --ticket <ticket>`. O jogo conecta no servidor oficial (`Online.DefaultServer`, `209.126.83.192:7031`, a VPS da DMO.API); `--servidor host:porta` ou `DW4_SERVIDOR` trocam o endereço.
 2. O jogo conecta (UDP, chave `DW4-online-1`) e manda `Hello` com o ticket, o nome do personagem, a forma e o nível.
 3. O servidor resgata o ticket na DMO.API (mesma regra do DMO: 1º uso em 2 min; reconexão do mesmo IP por 12 h).
    Válido: `Welcome`; inválido: a desconexão leva o motivo, e o jogo segue local avisando no chat.
@@ -45,6 +45,6 @@ Teste local sem launcher: servidor com `DW4_DEV=1`; o jogo pela Godot com `DW4_S
 
 ## Pendências
 
-- Launcher: acrescentar `--servidor <host:porta>` aos argumentos do `dw4` no catálogo.
+- Launcher: nada a fazer para o endereço (o jogo já sabe o oficial). Os `arguments` do catálogo vão antes do `--` e a Godot não os repassa ao jogo, então o endereço não pode ir por lá.
 - DMO.API: publicar `api/dw4/ticket/redeem` (PR #4 do privateDmoSite) e ter `Dw4:ServiceKey` configurada.
 - Sem colisão entre jogadores e sem combate em grupo ainda; o chat do jogo ainda é local (o do hub, PR #3, entra depois).
