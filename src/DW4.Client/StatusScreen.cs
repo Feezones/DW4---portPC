@@ -27,8 +27,6 @@ public sealed class StatusContext
     public BitmapFont? Font { get; init; }
     /// <summary>charaicon.png (rostos 64 × 64 em 4 × 4, na ordem da shinka); null sem a arte.</summary>
     public Texture2D? Faces { get; init; }
-    /// <summary>Outros Digimon do grupo (Give). Local = 0 até a Fase 6.</summary>
-    public int PartyOthers { get; init; }
     public Action<string>? Log { get; init; }
 }
 
@@ -37,7 +35,7 @@ public sealed class StatusContext
 /// no menu ao apertar TAB, todos os seus dados e funcionalidades"), como as telas de vagas e criação (MainMenu.Slots.cs).
 /// Estrutura e textos do jogo (FATO, txt_status.lua I&lt;11..112&gt;): coluna de status (Lv, nome, HP/MP, 5 atributos, 4 resistências,
 /// ¶ Data, BITS, Next Level), menu Equipment / Folder / Techniques e as subtelas: Weapon Slot (3 soquetes e Mods), Armor Slot, Sub
-/// Slot; Device / Key / Disk / BITS Folder com Sort, Give e Break; Digivolve Tech, Skill Tech e MP Tech. Visual da captura do menu
+/// Slot; Device / Key / Disk / BITS Folder com Sort e Break (sem o Give, a pedido do usuário); Digivolve Tech, Skill Tech e MP Tech. Visual da captura do menu
 /// antigo (conferir_status.png): janelas azul-escuras de borda lilás, cantos redondos, linhas sublinhadas, faixas rosa.
 /// Regras em <see cref="EquipRules"/>. Desenho com controles da Godot e a fonte do jogo, escala pela altura da janela (base 720).
 /// </summary>
@@ -61,8 +59,6 @@ public partial class StatusScreen : Control
     // Break pedindo confirmação (Yes/No, I<55..57>).
     ItemRef? _breakAsk;
     int _breakIndex = -1;
-    // Give/Break de um item aberto no quadro de baixo.
-    bool _itemMenu;
 
     public event Action? Closed;
 
@@ -398,7 +394,6 @@ public partial class StatusScreen : Control
     {
         _msg = "";
         if (_breakAsk != null) { _breakAsk = null; RefreshAll(); return; }
-        if (_itemMenu) { _itemMenu = false; RefreshAll(); return; }
         if (_inRight) { _inRight = false; RefreshAll(); return; }
         Close();
     }
@@ -410,7 +405,6 @@ public partial class StatusScreen : Control
         _leftCursor = _rightCursor = 0;
         _inRight = false;
         _breakAsk = null;
-        _itemMenu = false;
         _msg = "";
         RefreshAll();
     }
@@ -759,7 +753,7 @@ public partial class StatusScreen : Control
             ListButton(_leftButtons, names[i], counts[i], () => { if (!_inRight && _leftCursor == k) FolderInfo(k); BuildFolderItems(k); },
                 () => { if (_rightButtons.Count > 0) { _inRight = true; _rightCursor = 0; _rightButtons[0].GrabFocus(); } });
         }
-        // Ações da pasta (I<49..51>): Sort na Device Folder; Give e Break no item escolhido.
+        // Ações da pasta (I<49..51>): Sort na Device Folder; Break no item escolhido (o Give ficou de fora: ver ItemMenu).
         Header(_left, "");
         ListButton(_leftButtons, T(49, "Sort"), "", () => ShowInfo(InfoText("Ordena a Device Folder por tipo (∈ ∋ ∨ ∧) e por item.")), () =>
         {
@@ -818,58 +812,27 @@ public partial class StatusScreen : Control
             default:
                 _right.AddChild(Row(T(24, "BITS"), inv.Bit.ToString(), 26));
                 _right.AddChild(Row("¶ Data", inv.XData.ToString(), 26));
-                ListButton(_rightButtons, T(50, "Give"), "", () => ShowInfo(InfoText(T(61, "Folder for collected BITS"))),
-                    () => { _msg = _c.PartyOthers <= 0 ? T(63, "No Digimon to give BITS to") : ""; _message.Text = _msg; });
                 break;
         }
         if (_rightButtons.Count == 0 && folder != 3) _right.AddChild(InfoText("Pasta vazia.", 20, Dim));
     }
 
-    Control Actions() => Text($"{Help(12, "Confirm")}: {T(50, "Give")} / {T(51, "Break")}", 17, Dim);
+    Control Actions() => Text($"{Help(12, "Confirm")}: {T(51, "Break")}", 17, Dim);
 
     void FolderInfo(int folder) => ShowInfo(InfoText(T(58 + folder, "")));
 
-    // Confirmar num item da pasta: Give (sem grupo, recusa com o texto do jogo) ou Break (pede Yes/No).
+    // Confirmar num item da pasta: Break (pede Yes/No). DECISÃO DO PORT (pedido do usuário em 2026-11-02): o TAB é só o menu do
+    // próprio jogador; o Give do jogo (dar item a outro Digimon do grupo) ficou de fora, como compra, venda e banco, que são dos NPCs.
     void ItemMenu(ItemRef it, int index)
     {
         _msg = "";
-        _itemMenu = true;
         var inv = _c.Inventory();
-        var eq = _c.Equipment();
-        var give = new Button { Text = T(50, "Give") };
-        var brk = new Button { Text = T(51, "Break") };
-        foreach (var b in new[] { give, brk })
-        {
-            b.CustomMinimumSize = new Vector2(150, 40);
-            b.AddThemeFontSizeOverride("font_size", 22);
-            b.MouseEntered += () => b.GrabFocus();
-        }
-        give.Pressed += () =>
-        {
-            var why = EquipRules.CannotGive(_c.Db, inv, eq, it, _c.PartyOthers);
-            _msg = why is { } w ? T(w, "This Item cannot be sent.") : "";
-            _message.Text = _msg;
-        };
-        brk.Pressed += () =>
-        {
-            if (EquipRules.CannotBreak(_c.Db, inv, eq, it) is { } w) { _msg = T(w, "This Item cannot be damaged."); _message.Text = _msg; return; }
-            _breakAsk = it;
-            _breakIndex = index;
-            _itemMenu = false;
-            _rightCursor = 1; // "No" primeiro, para não quebrar sem querer
-            _inRight = true;
-            RefreshAll();
-        };
-        var row = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
-        row.AddThemeConstantOverride("separation", 20);
-        row.AddChild(give);
-        row.AddChild(brk);
-        ShowInfo(ItemInfo(it), row);
-        brk.FocusNeighborLeft = give.GetPath();
-        give.FocusNeighborRight = brk.GetPath();
-        var back = _rightCursor < _rightButtons.Count ? _rightButtons[_rightCursor] : null;
-        if (back != null) { give.FocusNeighborTop = back.GetPath(); brk.FocusNeighborTop = back.GetPath(); }
-        give.CallDeferred(Control.MethodName.GrabFocus);
+        if (EquipRules.CannotBreak(_c.Db, inv, _c.Equipment(), it) is { } w) { _msg = T(w, "This Item cannot be damaged."); _message.Text = _msg; return; }
+        _breakAsk = it;
+        _breakIndex = index;
+        _rightCursor = 1; // "No" primeiro, para não quebrar sem querer
+        _inRight = true;
+        RefreshAll();
     }
 
     void DoBreak(ItemRef it)

@@ -76,7 +76,6 @@ public partial class Fatia
             TextByKey = k => TextKey(k, "") is { Length: > 0 } t ? t : null,
             Font = GameFont(),
             Faces = Faces(),
-            PartyOthers = 0, // grupo online: Fase 6
             Log = ScriptLog,
         });
         _statusScreen.Closed += () => { _menuOpen = false; _statusScreen = null; };
