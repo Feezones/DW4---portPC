@@ -22,7 +22,9 @@ Relatos do usuário jogando com o Veemon.
 - **HIPÓTESE:** o quadro do disparador do jogador é de 60 Hz. A VATCG1 dura 0,217 s (6,5 quadros de 30 Hz), e o tiro sai no
   quadro 10.
 - Bot sem janela (Veemon + Shot Pistol na stag0101): 12 tiros, Goburimon de 50 para 29 HP.
-- **DESCONHECIDO:** o tiro carregado (x_100gunk01 na KATCG3 não tem caixa).
+- **FATO (igb-seq do p_vmon):** o golpe carregado da pistola (SQ_ATCKTM, bloco "gun") não é projétil: é um giro com pulo e
+  6 caixas HITBOX 20000 em volta do jogador; o x_100gunk01 da KATCG3 é só o efeito. O port só contava caixas 10000, então
+  nenhum golpe carregado acertava; agora conta 10000 e 20000 (a mesma conta do golpe físico; HIPÓTESE: sem multiplicador).
 
 ## Spawn do lobby
 
