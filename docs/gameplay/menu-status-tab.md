@@ -40,7 +40,10 @@ itens, inventário, técnicas, armas"). Layout próprio no estilo do original, c
 - **HIPÓTESE**: Sort ordena por tipo (∈ ∋ ∨ ∧) e pela linha da tabela. Break de disco tira um por vez (o "How many?" não foi
   feito). Itens de evento não quebram nem vão.
 - **HIPÓTESE**: "Digivolve Tech" = formas liberadas e o nível de cada (o conteúdo real da tela não foi lido).
-- Give sempre recusa com o texto do jogo ("No one to give Item to.") até o grupo online (Fase 6).
+- **DECISÃO (usuário, 2026-11-02)**: o TAB é só o menu do próprio jogador. O Give do jogo (dar item ou BITS a outro Digimon do
+  grupo) ficou de fora; compra, venda, banco e conversas continuam só nos NPCs. A BITS Folder só mostra os valores.
+- Os textos são buscados pela chave mswkPRG, não pelo índice: cada fase tem o pacote de textos em outra ordem (no lobby o
+  índice 26 é uma fala de NPC).
 - Comparação antes de equipar (atributos antes > depois) é do port.
 
 ## Conferência
