@@ -43,13 +43,10 @@ public partial class MainMenu : Control
 
     public override void _Ready()
     {
+        DataPaths.MigrateOldUserData();
         PortSettings.Apply(GetTree().Root);
-        if (DataPaths.Version is { Length: > 0 } version)
-        {
-            // Pacote do launcher: a versão publicada vai no título da janela e no log (para os relatos de teste).
-            DisplayServer.WindowSetTitle($"Digimon World 4 (port PC) {version}");
-            GD.Print($"[versao] {version}; dados em {DataPaths.Fatia}");
-        }
+        // Pacote do launcher: a versão publicada vai para o log (para os relatos de teste); a janela fica só "Digimon World 4".
+        if (DataPaths.Version is { Length: > 0 } version) GD.Print($"[versao] {version}; dados em {DataPaths.Fatia}");
         if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_VER_MODELO").Length > 0)
         {
             CallDeferred(Node.MethodName.AddSibling, new ModelViewer());

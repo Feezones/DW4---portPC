@@ -30,6 +30,40 @@ public static class DataPaths
             ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(Fases)) ?? "", "extracted", "files")
             : Path.Combine(Root, "arquivos"));
 
+    /// <summary>
+    /// O projeto se chamava "DW4 - fatia vertical" até a 0.5.0, e a Godot guarda user:// numa pasta com o nome do projeto
+    /// (%APPDATA%\Godot\app_userdata\&lt;nome&gt;). Na primeira abertura com o nome novo, copia as vagas (accounts) e as
+    /// configurações (config.cfg) da pasta antiga, sem apagar nada lá e sem sobrescrever o que já existir na nova.
+    /// </summary>
+    public static void MigrateOldUserData()
+    {
+        try
+        {
+            var now = ProjectSettings.GlobalizePath("user://").TrimEnd('/', '\\');
+            var parent = Path.GetDirectoryName(now);
+            if (parent == null) return;
+            var old = Path.Combine(parent, "DW4 - fatia vertical");
+            if (!Directory.Exists(old) || string.Equals(Path.GetFullPath(old), Path.GetFullPath(now), System.StringComparison.OrdinalIgnoreCase)) return;
+            var oldCfg = Path.Combine(old, "config.cfg");
+            var newCfg = Path.Combine(now, "config.cfg");
+            if (File.Exists(oldCfg) && !File.Exists(newCfg)) { Directory.CreateDirectory(now); File.Copy(oldCfg, newCfg); }
+            var oldAcc = Path.Combine(old, "accounts");
+            if (!Directory.Exists(oldAcc)) return;
+            foreach (var f in Directory.EnumerateFiles(oldAcc, "*", SearchOption.AllDirectories))
+            {
+                var target = Path.Combine(now, "accounts", Path.GetRelativePath(oldAcc, f));
+                if (File.Exists(target)) continue;
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(f, target);
+            }
+            GD.Print($"[dados] vagas e configurações copiadas de {old}");
+        }
+        catch (System.Exception e) when (e is IOException or System.UnauthorizedAccessException)
+        {
+            GD.PushWarning($"[dados] não deu para copiar os dados da versão antiga: {e.Message}");
+        }
+    }
+
     /// <summary>Versão publicada pelo launcher (versao.txt ao lado do exe, gravado por tools/scripts/publicar.ps1); vazio fora do pacote.</summary>
     public static string Version
     {

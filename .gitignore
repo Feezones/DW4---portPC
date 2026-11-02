@@ -22,3 +22,9 @@ obj/
 
 # Godot (cache de importação e pacotes exportados)
 .godot/
+
+# Ícone do jogo (arte do launcher, fora do git): gerado pelo tools/scripts/publicar.ps1
+src/DW4.Client/icone.png
+src/DW4.Client/icone.ico
+src/DW4.Client/icone.png.import
+src/DW4.Client/icone.ico.import

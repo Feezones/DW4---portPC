@@ -35,6 +35,47 @@ if (-not (Test-Path $Chave)) { throw "chave de assinatura não encontrada: $Chav
 
 New-Item -ItemType Directory -Force -Path $Pacote | Out-Null
 
+# 0. Ícone (janela e DW4.exe) a partir do ícone do jogo no launcher; fica fora do git (arte do jogo).
+function Escrever-Icone([string]$png, [string]$dir) {
+    Add-Type -AssemblyName System.Drawing
+    $src = [Drawing.Image]::FromFile($png)
+    try {
+        $imagens = @()
+        foreach ($s in 256, 64, 48, 32, 16) {
+            $bmp = New-Object Drawing.Bitmap $s, $s
+            $g = [Drawing.Graphics]::FromImage($bmp)
+            $g.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+            $g.Clear([Drawing.Color]::Transparent)
+            $k = [Math]::Min($s / $src.Width, $s / $src.Height)
+            $w = [int]($src.Width * $k); $h = [int]($src.Height * $k)
+            $g.DrawImage($src, [int](($s - $w) / 2), [int](($s - $h) / 2), $w, $h)
+            $g.Dispose()
+            $ms = New-Object IO.MemoryStream
+            $bmp.Save($ms, [Drawing.Imaging.ImageFormat]::Png)
+            if ($s -eq 256) { $bmp.Save((Join-Path $dir "icone.png"), [Drawing.Imaging.ImageFormat]::Png) }
+            $bmp.Dispose()
+            $imagens += , @($s, $ms.ToArray())
+        }
+    } finally { $src.Dispose() }
+    # ICO com as imagens em PNG (aceito desde o Windows Vista).
+    $out = New-Object IO.MemoryStream
+    $bw = New-Object IO.BinaryWriter $out
+    $bw.Write([uint16]0); $bw.Write([uint16]1); $bw.Write([uint16]$imagens.Count)
+    $offset = 6 + 16 * $imagens.Count
+    foreach ($i in $imagens) {
+        $s = $i[0]; $b = $i[1]
+        $bw.Write([byte]($s % 256)); $bw.Write([byte]($s % 256)); $bw.Write([byte]0); $bw.Write([byte]0)
+        $bw.Write([uint16]1); $bw.Write([uint16]32); $bw.Write([uint32]$b.Length); $bw.Write([uint32]$offset)
+        $offset += $b.Length
+    }
+    foreach ($i in $imagens) { $bw.Write([byte[]]$i[1]) }
+    $bw.Flush()
+    [IO.File]::WriteAllBytes((Join-Path $dir "icone.ico"), $out.ToArray())
+}
+$iconeLauncher = Join-Path $Launcher "cdn-template\art\dw4\icon.png"
+if (Test-Path $iconeLauncher) { Escrever-Icone $iconeLauncher $client }
+else { Write-Warning "ícone não encontrado ($iconeLauncher); o DW4.exe sai com o ícone da Godot." }
+
 # 1. DW4.exe (release, sem janela de console). O .NET vai junto, na pasta data_DW4.Client_windows_x86_64.
 if (-not $SemExportar) {
     $console = Get-ChildItem $Godot -Filter "Godot_v4.7.2-stable_mono_win64_console.exe" | Select-Object -First 1
