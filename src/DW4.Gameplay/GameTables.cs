@@ -154,12 +154,14 @@ public sealed class GameTables
 }
 
 /// <summary>
-/// Equipamento de um jogador: arma ativa (POWERSOCKET[0]), armaduras (MAINSLOT = armor1, SUBSLOT = armor2; −1 = vazio) e
-/// linhas da abChip encaixadas na arma (POWERPOCKET) e na armadura (MAINPOCKET). Na digievolução o jogo desequipa
-/// armaduras e chips e re-escolhe a arma (0x8039CA4C).
+/// Equipamento de um jogador: arma ativa (POWERSOCKET[0]), armas de reserva (POWERSOCKET[1..2]), armaduras (MAINSLOT = armor1,
+/// SUBSLOT = armor2; −1 = vazio) e linhas da abChip encaixadas na arma (POWERPOCKET) e na armadura (MAINPOCKET). Na digievolução
+/// o jogo desequipa armaduras e chips, desmarca o POWERSOCKET e re-escolhe a arma só no [0] (0x8039CA4C).
 /// </summary>
 public sealed record Equipment(int WeaponRow, int Armor1Row = -1, int Armor2Row = -1)
 {
     public IReadOnlyList<int> WeaponChips { get; init; } = [];
     public IReadOnlyList<int> ArmorChips { get; init; } = [];
+    /// <summary>POWERSOCKET[1] e [2] (−1 = vazio). FATO: o personagem novo começa com INI_WEAPON2/3 neles (GAMEDATAINIT).</summary>
+    public IReadOnlyList<int> ReserveWeapons { get; init; } = [];
 }

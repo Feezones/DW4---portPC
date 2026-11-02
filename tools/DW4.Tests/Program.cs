@@ -178,10 +178,74 @@ Test("Port: personagem novo com as armas iniciais (INI_WEAPON1..3), a primeira e
     var p = ram.Players[0];
     True(p.Items.Has(new ItemRef("weapon", 268)) && p.Items.Has(new ItemRef("weapon", 275)) && p.Items.Has(new ItemRef("weapon", 274)), "as 3 na pasta");
     Equal(268, p.Equipment?.WeaponRow, "a primeira equipada");
+    Equal("275,274", string.Join(",", p.Equipment!.ReserveWeapons), "as outras nos soquetes de reserva (POWERSOCKET[1..2])");
     p.Equipment = new Equipment(275, 3) { WeaponChips = [7] };
     var back = new GameRam();
     DW4.Script.Save.CharacterSave.FromJson(DW4.Script.Save.CharacterSave.Capture(ram, 0, "Gui", "s", 0).ToJson())!.Apply(back, 0);
     Equal((275, 3, 7), (back.Players[0].Equipment!.WeaponRow, back.Players[0].Equipment!.Armor1Row, back.Players[0].Equipment!.WeaponChips[0]), "arma, armadura e chip gravados");
+});
+
+Test("Port: menu de status (TAB): soquetes, armaduras, pockets, chips, marcas (E), Break, Give e Sort", () =>
+{
+    // Tabelas mínimas: armas 0 (com pockets, SOUBI de todos, skill 1 ≥ 0) e 1 (sem pockets, ISHAKAI 0), 2 (SOUBI só da Digimon 5);
+    // armaduras ∋ 0 (Lv 1) e 1 (Lv 50); ∨ 0; chips 0 (arma e armadura), 1 (só arma), 2 (só armadura).
+    string Col(string n, params object[] v) => $"{{\"name\":\"{n}\",\"cells\":[{string.Join(",", v.Select(x => x is string t ? $"\"{t}\"" : x.ToString()))}]}}";
+    var db = GameTables.FromJson("{" +
+        $"\"weapon\":{{\"rows\":3,\"columns\":[{Col("SKILL", 1, 1, 1)},{Col("SKILLPOINT", 0, 0, 0)},{Col("SOUBI", 65535, 65535, 32)},{Col("ISPOCKET", 1, 0, 1)},{Col("ISHAKAI", 1, 0, 1)},{Col("ISJYOUDO", 1, 0, 1)},{Col("TSUYOSA", 10, 20, 30)},{Col("NAME", "a", "b", "c")}]}}," +
+        $"\"armor1\":{{\"rows\":2,\"columns\":[{Col("LVPOINT", 1, 50)},{Col("ISJYOUDO", 1, 1)}]}}," +
+        $"\"armor2\":{{\"rows\":1,\"columns\":[{Col("LVPOINT", 1)}]}}," +
+        $"\"abChip\":{{\"rows\":3,\"columns\":[{Col("WU", 1, 1, 0)},{Col("BLUEAB", 1, 0, 1)},{Col("ISJYOUDO", 1, 1, 1)}]}}}}");
+    int[] skill = [1, 1, 1, 1, 1, 1, 1, 1, 1];
+    var inv = new Inventory();
+    foreach (var it in new[] { ("weapon", 0), ("weapon", 1), ("weapon", 0), ("armor1", 0), ("armor1", 1), ("armor2", 0), ("abChip", 0), ("abChip", 1), ("abChip", 2) })
+        inv.Add(new ItemRef(it.Item1, it.Item2));
+    var eq = new Equipment(0);
+    Equal(2, EquipRules.Pockets(db, "weapon", 0), "arma com ISPOCKET: 2 pockets (decisão do port)");
+    Equal(0, EquipRules.Pockets(db, "weapon", 1), "arma sem ISPOCKET");
+    True(EquipRules.CanEquip(db, new ItemRef("weapon", 0), 2, 10, skill) && !EquipRules.CanEquip(db, new ItemRef("weapon", 2), 2, 10, skill), "SOUBI da arma");
+    True(EquipRules.CanEquip(db, new ItemRef("armor1", 0), 2, 10, skill) && !EquipRules.CanEquip(db, new ItemRef("armor1", 1), 2, 10, skill), "LVPOINT da armadura");
+    // Soquetes: a segunda cópia da arma 0 vai para o soquete 2; o 0 não fica vazio; Exchange troca com a ativa.
+    eq = EquipRules.SetSocket(db, eq, 1, 0)!;
+    Equal("0,0,-1", string.Join(",", EquipRules.SocketRows(eq)), "soquetes");
+    Equal(0, EquipRules.Free(inv, eq, new ItemRef("weapon", 0)), "as duas cópias em uso");
+    Equal(0, EquipRules.Candidates(inv, eq, "weapon").Count(c => c.Row == 0), "sem cópia livre não é candidata");
+    True(EquipRules.SetSocket(db, eq, 0, -1) == null, "soquete 0 não esvazia");
+    eq = EquipRules.SetSocket(db, eq, 2, 1)!;
+    // Chips: o 2 só serve na armadura; na arma 0 cabem 2; trocar a ativa pela arma 1 (sem pockets) tira os chips da arma.
+    True(EquipRules.SetChip(db, eq, weapon: true, 0, 2) == null, "chip de armadura na arma recusado");
+    eq = EquipRules.SetChip(db, eq, weapon: true, 0, 1)!;
+    True(EquipRules.SetChip(db, eq, weapon: true, 2, 0) == null, "pocket 3 não existe");
+    var swapped = EquipRules.Exchange(db, eq, 2)!;
+    Equal(1, swapped.WeaponRow, "Exchange: a reserva vira a ativa");
+    Equal("1,0,0", string.Join(",", EquipRules.SocketRows(swapped)), "Exchange: a ativa vai para o soquete");
+    Equal(0, swapped.WeaponChips.Count, "arma sem pockets: chips saem");
+    // Armadura ∋ com chip; tirar a armadura tira o chip.
+    eq = EquipRules.SetArmor(db, eq, EquipSlot.Armor, 0);
+    eq = EquipRules.SetChip(db, eq, weapon: false, 0, 2)!;
+    eq = EquipRules.SetArmor(db, eq, EquipSlot.Sub, 0);
+    Equal((0, 0, 1), (eq.Armor1Row, eq.Armor2Row, eq.ArmorChips.Count), "armaduras e chip");
+    Equal(0, EquipRules.SetArmor(db, eq, EquipSlot.Armor, -1).ArmorChips.Count, "sem a ∋, o chip dela sai");
+    // Marcas (E) na pasta: arma 0 duas vezes, arma 1, ∋ 0, ∨ 0, chips 1 e 2 em uso; ∋ 1 e chip 0 livres.
+    Equal("EEEE-E-EE", string.Concat(EquipRules.EquippedMarks(inv, eq).Select(m => m ? 'E' : '-')), "marcas (E) por posição");
+    // Break: equipada recusa (107); ISHAKAI 0 recusa (108); livre deixa. Give: sem grupo, 111; ISJYOUDO 0, 110.
+    Equal((int?)EquipRules.TextEquippedNoBreak, EquipRules.CannotBreak(db, inv, eq, new ItemRef("armor2", 0)), "Break de equipada");
+    Equal((int?)EquipRules.TextNoBreak, EquipRules.CannotBreak(db, inv, eq, new ItemRef("weapon", 1)), "Break de ISHAKAI 0");
+    Equal((int?)null, EquipRules.CannotBreak(db, inv, eq, new ItemRef("armor1", 1)), "Break de livre");
+    Equal((int?)EquipRules.TextNoOneToGive, EquipRules.CannotGive(db, inv, eq, new ItemRef("armor1", 1), 0), "Give sem grupo");
+    Equal((int?)EquipRules.TextNoGive, EquipRules.CannotGive(db, inv, eq, new ItemRef("weapon", 1), 1), "Give de ISJYOUDO 0");
+    Equal((int?)null, EquipRules.CannotGive(db, inv, eq, new ItemRef("armor1", 1), 1), "Give com grupo");
+    // Sort: ∈ ∋ ∨ ∧ e linha; Break tira da pasta; discos saem um por vez.
+    inv.SortDevices(EquipRules.SortKey);
+    Equal("weapon0,weapon0,weapon1,armor10,armor11,armor20,abChip0,abChip1,abChip2", string.Join(",", inv.Devices.Select(d => d.Table + d.Row)), "Sort");
+    True(inv.RemoveDeviceAt(4) && inv.Devices.Count == 8 && !inv.Has(new ItemRef("armor1", 1)), "Break tira o item");
+    inv.Add(new ItemRef("conItem", 3)); inv.Add(new ItemRef("conItem", 3));
+    True(inv.RemoveDisks(3, 1) && inv.Disks(3) == 1 && !inv.RemoveDisks(3, 2), "discos");
+    // Soquetes de reserva vão para o save.
+    var ram = new GameRam();
+    ram.Players[0].Equipment = eq;
+    var back = new GameRam();
+    DW4.Script.Save.CharacterSave.FromJson(DW4.Script.Save.CharacterSave.Capture(ram, 0, "Gui", "s", 0).ToJson())!.Apply(back, 0);
+    Equal("0,0,1", string.Join(",", EquipRules.SocketRows(back.Players[0].Equipment!)), "soquetes no save");
 });
 
 Test("Port: X-data nos atributos (custo ⌈(valor − 45)/5⌉, teto 400, mínimo 1; UPCNT 2..6, 0, 1)", () =>
