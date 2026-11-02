@@ -82,6 +82,8 @@ public partial class Fatia
             }
             if (Seq.Alpha != alpha) Actor.SetAlpha(Seq.Alpha);
             Actor.Root.Visible = Seq.Alpha > 0;
+            // DECISÃO DO PORT (parede invisível): objeto transparente (FADE em 0, ainda entrando ou sumindo) não segura o jogador.
+            if (Body != null) Body.ProcessMode = Actor.Root.Visible ? Node.ProcessModeEnum.Inherit : Node.ProcessModeEnum.Disabled;
             Actor.Time = Seq.Frame / 60f;
             Actor.Update();
         }
@@ -160,7 +162,7 @@ public partial class Fatia
         if (Spawn(model, 0, at, new Vector3(0, rotDeg, 0), gen) is not { } box) return null;
         box.Hp = _db != null && _db.Contains("enemy") ? _db["enemy"].Int(gen.EnemyRow, "HPMAX") : GboxHp;
         box.SetSequence("SQ_ENTR");
-        var body = new StaticBody3D { Position = at + new Vector3(0, GboxSize.Y / 2, 0) };
+        var body = new StaticBody3D { Name = $"corpo_{model}", Position = at + new Vector3(0, GboxSize.Y / 2, 0) };
         body.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = GboxSize } });
         AddChild(body);
         box.Body = body;
