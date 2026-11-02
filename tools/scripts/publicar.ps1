@@ -41,7 +41,7 @@ function Escrever-Icone([string]$png, [string]$dir) {
     $src = [Drawing.Image]::FromFile($png)
     try {
         $imagens = @()
-        foreach ($s in 256, 64, 48, 32, 16) {
+        foreach ($s in 256, 128, 64, 48, 32, 16) {
             $bmp = New-Object Drawing.Bitmap $s, $s
             $g = [Drawing.Graphics]::FromImage($bmp)
             $g.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
