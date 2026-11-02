@@ -24,7 +24,7 @@ public sealed class InputBindings
         new("tecnica1", "Técnica 1"), new("tecnica2", "Técnica 2"), new("tecnica3", "Técnica 3"), new("tecnica4", "Técnica 4"),
         new("tecnica5", "Técnica 5"), new("tecnica6", "Técnica 6"),
         new("status", "Menu de status"), new("confirmar", "Confirmar"), new("cancelar", "Cancelar"), new("equipar", "Equipar o último item"),
-        new("chat", "Abrir o chat"), new("pausa", "Pausa (menu)"),
+        new("chat", "Abrir o chat"), new("interagir", "Interagir com jogador"), new("pausa", "Pausa (menu)"),
         new("salvar_rapido", "Salvar rápido"), new("acelerar", "Acelerar cenas (segurar)"),
     ];
 
@@ -36,7 +36,7 @@ public sealed class InputBindings
         ["tecnica1"] = ["tecla:Key1"], ["tecnica2"] = ["tecla:Key2"], ["tecnica3"] = ["tecla:Key3"], ["tecnica4"] = ["tecla:Key4"],
         ["tecnica5"] = ["tecla:Key5"], ["tecnica6"] = ["tecla:Key6"],
         ["status"] = ["tecla:Tab"], ["confirmar"] = ["tecla:Enter", "tecla:J"], ["cancelar"] = ["tecla:Backspace", "tecla:K"], ["equipar"] = ["tecla:E"],
-        ["chat"] = ["tecla:Enter"], ["pausa"] = ["tecla:Escape"],
+        ["chat"] = ["tecla:Enter"], ["interagir"] = ["tecla:F"], ["pausa"] = ["tecla:Escape"],
         ["salvar_rapido"] = ["tecla:F5"], ["acelerar"] = ["tecla:Shift"],
     };
 
@@ -49,7 +49,7 @@ public sealed class InputBindings
         ["tecnica_anterior"] = ["botao:13"], ["tecnica_proxima"] = ["botao:14"],
         ["tecnica1"] = [], ["tecnica2"] = [], ["tecnica3"] = [], ["tecnica4"] = [], ["tecnica5"] = [], ["tecnica6"] = [],
         ["status"] = ["botao:6"], ["confirmar"] = ["botao:0"], ["cancelar"] = ["botao:1"], ["equipar"] = ["botao:3"],
-        ["chat"] = [], ["pausa"] = ["botao:4"],
+        ["chat"] = [], ["interagir"] = [], ["pausa"] = ["botao:4"],
         ["salvar_rapido"] = [], ["acelerar"] = ["eixo:5+"],
     };
 

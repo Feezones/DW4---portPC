@@ -170,6 +170,111 @@ Test("Port: chat (\"nome: mensagem - HH:MM\", histórico, some sem uso, canal lo
     True(log.Visible, "ainda visível logo depois de fechar");
 });
 
+Test("Online: chat com canais (geral, grupo, privada), comandos /g /p /w /r e anti-spam", () =>
+{
+    var t = new DateTime(2026, 11, 2, 20, 1, 0);
+    Equal("[Grupo] Gui: vamos - 20:01", new ChatMessage("Gui", "vamos", t, ChatChannel.Party).Format(), "grupo");
+    var w = new ChatMessage("Gui", "oi", t, ChatChannel.Whisper, "Ana");
+    Equal("[De Gui] Gui: oi - 20:01", w.Format("Ana"), "privada recebida");
+    Equal("[Para Ana] Gui: oi - 20:01", w.Format("gui"), "privada enviada");
+    var c = ChatCommand.Parse("/w Ana  tudo bem?");
+    True(c.Channel == ChatChannel.Whisper && c.To == "Ana" && c.Text == "tudo bem?" && c.Error == null, "/w nome texto");
+    c = ChatCommand.Parse("/p bora", ChatChannel.Global);
+    True(c.Channel == ChatChannel.Party && c.Text == "bora", "/p");
+    c = ChatCommand.Parse("oi", ChatChannel.Party);
+    True(c.Channel == ChatChannel.Party && c.Text == "oi", "sem comando: canal atual");
+    True(ChatCommand.Parse("/r ok").Error != null, "/r sem ninguém");
+    c = ChatCommand.Parse("/r ok", lastWhisperFrom: "Ana");
+    True(c.To == "Ana" && c.Channel == ChatChannel.Whisper, "/r responde");
+    True(ChatCommand.Parse("/x a").Error != null, "comando desconhecido");
+    var f = new ChatFlood { Max = 3, Window = TimeSpan.FromSeconds(5) };
+    True(f.Allow("a", t) && f.Allow("a", t) && f.Allow("A", t) && !f.Allow("a", t.AddSeconds(1)), "quarta em 5 s barrada");
+    True(f.Allow("b", t), "outro remetente livre");
+    True(f.Allow("a", t.AddSeconds(5)), "janela passou");
+});
+
+Test("Online: grupo de até 4 (convite com validade, aceite, cheio, saída do líder, expulsar)", () =>
+{
+    var now = new DateTime(2026, 11, 2, 0, 0, 0, DateTimeKind.Utc);
+    var p = new DW4.Gameplay.Online.PartyGroup("p1", "Gui");
+    True(p.Invite("Gui", "Ana", now, out var i1).Ok && i1 != null, "convite");
+    True(!p.Invite("Gui", "ana", now, out _).Ok, "convite repetido");
+    True(p.Accept(i1!.Id, "Ana", now.AddSeconds(10)).Ok && p.Count == 2, "Ana entrou");
+    p.Invite("Gui", "Bia", now, out var i2);
+    p.Invite("Ana", "Caio", now, out var i3);
+    Equal("GrupoCheio", p.Invite("Gui", "Duda", now, out _).Code, "2 membros + 2 convites = cheio");
+    True(p.Accept(i3!.Id, "Caio", now.AddSeconds(20)).Ok, "Caio entrou");
+    True(!p.Accept(i2!.Id, "Bia", now.AddSeconds(61)).Ok, "convite vencido");
+    True(p.Invite("Gui", "Duda", now.AddSeconds(70), out var i4).Ok && p.Accept(i4!.Id, "Duda", now.AddSeconds(71)).Ok, "Duda entrou");
+    True(p.IsFull && p.Count == 4, "4 no grupo");
+    Equal("GrupoCheio", p.Invite("Gui", "Edu", now.AddSeconds(72), out _).Code, "não passa de 4");
+    Equal("NaoLider", p.Kick("Ana", "Caio").Code, "só o líder expulsa");
+    True(p.Kick("Gui", "Caio").Ok && p.Count == 3, "líder expulsa");
+    True(p.Leave("Gui").Ok && p.Leader == "Ana", "líder saiu: próximo vira líder");
+    p.Leave("Ana"); p.Leave("Duda");
+    True(p.IsDisbanded, "grupo acaba vazio");
+});
+
+Test("Online: XP dividida como no original, BIT dividido no grupo e NINZU pelos membros na fase", () =>
+{
+    var four = new[]
+    {
+        new DW4.Gameplay.Online.PartyMemberState("Gui", true, 10, 5), new("Ana", true, 10, 5),
+        new("Bia", true, 0, 5), new("Caio", false, 10, 5),
+    };
+    Equal(3, DW4.Gameplay.Online.PartyRewards.Ninzu(four), "Caio fora da fase não conta");
+    var exp = DW4.Gameplay.Online.PartyRewards.Exp(four, "Gui", 1000);
+    Equal(DamageFormula.ExpShare(1000, 0, 3, true), exp["Gui"], "quem matou");
+    Equal(DamageFormula.ExpShare(1000, 0, 3, false), exp["ana"], "quem ajudou");
+    True(exp["Bia"] == 0 && exp["Caio"] == 0, "caído e ausente não ganham");
+    True(DamageFormula.ExpShare(1000, 0, 1, true) == 1000 && DamageFormula.ExpShare(1000, 0, 4, true) == 800 && DamageFormula.ExpShare(1000, 0, 4, false) == 400, "sozinho 100%, em 4: 80% / 40%");
+    var bit = DW4.Gameplay.Online.PartyRewards.Bit(four, "Ana", 101);
+    True(bit["Gui"] == 50 && bit["Ana"] == 51 && bit["Bia"] == 0 && bit["Caio"] == 0, $"101 entre 2 vivos, resto para quem pegou: {bit["Gui"]}/{bit["Ana"]}");
+    var solo = DW4.Gameplay.Online.PartyRewards.Bit([new("Gui", true, 10, 5)], "Gui", 77);
+    Equal(77, solo["Gui"], "sozinho leva tudo");
+});
+
+Test("Online: menu do F (jogador mais perto e opções conforme grupo e amizade)", () =>
+{
+    var me = new System.Numerics.Vector3(0, 0, 0);
+    var near = DW4.Gameplay.Online.PlayerInteraction.Nearest(me, [new("Ana", new(100, 50, 0)), new("Bia", new(30, 0, 30)), new("Caio", new(500, 0, 0))]);
+    Equal("Bia", near?.Name, "mais perto");
+    True(DW4.Gameplay.Online.PlayerInteraction.Nearest(me, [new("Caio", new(500, 0, 0))]) == null, "fora do alcance");
+    var p = new DW4.Gameplay.Online.PartyGroup("p", "Ana");
+    var o = DW4.Gameplay.Online.PlayerInteraction.Options("Bia", new(p, "Gui", TargetIsFriend: true, FriendRequestSent: false, TargetInOtherParty: false, Busy: false));
+    True(!o[0].Enabled && o[0].Reason == "Só o líder convida.", "não líder");
+    True(!o[1].Enabled && o[2].Enabled, "já amigo; troca livre");
+    o = DW4.Gameplay.Online.PlayerInteraction.Options("Bia", new(null, "Gui", false, false, false, false));
+    True(o.All(x => x.Enabled), "sem grupo: tudo liberado");
+    var b = new InputBindings();
+    True(b.Get(InputBindings.Keyboard, "interagir").SequenceEqual(new[] { "tecla:F" }), "F no teclado");
+});
+
+Test("Online: troca de itens (travar, confirmar, tudo ou nada, mudança destrava, impItem fora)", () =>
+{
+    var a = new Inventory { Bit = 500 }; var b = new Inventory { Bit = 100 };
+    var sword = new ItemRef("weapon", 3); var disk = new ItemRef("conItem", 0);
+    a.Add(sword); b.Add(disk); b.Add(disk);
+    var t = new DW4.Gameplay.Online.TradeSession("Gui", "Ana");
+    True(t.AddItem("Gui", sword, a).Ok, "oferece arma");
+    True(!t.AddItem("Gui", sword, a).Ok, "não oferece o que não tem duas vezes");
+    True(!t.AddItem("Gui", new ItemRef("impItem", 1), a).Ok, "item de enredo não");
+    True(t.AddItem("Ana", disk, b).Ok && t.AddItem("Ana", disk, b).Ok, "dois discos");
+    True(t.SetBit("Gui", 200, a).Ok && !t.SetBit("Ana", 999, b).Ok, "BIT só o que tem");
+    Equal("NaoTravada", t.Confirm("Gui", a, b).Code, "confirmar exige travar");
+    t.Lock("Gui"); t.Lock("Ana");
+    True(t.Confirm("Gui", a, b).Ok && t.State == DW4.Gameplay.Online.TradeState.Open, "um confirmou");
+    t.RemoveItem("Ana", disk);
+    True(!t.OfferA.Locked && !t.OfferA.Confirmed, "mudança destrava os dois");
+    t.Lock("Gui"); t.Lock("Ana"); t.Confirm("Gui", a, b);
+    True(t.Confirm("Ana", a, b).Ok && t.State == DW4.Gameplay.Online.TradeState.Done, "troca feita");
+    True(!a.Has(sword) && b.Has(sword) && a.Disks(0) == 1 && b.Disks(0) == 1 && a.Bit == 300 && b.Bit == 300, "inventários trocados");
+    var t2 = new DW4.Gameplay.Online.TradeSession("Gui", "Ana");
+    t2.AddItem("Ana", sword, b); t2.Lock("Gui"); t2.Lock("Ana"); t2.Confirm("Gui", a, b);
+    b.Remove(sword);
+    True(!t2.Confirm("Ana", a, b).Ok && t2.State == DW4.Gameplay.Online.TradeState.Cancelled && !a.Has(sword), "item sumiu antes: nada muda");
+});
+
 Test("Port: personagem novo com as armas iniciais (INI_WEAPON1..3), a primeira equipada, e o equipamento no save", () =>
 {
     var s = DW4.Script.Save.CharacterSave.New("Gui", 2, "p_girumon", 0, "stagml11", 3, [268, 275, 274]);
