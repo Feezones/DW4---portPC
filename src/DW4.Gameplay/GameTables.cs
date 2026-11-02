@@ -8,18 +8,27 @@ namespace DW4.Gameplay;
 /// </summary>
 public sealed class GameTables
 {
-    public sealed class Table(int rows, Dictionary<string, object?[]> columns)
+    public sealed class Table(int rows, Dictionary<string, object?[]> columns, string name = "")
     {
         public int Rows { get; } = rows;
+        public string Name { get; } = name;
         public bool Has(string column) => columns.ContainsKey(column);
 
         public int Int(int row, string column) =>
             columns.TryGetValue(column, out var c) && row >= 0 && row < c.Length ? c[row] switch { int i => i, bool b => b ? 1 : 0, float f => (int)f, _ => 0 } : 0;
 
-        public string Text(int row, string column) =>
+        /// <summary>Texto da célula; NAME e TXT passam pelo idioma escolhido (<see cref="GameText.Cell"/>).</summary>
+        public string Text(int row, string column)
+        {
+            string s = Raw(row, column);
+            return column is "NAME" or "TXT" ? GameText.Cell(Name, column, s) : s;
+        }
+
+        /// <summary>Texto da célula como no disco (para comparar; nunca traduzido).</summary>
+        public string Raw(int row, string column) =>
             columns.TryGetValue(column, out var c) && row >= 0 && row < c.Length ? c[row] as string ?? "" : "";
 
-        public IEnumerable<int> RowsWhere(string column, string value) => Enumerable.Range(0, Rows).Where(r => Text(r, column) == value);
+        public IEnumerable<int> RowsWhere(string column, string value) => Enumerable.Range(0, Rows).Where(r => Raw(r, column) == value);
     }
 
     readonly Dictionary<string, Table> _tables;
@@ -45,7 +54,7 @@ public sealed class GameTables
                     JsonValueKind.String => v.GetString(),
                     _ => null,
                 }).ToArray();
-            tables[t.Name] = new Table(t.Value.GetProperty("rows").GetInt32(), cols);
+            tables[t.Name] = new Table(t.Value.GetProperty("rows").GetInt32(), cols, t.Name);
         }
         return new GameTables(tables);
     }

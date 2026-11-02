@@ -221,6 +221,44 @@ Test("Port: configurações em texto do ConfigFile (ida e volta, padrão e faixa
     True(Math.Abs(PortConfig.ToDb(0.5f) + 6.02f) < 0.01f, "0,5 ≈ −6 dB");
 });
 
+Test("Idioma: inglês original, português e português com nomes originais", () =>
+{
+    True(GameText.Load("""
+        { "textos": { "mswk1": "Obteve {Long Sword}!\nParabéns.", "mswk2": "Olá" },
+          "nomes": { "Long Sword": "Espada Longa", "Pyro Sphere": "Esfera de Fogo", "Guilmon": "X" },
+          "descricoes": { "A long sword.\nSharp.": "Uma espada longa {Long Sword}." } }
+        """), "JSON lido");
+    var weapon = new GameTables.Table(1, new() { ["NAME"] = ["Long Sword"], ["TXT"] = ["A long sword.\r\nSharp. "], ["MODEL"] = ["w_sword01"] }, "weapon");
+    var shinka = new GameTables.Table(1, new() { ["NAME"] = ["Guilmon"] }, "shinka");
+    try
+    {
+        GameText.Language = GameLanguage.English;
+        Equal("Obtained Long Sword!", GameText.Text("mswk1", "Obtained Long Sword!"), "inglês: o texto da fase");
+        Equal("Long Sword", weapon.Text(0, "NAME"), "inglês: nome do disco");
+        GameText.Language = GameLanguage.Portuguese;
+        Equal("Obteve Espada Longa!\r\nParabéns.", GameText.Text("mswk1", "x"), "português: nome traduzido e quebra \\r\\n");
+        Equal("Espada Longa", weapon.Text(0, "NAME"), "português: NAME traduzido");
+        Equal("Uma espada longa Espada Longa.", weapon.Text(0, "TXT"), "português: TXT pela descrição normalizada");
+        Equal("Guilmon", shinka.Text(0, "NAME"), "Digimon não se traduz");
+        Equal("w_sword01", weapon.Text(0, "MODEL"), "outras colunas intactas");
+        Equal("∈Espada Longa β", GameText.Name("∈Long Sword β"), "ícone e grau mantidos");
+        Equal("∧⊂Esfera de Fogo α+120", GameText.Name("∧⊂Pyro Sphere α+120"), "chip com elemento e +120");
+        Equal("∈Desconhecida α", GameText.Name("∈Desconhecida α"), "sem tradução fica igual");
+        Equal(1, weapon.RowsWhere("NAME", "Long Sword").Count(), "busca pelo valor do disco");
+        Equal("Sem tradução", GameText.Text("mswk999", "Sem tradução"), "chave sem tradução fica no inglês");
+        Equal("Untitled", GameText.Text(null, "Untitled"), "sem chave fica no inglês");
+        GameText.Language = GameLanguage.PortugueseOriginalNames;
+        Equal("Obteve Long Sword!\r\nParabéns.", GameText.Text("mswk1", "x"), "misto: fala em português, nome original");
+        Equal("Long Sword", weapon.Text(0, "NAME"), "misto: NAME original");
+        Equal("Uma espada longa Long Sword.", weapon.Text(0, "TXT"), "misto: descrição em português com nome original");
+        True(!GameText.Load("{ quebrado"), "JSON inválido");
+        var cfg = PortConfig.FromIni(new PortConfig { Language = 2 }.ToIni());
+        Equal(2, cfg.Language, "idioma gravado na config");
+        Equal(2, PortConfig.FromIni("[jogo]\nidioma=9").Language, "idioma fora da faixa vai para o limite");
+    }
+    finally { GameText.Language = GameLanguage.English; GameText.Clear(); }
+});
+
 Test("AFS: tabela, nomes, datas e cópia de entrada", () =>
 {
     var file = new byte[0x2000];

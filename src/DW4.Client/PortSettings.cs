@@ -33,6 +33,7 @@ public static class PortSettings
     public static void Apply(Window root)
     {
         var c = Current;
+        ApplyLanguage(c);
         if (DisplayServer.GetName() == "headless") { PortInput.Apply(c.Bindings); return; } // sem janela: só o mapa de controles
         switch (c.WindowMode)
         {
@@ -69,6 +70,27 @@ public static class PortSettings
         AudioServer.SetBusVolumeDb(Bus(EffectsBus), PortConfig.ToDb(c.EffectsVolume));
         AudioServer.SetBusVolumeDb(Bus(VoiceBus), PortConfig.ToDb(c.VoiceVolume));
         PortInput.Apply(c.Bindings);
+    }
+
+    static bool s_translationTried;
+
+    /// <summary>
+    /// Idioma dos textos do jogo. A tradução vem de &lt;fatia&gt;\idioma\pt-br.json (DW4_FATIA, padrão D:\dw4-work\fatia), fora do
+    /// repositório como os textos originais; sem o arquivo, o português mostra o inglês.
+    /// </summary>
+    public static void ApplyLanguage(PortConfig c)
+    {
+        GameText.Language = (GameLanguage)c.Language;
+        if (GameText.Language == GameLanguage.English || s_translationTried) return;
+        s_translationTried = true;
+        string fatia = OS.GetEnvironment("DW4_FATIA") is { Length: > 0 } d ? d : @"D:\dw4-work\fatia";
+        var file = Path.Combine(fatia, "idioma", "pt-br.json");
+        try
+        {
+            if (!System.IO.File.Exists(file)) GD.PushWarning($"falta {file}: o português mostra o inglês");
+            else if (!GameText.Load(System.IO.File.ReadAllText(file))) GD.PushWarning($"{file} não é um JSON válido");
+        }
+        catch (IOException e) { GD.PushWarning($"{file}: {e.Message}"); }
     }
 
     /// <summary>Índice do barramento (cria com saída no Master se ainda não existe).</summary>
