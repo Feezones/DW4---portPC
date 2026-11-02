@@ -26,7 +26,7 @@ public sealed class InputBindings
         new("item1", "Item rápido 1"), new("item2", "Item rápido 2"), new("item3", "Item rápido 3"), new("item4", "Item rápido 4"),
         new("item5", "Item rápido 5"), new("itens", "Janela de itens"),
         new("status", "Menu de status"), new("confirmar", "Confirmar"), new("cancelar", "Cancelar"),
-        new("chat", "Abrir o chat"), new("pausa", "Pausa (menu)"),
+        new("chat", "Abrir o chat"), new("interagir", "Interagir com jogador"), new("pausa", "Pausa (menu)"),
         new("salvar_rapido", "Salvar rápido"), new("acelerar", "Acelerar cenas (segurar)"),
     ];
 
@@ -40,7 +40,7 @@ public sealed class InputBindings
         ["tecnica1"] = [], ["tecnica2"] = [], ["tecnica3"] = [], ["tecnica4"] = [], ["tecnica5"] = [], ["tecnica6"] = [],
         ["item1"] = ["tecla:Key1"], ["item2"] = ["tecla:Key2"], ["item3"] = ["tecla:Key3"], ["item4"] = ["tecla:Key4"], ["item5"] = ["tecla:Key5"], ["itens"] = ["tecla:I"],
         ["status"] = ["tecla:Tab"], ["confirmar"] = ["tecla:Enter", "tecla:J"], ["cancelar"] = ["tecla:Backspace", "tecla:K"],
-        ["chat"] = ["tecla:Enter"], ["pausa"] = ["tecla:Escape"],
+        ["chat"] = ["tecla:Enter"], ["interagir"] = ["tecla:F"], ["pausa"] = ["tecla:Escape"],
         ["salvar_rapido"] = ["tecla:F5"], ["acelerar"] = ["tecla:Shift"],
     };
 
@@ -56,7 +56,7 @@ public sealed class InputBindings
         // pela tradução dos ícones da fonte).
         ["item1"] = [], ["item2"] = [], ["item3"] = [], ["item4"] = [], ["item5"] = [], ["itens"] = ["botao:1"],
         ["status"] = ["botao:6"], ["confirmar"] = ["botao:0"], ["cancelar"] = ["botao:1"],
-        ["chat"] = [], ["pausa"] = ["botao:4"],
+        ["chat"] = [], ["interagir"] = [], ["pausa"] = ["botao:4"],
         ["salvar_rapido"] = [], ["acelerar"] = ["eixo:5+"],
     };
 
