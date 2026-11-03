@@ -1492,6 +1492,23 @@ Test("be: DMsetSD SETDEMOCAMERA com atraso segura o chk ISDEMOCAMERA até a demo
     Equal("SETDEMOCAMERA,SETBOXCAMERA", string.Join(",", log), "a demo chega antes do SETBOXCAMERA");
 });
 
+Test("Inimigos: a amostra que volta à pose inicial no fim da trnsIN é um salto e sai", () =>
+{
+    // Goburimon (e_goburi trnsIN, main_Trans_Rotate1 Y): −3 no início, 5,7 na penúltima (1,000 s), −3 na última (1,017 s).
+    True(AnimationWrap.IsWrapJump(new Vector3(0, -3, 0), new Vector3(0, 5.7f, -2), new Vector3(0, -3, 0)), "Goburimon: salto de volta");
+    True(AnimationWrap.IsClosingGap(1.0, 1.0 + 1 / 60.0), "meio quadro fecha o ciclo");
+    True(AnimationWrap.IsClosingGap(0.967, 1.0), "um quadro fecha o ciclo");
+    True(!AnimationWrap.IsClosingGap(0.9, 1.0), "três quadros não");
+    // Ciclo que fecha sem salto (wait01 em laço): fica.
+    True(!AnimationWrap.IsWrapJump(new Vector3(0, 5.7f, -2), new Vector3(0, 5.75f, -2), new Vector3(0, 5.7f, -2)), "laço contínuo fica");
+    // Última diferente da primeira: não é o fecho do ciclo.
+    True(!AnimationWrap.IsWrapJump(new Vector3(0, -3, 0), new Vector3(0, 5.7f, 0), new Vector3(0, 5.6f, 0)), "fim natural fica");
+    var q0 = Quaternion.Identity;
+    var q90 = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2);
+    True(AnimationWrap.IsWrapJump(q0, q90, q0), "giro de 90° de volta");
+    True(!AnimationWrap.IsWrapJump(q0, Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.05f), q0), "giro pequeno fica");
+});
+
 // ---------- dados do jogo (opcional) ----------
 
 if (args.Length == 1)
