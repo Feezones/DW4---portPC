@@ -34,6 +34,8 @@ public partial class Fatia
         public float FlashFrame { get; set; }
         /// <summary>LUACALL de evento armado (nome de chamada terminado em "Hit", ex. "wft" "WHit"): roda quando bater na parede.</summary>
         public (string Name, string Call)? HitLua { get; set; }
+        /// <summary>CTRL "toWait" da sequência em andamento: a IA pode trocar de golpe enquanto ela roda (ver UpdateEnemy).</summary>
+        public bool AiCanCut { get; set; }
         public float HitHeight { get; set; } = 14;
         public EnemyBrain? Brain { get; set; }
         public SequenceRunner? Runner { get; set; }
@@ -289,6 +291,16 @@ public partial class Fatia
     string? EnemyAnimName(Enemy e, string action) =>
         ActionAnimations.Motion(e.Kind.Actions, action) is { } motion ? e.Anim?.GetAnimationList().FirstOrDefault(n => n == motion) : null;
 
+    // Bloco do rótulo guardado (LABELCTRL/SETLABEL) de uma sequência: a ACTION e o MOVE "Move" dele. Sem rótulo guardado: nada (usa o padrão).
+    static (string? Action, float? Move) IdleBlock(Enemy e, string seq)
+    {
+        if (!e.Labels.TryGetValue(seq, out var label) || !e.Kind.Sequences.TryGetValue(seq, out var cmds)) return (null, null);
+        int at = cmds.FindIndex(c => c.Kind == "LABEL" && c.S(0) == label);
+        if (at < 0) return (null, null);
+        var block = cmds.Skip(at + 1).TakeWhile(c => c.Kind != "LABEL").ToList();
+        return (block.FirstOrDefault(c => c.Kind == "ACTION")?.S(0), block.FirstOrDefault(c => c.Kind == "MOVE" && c.S(0) == "Move")?.F(1));
+    }
+
     float? EnemyAnimFrames(Enemy e, string action) => ActionAnimations.Length(e.Kind.Actions, action, motion =>
         e.Anim != null && e.Anim.HasAnimation(motion) ? (float)e.Anim.GetAnimation(motion).Length * SequenceRunner.FramesPerSecond : null);
 
@@ -520,6 +532,19 @@ public partial class Fatia
                     if (!e.Started) e.Brain.Release();
                 }
                 else e.Runner.Tick(dt, false);
+                // FATO (e_mecha4 SQ_ATCK2/SQ_ATCK4): depois do recuo vem CTRL "toWait", AIMAP MAP01/MAP02 e uma corrida sem fim (ACTN02/ACTN06
+                // sem WCHECK); o MAP01 escolhe SQ_ATCK4 de perto. HIPÓTESE: "toWait" deixa a IA do mapa atual cortar a sequência com um golpe
+                // diferente dela (passeio e espera não cortam); sem isso o SQ_ATCK4 e o SQ_SWOF nunca saíam.
+                if (e.Started && e.AiCanCut && e.Runner.Running && e.Hp > 0)
+                {
+                    var to = _player.GlobalPosition - e.Body.GlobalPosition;
+                    if (e.Brain.Map.Pick(to.X * to.X + to.Z * to.Z, _rng.Next(16)) is { } cut && cut.Sequence != e.Runner.Sequence
+                        && cut.Sequence is not ("SQ_WAIT" or "SQ_WALK" or "SQ_SILENT") && e.Kind.Sequences.ContainsKey(cut.Sequence))
+                    {
+                        e.Yaw = MathF.Atan2(to.X, to.Z) + cut.Angle;
+                        if (StartEnemySequence(e, cut.Sequence)) { e.Brain.Force(cut.Sequence); e.Serial = -1; }
+                    }
+                }
                 // FATO (f_luce SQ_BOMBn → JUMP "SQ_ATCKOF", que põe o MAP02 e leva ao voo/pouso): JUMP para outra sequência continua
                 // nela; só SQ_WAIT (e SQ_ERAS) devolvem o inimigo à IA. Com HP 0, só segue para a queda (FATO, e_blosso: SQ_DDMG/common →
                 // JUMP "SQ_DFORMC", rótulo BOSS do SQ_ENTR, LUACALL "ded" → ded_e_blosso.lua abre as portas; antes o chefe sumia sem isso).
@@ -544,8 +569,11 @@ public partial class Fatia
             if (e.Started && e.Runner.Running) TickEnemyAction(e);
             else
             {
-                if (e.Brain.Walking) vel = forward * Speed(e.Kind.Walk);
-                var want = e.Brain.Walking ? e.Kind.Run : e.Kind.Wait;
+                // Passeio e espera da IA no rótulo guardado do SQ_WALK/SQ_WAIT (FATO, f_apocaly SQ_PHASE2: rótulo FLOAT, WAIT02 e RUNN03 com
+                // MOVE "Move" 0,6; antes ficava no wait01/run do 1º bloco e na velocidade da fase 1).
+                var (idleAction, idleMove) = IdleBlock(e, e.Brain.Walking ? "SQ_WALK" : "SQ_WAIT");
+                if (e.Brain.Walking) vel = forward * Speed(idleMove ?? e.Kind.Walk);
+                var want = (idleAction != null ? EnemyAnimName(e, idleAction) : null) ?? (e.Brain.Walking ? e.Kind.Run : e.Kind.Wait);
                 if (e.Anim != null && want != null && e.Anim.HasAnimation(want) && e.Anim.CurrentAnimation != want) e.Anim.Play(want, 8 / SequenceRunner.FramesPerSecond);
             }
         }

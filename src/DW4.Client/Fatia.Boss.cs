@@ -91,6 +91,9 @@ public partial class Fatia
             case "LABELCTRL" when c.S(0) is { } label:
                 e.Labels[c.S(1) is { Length: > 0 } seq ? seq : "SQ_WAIT"] = label;
                 break;
+            case "CTRL" when c.S(0) == "toWait":
+                e.AiCanCut = true;
+                break;
             case "AIMAP" when c.S(0) is { } map:
                 e.Brain?.SetMap(map);
                 break;
@@ -125,6 +128,7 @@ public partial class Fatia
             var only = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, $"{name}_*.lua").Select(Path.GetFileName).ToList() : [];
             script = only.Count == 1 ? only[0] : null;
         }
+        if (DiagNpc) GD.Print($"[luacall] {model}: {name} → {script ?? "sem script"}");
         if (script != null)
         {
             var host = _stage.Host;
@@ -158,6 +162,7 @@ public partial class Fatia
         if (DiagNpc) GD.Print($"[ini] {Engine.GetPhysicsFrames()} {e.Kind.Model}: {seq} (mapa {e.Brain?.Map.Name ?? "-"}) anim {e.Anim?.CurrentAnimation ?? "-"}");
         e.Motion.SequenceChanged(); // 0x8030EA38: troca de sequência
         e.HitLua = null;
+        e.AiCanCut = false;
         string? label = null;
         if (e.Labels.TryGetValue(seq, out var l) && e.Runner.Start(seq, l)) label = l;
         else if (e.Runner.Start(seq, "common")) label = "common";
@@ -175,7 +180,9 @@ public partial class Fatia
     // MODELCTRL para inimigos pelo nome do modelo (f_apocaly SQ_WAIT, SETLABEL "SQ_SDMG/common", MOVETRANS da derrota…).
     bool DeliverToEnemies(BeMessage m)
     {
-        if (m.Class != "MODELCTRL" || m.Name == null) return false;
+        // FATO (matg11.lua da dng102b3): "ENEMY e_mammos 0 SQ_WALKIN" manda o chefe começar pela investida; ENEMY com nome vale como
+        // MODELCTRL para aquele inimigo.
+        if (m.Class is not ("MODELCTRL" or "ENEMY") || m.Name == null) return false;
         var targets = _enemies.Where(e => e.Kind.Model == m.Name && !e.Dead).ToList();
         if (targets.Count == 0) return false;
         foreach (var e in targets)

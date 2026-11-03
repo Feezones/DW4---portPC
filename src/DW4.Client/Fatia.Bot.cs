@@ -71,6 +71,16 @@ public partial class Fatia
             return;
         }
         if (target == null) { attackDown = tap; return; } // sem inimigo: só confirma as falas
+        // DW4_ALVO=longe: fica a ~55 do alvo, sem atacar (golpes de longe dos chefes: SQ_FIRE, investida).
+        if (OS.GetEnvironment("DW4_ALVO") == "longe")
+        {
+            var away = _player.GlobalPosition - target.Body.GlobalPosition;
+            away.Y = 0;
+            float d = away.Length();
+            if (d < 50 && d > 0.1f) dir = away / d; else if (d > 62) dir = -away / d;
+            attackDown = tap && (TalkWindowOpen || _choice >= 0 || _listChoice >= 0 || !_padEnabled);
+            return;
+        }
         var to = target.Body.GlobalPosition - _player.GlobalPosition;
         to.Y = 0;
         if (to.Length() > 7) { dir = to.Normalized(); attackDown = tap && (TalkWindowOpen || _choice >= 0 || _listChoice >= 0); }
