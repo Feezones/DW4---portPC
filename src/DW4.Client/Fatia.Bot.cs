@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using Godot;
 
@@ -54,6 +55,8 @@ public partial class Fatia
         var target = _enemies.Where(e => !e.Dead && !e.Killed && e.Body.IsInsideTree())
             .OrderBy(e => e.Body.GlobalPosition.DistanceSquaredTo(_player.GlobalPosition)).FirstOrDefault();
         bool tap = _tick % 30 < 2;
+        // DW4_ALVO=npc: visita cada NPC (n_*) da fase, chega perto e aperta o ataque (sonda de conversa); 10 s por NPC.
+        if (OS.GetEnvironment("DW4_ALVO") == "npc") { BotTalkToNpcs(ref dir, ref attackDown); return; }
         // DW4_ALVO=objetos: bate nos objetos quebráveis mais perto (contar golpes até quebrar), um golpe por segundo.
         if (OS.GetEnvironment("DW4_ALVO") == "objetos"
             && _objects.Where(o => o.Body != null && !o.Dead).OrderBy(o => o.Actor.Root.GlobalPosition.DistanceSquaredTo(_player.GlobalPosition)).FirstOrDefault() is { } obj)
@@ -78,6 +81,29 @@ public partial class Fatia
             dir = Vector3.Zero;
             attackDown = _tick % 15 < 2;
         }
+    }
+
+    int _botNpc = -1;
+    double _botNpcClock;
+
+    void BotTalkToNpcs(ref Vector3 dir, ref bool attackDown)
+    {
+        var only = OS.GetEnvironment("DW4_NPC"); // nome/índice, ex.: n_digilff/1
+        var npcs = _objects.Where(o => o.Name.StartsWith("n_", StringComparison.Ordinal) && !o.Dead && (only.Length == 0 || only == $"{o.Name}/{o.Index}")).ToList();
+        _botNpcClock += 1.0 / 60;
+        if (_botNpc < 0 || _botNpcClock > 10) { _botNpc++; _botNpcClock = 0; if (_botNpc < npcs.Count) GD.Print($"[npc-bot] -> {npcs[_botNpc].Name}/{npcs[_botNpc].Index} em {npcs[_botNpc].Actor.Root.GlobalPosition.Round()}"); }
+        if (!_padEnabled || !_playerCtrl || TalkWindowOpen || _choice >= 0 || _listChoice >= 0 || _menuOpen) { attackDown = _tick % 30 < 2; return; }
+        if (_botNpc >= npcs.Count) return;
+        var npc = npcs[_botNpc];
+        var to = npc.Actor.Root.GlobalPosition - _player.GlobalPosition;
+        to.Y = 0;
+        // Chega a 40 de uma vez e anda o resto com colisão (balcões seguram o jogador como no jogo).
+        if (to.Length() > 40) { float ry = npc.Actor.Root.GlobalRotation.Y; var at = npc.Actor.Root.GlobalPosition + new Vector3(MathF.Sin(ry), 0, MathF.Cos(ry)) * 25; // à frente do NPC (balcão no meio)
+            _player.GlobalPosition = at + Vector3.Up * 2; _player.Velocity = Vector3.Zero; return; } // na altura do chão do NPC
+        if (to.Length() > 8 && _botNpcClock < 6) dir = to.Normalized();
+        else if (_runner?.Running != true) _move.Face(Mathf.Atan2(to.X, to.Z));
+        if (_botNpcClock >= 6 && _tick % 60 == 0) GD.Print($"[npc-bot] {npc.Name}/{npc.Index}: aperta o ataque a {to.Length():0.0}");
+        attackDown = _botNpcClock >= 6 && _tick % 60 < 2;
     }
 
     void TickBotStats(double dt)

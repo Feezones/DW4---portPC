@@ -93,6 +93,7 @@ conferido na janela. O estado vem do repositório, dos testes (81 ok) e das jane
 
 ## Já resolvido (referência)
 
+- NPCs do lobby respondem ao ataque com o cursor em qualquer lugar (2026-11-02, docs/gameplay/npcs-lobby.md). Falta: janela CNOS do Appraisal Keeper.
 - Backup chip na queda e Raise Disk no chip, salvos na vaga (2026-11-02, docs/gameplay/backup-chip.md). Falta: MP Tech Raise e a fração real de EXP do Raise.
 - Menu inicial com 4 vagas por conta, configurações, save automático por vaga, dificuldade pelo hostLoad.
 - Geradores pelo modo de início (direct/radar), torretas g_cannon01 com IA e tiro, pisca vermelho do FLASHSET "Damage" e Security Hole da matx01 (2026-11-02, docs/gameplay/geradores-torretas-pisca.md). Telas de vagas e criação refeitas com layout próprio (2026-11-02, autorização do usuário): cartões 2 × 2, detalhes, modelo 3D girando.
