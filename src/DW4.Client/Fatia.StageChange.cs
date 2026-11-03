@@ -99,6 +99,7 @@ public partial class Fatia
             case ("MODELCTRL", null, "ONCTRL"):
                 _playerCtrl = true;
                 _enemiesFrozen = false;
+                _frozenModels.Clear();
                 return true;
         }
         return false;

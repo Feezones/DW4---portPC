@@ -398,7 +398,7 @@ public partial class Fatia : Node3D
                 var to = npc.Actor.Root.GlobalPosition - _player.GlobalPosition;
                 if (to.X * to.X + to.Z * to.Z > 0.01f) _move.Face(MathF.Atan2(to.X, to.Z));
             }
-            else if (attacking && !_demo && !_usingPad && MouseGround() is { } aim)
+            else if (attacking && !_demo && !_bot && !_usingPad && MouseGround() is { } aim) // o bot mira sozinho
             {
                 // DECISÃO DO PORT PARA PC (não é do original): o golpe sai na direção do cursor do mouse.
                 var to = aim - _player.GlobalPosition;

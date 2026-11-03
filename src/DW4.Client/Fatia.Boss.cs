@@ -258,6 +258,8 @@ public partial class Fatia
 
     ProgressBar? _bossBar;
     bool _bossBarOpen;
+    string? _bossBarModel; // SETMODELHP "<modelo>/I<n>"
+    string? _bossMeter; // bshp01..10: medidor da arte i_bosshp<n> quando a camada de janelas desenha o ator do jogo
 
     bool DeliverToBossBar(BeMessage m)
     {
@@ -275,12 +277,45 @@ public partial class Fatia
             case ("METERCTRL", "bshp01", "SETMODELHP"):
                 // "f_apocaly/I<0>": a barra segue o HP desse modelo (o hit_*.lua também manda SETPERCENT a cada golpe).
                 if (_bossBar != null) _bossBar.Value = 100;
+                _bossMeter = m.Name;
+                SetBossMeter(100);
+                _bossBarModel = m.RawArgs?.Split('/')[0];
                 return true;
             case ("METERCTRL", "bshp01", "SETPERCENT") when m.Arg(0) is { Numbers.Length: > 0 } pc:
                 if (_bossBar != null) _bossBar.Value = Math.Clamp(pc.Numbers[0], 0, 100);
+                _bossMeter = m.Name;
+                SetBossMeter((float)Math.Clamp(pc.Numbers[0], 0, 100));
                 return true;
         }
         return false;
+    }
+
+    // Chefe e_* (golpe pelo PlayerStrikes, sem o hit_<modelo>.lua): a barra faz o que o hit_e_blosso.lua faria (FATO: SETPERCENT
+    // ceil(HP / MHP × 100) a cada golpe e MODELCTRL i_bosshp10 SQ_CLOSE quando MDLisLive é falso).
+    void TickBossBarModel()
+    {
+        if (_bossBarModel is not { Length: > 0 } model || model.StartsWith("f_", StringComparison.Ordinal)) return;
+        var boss = _enemies.FirstOrDefault(e => e.Kind.Model == model && !e.Dead);
+        int max = boss?.Kind.Stats?.MaxHp ?? 0;
+        if (boss == null || boss.Hp <= 0 || max <= 0)
+        {
+            _bossBarModel = null;
+            ShowBossBar(false);
+            SetBossMeter(0);
+            if (_bossMeter is { } meter) Deliver(new BeMessage("MODELCTRL", "i_bosshp" + meter[4..], 0, "SQ_CLOSE", [], null));
+            return;
+        }
+        float pct = (float)Math.Ceiling(boss.Hp * 100.0 / max);
+        if (_bossBar != null) _bossBar.Value = pct;
+        SetBossMeter(pct);
+    }
+
+    // Medidor da arte do jogo (i_bosshp<n>, desenhada pela camada de janelas): a mesma conta do HUD do jogador (Hud.MeterTime).
+    void SetBossMeter(float pct)
+    {
+        if (_bossMeter == null || _winData?.Meters.GetValueOrDefault(_bossMeter) is not { } meters) return;
+        foreach (var w in _windows.Values)
+            foreach (var md in meters) w.Actor.SetMeterTime(md.Node, HudOverlay.MeterTime(md, pct, 100));
     }
 
     // DECISÃO DA FATIA: o ator i_bosshp01 ainda não foi exportado; a barra é uma ProgressBar no topo (V<0,205,0> = alto da tela).

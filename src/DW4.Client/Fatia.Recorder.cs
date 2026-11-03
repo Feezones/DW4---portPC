@@ -27,6 +27,9 @@ public partial class Fatia
     public static string PlayerModel { get; set; } = OS.IsDebugBuild() && OS.GetEnvironment("DW4_FORMA") is { Length: > 0 } f ? f : "p_girumon";
 
     bool _playerCtrl = true, _enemiesFrozen, _generatorsFrozen;
+    // ENEMY <modelo> OFCTRL trava só esse modelo; volta com MODELCTRL <modelo> <n> ONCTRL (FATO, matg08.lua da dng101b2: o
+    // Blossomon nasce travado e é solto assim depois da janela de apresentação). Sem modelo ("-"), trava todos.
+    readonly HashSet<string> _frozenModels = [];
     bool _confirmDown, _confirmArmed, _selectEnded;
     List<(string? Key, string Text)>? _texts;
     bool _textsTried;
@@ -103,8 +106,12 @@ public partial class Fatia
                 if (m.Arg(1) is { Kind: 'V', Numbers.Length: 3 } mr) _move.Face(Mathf.DegToRad((float)mr.Numbers[1]));
                 _snapToFloor = true;
                 return true;
+            case ("ENEMY", "OFCTRL") when m.Name is { Length: > 0 } frozen: _frozenModels.Add(frozen); return true;
+            case ("ENEMY", "ONCTRL") when m.Name is { Length: > 0 } freed: _frozenModels.Remove(freed); return true;
             case ("ENEMY", "OFCTRL"): _enemiesFrozen = true; return true;
-            case ("ENEMY", "ONCTRL"): _enemiesFrozen = false; return true;
+            case ("ENEMY", "ONCTRL"): _enemiesFrozen = false; _frozenModels.Clear(); return true;
+            case ("MODELCTRL", "OFCTRL") when m.Name is { Length: > 0 } model && _enemies.Any(e => e.Kind.Model == model): _frozenModels.Add(model); return true;
+            case ("MODELCTRL", "ONCTRL") when m.Name is { Length: > 0 } model && _frozenModels.Remove(model): return true;
             case ("GENERATER", "ONFREEZE"): _generatorsFrozen = true; return true;
             case ("GENERATER", "OFFREEZE"): _generatorsFrozen = false; return true;
             // FATO: "TALKFONT01/font00/I<k>": k = posição na beUnicodeObjList do pacote (113 de 136 conferidos).
