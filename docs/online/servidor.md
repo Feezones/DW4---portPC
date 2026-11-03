@@ -38,6 +38,20 @@ Primeira etapa do coop (ADR 0003): os jogadores se veem e andam juntos. Combate,
 - Trocar itens aparece desligado até os saves irem para o servidor.
 - Cliente e servidor precisam da mesma versão do protocolo; o servidor recusa a versão antiga com aviso para atualizar.
 
+## Combate em grupo (protocolo 3)
+
+Só entre membros da mesma party na mesma fase (decisão do responsável, 2026-11-03). O servidor manda `CoopGroup`
+(anfitrião = o primeiro que chegou) e repassa `CoopRelay` só para os outros membros, sem abrir o conteúdo (até 120 pacotes
+por segundo por jogador). O conteúdo (`src/DW4.Net/Coop.cs`) é entre os jogos:
+
+- o anfitrião roda geradores e IA e manda inimigo novo, posições (~10 por segundo), sequência, morte, corpo sumido e onda vencida;
+- os outros mostram cópias, que tocam as mesmas sequências (o golpe do inimigo acerta cada um na própria tela), e mandam os
+  próprios golpes com o dano já calculado;
+- NINZU = membros na fase: mais inimigos por onda e a parte do EXP (quem matou leva mais). Cada um sorteia o próprio drop;
+- a IA mira o membro mais perto. Se o anfitrião sai, o próximo assume e as cópias viram inimigos.
+
+Limites da v1: chefe com `hit_f_*.lua` roda o script em quem bate, e o anfitrião só recebe o dano. O BIT ainda não é dividido.
+
 ## Rodar
 
 Variáveis de ambiente do `dw4-servidor`:

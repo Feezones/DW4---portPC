@@ -18,8 +18,8 @@ public enum CoopType : byte
     Wipeout = 7,
 }
 
-/// <summary>Anfitrião → grupo: inimigo novo (linha da tabela enemy, posição, giro, HP).</summary>
-public sealed record EnemySpawn(int NetId, int Row, float X, float Y, float Z, float Yaw, int Hp);
+/// <summary>Anfitrião → grupo: inimigo novo (linha da tabela enemy, posição, giro, HP e o gerador que o gerou, "" = nenhum).</summary>
+public sealed record EnemySpawn(int NetId, int Row, float X, float Y, float Z, float Yaw, int Hp, string Gen = "");
 
 /// <summary>Posição, giro e HP de um inimigo (vários num <see cref="EnemySync"/>).</summary>
 public readonly record struct EnemyPose(int NetId, float X, float Y, float Z, float Yaw, int Hp);
@@ -33,8 +33,11 @@ public sealed record EnemySeq(int NetId, string Sequence, string Style);
 /// <summary>Membro → anfitrião: o golpe do membro acertou (dano já calculado com os status dele) e a reação do inimigo.</summary>
 public sealed record EnemyHit(int NetId, int Damage, string Reaction);
 
-/// <summary>Anfitrião → grupo: o inimigo morreu; <see cref="KillerId"/> leva a parte de quem matou (P2EEXPUP).</summary>
-public sealed record EnemyKilled(int NetId, int KillerId);
+/// <summary>
+/// Anfitrião → grupo: o inimigo morreu; <see cref="KillerId"/> leva a parte de quem matou (P2EEXPUP). <see cref="Drop"/>: cada um
+/// sorteia o próprio drop (false quando o script de acerto do chefe deu o EXP sem drop).
+/// </summary>
+public sealed record EnemyKilled(int NetId, int KillerId, bool Drop = true);
 
 /// <summary>Anfitrião → grupo: o corpo sumiu (fim da sequência de morte, ou STOPREVERS).</summary>
 public sealed record EnemyRemoved(int NetId);
@@ -50,14 +53,14 @@ public static class CoopCodec
         using var w = new BinaryWriter(ms, Encoding.UTF8);
         switch (msg)
         {
-            case EnemySpawn x: w.Write((byte)CoopType.EnemySpawn); w.Write(x.NetId); w.Write(x.Row); w.Write(x.X); w.Write(x.Y); w.Write(x.Z); w.Write(x.Yaw); w.Write(x.Hp); break;
+            case EnemySpawn x: w.Write((byte)CoopType.EnemySpawn); w.Write(x.NetId); w.Write(x.Row); w.Write(x.X); w.Write(x.Y); w.Write(x.Z); w.Write(x.Yaw); w.Write(x.Hp); Str(w, x.Gen); break;
             case EnemySync x:
                 w.Write((byte)CoopType.EnemySync); w.Write((byte)Math.Min(x.Poses.Length, MaxPoses));
                 foreach (var p in x.Poses.Take(MaxPoses)) { w.Write(p.NetId); w.Write(p.X); w.Write(p.Y); w.Write(p.Z); w.Write(p.Yaw); w.Write(p.Hp); }
                 break;
             case EnemySeq x: w.Write((byte)CoopType.EnemySeq); w.Write(x.NetId); Str(w, x.Sequence); Str(w, x.Style); break;
             case EnemyHit x: w.Write((byte)CoopType.EnemyHit); w.Write(x.NetId); w.Write(x.Damage); Str(w, x.Reaction); break;
-            case EnemyKilled x: w.Write((byte)CoopType.EnemyKilled); w.Write(x.NetId); w.Write(x.KillerId); break;
+            case EnemyKilled x: w.Write((byte)CoopType.EnemyKilled); w.Write(x.NetId); w.Write(x.KillerId); w.Write(x.Drop); break;
             case EnemyRemoved x: w.Write((byte)CoopType.EnemyRemoved); w.Write(x.NetId); break;
             case Wipeout x: w.Write((byte)CoopType.Wipeout); Str(w, x.Generator); break;
             default: throw new ArgumentException("mensagem do grupo desconhecida: " + msg.GetType().Name);
@@ -76,11 +79,11 @@ public static class CoopCodec
             var type = (CoopType)r.ReadByte();
             object msg = type switch
             {
-                CoopType.EnemySpawn => new EnemySpawn(r.ReadInt32(), r.ReadInt32(), F(r), F(r), F(r), F(r), r.ReadInt32()),
+                CoopType.EnemySpawn => new EnemySpawn(r.ReadInt32(), r.ReadInt32(), F(r), F(r), F(r), F(r), r.ReadInt32(), Str(r)),
                 CoopType.EnemySync => ReadSync(r),
                 CoopType.EnemySeq => new EnemySeq(r.ReadInt32(), Str(r), Str(r)),
                 CoopType.EnemyHit => new EnemyHit(r.ReadInt32(), r.ReadInt32(), Str(r)),
-                CoopType.EnemyKilled => new EnemyKilled(r.ReadInt32(), r.ReadInt32()),
+                CoopType.EnemyKilled => new EnemyKilled(r.ReadInt32(), r.ReadInt32(), r.ReadBoolean()),
                 CoopType.EnemyRemoved => new EnemyRemoved(r.ReadInt32()),
                 CoopType.Wipeout => new Wipeout(Str(r)),
                 _ => throw new FormatException($"tipo do grupo {(byte)type}"),

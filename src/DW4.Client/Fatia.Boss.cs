@@ -63,7 +63,7 @@ public partial class Fatia
                 if (args.ElementAtOrDefault(0) != 0) SkillUp();
                 return 0;
             case "BLTcalcEXPUp" when e != null:
-                if (!e.Killed) { e.Killed = true; GainExp(e); }
+                EnemyDefeated(e, Online.MyId, drop: false);
                 return 0;
             case "MDLdspDamage" when e != null:
                 int dmg = (int)args.ElementAtOrDefault(0);
@@ -96,6 +96,9 @@ public partial class Fatia
                 break;
             case "MOVEEX" or "MOVERL":
                 e.Motion.Apply(c);
+                break;
+            // Cópia do inimigo do anfitrião (combate em grupo): os scripts rodam só no anfitrião.
+            case "LUACALL" when e.Proxy:
                 break;
             case "LUACALL":
                 // FATO: SQ_ATCK2 do f_apocaly faz LUACALL "bit" e a fase tem bit_f_apocaly.lua (gera o f_bit se ele não está vivo,
@@ -155,10 +158,18 @@ public partial class Fatia
         if (DiagNpc) GD.Print($"[ini] {Engine.GetPhysicsFrames()} {e.Kind.Model}: {seq} (mapa {e.Brain?.Map.Name ?? "-"}) anim {e.Anim?.CurrentAnimation ?? "-"}");
         e.Motion.SequenceChanged(); // 0x8030EA38: troca de sequência
         e.HitLua = null;
-        if (e.Labels.TryGetValue(seq, out var l) && e.Runner.Start(seq, l)) return true;
-        if (e.Runner.Start(seq, "common") || e.Runner.Start(seq, "NORM")) return true;
-        var first = e.Kind.Sequences.TryGetValue(seq, out var cmds) ? cmds.FirstOrDefault(c => c.Kind == "LABEL")?.S(0) : null;
-        return first != null ? e.Runner.Start(seq, first) : e.Runner.Start(seq, null);
+        string? label = null;
+        if (e.Labels.TryGetValue(seq, out var l) && e.Runner.Start(seq, l)) label = l;
+        else if (e.Runner.Start(seq, "common")) label = "common";
+        else if (e.Runner.Start(seq, "NORM")) label = "NORM";
+        else
+        {
+            var first = e.Kind.Sequences.TryGetValue(seq, out var cmds) ? cmds.FirstOrDefault(c => c.Kind == "LABEL")?.S(0) : null;
+            if (!(first != null ? e.Runner.Start(seq, first) : e.Runner.Start(seq, null))) return false;
+            label = first ?? "";
+        }
+        CoopSequence(e, seq, label); // combate em grupo: as cópias tocam a mesma sequência
+        return true;
     }
 
     // MODELCTRL para inimigos pelo nome do modelo (f_apocaly SQ_WAIT, SETLABEL "SQ_SDMG/common", MOVETRANS da derrota…).

@@ -53,6 +53,14 @@ public partial class Fatia
         public float RespawnTimer { get; set; }
         public Vector3 Home { get; init; }
         public Generator? Gen { get; init; }
+        /// <summary>Combate em grupo (Fatia.Coop.cs): número do inimigo no grupo; Proxy = cópia de um inimigo do anfitrião.</summary>
+        public int NetId { get; set; }
+        public bool Proxy { get; set; }
+        public Vector3 NetPos { get; set; }
+        public float NetYaw { get; set; }
+        /// <summary>EXP e drop já dados por esta morte.</summary>
+        public bool Rewarded { get; set; }
+        public float ProxyKillWait { get; set; }
         // IBeModel (hit_<modelo>.lua do chefe roda no contexto dele).
         public int Index => 0;
         public int BulletKind { get; set; }
@@ -85,8 +93,13 @@ public partial class Fatia
         public required string Name { get; init; }
         public required Vector3[] Positions { get; init; }
         public required float[] RotYDeg { get; init; }
-        public int Count { get; init; }
-        public int MaxCount { get; init; }
+        /// <summary>_geneCount e _geneMaxCount por número de jogadores (1..4); vale a coluna do NINZU atual (GameRam.Ninzu).</summary>
+        public required int[] CountBy { get; init; }
+        public required int[] MaxBy { get; init; }
+        public required Func<int> Players { get; init; }
+        public int Count => ByPlayers(CountBy);
+        public int MaxCount => ByPlayers(MaxBy);
+        int ByPlayers(int[] v) => v.Length == 0 ? 0 : v[Math.Clamp(Players(), 1, v.Length) - 1];
         public int EnemyRow { get; init; }
         public string? CallLua { get; init; }
         /// <summary>_startModeStr ("direct", "radar", "timer"…), _startData e _genePoint.</summary>
@@ -219,7 +232,7 @@ public partial class Fatia
         };
     }
 
-    Enemy? SpawnEnemy(int row, Vector3 pos, float yaw, Generator? gen, bool respawns = false)
+    Enemy? SpawnEnemy(int row, Vector3 pos, float yaw, Generator? gen, bool respawns = false, int netId = 0)
     {
         if (Kind(row) is not { } kind) return null;
         Node3D? model = kind.RigidRoot >= 0 && ObjectData() is { } od ? new HudActor(od, kind.RigidRoot, slot: 0).Root
@@ -263,7 +276,11 @@ public partial class Fatia
             e.HitHalf = Math.Max(4, Math.Min(all.Size.X * s.X, all.Size.Z * s.Z) * 0.35f);
             e.HitHeight = Math.Max(14, all.Size.Y * s.Y);
         }
+        // Combate em grupo: netId ≠ 0 = cópia de um inimigo do anfitrião; senão, um número novo e o aviso ao grupo.
+        (e.NetId, e.Proxy, e.NetPos, e.NetYaw) = (netId != 0 ? netId : NewNetId(), netId != 0, pos, yaw);
+        _byNetId[e.NetId] = e;
         _enemies.Add(e);
+        SendSpawn(e);
         return e;
     }
 
@@ -286,14 +303,15 @@ public partial class Fatia
             foreach (var g in doc.RootElement.GetProperty("generators").EnumerateArray())
             {
                 static Vector3 V(JsonElement a) => new(a[0].GetSingle(), a[1].GetSingle(), a[2].GetSingle());
-                // Contagens por número de jogadores (1..4); a fatia tem 1 jogador.
+                // Contagens por número de jogadores (1..4): no online, o grupo de combate (Fatia.Coop.cs) põe o NINZU.
                 var gen = new Generator
                 {
                     Name = g.GetProperty("name").GetString()!,
                     Positions = g.GetProperty("positions").EnumerateArray().Select(V).ToArray(),
                     RotYDeg = g.GetProperty("rotYDeg").EnumerateArray().Select(x => x.GetSingle()).ToArray(),
-                    Count = g.GetProperty("count")[0].GetInt32(),
-                    MaxCount = g.GetProperty("maxCount")[0].GetInt32(),
+                    CountBy = g.GetProperty("count").EnumerateArray().Select(x => x.GetInt32()).ToArray(),
+                    MaxBy = g.GetProperty("maxCount").EnumerateArray().Select(x => x.GetInt32()).ToArray(),
+                    Players = () => Ram.Ninzu,
                     EnemyRow = g.GetProperty("enemyRow").GetInt32(),
                     CallLua = g.TryGetProperty("callLua", out var cl) && cl.ValueKind == JsonValueKind.String ? cl.GetString() : null,
                     StartMode = g.TryGetProperty("startMode", out var sm) ? sm.GetString() ?? "direct" : "direct",
@@ -356,7 +374,7 @@ public partial class Fatia
     {
         foreach (var g in _generators.Values.Where(g => g.Armed && !g.Active && !g.Finished))
         {
-            if (g.StartMode.StartsWith('r') && _player.GlobalPosition.DistanceSquaredTo(g.Point) > g.StartData) continue;
+            if (g.StartMode.StartsWith('r') && NearestMember(g.Point).DistanceSquaredTo(g.Point) > g.StartData) continue;
             g.Armed = false;
             g.Active = true;
             ScriptLog($"{g.Name}: começou ({g.StartMode})");
@@ -395,7 +413,7 @@ public partial class Fatia
 
     void Despawn(object o)
     {
-        if (o is Enemy e) { e.Dead = true; e.Body.QueueFree(); _enemies.Remove(e); }
+        if (o is Enemy e) { CoopRemoved(e); RemoveEnemy(e); }
         else if (o is WorldObject w) { w.Dead = true; w.Body?.QueueFree(); w.Actor.Root.QueueFree(); _objects.Remove(w); }
     }
 
@@ -403,10 +421,12 @@ public partial class Fatia
     void GeneratedDied(Generator? g, object o)
     {
         if (g == null || !g.Alive.Remove(o)) return;
+        if (_coopGuest) return; // no grupo, quem vence a onda é o anfitrião (Wipeout)
         if (g.Spawned < g.Count || g.Alive.Count > 0 || g.Finished) return;
         g.Finished = true;
         g.Active = false;
         ScriptLog($"{g.Name}: onda vencida ({g.CallLua ?? "sem script"})");
+        CoopWipeout(g);
         if (g.CallLua != null && _stage?.Has(g.CallLua) == true) _stage.Run(g.CallLua);
     }
 
@@ -420,6 +440,8 @@ public partial class Fatia
             var pos = g.Positions[slot];
             float rot = g.RotYDeg.Length > slot ? g.RotYDeg[slot] : 0;
             string model = _db != null && _db.Contains("enemy") ? _db["enemy"].Text(g.EnemyRow, "MODEL") : "";
+            // Combate em grupo: inimigo quem gera é o anfitrião; caixas e barris (g_*) continuam de cada um.
+            if (!model.StartsWith("g_", StringComparison.Ordinal) && CoopWaitsForHost) continue;
             object? spawned = model.StartsWith("g_", StringComparison.Ordinal)
                 ? SpawnBox(model, pos, rot, g)
                 : SpawnEnemy(g.EnemyRow, pos, rot * MathF.PI / 180, g);
@@ -459,6 +481,7 @@ public partial class Fatia
     void UpdateEnemy(Enemy e, float dt)
     {
         CheckEnemyFlash(e);
+        if (e.Proxy) { UpdateProxy(e, dt); return; }
         if (e.Dead)
         {
             if (!e.Respawns) return;
@@ -479,7 +502,7 @@ public partial class Fatia
         if (e.Brain != null && e.Runner != null)
         {
             var p = e.Body.GlobalPosition;
-            var t = _player.GlobalPosition;
+            var t = NearestMember(p); // no grupo, o membro mais perto (sozinho, o jogador)
             e.Brain.Tick(dt, new NVector3(p.X, p.Y, p.Z), new NVector3(t.X, t.Y, t.Z), e.Yaw);
             e.Yaw = e.Brain.Yaw;
             forward = new Vector3(MathF.Sin(e.Yaw), 0, MathF.Cos(e.Yaw));
@@ -513,25 +536,7 @@ public partial class Fatia
                     if (e.Kind.Stats != null && e.Hp <= 0) { Kill(e); return; }
                 }
             }
-            if (e.Started && e.Runner.Running)
-            {
-                if (e.Runner.ActionSerial != e.Serial)
-                {
-                    e.Serial = e.Runner.ActionSerial;
-                    // Caixa que já acertou e passou para a ação nova (CarryHitBoxes) não acerta de novo.
-                    e.HitThisAction.RemoveWhere(k => !e.Runner.CarriedHitBoxes.Any(h => HitKey(h) == k));
-                    if (e.Runner.Action != null) _sfx?.Action(e.Kind.Model, e.Runner.Action);
-                    if (e.Anim != null && e.Runner.Action != null && EnemyAnimName(e, e.Runner.Action) is { } an)
-                    {
-                        e.Anim.GetAnimation(an).LoopMode = ActionAnimations.Loops(e.Kind.Actions, e.Runner.Action) ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
-                        e.Anim.Play(an, ActionAnimations.Blend(e.Kind.Actions, e.Runner.Action) / SequenceRunner.FramesPerSecond);
-                        // As animações seguintes da ação (MOTIONSET depois de WAITCHECK "Motion") entram em fila.
-                        foreach (var next in ActionAnimations.Chain(e.Kind.Actions, e.Runner.Action).Skip(1))
-                            if (e.Anim.HasAnimation(next)) e.Anim.Queue(next);
-                    }
-                }
-                CheckEnemyHits(e);
-            }
+            if (e.Started && e.Runner.Running) TickEnemyAction(e);
             else
             {
                 if (e.Brain.Walking) vel = forward * Speed(e.Kind.Walk);
@@ -579,6 +584,28 @@ public partial class Fatia
         if (e.Model != null) e.Model.Rotation = new Vector3(0, e.Yaw, 0);
     }
 
+    // Ação nova da sequência do inimigo (som, animação) e as caixas de golpe contra o jogador.
+    void TickEnemyAction(Enemy e)
+    {
+        if (e.Runner == null) return;
+        if (e.Runner.ActionSerial != e.Serial)
+        {
+            e.Serial = e.Runner.ActionSerial;
+            // Caixa que já acertou e passou para a ação nova (CarryHitBoxes) não acerta de novo.
+            e.HitThisAction.RemoveWhere(k => !e.Runner.CarriedHitBoxes.Any(h => HitKey(h) == k));
+            if (e.Runner.Action != null) _sfx?.Action(e.Kind.Model, e.Runner.Action);
+            if (e.Anim != null && e.Runner.Action != null && EnemyAnimName(e, e.Runner.Action) is { } an)
+            {
+                e.Anim.GetAnimation(an).LoopMode = ActionAnimations.Loops(e.Kind.Actions, e.Runner.Action) ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
+                e.Anim.Play(an, ActionAnimations.Blend(e.Kind.Actions, e.Runner.Action) / SequenceRunner.FramesPerSecond);
+                // As animações seguintes da ação (MOTIONSET depois de WAITCHECK "Motion") entram em fila.
+                foreach (var next in ActionAnimations.Chain(e.Kind.Actions, e.Runner.Action).Skip(1))
+                    if (e.Anim.HasAnimation(next)) e.Anim.Queue(next);
+            }
+        }
+        CheckEnemyHits(e);
+    }
+
     void Kill(Enemy e)
     {
         e.Dead = true;
@@ -589,9 +616,8 @@ public partial class Fatia
             e.Body.ProcessMode = ProcessModeEnum.Disabled;
             return;
         }
-        e.Body.QueueFree();
-        _enemies.Remove(e);
-        if (_lastEnemy == e) _lastEnemy = null;
+        CoopRemoved(e);
+        RemoveEnemy(e);
         GeneratedDied(e.Gen, e);
     }
 
@@ -667,12 +693,15 @@ public partial class Fatia
                 _enemiesHitThisAction.Add(e);
                 _hits++;
                 _lastEnemy = e;
+                int hpBefore = e.Hp;
                 if (UsesHitScript(e))
                 {
                     StrikeWithScript(e, h.Type); // a reação vem do MDLsetSeq do próprio script
+                    ProxyStruck(e, hpBefore, "");
                     break;
                 }
                 string reaction = PlayerStrikes(e, h.Type);
+                if (ProxyStruck(e, hpBefore, reaction)) break;
                 if (e.Brain != null && e.Runner != null)
                 {
                     e.Brain.Force(reaction);

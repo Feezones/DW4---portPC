@@ -47,6 +47,17 @@ public static class Online
     public static event Action<InteractResult>? Result;
     /// <summary>Pedido de amizade ou convite de grupo de outro jogador.</summary>
     public static event Action<SocialPrompt>? Prompt;
+    /// <summary>Grupo de combate atual (a party na mesma fase; anfitrião primeiro), ou null fora do online.</summary>
+    public static CoopGroup? Group { get; private set; }
+    /// <summary>Pacote do combate em grupo (<see cref="CoopCodec"/>) de outro membro: (quem mandou, mensagem).</summary>
+    public static event Action<int, object>? Coop;
+
+    /// <summary>Combate em grupo: manda o pacote para os outros membros (sem garantia de entrega quando <paramref name="reliable"/> é false).</summary>
+    public static void SendCoop(object msg, bool reliable)
+    {
+        if (State != Status.Online || Group is not { Members.Length: > 1 }) return;
+        s_server?.Send(Codec.Write(new CoopRelay(reliable, CoopCodec.Write(msg))), reliable ? DeliveryMethod.ReliableOrdered : DeliveryMethod.Unreliable);
+    }
 
     /// <summary>Menu do F: pede ao servidor (false se não está online).</summary>
     public static bool Interact(int target, string action, string inviteId = "")
@@ -98,7 +109,7 @@ public static class Online
         s_claiming = false;
         s_net?.Stop();
         (s_net, s_server) = (null, null);
-        Remotes.Clear();
+        Remotes.Clear(); Group = null;
         if (State != Status.Failed) State = Status.Off;
         if (s_wanted is { } w && State == Status.Off) { s_wanted = null; Open(w.Character, w.Model, w.Level); }
         s_wanted = null;
@@ -109,7 +120,7 @@ public static class Online
         if (Ticket is not { } ticket || ServerAddress is not { } address) { State = Status.Off; return; }
         s_net?.Stop(); // tentativa anterior que falhou
         (s_net, s_server) = (null, null);
-        Remotes.Clear();
+        Remotes.Clear(); Group = null;
         var (host, port) = Split(address);
         s_hello = new Hello(Protocol.Version, ticket, character, model, level);
         var l = new EventBasedNetListener();
@@ -170,6 +181,13 @@ public static class Online
             case Despawn d:
                 Remotes.Remove(d.PlayerId);
                 break;
+            case CoopGroup g:
+                Group = g;
+                break;
+            case CoopFrom cf:
+                try { Coop?.Invoke(cf.FromId, CoopCodec.Read(cf.Payload)); }
+                catch (FormatException ex) { GD.PushWarning("[online] pacote do grupo inválido: " + ex.Message); }
+                break;
             case RemoteState rs when Remotes.TryGetValue(rs.PlayerId, out var r):
                 r.State = rs.State;
                 r.ReceivedAt = Now;
@@ -181,7 +199,7 @@ public static class Online
     {
         State = Status.Failed;
         Error = why;
-        Remotes.Clear();
+        Remotes.Clear(); Group = null;
         GD.PushWarning("[online] " + why);
         Notice?.Invoke(why + " Jogando sem os outros jogadores.");
         s_server = null;
@@ -213,7 +231,7 @@ public static class Online
         s_net?.Stop();
         s_net = null;
         s_server = null;
-        Remotes.Clear();
+        Remotes.Clear(); Group = null;
         if (State != Status.Failed) State = Status.Off;
     }
 }

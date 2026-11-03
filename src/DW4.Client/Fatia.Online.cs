@@ -8,7 +8,7 @@ namespace DW4.Client;
 
 /// <summary>
 /// Outros jogadores na fase (online, ADR 0003): o modelo da forma de cada um, com a placa "Personagem  Lv N", andando para a
-/// posição recebida (interpolação curta) e tocando a animação que ele toca. Sem colisão e sem combate por enquanto (etapa 6d).
+/// posição recebida (interpolação curta) e tocando a animação que ele toca. Sem colisão; o combate em grupo está em Fatia.Coop.cs.
 /// </summary>
 public partial class Fatia
 {
@@ -30,7 +30,12 @@ public partial class Fatia
         Online.Notice += OnlineNotice;
         Online.Result += OnInteractResult;
         Online.Prompt += OnSocialPrompt;
-        TreeExiting += () => { Online.Notice -= OnlineNotice; Online.Result -= OnInteractResult; Online.Prompt -= OnSocialPrompt; };
+        Online.Coop += OnCoop;
+        TreeExiting += () =>
+        {
+            Online.Notice -= OnlineNotice; Online.Result -= OnInteractResult; Online.Prompt -= OnSocialPrompt; Online.Coop -= OnCoop;
+            Ram.Ninzu = 1;
+        };
         Online.Connect(PlayerName, PlayerModel, _level);
     }
 
@@ -46,6 +51,7 @@ public partial class Fatia
     void TickOnline(float dt)
     {
         Online.Poll(MyState());
+        TickCoop(dt);
         foreach (var id in _avatars.Keys.ToList())
             if (!Online.Remotes.TryGetValue(id, out var r) || !r.State.Stage.Equals(_stageName, StringComparison.OrdinalIgnoreCase))
             {
