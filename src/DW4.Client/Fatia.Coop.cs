@@ -36,6 +36,11 @@ public partial class Fatia
     // Ao entrar na fase online, espera o grupo chegar antes de gerar inimigos (senão nasce e some logo depois).
     float _coopSettle = 1f;
     readonly Dictionary<int, Enemy> _byNetId = [];
+    // Última sincronia recebida do anfitrião (s); sem ela há um tempo, não apaga cópias (o anfitrião pode estar travado).
+    double _coopLastSync = -1;
+    static double CoopNow => Time.GetTicksMsec() / 1000.0;
+    /// <summary>Cópia que a sincronia não cita há mais que isso (s) some: o anfitrião não tem mais esse inimigo.</summary>
+    const double ProxyStale = 1.5;
 
     bool CoopOn => _coopMembers.Length > 1;
 
@@ -67,17 +72,38 @@ public partial class Fatia
     {
         if (_coopSettle > 0) _coopSettle -= dt;
         UpdateCoopRole();
-        if (!CoopOn || _coopGuest) return;
+        if (_coopGuest) { ReconcileProxies(); return; }
+        if (!CoopOn) return;
         _coopSyncTimer -= dt;
         if (_coopSyncTimer > 0) return;
         _coopSyncTimer = 0.1f;
         var poses = _enemies.Where(e => !e.Dead).Select(e =>
         {
             var p = e.Body.GlobalPosition;
-            return new EnemyPose(e.NetId, MathF.Round(p.X, 2), MathF.Round(p.Y, 2), MathF.Round(p.Z, 2), MathF.Round(e.Yaw, 3), e.Hp);
+            return new EnemyPose(e.NetId, MathF.Round(p.X, 2), MathF.Round(p.Y, 2), MathF.Round(p.Z, 2), MathF.Round(e.Yaw, 3), e.Hp, e.Kind.Row);
         }).ToList();
         for (int i = 0; i < poses.Count; i += CoopCodec.MaxPoses)
             Online.SendCoop(new EnemySync(poses.Skip(i).Take(CoopCodec.MaxPoses).ToArray()), false);
+    }
+
+    // Membro (não anfitrião): só existem as cópias do que o anfitrião tem. Inimigo próprio que tenha nascido por qualquer caminho
+    // some; cópia que a sincronia parou de citar some (relato de 2026-11-03: 1 inimigo numa tela e 3 na outra).
+    void ReconcileProxies()
+    {
+        foreach (var e in _enemies.Where(e => !e.Proxy).ToList())
+        {
+            ScriptLog($"grupo: inimigo próprio {e.Kind.Model} removido (quem gera é o anfitrião)");
+            e.Gen?.Alive.Remove(e);
+            RemoveEnemy(e);
+        }
+        double now = CoopNow;
+        if (_coopLastSync < 0 || now - _coopLastSync > 0.5) return; // sem sincronia recente: não dá para saber
+        foreach (var e in _enemies.Where(e => e.Proxy && now - e.ProxySeen > ProxyStale).ToList())
+        {
+            ScriptLog($"grupo: cópia {e.Kind.Model} ({e.NetId}) sumiu do anfitrião");
+            e.Gen?.Alive.Remove(e);
+            RemoveEnemy(e);
+        }
     }
 
     // Outro membro é o anfitrião: os inimigos daqui somem (os dele chegam pelo EnemySpawn).
@@ -189,18 +215,32 @@ public partial class Fatia
             case EnemySpawn s when fromHost:
             {
                 var pos = new Vector3(s.X, s.Y, s.Z);
-                if (_byNetId.TryGetValue(s.NetId, out var known)) { (known.NetPos, known.NetYaw, known.Hp) = (pos, s.Yaw, s.Hp); break; }
+                if (_byNetId.TryGetValue(s.NetId, out var known)) { (known.NetPos, known.NetYaw, known.Hp, known.ProxySeen) = (pos, s.Yaw, s.Hp, CoopNow); break; }
                 var gen = s.Gen.Length > 0 ? _generators.GetValueOrDefault(s.Gen) : null;
                 if (SpawnEnemy(s.Row, pos, s.Yaw, gen, netId: s.NetId) is not { } e) { ScriptLog($"grupo: não sei mostrar o inimigo da linha {s.Row}"); break; }
                 e.Hp = s.Hp;
+                e.ProxySeen = CoopNow;
                 if (gen != null) { gen.Spawned++; gen.Alive.Add(e); }
                 break;
             }
             case EnemySync y when fromHost:
+            {
+                double now = _coopLastSync = CoopNow;
                 foreach (var p in y.Poses)
+                {
+                    var pos = new Vector3(p.X, p.Y, p.Z);
                     if (_byNetId.TryGetValue(p.NetId, out var e))
-                        (e.NetPos, e.NetYaw, e.Hp) = (new Vector3(p.X, p.Y, p.Z), p.Yaw, p.Hp);
+                    {
+                        if (!e.Proxy) { RemoveEnemy(e); e = null; } // número igual a um inimigo próprio: vale o do anfitrião
+                        else { (e.NetPos, e.NetYaw, e.Hp, e.ProxySeen) = (pos, p.Yaw, p.Hp, now); continue; }
+                    }
+                    // Faltava a cópia (o EnemySpawn se perdeu ou chegou antes do grupo): cria pela sincronia.
+                    if (p.Hp <= 0 || SpawnEnemy(p.Row, pos, p.Yaw, null, netId: p.NetId) is not { } made) continue;
+                    (made.Hp, made.ProxySeen) = (p.Hp, now);
+                    ScriptLog($"grupo: cópia {made.Kind.Model} ({p.NetId}) criada pela sincronia");
+                }
                 break;
+            }
             case EnemySeq q when fromHost && _byNetId.TryGetValue(q.NetId, out var e) && e.Runner != null:
                 e.Motion.SequenceChanged();
                 e.Started = e.Runner.Start(q.Sequence, q.Style.Length > 0 ? q.Style : null) || StartEnemySequence(e, q.Sequence);

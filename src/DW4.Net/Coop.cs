@@ -21,10 +21,16 @@ public enum CoopType : byte
 /// <summary>Anfitrião → grupo: inimigo novo (linha da tabela enemy, posição, giro, HP e o gerador que o gerou, "" = nenhum).</summary>
 public sealed record EnemySpawn(int NetId, int Row, float X, float Y, float Z, float Yaw, int Hp, string Gen = "");
 
-/// <summary>Posição, giro e HP de um inimigo (vários num <see cref="EnemySync"/>).</summary>
-public readonly record struct EnemyPose(int NetId, float X, float Y, float Z, float Yaw, int Hp);
+/// <summary>
+/// Posição, giro e HP de um inimigo (vários num <see cref="EnemySync"/>), com a linha da tabela enemy: quem não tem a cópia
+/// (perdeu o EnemySpawn, chegou depois) cria pela sincronia.
+/// </summary>
+public readonly record struct EnemyPose(int NetId, float X, float Y, float Z, float Yaw, int Hp, int Row = 0);
 
-/// <summary>Anfitrião → grupo, ~10 por segundo: onde estão os inimigos (sem garantia de entrega; o próximo corrige).</summary>
+/// <summary>
+/// Anfitrião → grupo, ~10 por segundo: onde estão TODOS os inimigos vivos dele (sem garantia de entrega; o próximo corrige).
+/// É a lista que vale: cópia que não aparece por um tempo some, inimigo que falta é criado.
+/// </summary>
 public sealed record EnemySync(EnemyPose[] Poses);
 
 /// <summary>Anfitrião → grupo: o inimigo começou uma sequência do jogo (SQ_ATCK1, SQ_SDMG…), com o bloco (estilo).</summary>
@@ -56,7 +62,7 @@ public static class CoopCodec
             case EnemySpawn x: w.Write((byte)CoopType.EnemySpawn); w.Write(x.NetId); w.Write(x.Row); w.Write(x.X); w.Write(x.Y); w.Write(x.Z); w.Write(x.Yaw); w.Write(x.Hp); Str(w, x.Gen); break;
             case EnemySync x:
                 w.Write((byte)CoopType.EnemySync); w.Write((byte)Math.Min(x.Poses.Length, MaxPoses));
-                foreach (var p in x.Poses.Take(MaxPoses)) { w.Write(p.NetId); w.Write(p.X); w.Write(p.Y); w.Write(p.Z); w.Write(p.Yaw); w.Write(p.Hp); }
+                foreach (var p in x.Poses.Take(MaxPoses)) { w.Write(p.NetId); w.Write(p.X); w.Write(p.Y); w.Write(p.Z); w.Write(p.Yaw); w.Write(p.Hp); w.Write(p.Row); }
                 break;
             case EnemySeq x: w.Write((byte)CoopType.EnemySeq); w.Write(x.NetId); Str(w, x.Sequence); Str(w, x.Style); break;
             case EnemyHit x: w.Write((byte)CoopType.EnemyHit); w.Write(x.NetId); w.Write(x.Damage); Str(w, x.Reaction); break;
@@ -68,8 +74,8 @@ public static class CoopCodec
         return ms.ToArray();
     }
 
-    /// <summary>Poses por <see cref="EnemySync"/> (24 bytes cada; 40 cabem com folga em <see cref="Protocol.MaxPayload"/>).</summary>
-    public const int MaxPoses = 40;
+    /// <summary>Poses por <see cref="EnemySync"/> (28 bytes cada; 36 cabem com folga em <see cref="Protocol.MaxPayload"/>).</summary>
+    public const int MaxPoses = 36;
 
     public static object Read(byte[] data)
     {
@@ -99,7 +105,7 @@ public static class CoopCodec
         int n = r.ReadByte();
         if (n > MaxPoses) throw new FormatException("poses demais");
         var poses = new EnemyPose[n];
-        for (int i = 0; i < n; i++) poses[i] = new EnemyPose(r.ReadInt32(), F(r), F(r), F(r), F(r), r.ReadInt32());
+        for (int i = 0; i < n; i++) poses[i] = new EnemyPose(r.ReadInt32(), F(r), F(r), F(r), F(r), r.ReadInt32(), r.ReadInt32());
         return new EnemySync(poses);
     }
 
