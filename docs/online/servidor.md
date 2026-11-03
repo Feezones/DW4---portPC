@@ -24,8 +24,9 @@ Primeira etapa do coop (ADR 0003): os jogadores se veem e andam juntos. Combate,
 
 ## Instâncias (DECISÃO DO PORT)
 
-- Fases da cidade (`stagml*`): abertas, todo mundo se vê.
-- As outras (dungeons, chefes, tutorial): uma instância por party; sem party, uma por conta.
+- DECISÃO DO RESPONSÁVEL (2026-11-03): todo mundo na mesma fase se vê, na cidade e nas dungeons.
+- Inimigos, dano e drops são compartilhados só entre os membros da mesma party na mesma fase (`World.CombatGroup`, etapa 6d).
+  Quem não está no grupo vê os outros, mas tem os próprios inimigos.
 - Mesma conta entrando de novo derruba a sessão antiga.
 
 ## Menu do F (protocolo 2)

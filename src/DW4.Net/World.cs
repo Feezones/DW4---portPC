@@ -9,9 +9,9 @@ public readonly record struct Outgoing(int To, object Message, bool Reliable);
 /// <summary>
 /// Regras do servidor sem socket: quem está em qual instância de fase e quem vê quem.
 ///
-/// Instância (DECISÃO DO PORT, ADR 0003): as fases da cidade (stagml*: lobby, Central Area e as outras áreas da cidade) são
-/// abertas, todo mundo se vê lá (dá para chegar perto e apertar F). As outras (dungeons, chefes, tutorial) são uma instância por
-/// grupo, como o jogo original com até 4 na mesma partida; sem grupo, cada um tem a sua.
+/// Instância (DECISÃO DO RESPONSÁVEL, 2026-11-03): todo mundo na mesma fase se vê, em qualquer fase (cidade ou dungeon). O que é do
+/// grupo é o combate: inimigos, dano e drops são compartilhados só entre os membros da mesma party na mesma fase
+/// (<see cref="CombatGroup"/>, etapa 6d); quem não está no grupo vê os outros andando, mas tem os próprios inimigos.
 /// </summary>
 public sealed class World
 {
@@ -32,9 +32,15 @@ public sealed class World
 
     public static bool IsPublic(string stage) => stage.StartsWith("stagml", StringComparison.OrdinalIgnoreCase);
 
-    public static string InstanceOf(string stage, Identity who) =>
-        IsPublic(stage) ? stage.ToLowerInvariant()
-        : $"{stage.ToLowerInvariant()}#{(who.PartyId is { Length: > 0 } p ? "p:" + p : "a:" + who.AccountId)}";
+    /// <summary>Instância de visão: a fase (todos na mesma fase se veem).</summary>
+    public static string InstanceOf(string stage, Identity who) => stage.ToLowerInvariant();
+
+    /// <summary>
+    /// Grupo de combate (inimigos, dano e drops compartilhados): a party na fase; sem party, só a conta. A cidade (stagml*) não
+    /// tem combate, mas segue a mesma regra.
+    /// </summary>
+    public static string CombatGroup(string stage, Identity who) =>
+        $"{stage.ToLowerInvariant()}#{(who.PartyId is { Length: > 0 } p ? "p:" + p : "a:" + who.AccountId)}";
 
     /// <summary>Jogador entrou (ticket aceito). Devolve o id de quem já estava com a mesma conta (para derrubar), ou null.</summary>
     public int? Join(int id, Identity who, string character)
@@ -65,7 +71,7 @@ public sealed class World
         return res;
     }
 
-    /// <summary>A party da conta mudou (a DMO.API avisa no heartbeat): muda de instância se estiver numa fase de grupo.</summary>
+    /// <summary>A party da conta mudou (a DMO.API avisa no heartbeat). A visão não muda (é por fase); muda o grupo de combate.</summary>
     public List<Outgoing> SetParty(int id, string? partyId)
     {
         var res = new List<Outgoing>();

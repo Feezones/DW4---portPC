@@ -297,7 +297,7 @@ Test("Online: protocolo de rede (ida e volta de cada pacote, pacote quebrado rec
     True(threw, "tipo desconhecido");
 });
 
-Test("Online: servidor (cidade aberta, dungeon por grupo, aparecer e sumir, conta repetida)", () =>
+Test("Online: servidor (todos na fase se veem, combate por grupo, aparecer e sumir, conta repetida)", () =>
 {
     var w = new DW4.Net.World();
     DW4.Net.PlayerState S(string stage) => new(stage, 0, 0, 0, 0, "wait01", "p_girumon", 5);
@@ -310,12 +310,12 @@ Test("Online: servidor (cidade aberta, dungeon por grupo, aparecer e sumir, cont
     True(o.Count == 1 && o[0] is { To: 1, Reliable: false, Message: DW4.Net.RemoteState }, "estado repassado sem garantia");
     o = w.Update(1, S("dng101b1"));
     True(o.Any(x => x.To == 2 && x.Message is DW4.Net.Despawn { PlayerId: 1 }), "foi para a dungeon: some da cidade");
-    True(w.Update(2, S("dng101b1")).Count == 0, "dungeon sem grupo: instâncias separadas");
-    o = w.SetParty(1, "p1");
-    True(o.Count == 0, "grupo novo, ainda sozinho na instância");
-    o = w.SetParty(2, "p1");
-    True(o.Any(x => x.To == 1 && x.Message is DW4.Net.Spawn { PlayerId: 2 }), "mesmo grupo: mesma dungeon");
-    Equal("dng101b1#p:p1", DW4.Net.World.InstanceOf("DNG101B1", new(1, "x", "p1")), "nome da instância");
+    o = w.Update(2, S("dng101b1"));
+    True(o.Any(x => x.To == 1 && x.Message is DW4.Net.Spawn { PlayerId: 2 }), "dungeon sem grupo: os dois se veem (pedido do responsável)");
+    True(w.SetParty(1, "p1").Count == 0 && w.SetParty(2, "p1").Count == 0, "entrar no grupo não muda quem se vê");
+    Equal("dng101b1", DW4.Net.World.InstanceOf("DNG101B1", new(1, "x", "p1")), "visão: a fase");
+    Equal("dng101b1#p:p1", DW4.Net.World.CombatGroup("DNG101B1", new(1, "x", "p1")), "combate: o grupo");
+    Equal("dng101b1#a:7", DW4.Net.World.CombatGroup("DNG101B1", new(7, "x", null)), "combate sem grupo: a conta");
     o = w.Leave(2);
     True(o.Count == 1 && o[0].Message is DW4.Net.Despawn { PlayerId: 2 }, "saiu: some para o outro");
     Equal<int?>(1, w.Join(5, new(10, "Alfa", null), "Gui"), "mesma conta de novo: derruba a antiga");
@@ -2733,7 +2733,7 @@ Test("Online: servidor só deixa o F entre quem está na mesma instância", () =
     w.Update(2, S("dng101b1"));
     True(!w.SameInstance(1, 2), "um na dungeon");
     w.Update(1, S("dng101b1"));
-    True(!w.SameInstance(1, 2), "dungeon sem grupo: cada um na sua");
+    True(w.SameInstance(1, 2), "os dois na mesma dungeon: F vale (mesmo sem grupo)");
 });
 
 Console.WriteLine($"{passed} ok, {failed} falharam");
