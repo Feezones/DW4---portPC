@@ -82,6 +82,10 @@ public sealed class GameServer
                     _main.Enqueue(() => Admit(p, h, who, error));
                 });
                 break;
+            case CoopRelay x when _world.IsOnline(p.Id):
+                if (!AllowCoop(p.Id)) return;
+                Send(_world.Relay(p.Id, x.Payload, x.Reliable));
+                break;
             case Interact x when _world.IsOnline(p.Id):
                 OnInteract(p, x);
                 break;
@@ -169,6 +173,7 @@ public sealed class GameServer
         _connectedAt.Remove(id);
         _rate.Remove(id);
         _lastInteract.Remove(id);
+        _coopRate.Remove(id);
         if (_world.Who(id) is { } who)
         {
             Log($"[{id}] saiu: {who.Tamer}");
@@ -181,6 +186,19 @@ public sealed class GameServer
     {
         foreach (var (id, acc) in _world.Accounts.ToList())
             _ = SafeAsync(async () => { var party = await _api.PresenceAsync(acc, true); _main.Enqueue(() => Send(_world.SetParty(id, party))); });
+    }
+
+    // Combate em grupo: até 120 pacotes por segundo por jogador (sincronia a 10 Hz + golpes e sequências de vários inimigos).
+    readonly Dictionary<int, (long Second, int Count)> _coopRate = [];
+    const int MaxCoopPerSecond = 120;
+
+    bool AllowCoop(int id)
+    {
+        long sec = Stopwatch.GetTimestamp() / Stopwatch.Frequency;
+        var (s, n) = _coopRate.TryGetValue(id, out var v) ? v : (sec, 0);
+        if (s != sec) (s, n) = (sec, 0);
+        _coopRate[id] = (s, n + 1);
+        return n < MaxCoopPerSecond;
     }
 
     bool Allow(int id)
@@ -197,8 +215,10 @@ public sealed class GameServer
         foreach (var o in list) if (_peers.TryGetValue(o.To, out var p)) Send(p, o.Message, o.Reliable);
     }
 
+    // Sem garantia: o estado do jogador vai em sequência (o mais novo vale); a sincronia do grupo vai solta, para não brigar com
+    // o estado no mesmo canal (Sequenced descarta o que chega depois de um pacote mais novo do canal, de qualquer tipo).
     static void Send(NetPeer p, object msg, bool reliable) =>
-        p.Send(Codec.Write(msg), reliable ? DeliveryMethod.ReliableOrdered : DeliveryMethod.Sequenced);
+        p.Send(Codec.Write(msg), reliable ? DeliveryMethod.ReliableOrdered : msg is CoopFrom ? DeliveryMethod.Unreliable : DeliveryMethod.Sequenced);
 
     /// <summary>Recusa: o motivo vai junto do pedido de desconexão (um pacote mandado logo antes se perderia).</summary>
     void Reject(NetPeer p, string reason) => _net.DisconnectPeer(p, Codec.Write(new Reject(reason)));

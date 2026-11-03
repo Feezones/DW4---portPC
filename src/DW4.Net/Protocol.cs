@@ -9,13 +9,17 @@ namespace DW4.Net;
 public static class Protocol
 {
     /// <summary>Muda quando o formato muda; cliente e servidor de versões diferentes não conversam.</summary>
-    public const int Version = 2; // 2 (0.6.1): arma no PlayerState; menu do F (Interact, InteractResult, SocialPrompt)
+    public const int Version = 3; // 2 (0.6.1): arma, menu do F; 3 (0.6.2): combate em grupo (CoopGroup, CoopRelay)
     /// <summary>Chave de conexão da LiteNetLib (recusa quem não é o DW4 antes de qualquer pacote).</summary>
     public const string ConnectionKey = "DW4-online-1";
     public const int DefaultPort = 7031;
     /// <summary>Estados de posição por segundo que o cliente manda.</summary>
     public const int StateRate = 20;
     public const int MaxText = 64;
+    /// <summary>Membros de um grupo de combate (a party do original tem até 4).</summary>
+    public const int MaxGroup = 4;
+    /// <summary>Tamanho máximo de um pacote do combate em grupo (cabe num datagrama sem fragmentar).</summary>
+    public const int MaxPayload = 1100;
 }
 
 public enum MsgType : byte
@@ -24,6 +28,7 @@ public enum MsgType : byte
     Hello = 1,
     State = 2,
     Interact = 3,
+    CoopRelay = 4,
     // servidor → cliente
     Welcome = 10,
     Reject = 11,
@@ -32,6 +37,8 @@ public enum MsgType : byte
     RemoteState = 14,
     InteractResult = 15,
     SocialPrompt = 16,
+    CoopGroup = 17,
+    CoopFrom = 18,
 }
 
 /// <summary>Cliente → servidor, ao conectar: ticket do launcher e o personagem da vaga.</summary>
@@ -64,6 +71,18 @@ public sealed record InteractResult(int TargetId, string Action, bool Ok, string
 /// <summary>Pergunta para quem recebeu um pedido de amizade (Kind "friend") ou um convite de grupo (Kind "party").</summary>
 public sealed record SocialPrompt(string Kind, int FromId, string FromTamer, string InviteId = "");
 
+/// <summary>
+/// Grupo de combate (inimigos, dano e drops compartilhados: a party na mesma fase). <see cref="HostId"/> roda os inimigos; os
+/// outros mostram cópias. Vem a cada mudança (alguém entrou, saiu, trocou de fase ou de party). Sozinho: Members = [você].
+/// </summary>
+public sealed record CoopGroup(int HostId, int[] Members);
+
+/// <summary>Cliente → servidor: pacote do combate em grupo (<see cref="CoopCodec"/>) para os outros membros do grupo.</summary>
+public sealed record CoopRelay(bool Reliable, byte[] Payload);
+
+/// <summary>Servidor → cliente: pacote do combate em grupo vindo de <see cref="FromId"/>.</summary>
+public sealed record CoopFrom(int FromId, byte[] Payload);
+
 /// <summary>Grava e lê os pacotes. Erro de formato vira <see cref="FormatException"/> (o servidor derruba quem mandou).</summary>
 public static class Codec
 {
@@ -85,6 +104,12 @@ public static class Codec
                 Str(w, x.Relation, 32); w.Write(x.HasParty); w.Write(x.AmLeader); w.Write(x.TargetInMyParty); w.Write(x.PartyOccupied);
                 w.Write(x.TargetInOtherParty);
                 break;
+            case CoopGroup x:
+                w.Write((byte)MsgType.CoopGroup); w.Write(x.HostId); w.Write((byte)Math.Min(x.Members.Length, Protocol.MaxGroup));
+                foreach (var m in x.Members.Take(Protocol.MaxGroup)) w.Write(m);
+                break;
+            case CoopRelay x: w.Write((byte)MsgType.CoopRelay); w.Write(x.Reliable); Bytes(w, x.Payload); break;
+            case CoopFrom x: w.Write((byte)MsgType.CoopFrom); w.Write(x.FromId); Bytes(w, x.Payload); break;
             case SocialPrompt x: w.Write((byte)MsgType.SocialPrompt); Str(w, x.Kind, 16); w.Write(x.FromId); Str(w, x.FromTamer); Str(w, x.InviteId, 64); break;
             case RemoteState x: w.Write((byte)MsgType.RemoteState); w.Write(x.PlayerId); State(w, x.State); break;
             default: throw new ArgumentException("mensagem desconhecida: " + msg.GetType().Name);
@@ -111,6 +136,9 @@ public static class Codec
                 MsgType.Interact => new Interact(r.ReadInt32(), Str(r, 32), Str(r, 64)),
                 MsgType.InteractResult => new InteractResult(r.ReadInt32(), Str(r, 32), r.ReadBoolean(), Str(r, 200), Str(r, 32), r.ReadBoolean(),
                     r.ReadBoolean(), r.ReadBoolean(), r.ReadInt32(), r.ReadBoolean()),
+                MsgType.CoopGroup => ReadGroup(r),
+                MsgType.CoopRelay => new CoopRelay(r.ReadBoolean(), Bytes(r)),
+                MsgType.CoopFrom => new CoopFrom(r.ReadInt32(), Bytes(r)),
                 MsgType.SocialPrompt => new SocialPrompt(Str(r, 16), r.ReadInt32(), Str(r), Str(r, 64)),
                 MsgType.RemoteState => new RemoteState(r.ReadInt32(), State(r)),
                 _ => throw new FormatException($"tipo {(byte)type}"),
@@ -119,6 +147,31 @@ public static class Codec
             return msg;
         }
         catch (EndOfStreamException) { throw new FormatException("pacote curto"); }
+    }
+
+    static CoopGroup ReadGroup(BinaryReader r)
+    {
+        int host = r.ReadInt32(), n = r.ReadByte();
+        if (n > Protocol.MaxGroup) throw new FormatException("grupo grande demais");
+        var m = new int[n];
+        for (int i = 0; i < n; i++) m[i] = r.ReadInt32();
+        return new CoopGroup(host, m);
+    }
+
+    static void Bytes(BinaryWriter w, byte[] b)
+    {
+        if (b.Length > Protocol.MaxPayload) throw new ArgumentException("pacote do grupo grande demais");
+        w.Write((ushort)b.Length);
+        w.Write(b);
+    }
+
+    static byte[] Bytes(BinaryReader r)
+    {
+        int n = r.ReadUInt16();
+        if (n > Protocol.MaxPayload) throw new FormatException("pacote do grupo grande demais");
+        var b = r.ReadBytes(n);
+        if (b.Length != n) throw new EndOfStreamException();
+        return b;
     }
 
     static void State(BinaryWriter w, PlayerState s)

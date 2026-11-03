@@ -22,9 +22,12 @@ public sealed class World
         public required string Character;
         public PlayerState? State;
         public string? Instance;
+        public string? Group;
     }
 
     readonly Dictionary<int, Player> _players = [];
+    // Grupo de combate → membros na ordem de chegada; o primeiro é o anfitrião (roda os inimigos).
+    readonly Dictionary<string, List<int>> _groups = [];
 
     public int Count => _players.Count;
     public bool IsOnline(int id) => _players.ContainsKey(id);
@@ -55,6 +58,7 @@ public sealed class World
         var res = new List<Outgoing>();
         if (!_players.Remove(id, out var p)) return res;
         if (p.Instance != null) foreach (var o in In(p.Instance)) res.Add(new(o.Id, new Despawn(id), true));
+        SetGroup(p, null, res);
         return res;
     }
 
@@ -65,6 +69,7 @@ public sealed class World
         if (!_players.TryGetValue(id, out var p)) return res;
         p.State = state;
         Move(p, InstanceOf(state.Stage, p.Who), res);
+        SetGroup(p, CombatGroup(state.Stage, p.Who), res);
         if (p.Instance != null)
             foreach (var o in In(p.Instance))
                 if (o.Id != id) res.Add(new(o.Id, new RemoteState(id, state), false));
@@ -77,8 +82,48 @@ public sealed class World
         var res = new List<Outgoing>();
         if (!_players.TryGetValue(id, out var p) || p.Who.PartyId == partyId) return res;
         p.Who = p.Who with { PartyId = partyId };
-        if (p.State != null) Move(p, InstanceOf(p.State.Stage, p.Who), res);
+        if (p.State != null)
+        {
+            Move(p, InstanceOf(p.State.Stage, p.Who), res);
+            SetGroup(p, CombatGroup(p.State.Stage, p.Who), res);
+        }
         return res;
+    }
+
+    /// <summary>Membros do grupo de combate de <paramref name="id"/> (o primeiro é o anfitrião); vazio sem estado.</summary>
+    public IReadOnlyList<int> GroupOf(int id) =>
+        _players.TryGetValue(id, out var p) && p.Group != null && _groups.TryGetValue(p.Group, out var g) ? g : [];
+
+    /// <summary>Pacote do combate em grupo: vai para os outros membros do grupo de quem mandou.</summary>
+    public List<Outgoing> Relay(int from, byte[] payload, bool reliable)
+    {
+        var res = new List<Outgoing>();
+        foreach (var m in GroupOf(from))
+            if (m != from) res.Add(new(m, new CoopFrom(from, payload), reliable));
+        return res;
+    }
+
+    // Troca de grupo de combate (fase ou party): sai do antigo, entra no novo (no fim da fila) e avisa os dois grupos.
+    void SetGroup(Player p, string? group, List<Outgoing> res)
+    {
+        if (p.Group == group) return;
+        if (p.Group != null && _groups.TryGetValue(p.Group, out var old))
+        {
+            old.Remove(p.Id);
+            if (old.Count == 0) _groups.Remove(p.Group);
+            else Announce(old, res);
+        }
+        p.Group = group;
+        if (group == null) return;
+        if (!_groups.TryGetValue(group, out var g)) _groups[group] = g = [];
+        g.Add(p.Id);
+        Announce(g, res);
+    }
+
+    static void Announce(List<int> g, List<Outgoing> res)
+    {
+        var msg = new CoopGroup(g[0], g.Take(Protocol.MaxGroup).ToArray());
+        foreach (var m in g) res.Add(new(m, msg, true));
     }
 
     public Identity? Who(int id) => _players.TryGetValue(id, out var p) ? p.Who : null;
