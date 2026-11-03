@@ -28,7 +28,9 @@ public partial class Fatia
     void SetupOnline()
     {
         Online.Notice += OnlineNotice;
-        TreeExiting += () => Online.Notice -= OnlineNotice;
+        Online.Result += OnInteractResult;
+        Online.Prompt += OnSocialPrompt;
+        TreeExiting += () => { Online.Notice -= OnlineNotice; Online.Result -= OnInteractResult; Online.Prompt -= OnSocialPrompt; };
         Online.Connect(PlayerName, PlayerModel, _level);
     }
 

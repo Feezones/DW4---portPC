@@ -9,7 +9,7 @@ namespace DW4.Net;
 public static class Protocol
 {
     /// <summary>Muda quando o formato muda; cliente e servidor de versões diferentes não conversam.</summary>
-    public const int Version = 2; // 2: arma equipada no PlayerState (0.6.1)
+    public const int Version = 2; // 2 (0.6.1): arma no PlayerState; menu do F (Interact, InteractResult, SocialPrompt)
     /// <summary>Chave de conexão da LiteNetLib (recusa quem não é o DW4 antes de qualquer pacote).</summary>
     public const string ConnectionKey = "DW4-online-1";
     public const int DefaultPort = 7031;
@@ -23,12 +23,15 @@ public enum MsgType : byte
     // cliente → servidor
     Hello = 1,
     State = 2,
+    Interact = 3,
     // servidor → cliente
     Welcome = 10,
     Reject = 11,
     Spawn = 12,
     Despawn = 13,
     RemoteState = 14,
+    InteractResult = 15,
+    SocialPrompt = 16,
 }
 
 /// <summary>Cliente → servidor, ao conectar: ticket do launcher e o personagem da vaga.</summary>
@@ -43,6 +46,23 @@ public sealed record Reject(string Reason);
 public sealed record Spawn(int PlayerId, string Character, string Tamer, PlayerState State);
 public sealed record Despawn(int PlayerId);
 public sealed record RemoteState(int PlayerId, PlayerState State);
+
+/// <summary>
+/// Menu do F (cliente → servidor): <see cref="Action"/> sobre o jogador <see cref="TargetId"/>. Ações: relation (montar o menu),
+/// friend-request, party-invite; e as respostas a um <see cref="SocialPrompt"/>: friend-accept, friend-decline, party-accept,
+/// party-decline (o alvo é quem perguntou; <see cref="InviteId"/> no convite de grupo).
+/// </summary>
+public sealed record Interact(int TargetId, string Action, string InviteId = "");
+
+/// <summary>
+/// Resposta do servidor a um <see cref="Interact"/>: deu certo ou o aviso (Message, os textos da DMO.API). Em "relation", o que
+/// o menu precisa: Relation (none | friend | requestSent | requestReceived | blockedByYou | self) e a party.
+/// </summary>
+public sealed record InteractResult(int TargetId, string Action, bool Ok, string Message, string Relation = "", bool HasParty = false,
+    bool AmLeader = false, bool TargetInMyParty = false, int PartyOccupied = 0, bool TargetInOtherParty = false);
+
+/// <summary>Pergunta para quem recebeu um pedido de amizade (Kind "friend") ou um convite de grupo (Kind "party").</summary>
+public sealed record SocialPrompt(string Kind, int FromId, string FromTamer, string InviteId = "");
 
 /// <summary>Grava e lê os pacotes. Erro de formato vira <see cref="FormatException"/> (o servidor derruba quem mandou).</summary>
 public static class Codec
@@ -59,6 +79,13 @@ public static class Codec
             case Reject x: w.Write((byte)MsgType.Reject); Str(w, x.Reason, 200); break;
             case Spawn x: w.Write((byte)MsgType.Spawn); w.Write(x.PlayerId); Str(w, x.Character); Str(w, x.Tamer); State(w, x.State); break;
             case Despawn x: w.Write((byte)MsgType.Despawn); w.Write(x.PlayerId); break;
+            case Interact x: w.Write((byte)MsgType.Interact); w.Write(x.TargetId); Str(w, x.Action, 32); Str(w, x.InviteId, 64); break;
+            case InteractResult x:
+                w.Write((byte)MsgType.InteractResult); w.Write(x.TargetId); Str(w, x.Action, 32); w.Write(x.Ok); Str(w, x.Message, 200);
+                Str(w, x.Relation, 32); w.Write(x.HasParty); w.Write(x.AmLeader); w.Write(x.TargetInMyParty); w.Write(x.PartyOccupied);
+                w.Write(x.TargetInOtherParty);
+                break;
+            case SocialPrompt x: w.Write((byte)MsgType.SocialPrompt); Str(w, x.Kind, 16); w.Write(x.FromId); Str(w, x.FromTamer); Str(w, x.InviteId, 64); break;
             case RemoteState x: w.Write((byte)MsgType.RemoteState); w.Write(x.PlayerId); State(w, x.State); break;
             default: throw new ArgumentException("mensagem desconhecida: " + msg.GetType().Name);
         }
@@ -81,6 +108,10 @@ public static class Codec
                 MsgType.Reject => new Reject(Str(r, 200)),
                 MsgType.Spawn => new Spawn(r.ReadInt32(), Str(r), Str(r), State(r)),
                 MsgType.Despawn => new Despawn(r.ReadInt32()),
+                MsgType.Interact => new Interact(r.ReadInt32(), Str(r, 32), Str(r, 64)),
+                MsgType.InteractResult => new InteractResult(r.ReadInt32(), Str(r, 32), r.ReadBoolean(), Str(r, 200), Str(r, 32), r.ReadBoolean(),
+                    r.ReadBoolean(), r.ReadBoolean(), r.ReadInt32(), r.ReadBoolean()),
+                MsgType.SocialPrompt => new SocialPrompt(Str(r, 16), r.ReadInt32(), Str(r), Str(r, 64)),
                 MsgType.RemoteState => new RemoteState(r.ReadInt32(), State(r)),
                 _ => throw new FormatException($"tipo {(byte)type}"),
             };

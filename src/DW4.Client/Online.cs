@@ -43,6 +43,18 @@ public static class Online
     public static readonly Dictionary<int, RemotePlayer> Remotes = [];
     /// <summary>Avisos para o chat do jogo ("Conectado", "Ana entrou"...).</summary>
     public static event Action<string>? Notice;
+    /// <summary>Resposta do servidor ao menu do F.</summary>
+    public static event Action<InteractResult>? Result;
+    /// <summary>Pedido de amizade ou convite de grupo de outro jogador.</summary>
+    public static event Action<SocialPrompt>? Prompt;
+
+    /// <summary>Menu do F: pede ao servidor (false se não está online).</summary>
+    public static bool Interact(int target, string action, string inviteId = "")
+    {
+        if (State != Status.Online) return false;
+        Send(new Interact(target, action, inviteId), true);
+        return true;
+    }
 
     static string? Arg(string name)
     {
@@ -148,6 +160,12 @@ public static class Online
                 break;
             case Spawn s:
                 Remotes[s.PlayerId] = new RemotePlayer { Id = s.PlayerId, Character = s.Character, Tamer = s.Tamer, State = s.State, ReceivedAt = Now };
+                break;
+            case InteractResult ir:
+                Result?.Invoke(ir);
+                break;
+            case SocialPrompt sp:
+                Prompt?.Invoke(sp);
                 break;
             case Despawn d:
                 Remotes.Remove(d.PlayerId);

@@ -281,6 +281,7 @@ public partial class Fatia : Node3D
         if (TechBarInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (MenuInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (QuickItemInput(e)) { GetViewport().SetInputAsHandled(); return; }
+        if (InteractInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (e is InputEventKey { Pressed: true, Echo: false } k)
         {
             if (k.Keycode == Key.F1 && _cameraSets.Length > 1) _cameraSet = (_cameraSet + 1) % _cameraSets.Length;

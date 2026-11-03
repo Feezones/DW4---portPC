@@ -77,6 +77,10 @@ public sealed class World
 
     public Identity? Who(int id) => _players.TryGetValue(id, out var p) ? p.Who : null;
 
+    /// <summary>Os dois estão na mesma instância de fase (o menu do F só vale para quem o jogador vê).</summary>
+    public bool SameInstance(int a, int b) =>
+        _players.TryGetValue(a, out var pa) && _players.TryGetValue(b, out var pb) && pa.Instance != null && pa.Instance == pb.Instance;
+
     void Move(Player p, string instance, List<Outgoing> res)
     {
         if (p.Instance == instance) return;
