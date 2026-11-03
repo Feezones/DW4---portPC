@@ -272,6 +272,16 @@ public partial class Fatia
     string? EnemyAnimName(Enemy e, string action) =>
         ActionAnimations.Motion(e.Kind.Actions, action) is { } motion ? e.Anim?.GetAnimationList().FirstOrDefault(n => n == motion) : null;
 
+    // Bloco do rótulo guardado (LABELCTRL/SETLABEL) de uma sequência: a ACTION e o MOVE "Move" dele. Sem rótulo guardado: nada (usa o padrão).
+    static (string? Action, float? Move) IdleBlock(Enemy e, string seq)
+    {
+        if (!e.Labels.TryGetValue(seq, out var label) || !e.Kind.Sequences.TryGetValue(seq, out var cmds)) return (null, null);
+        int at = cmds.FindIndex(c => c.Kind == "LABEL" && c.S(0) == label);
+        if (at < 0) return (null, null);
+        var block = cmds.Skip(at + 1).TakeWhile(c => c.Kind != "LABEL").ToList();
+        return (block.FirstOrDefault(c => c.Kind == "ACTION")?.S(0), block.FirstOrDefault(c => c.Kind == "MOVE" && c.S(0) == "Move")?.F(1));
+    }
+
     float? EnemyAnimFrames(Enemy e, string action) => ActionAnimations.Length(e.Kind.Actions, action, motion =>
         e.Anim != null && e.Anim.HasAnimation(motion) ? (float)e.Anim.GetAnimation(motion).Length * SequenceRunner.FramesPerSecond : null);
 
@@ -552,8 +562,11 @@ public partial class Fatia
             }
             else
             {
-                if (e.Brain.Walking) vel = forward * Speed(e.Kind.Walk);
-                var want = e.Brain.Walking ? e.Kind.Run : e.Kind.Wait;
+                // Passeio e espera da IA no rótulo guardado do SQ_WALK/SQ_WAIT (FATO, f_apocaly SQ_PHASE2: rótulo FLOAT, WAIT02 e RUNN03 com
+                // MOVE "Move" 0,6; antes ficava no wait01/run do 1º bloco e na velocidade da fase 1).
+                var (idleAction, idleMove) = IdleBlock(e, e.Brain.Walking ? "SQ_WALK" : "SQ_WAIT");
+                if (e.Brain.Walking) vel = forward * Speed(idleMove ?? e.Kind.Walk);
+                var want = (idleAction != null ? EnemyAnimName(e, idleAction) : null) ?? (e.Brain.Walking ? e.Kind.Run : e.Kind.Wait);
                 if (e.Anim != null && want != null && e.Anim.HasAnimation(want) && e.Anim.CurrentAnimation != want) e.Anim.Play(want, 8 / SequenceRunner.FramesPerSecond);
             }
         }

@@ -4,6 +4,7 @@ Mudanças pedidas para o PC que **não existem no original**. Ficam separadas da
 
 | Data | Decisão | Pedido por | Onde |
 |---|---|---|---|
+| 2026-11-03 | Espera e passeio da IA dos inimigos usam a ação e o MOVE do rótulo guardado do SQ_WAIT/SQ_WALK (Apocalymon fase 2: wait02, run03, 0,6). | feelipe | `Fatia.Enemies.cs` (IdleBlock), docs/gameplay/fase5-chefe-bs01.md |
 | 2026-11-03 | CTRL "toWait" de uma sequência de inimigo deixa a IA do mapa atual cortar com outro golpe (HIPÓTESE; Mecha Rogue 04: corrida do SQ_ATCK2 → SQ_ATCK4). | feelipe | `Fatia.Enemies.cs` (AiCanCut), docs/gameplay/chefe-mecha-rogue.md |
 | 2026-11-03 | Mammothmon: ENEMY <modelo> <n> SQ_… do script vale como MODELCTRL para aquele inimigo (a investida de abertura do matg11.lua). | feelipe | `Fatia.Boss.cs` (DeliverToEnemies), docs/gameplay/chefe-mammothmon.md |
 | 2026-11-03 | Blossomon: ENEMY/MODELCTRL <modelo> OFCTRL/ONCTRL travam e soltam só aquele modelo; com HP 0 o inimigo segue para as SQ_DFORM* (LUACALL "ded" abre as portas); a barra de chefe e_* segue o HP sem o hit_<modelo>.lua. | feelipe (chefe travado e portas fechadas) | `Fatia.Recorder.cs`, `Fatia.Enemies.cs`, `Fatia.Boss.cs`, docs/gameplay/chefe-blossomon.md |
