@@ -28,6 +28,15 @@ Primeira etapa do coop (ADR 0003): os jogadores se veem e andam juntos. Combate,
 - As outras (dungeons, chefes, tutorial): uma instância por party; sem party, uma por conta.
 - Mesma conta entrando de novo derruba a sessão antiga.
 
+## Menu do F (protocolo 2)
+
+- F perto de outro jogador (até 128 unidades, mesma instância): o cliente manda `Interact(alvo, "relation")`; o servidor pergunta
+  à DMO.API (`api/dw4/social`, em nome da conta do ticket) e devolve `InteractResult` com a relação e a party.
+- Convidar para o grupo (`party-invite`) e adicionar amigo (`friend-request`) seguem as regras do launcher. O alvo recebe
+  `SocialPrompt` e responde com `party-accept/decline` ou `friend-accept/decline`.
+- Trocar itens aparece desligado até os saves irem para o servidor.
+- Cliente e servidor precisam da mesma versão do protocolo; o servidor recusa a versão antiga com aviso para atualizar.
+
 ## Rodar
 
 Variáveis de ambiente do `dw4-servidor`:
@@ -49,5 +58,5 @@ Teste local sem launcher: servidor com `DW4_DEV=1`; o jogo pela Godot com `DW4_S
 ## Pendências
 
 - Launcher: nada a fazer para o endereço (o jogo já sabe o oficial). Os `arguments` do catálogo vão antes do `--` e a Godot não os repassa ao jogo, então o endereço não pode ir por lá.
-- DMO.API: publicar `api/dw4/ticket/redeem` (PR #4 do privateDmoSite) e ter `Dw4:ServiceKey` configurada.
+- DMO.API: `api/dw4/social` (menu do F) precisa estar publicada junto com o servidor do protocolo 2.
 - Sem colisão entre jogadores e sem combate em grupo ainda; o chat do jogo ainda é local (o do hub, PR #3, entra depois).
