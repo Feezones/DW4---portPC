@@ -207,6 +207,7 @@ public partial class Fatia
     {
         if (_db == null || _pf == null || !_padEnabled || !_playerCtrl || InCutscene || _hp <= 0) return;
         if (_runner?.Running == true && _runner.Sequence != "SQ_WAIT" && _runner.Sequence != "SQ_WALK") { Toast("Agora não dá para usar item."); return; }
+        if (UseRaiseDisk(row)) return; // Raise Disk: só no backup chip (Fatia.BackupChip.cs)
         if (_inventory.UseDisk(_db, row) is not { } heal) return;
         int hp = _hp, mp = _mp;
         _hp = Math.Min(_pf.MaxHp, _hp + heal.Hp);

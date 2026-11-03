@@ -26,6 +26,16 @@ public sealed class Inventory
     /// </summary>
     public int[] QuickItems { get; } = [-1, -1, -1, -1, -1];
 
+    /// <summary>
+    /// Backup chip (FATO, textos mswk67043–67049 e mswk202433–202436; BKCHIPBITEXP 0x80377F70): ao cair, o BIT carregado e a EXP
+    /// perdida ficam num chip onde o Digimon caiu; o Raise Disk usado nele devolve todo o BIT e parte da EXP; cair de novo sem
+    /// recuperar apaga o chip antigo. Um chip por personagem; fase vazia = sem chip.
+    /// </summary>
+    public string ChipStage { get; set; } = "";
+    public float[] ChipPos { get; set; } = [0, 0, 0];
+    public int ChipBit { get; set; }
+    public long ChipExp { get; set; }
+
     /// <summary>XDATA do jogador. FATO: o GETSHOPDATA (0x803518F8) limita a soma a 9999 (0x270F). HIPÓTESE: o mesmo teto por jogador.</summary>
     public const int XDataMax = 9999;
     int _xdata;

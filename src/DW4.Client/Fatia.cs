@@ -56,6 +56,7 @@ public partial class Fatia : Node3D
     Fighter? _pf;
     int _shinkaRow = -1, _weaponRow = -1, _level = 1, _hp;
     long _exp;
+    static bool s_debugExpSet;
     readonly int[] _skill = new int[9];
     // Técnicas (Techniques, TechniquePanel). DECISÃO DA FATIA: sem o painel do jogo, as teclas 1..6 usam a técnica n da
     // WAZALIST direto (K, botão direito ou Y usam a primeira).
@@ -317,6 +318,7 @@ public partial class Fatia : Node3D
         TickDeath(dt);
         TickEnding(dt);
         TickPrints(dt);
+        if (!IsInsideTree()) return; // a queda ou o fim trocou de fase neste quadro
         UpdateTechBar();
         TickQuestTimer(dt);
         TickWindows(dt);
@@ -558,6 +560,7 @@ public partial class Fatia : Node3D
         if (OS.IsDebugBuild() && int.TryParse(OS.GetEnvironment("DW4_NIVEL"), out int debugLevel) && debugLevel > 1)
         {
             _level = Math.Min(debugLevel, PlayerGrowth.MaxLevel);
+            if (!s_debugExpSet) { s_debugExpSet = true; _exp = Math.Max(_exp, PlayerGrowth.NextExp(_level) - 1); } // uma vez: perto do próximo nível
             Array.Fill(_skill, Math.Min(9999, debugLevel * 10));
         }
         _equip = Ram.Players[0].Equipment; // equipamento da vaga (sem vaga: a w_sword01 da fatia, no Recalc)
