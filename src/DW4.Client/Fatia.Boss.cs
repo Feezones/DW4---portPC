@@ -164,7 +164,9 @@ public partial class Fatia
     // MODELCTRL para inimigos pelo nome do modelo (f_apocaly SQ_WAIT, SETLABEL "SQ_SDMG/common", MOVETRANS da derrota…).
     bool DeliverToEnemies(BeMessage m)
     {
-        if (m.Class != "MODELCTRL" || m.Name == null) return false;
+        // FATO (matg11.lua da dng102b3): "ENEMY e_mammos 0 SQ_WALKIN" manda o chefe começar pela investida; ENEMY com nome vale como
+        // MODELCTRL para aquele inimigo.
+        if (m.Class is not ("MODELCTRL" or "ENEMY") || m.Name == null) return false;
         var targets = _enemies.Where(e => e.Kind.Model == m.Name && !e.Dead).ToList();
         if (targets.Count == 0) return false;
         foreach (var e in targets)
