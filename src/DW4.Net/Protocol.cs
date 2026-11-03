@@ -9,7 +9,7 @@ namespace DW4.Net;
 public static class Protocol
 {
     /// <summary>Muda quando o formato muda; cliente e servidor de versões diferentes não conversam.</summary>
-    public const int Version = 3; // 2 (0.6.1): arma, menu do F; 3 (0.6.2): combate em grupo (CoopGroup, CoopRelay)
+    public const int Version = 3; // 2 (0.6.1): arma, menu do F; 3 (0.6.2): combate em grupo (CoopGroup, CoopRelay), HP/MP e PartyRoster
     /// <summary>Chave de conexão da LiteNetLib (recusa quem não é o DW4 antes de qualquer pacote).</summary>
     public const string ConnectionKey = "DW4-online-1";
     public const int DefaultPort = 7031;
@@ -39,13 +39,23 @@ public enum MsgType : byte
     SocialPrompt = 16,
     CoopGroup = 17,
     CoopFrom = 18,
+    PartyRoster = 19,
 }
 
 /// <summary>Cliente → servidor, ao conectar: ticket do launcher e o personagem da vaga.</summary>
 public sealed record Hello(int Version, string Ticket, string Character, string Model, int Level);
 
 /// <summary>Estado do jogador: fase, posição, direção, animação. Também anuncia troca de fase, forma e nível.</summary>
-public sealed record PlayerState(string Stage, float X, float Y, float Z, float Facing, string Anim, string Model, int Level, string Weapon = "");
+public sealed record PlayerState(string Stage, float X, float Y, float Z, float Facing, string Anim, string Model, int Level, string Weapon = "",
+    int Hp = 0, int MaxHp = 0, int Mp = 0, int MaxMp = 0);
+
+/// <summary>Um membro da party online no DW4 (em qualquer fase): para o quadro do grupo no canto esquerdo da tela.</summary>
+public sealed record PartyEntry(int PlayerId, string Character, string Model, int Level, int Hp, int MaxHp, int Mp, int MaxMp, string Stage);
+
+/// <summary>
+/// Servidor → membros da party: quem da party está no DW4 agora, com nível, HP e MP (vem quando algo disso muda; vazio = sem party).
+/// </summary>
+public sealed record PartyRoster(PartyEntry[] Members);
 
 public sealed record Welcome(int PlayerId, string Tamer);
 public sealed record Reject(string Reason);
@@ -110,6 +120,14 @@ public static class Codec
                 break;
             case CoopRelay x: w.Write((byte)MsgType.CoopRelay); w.Write(x.Reliable); Bytes(w, x.Payload); break;
             case CoopFrom x: w.Write((byte)MsgType.CoopFrom); w.Write(x.FromId); Bytes(w, x.Payload); break;
+            case PartyRoster x:
+                w.Write((byte)MsgType.PartyRoster); w.Write((byte)Math.Min(x.Members.Length, Protocol.MaxGroup));
+                foreach (var m in x.Members.Take(Protocol.MaxGroup))
+                {
+                    w.Write(m.PlayerId); Str(w, m.Character); Str(w, m.Model); w.Write(m.Level);
+                    w.Write(m.Hp); w.Write(m.MaxHp); w.Write(m.Mp); w.Write(m.MaxMp); Str(w, m.Stage);
+                }
+                break;
             case SocialPrompt x: w.Write((byte)MsgType.SocialPrompt); Str(w, x.Kind, 16); w.Write(x.FromId); Str(w, x.FromTamer); Str(w, x.InviteId, 64); break;
             case RemoteState x: w.Write((byte)MsgType.RemoteState); w.Write(x.PlayerId); State(w, x.State); break;
             default: throw new ArgumentException("mensagem desconhecida: " + msg.GetType().Name);
@@ -139,6 +157,7 @@ public static class Codec
                 MsgType.CoopGroup => ReadGroup(r),
                 MsgType.CoopRelay => new CoopRelay(r.ReadBoolean(), Bytes(r)),
                 MsgType.CoopFrom => new CoopFrom(r.ReadInt32(), Bytes(r)),
+                MsgType.PartyRoster => ReadRoster(r),
                 MsgType.SocialPrompt => new SocialPrompt(Str(r, 16), r.ReadInt32(), Str(r), Str(r, 64)),
                 MsgType.RemoteState => new RemoteState(r.ReadInt32(), State(r)),
                 _ => throw new FormatException($"tipo {(byte)type}"),
@@ -156,6 +175,16 @@ public static class Codec
         var m = new int[n];
         for (int i = 0; i < n; i++) m[i] = r.ReadInt32();
         return new CoopGroup(host, m);
+    }
+
+    static PartyRoster ReadRoster(BinaryReader r)
+    {
+        int n = r.ReadByte();
+        if (n > Protocol.MaxGroup) throw new FormatException("party grande demais");
+        var m = new PartyEntry[n];
+        for (int i = 0; i < n; i++)
+            m[i] = new PartyEntry(r.ReadInt32(), Str(r), Str(r), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), Str(r));
+        return new PartyRoster(m);
     }
 
     static void Bytes(BinaryWriter w, byte[] b)
@@ -177,11 +206,13 @@ public static class Codec
     static void State(BinaryWriter w, PlayerState s)
     {
         Str(w, s.Stage); w.Write(s.X); w.Write(s.Y); w.Write(s.Z); w.Write(s.Facing); Str(w, s.Anim); Str(w, s.Model); w.Write(s.Level); Str(w, s.Weapon);
+        w.Write(s.Hp); w.Write(s.MaxHp); w.Write(s.Mp); w.Write(s.MaxMp);
     }
 
     static PlayerState State(BinaryReader r)
     {
-        var s = new PlayerState(Str(r), r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), Str(r), Str(r), r.ReadInt32(), Str(r));
+        var s = new PlayerState(Str(r), r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), Str(r), Str(r), r.ReadInt32(), Str(r),
+            r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32());
         if (!float.IsFinite(s.X) || !float.IsFinite(s.Y) || !float.IsFinite(s.Z) || !float.IsFinite(s.Facing)) throw new FormatException("número inválido");
         return s;
     }

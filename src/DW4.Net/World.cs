@@ -28,6 +28,8 @@ public sealed class World
     readonly Dictionary<int, Player> _players = [];
     // Grupo de combate → membros na ordem de chegada; o primeiro é o anfitrião (roda os inimigos).
     readonly Dictionary<string, List<int>> _groups = [];
+    // Último quadro da party mandado (party → texto do conteúdo), para só mandar quando muda.
+    readonly Dictionary<string, string> _rosters = [];
 
     public int Count => _players.Count;
     public bool IsOnline(int id) => _players.ContainsKey(id);
@@ -59,6 +61,7 @@ public sealed class World
         if (!_players.Remove(id, out var p)) return res;
         if (p.Instance != null) foreach (var o in In(p.Instance)) res.Add(new(o.Id, new Despawn(id), true));
         SetGroup(p, null, res);
+        Roster(p.Who.PartyId, res);
         return res;
     }
 
@@ -73,6 +76,7 @@ public sealed class World
         if (p.Instance != null)
             foreach (var o in In(p.Instance))
                 if (o.Id != id) res.Add(new(o.Id, new RemoteState(id, state), false));
+        Roster(p.Who.PartyId, res);
         return res;
     }
 
@@ -81,7 +85,12 @@ public sealed class World
     {
         var res = new List<Outgoing>();
         if (!_players.TryGetValue(id, out var p) || p.Who.PartyId == partyId) return res;
+        var old = p.Who.PartyId;
         p.Who = p.Who with { PartyId = partyId };
+        Roster(old, res);
+        Roster(partyId, res);
+        // Saiu da party: o quadro dele esvazia.
+        if (partyId is not { Length: > 0 }) res.Add(new(id, new PartyRoster([]), true));
         if (p.State != null)
         {
             Move(p, InstanceOf(p.State.Stage, p.Who), res);
@@ -124,6 +133,21 @@ public sealed class World
     {
         var msg = new CoopGroup(g[0], g.Take(Protocol.MaxGroup).ToArray());
         foreach (var m in g) res.Add(new(m, msg, true));
+    }
+
+    // Quadro da party (membros no DW4 com estado): manda para todos eles quando o conteúdo muda (entrou, saiu, HP, MP, nível, fase).
+    void Roster(string? party, List<Outgoing> res)
+    {
+        if (party is not { Length: > 0 }) return;
+        var members = _players.Values.Where(m => m.Who.PartyId == party && m.State != null).OrderBy(m => m.Id).ToList();
+        if (members.Count == 0) { _rosters.Remove(party); return; }
+        var entries = members.Take(Protocol.MaxGroup).Select(m => new PartyEntry(m.Id, m.Character, m.State!.Model, m.State.Level,
+            m.State.Hp, m.State.MaxHp, m.State.Mp, m.State.MaxMp, m.State.Stage.ToLowerInvariant())).ToArray();
+        var key = string.Join("|", entries.Select(e => e.ToString()));
+        if (_rosters.TryGetValue(party, out var last) && last == key) return;
+        _rosters[party] = key;
+        var msg = new PartyRoster(entries);
+        foreach (var m in members) res.Add(new(m.Id, msg, true));
     }
 
     public Identity? Who(int id) => _players.TryGetValue(id, out var p) ? p.Who : null;

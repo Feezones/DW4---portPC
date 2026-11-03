@@ -300,7 +300,7 @@ Test("Online: protocolo de rede (ida e volta de cada pacote, pacote quebrado rec
 Test("Online: servidor (todos na fase se veem, combate por grupo, aparecer e sumir, conta repetida)", () =>
 {
     var w = new DW4.Net.World();
-    List<DW4.Net.Outgoing> NG(List<DW4.Net.Outgoing> l) => l.Where(x => x.Message is not DW4.Net.CoopGroup).ToList(); // o grupo de combate tem teste próprio
+    List<DW4.Net.Outgoing> NG(List<DW4.Net.Outgoing> l) => l.Where(x => x.Message is not (DW4.Net.CoopGroup or DW4.Net.PartyRoster)).ToList(); // grupo de combate e quadro da party têm testes próprios
     DW4.Net.PlayerState S(string stage) => new(stage, 0, 0, 0, 0, "wait01", "p_girumon", 5);
     w.Join(1, new(10, "Alfa", null), "Gui");
     w.Join(2, new(20, "Bravo", null), "Ana");
@@ -2760,6 +2760,31 @@ Test("Online: grupo de combate (só a party na mesma fase; o primeiro a chegar r
     o = w.Leave(1);
     True(o.Any(x => x.To == 2 && x.Message is DW4.Net.CoopGroup { HostId: 2, Members.Length: 1 }), "anfitrião saiu: o próximo assume");
     Equal("dng101b1#p:p", DW4.Net.World.CombatGroup("dng101b1", new(20, "B", "p")), "chave do grupo");
+});
+
+Test("Online: quadro da party (HP e MP dos membros, só quando muda)", () =>
+{
+    var w = new DW4.Net.World();
+    DW4.Net.PlayerState S(string stage, int hp) => new(stage, 0, 0, 0, 0, "", "p_girumon", 3, "", hp, 100, 20, 40);
+    w.Join(1, new(10, "A", "p"), "Ana");
+    w.Join(2, new(20, "B", "p"), "Bia");
+    w.Join(3, new(30, "C", null), "Caio");
+    w.Update(1, S("dng101b1", 100));
+    var o = w.Update(2, S("stagml11", 90));
+    var r = o.Where(x => x.Message is DW4.Net.PartyRoster).ToList();
+    True(r.Count == 2 && r.All(x => x.Reliable), "os dois membros recebem");
+    var roster = (DW4.Net.PartyRoster)r[0].Message;
+    True(roster.Members.Length == 2 && roster.Members[1] is { Character: "Bia", Hp: 90, MaxHp: 100, Mp: 20, MaxMp: 40, Stage: "stagml11" }, "nome, HP, MP e fase");
+    True(!w.Update(2, S("stagml11", 90) with { X = 5 }).Any(x => x.Message is DW4.Net.PartyRoster), "andar não manda de novo");
+    True(w.Update(2, S("stagml11", 50)).Count(x => x.Message is DW4.Net.PartyRoster) == 2, "HP mudou: manda");
+    True(!w.Update(3, S("stagml11", 10)).Any(x => x.Message is DW4.Net.PartyRoster), "sem party: nada");
+    o = w.SetParty(2, null);
+    True(o.Any(x => x.To == 2 && x.Message is DW4.Net.PartyRoster { Members.Length: 0 }), "saiu da party: quadro vazio");
+    True(o.Any(x => x.To == 1 && x.Message is DW4.Net.PartyRoster { Members.Length: 1 }), "quem ficou vê só a si");
+    var back = (DW4.Net.PartyRoster)DW4.Net.Codec.Read(DW4.Net.Codec.Write(roster));
+    True(back.Members.SequenceEqual(roster.Members), "ida e volta do pacote");
+    var st = (DW4.Net.PlayerState)DW4.Net.Codec.Read(DW4.Net.Codec.Write(S("x", 7)));
+    True(st is { Hp: 7, MaxHp: 100, Mp: 20, MaxMp: 40 }, "estado leva HP e MP");
 });
 
 Test("Online: pacotes do combate em grupo (ida e volta, limites)", () =>

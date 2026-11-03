@@ -45,13 +45,14 @@ public partial class Fatia
     {
         var p = _player.GlobalPosition;
         return new PlayerState(_stageName, MathF.Round(p.X, 2), MathF.Round(p.Y, 2), MathF.Round(p.Z, 2), MathF.Round(_move.Facing, 3),
-            _anim?.CurrentAnimation ?? "", PlayerModel, _level, WeaponModel ?? "");
+            _anim?.CurrentAnimation ?? "", PlayerModel, _level, WeaponModel ?? "", Math.Max(0, _hp), _pf?.MaxHp ?? 0, Math.Max(0, _mp), _pf?.MaxMp ?? 0);
     }
 
     void TickOnline(float dt)
     {
         Online.Poll(MyState());
         TickCoop(dt);
+        TickPartyHud();
         foreach (var id in _avatars.Keys.ToList())
             if (!Online.Remotes.TryGetValue(id, out var r) || !r.State.Stage.Equals(_stageName, StringComparison.OrdinalIgnoreCase))
             {

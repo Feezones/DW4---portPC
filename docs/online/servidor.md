@@ -52,6 +52,12 @@ por segundo por jogador). O conteúdo (`src/DW4.Net/Coop.cs`) é entre os jogos:
 
 Limites da v1: chefe com `hit_f_*.lua` roda o script em quem bate, e o anfitrião só recebe o dano. O BIT ainda não é dividido.
 
+## Quadro da party
+
+O estado do jogador leva HP e MP. O servidor manda `PartyRoster` (os membros da party que estão no DW4, em qualquer fase,
+com nível, HP, MP e fase) a todos eles quando algo disso muda. O jogo mostra os outros membros no lado esquerdo da tela
+(`Fatia.PartyHud.cs`): quem está em outra fase aparece apagado, com o nome dela.
+
 ## Rodar
 
 Variáveis de ambiente do `dw4-servidor`:

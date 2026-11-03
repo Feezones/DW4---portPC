@@ -49,6 +49,8 @@ public static class Online
     public static event Action<SocialPrompt>? Prompt;
     /// <summary>Grupo de combate atual (a party na mesma fase; anfitrião primeiro), ou null fora do online.</summary>
     public static CoopGroup? Group { get; private set; }
+    /// <summary>Membros da party que estão no DW4 (você incluído), com nível, HP e MP; vazio sem party.</summary>
+    public static PartyEntry[] Party { get; private set; } = [];
     /// <summary>Pacote do combate em grupo (<see cref="CoopCodec"/>) de outro membro: (quem mandou, mensagem).</summary>
     public static event Action<int, object>? Coop;
 
@@ -109,7 +111,7 @@ public static class Online
         s_claiming = false;
         s_net?.Stop();
         (s_net, s_server) = (null, null);
-        Remotes.Clear(); Group = null;
+        Remotes.Clear(); Group = null; Party = [];
         if (State != Status.Failed) State = Status.Off;
         if (s_wanted is { } w && State == Status.Off) { s_wanted = null; Open(w.Character, w.Model, w.Level); }
         s_wanted = null;
@@ -120,7 +122,7 @@ public static class Online
         if (Ticket is not { } ticket || ServerAddress is not { } address) { State = Status.Off; return; }
         s_net?.Stop(); // tentativa anterior que falhou
         (s_net, s_server) = (null, null);
-        Remotes.Clear(); Group = null;
+        Remotes.Clear(); Group = null; Party = [];
         var (host, port) = Split(address);
         s_hello = new Hello(Protocol.Version, ticket, character, model, level);
         var l = new EventBasedNetListener();
@@ -184,6 +186,9 @@ public static class Online
             case CoopGroup g:
                 Group = g;
                 break;
+            case PartyRoster pr:
+                Party = pr.Members;
+                break;
             case CoopFrom cf:
                 try { Coop?.Invoke(cf.FromId, CoopCodec.Read(cf.Payload)); }
                 catch (FormatException ex) { GD.PushWarning("[online] pacote do grupo inválido: " + ex.Message); }
@@ -199,7 +204,7 @@ public static class Online
     {
         State = Status.Failed;
         Error = why;
-        Remotes.Clear(); Group = null;
+        Remotes.Clear(); Group = null; Party = [];
         GD.PushWarning("[online] " + why);
         Notice?.Invoke(why + " Jogando sem os outros jogadores.");
         s_server = null;
@@ -231,7 +236,7 @@ public static class Online
         s_net?.Stop();
         s_net = null;
         s_server = null;
-        Remotes.Clear(); Group = null;
+        Remotes.Clear(); Group = null; Party = [];
         if (State != Status.Failed) State = Status.Off;
     }
 }
