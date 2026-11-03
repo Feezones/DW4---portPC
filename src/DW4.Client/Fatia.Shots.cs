@@ -252,11 +252,12 @@ public partial class Fatia
                 s.Hit = true;
                 _hits++;
                 _lastEnemy = e;
-                if (UsesHitScript(e)) StrikeWithScript(e, h.Type);
+                int hpBefore = e.Hp;
+                if (UsesHitScript(e)) { StrikeWithScript(e, h.Type); ProxyStruck(e, hpBefore, ""); }
                 else
                 {
                     string reaction = PlayerStrikes(e, h.Type);
-                    if (e.Brain != null && e.Runner != null) { e.Brain.Force(reaction); e.Started = false; }
+                    if (!ProxyStruck(e, hpBefore, reaction) && e.Brain != null && e.Runner != null) { e.Brain.Force(reaction); e.Started = false; }
                 }
                 s.Seq.Start("SQ_ERAS");
                 return;

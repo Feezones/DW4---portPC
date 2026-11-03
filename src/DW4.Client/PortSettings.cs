@@ -83,7 +83,7 @@ public static class PortSettings
     static bool s_translationTried;
 
     /// <summary>
-    /// Idioma dos textos do jogo. A tradução vem de &lt;fatia&gt;\idioma\pt-br.json (DW4_FATIA, padrão D:\dw4-work\fatia), fora do
+    /// Idioma dos textos do jogo. A tradução vem de &lt;fatia&gt;\idioma\pt-br.json (DataPaths.Fatia), fora do
     /// repositório como os textos originais; sem o arquivo, o português mostra o inglês.
     /// </summary>
     public static void ApplyLanguage(PortConfig c)
@@ -91,7 +91,7 @@ public static class PortSettings
         GameText.Language = (GameLanguage)c.Language;
         if (GameText.Language == GameLanguage.English || s_translationTried) return;
         s_translationTried = true;
-        string fatia = OS.GetEnvironment("DW4_FATIA") is { Length: > 0 } d ? d : @"D:\dw4-work\fatia";
+        string fatia = DataPaths.Fatia;
         var file = Path.Combine(fatia, "idioma", "pt-br.json");
         try
         {

@@ -238,6 +238,7 @@ public partial class Fatia : Node3D
             _damageNumbers = new DamageNumbers(hud, this);
         }
         SetupChat();
+        SetupOnline();
         SetupPrints();
         SetupTechBar();
         SetupQuickItems();
@@ -280,6 +281,7 @@ public partial class Fatia : Node3D
         if (TechBarInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (MenuInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (QuickItemInput(e)) { GetViewport().SetInputAsHandled(); return; }
+        if (InteractInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (e is InputEventKey { Pressed: true, Echo: false } k)
         {
             if (k.Keycode == Key.F1 && _cameraSets.Length > 1) _cameraSet = (_cameraSet + 1) % _cameraSets.Length;
@@ -460,6 +462,7 @@ public partial class Fatia : Node3D
         if (!_generatorsFrozen) TickGenerators();
         if (!_enemiesFrozen) { UpdateEnemies(dt); TickShots(dt); }
         _minimap?.Update(dt, _player.GlobalPosition, GetViewport().GetVisibleRect().Size);
+        TickOnline(dt);
         UpdateFloaters(dt);
         _damageNumbers?.Update(dt);
         TickPlayerStatus(dt);
@@ -652,7 +655,7 @@ public partial class Fatia : Node3D
     void TechniqueStrikes(Enemy e, Technique t)
     {
         if (_pf == null || e.Kind.Stats is not { } ef) return;
-        int code = 40000 + t.Row;
+        int code = 40000 + t.Row, hpBefore = e.Hp;
         bool crit = DamageFormula.TechniqueCritical(t.Stats, ef, _mt);
         var r = DamageFormula.Technique(Pf!, ef, t.Stats, crit, _mt);
         RaiseSkill(t.Stats.SkillIndex, technique: true);
@@ -661,10 +664,12 @@ public partial class Fatia : Node3D
         _lastEnemy = e;
         Damage(e.Body, r.Damage, onPlayer: false, crit ? $"{r.Damage}!" : r.Damage.ToString(), crit ? Colors.Orange : Colors.Gold);
         _lastEvent = $"{t.Name}: {r.Damage}{(crit ? " crítico" : "")} (código {code})";
-        if (e.Hp <= 0 && !e.Killed) { e.Killed = true; GainExp(e); DropItem(e); }
+        if (e.Hp <= 0) EnemyDefeated(e, Online.MyId);
+        string reaction = DamageSequences[DamageFormula.Rank(r.Damage, e.Hp, ef.MaxHp)];
+        if (ProxyStruck(e, hpBefore, reaction)) return;
         if (e.Brain != null && e.Runner != null)
         {
-            e.Brain.Force(DamageSequences[DamageFormula.Rank(r.Damage, e.Hp, ef.MaxHp)]);
+            e.Brain.Force(reaction);
             e.Started = false;
         }
     }
@@ -687,7 +692,7 @@ public partial class Fatia : Node3D
         int rank = DamageFormula.Rank(r.Damage, e.Hp, ef.MaxHp);
         Damage(e.Body, r.Damage, onPlayer: false, crit ? $"{r.Damage}!" : r.Damage.ToString(), crit ? Colors.Orange : Colors.White);
         _lastEvent = $"Guilmon: {r.Damage}{(crit ? " crítico" : "")}{(r.Strong ? " forte" : "")} (código {code})";
-        if (e.Hp <= 0 && !e.Killed) { e.Killed = true; GainExp(e); DropItem(e); }
+        if (e.Hp <= 0) EnemyDefeated(e, Online.MyId);
         return DamageSequences[rank];
     }
 
@@ -799,11 +804,13 @@ public partial class Fatia : Node3D
         _lastEvent = $"equipou {name}";
     }
 
-    void GainExp(Enemy e)
+    void GainExp(Enemy e, bool killer = true)
     {
         // FATO (P2EEXPUP 0x80373B48): EXP do inimigo × (EXPRITSU + 100)/100, com o EXPRITSU do jogador (equipamento e chips);
-        // antes ia 0 e o bônus de EXP dos itens não valia.
-        AddExp(DamageFormula.ExpShare(_db!["enemy"].Int(e.Kind.Row, "EXP"), _pf?.Expritsu ?? 0, players: 1, killer: true));
+        // antes ia 0 e o bônus de EXP dos itens não valia. No grupo (NINZU = membros na fase), quem matou leva a parte maior e
+        // quem está caído não leva (PartyRewards).
+        if (CoopOn && _hp <= 0) return;
+        AddExp(DamageFormula.ExpShare(_db!["enemy"].Int(e.Kind.Row, "EXP"), _pf?.Expritsu ?? 0, players: Math.Clamp(Ram.Ninzu, 1, 4), killer));
     }
 
     void AddExp(int gain)

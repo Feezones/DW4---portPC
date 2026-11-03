@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Godot;
 using DW4.Gameplay;
+using DW4.Script.Be;
 
 namespace DW4.Client;
 
@@ -91,6 +92,15 @@ public partial class Fatia
     void TickQuickItems()
     {
         if (_quickLayer == null || _quickHud == null) return;
+        // DEPURAÇÃO (só no build Debug, não é do jogo): DW4_USAR_ITEM=<linha da conItem> ganha 1 desse disco e o usa 5 s depois
+        // de abrir a fase (conferir o Gate Disk sem ninguém no controle).
+        if (OS.IsDebugBuild() && _tick == 300 && int.TryParse(OS.GetEnvironment("DW4_USAR_ITEM"), out int debugItem))
+        {
+            _inventory.Add(new ItemRef("conItem", debugItem));
+            GD.Print($"[item] usando {DiskName(debugItem)} (tem {_inventory.Disks(debugItem)})");
+            UseDisk(debugItem);
+            GD.Print($"[item] depois: {_inventory.Disks(debugItem)}");
+        }
         var size = GetViewport().GetVisibleRect().Size;
         float s = size.Y / 720f;
         _quickHud.Scale = new Vector2(s, s);
@@ -202,11 +212,19 @@ public partial class Fatia
         UseDisk(row);
     }
 
+    // FATO (conItem): linha 6 キュアディスク (tira o veneno), 7 レイズディスク (revive as BackUP chips), 8 ゲートディスク (leva
+    // todos à Main Lobby), 10 ブースタパック e 11 キーチェーン (não são de usar: troca no balcão das cartas e colecionável).
+    const int CureDiskRow = 6, RaiseDiskRow = 7, GateDiskRow = 8, BoosterPackRow = 10, KeyChainRow = 11;
+
     // Usa o disco: SQ_ITEM do jogador, o efeito de cura e o HP/MP da conItem (soma com limite no máximo).
     void UseDisk(int row)
     {
         if (_db == null || _pf == null || !_padEnabled || !_playerCtrl || InCutscene || _hp <= 0) return;
         if (_runner?.Running == true && _runner.Sequence != "SQ_WAIT" && _runner.Sequence != "SQ_WALK") { Toast("Agora não dá para usar item."); return; }
+        if (row == GateDiskRow) { UseGateDisk(row); return; }
+        // Sem efeito no port ainda: não gasta (antes sumia sem fazer nada).
+        if (row is BoosterPackRow or KeyChainRow) { Toast($"{DiskName(row)} não é de usar."); return; }
+        if (row is CureDiskRow or RaiseDiskRow) { Toast($"{DiskName(row)} ainda não funciona no port; o disco não foi gasto."); return; }
         if (_inventory.UseDisk(_db, row) is not { } heal) return;
         int hp = _hp, mp = _mp;
         _hp = Math.Min(_pf.MaxHp, _hp + heal.Hp);
@@ -217,5 +235,32 @@ public partial class Fatia
         if (_mp > mp) Float(_player, $"MP +{_mp - mp}", Colors.LightBlue);
         _lastEvent = $"usou {DiskName(row)}";
         ScriptLog($"usou {DiskName(row)} (HP {hp}→{_hp}, MP {mp}→{_mp})");
+    }
+
+    // Gate Disk: FATO, toda fase tem a gatedisc.lua, que é o uso do disco: tira os jogadores do controle, guarda o portão de volta
+    // (SYSsetGateStage), toca SQ_EXIT, escurece (i_fadewn01 SQ_STCHANGE01) e manda PLAYERPOINT SETGENERATEPOS I<3> e STAGECTL
+    // NEXTSTAGE "stagML11" (Emergency Gate do lobby). HIPÓTESE: o script não faz nada com a fila de demo ocupada (abre com
+    // DMgetCount), então o disco só é gasto com a fila livre.
+    // FATO: "NDMWPANEL NOGATEDISK I<1>" no first.lua do tutorial (stag0001), das salas de chefe (stagbs*) e das quests (dngq*)
+    // trava o Gate Disk, e I<0> destrava (stagML11, matz00/stchg01 da stag0001 ao fim do tutorial). HIPÓTESE: vale até a troca de
+    // fase (as dungeons comuns não mandam nada e o disco funciona nelas).
+    bool _noGateDisk;
+
+    bool DeliverToQuickItems(BeMessage m)
+    {
+        if (m.Class != "NDMWPANEL" || m.Command != "NOGATEDISK") return false;
+        _noGateDisk = m.Args.Count > 0 && m.Args[0] is { Kind: 'I', Numbers.Length: > 0 } a && a.Numbers[0] != 0;
+        return true;
+    }
+
+    void UseGateDisk(int row)
+    {
+        if (_stage == null || !_stage.Has("gatedisc.lua") || _noGateDisk) { Toast($"{DiskName(row)} não funciona aqui."); return; }
+        if (_leaving || _stage.Host.Demo.Count != 0) { Toast("Agora não dá para usar item."); return; }
+        if (_inventory.UseDisk(_db!, row) == null) return;
+        OpenQuickWindow(false);
+        _lastEvent = $"usou {DiskName(row)}";
+        ScriptLog($"usou {DiskName(row)}: gatedisc.lua");
+        if (!_stage.Run("gatedisc.lua")) ScriptLog("gatedisc.lua não rodou");
     }
 }

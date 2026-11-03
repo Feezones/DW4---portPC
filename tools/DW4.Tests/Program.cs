@@ -279,6 +279,49 @@ Test("Online: troca de itens (travar, confirmar, tudo ou nada, mudança destrava
     True(!t2.Confirm("Ana", a, b).Ok && t2.State == DW4.Gameplay.Online.TradeState.Cancelled && !a.Has(sword), "item sumiu antes: nada muda");
 });
 
+Test("Online: protocolo de rede (ida e volta de cada pacote, pacote quebrado recusado)", () =>
+{
+    var st = new DW4.Net.PlayerState("stagml11", 1.5f, 10, -43, 0.7f, "wait01", "p_girumon", 12, "w_sword01");
+    object[] all = [new DW4.Net.Hello(DW4.Net.Protocol.Version, "RDT1abc", "Gui", "p_girumon", 12), st, new DW4.Net.Welcome(3, "Tamer"),
+        new DW4.Net.Reject("não"), new DW4.Net.Spawn(4, "Ana", "TamerAna", st), new DW4.Net.Despawn(4), new DW4.Net.RemoteState(4, st),
+        new DW4.Net.Interact(4, "party-accept", "inv-9"),
+        new DW4.Net.InteractResult(4, "relation", true, "", "friend", true, true, false, 3, false),
+        new DW4.Net.SocialPrompt("party", 4, "TamerAna", "inv-9")];
+    foreach (var m in all) Equal(m, DW4.Net.Codec.Read(DW4.Net.Codec.Write(m)), m.GetType().Name);
+    var bytes = DW4.Net.Codec.Write(st);
+    bool threw = false;
+    try { DW4.Net.Codec.Read(bytes[..^2]); } catch (FormatException) { threw = true; }
+    True(threw, "pacote curto");
+    threw = false;
+    try { DW4.Net.Codec.Read([99]); } catch (FormatException) { threw = true; }
+    True(threw, "tipo desconhecido");
+});
+
+Test("Online: servidor (todos na fase se veem, combate por grupo, aparecer e sumir, conta repetida)", () =>
+{
+    var w = new DW4.Net.World();
+    List<DW4.Net.Outgoing> NG(List<DW4.Net.Outgoing> l) => l.Where(x => x.Message is not (DW4.Net.CoopGroup or DW4.Net.PartyRoster)).ToList(); // grupo de combate e quadro da party têm testes próprios
+    DW4.Net.PlayerState S(string stage) => new(stage, 0, 0, 0, 0, "wait01", "p_girumon", 5);
+    w.Join(1, new(10, "Alfa", null), "Gui");
+    w.Join(2, new(20, "Bravo", null), "Ana");
+    True(NG(w.Update(1, S("stagml11"))).Count == 0, "sozinho na cidade");
+    var o = NG(w.Update(2, S("stagml11")));
+    True(o.Any(x => x.To == 1 && x.Message is DW4.Net.Spawn { PlayerId: 2 }) && o.Any(x => x.To == 2 && x.Message is DW4.Net.Spawn { PlayerId: 1 }), "cidade: os dois se veem");
+    o = NG(w.Update(2, S("stagml11")));
+    True(o.Count == 1 && o[0] is { To: 1, Reliable: false, Message: DW4.Net.RemoteState }, "estado repassado sem garantia");
+    o = NG(w.Update(1, S("dng101b1")));
+    True(o.Any(x => x.To == 2 && x.Message is DW4.Net.Despawn { PlayerId: 1 }), "foi para a dungeon: some da cidade");
+    o = NG(w.Update(2, S("dng101b1")));
+    True(o.Any(x => x.To == 1 && x.Message is DW4.Net.Spawn { PlayerId: 2 }), "dungeon sem grupo: os dois se veem (pedido do responsável)");
+    True(NG(w.SetParty(1, "p1")).Count == 0 && NG(w.SetParty(2, "p1")).Count == 0, "entrar no grupo não muda quem se vê");
+    Equal("dng101b1", DW4.Net.World.InstanceOf("DNG101B1", new(1, "x", "p1")), "visão: a fase");
+    Equal("dng101b1#p:p1", DW4.Net.World.CombatGroup("DNG101B1", new(1, "x", "p1")), "combate: o grupo");
+    Equal("dng101b1#a:7", DW4.Net.World.CombatGroup("DNG101B1", new(7, "x", null)), "combate sem grupo: a conta");
+    o = NG(w.Leave(2));
+    True(o.Count == 1 && o[0].Message is DW4.Net.Despawn { PlayerId: 2 }, "saiu: some para o outro");
+    Equal<int?>(1, w.Join(5, new(10, "Alfa", null), "Gui"), "mesma conta de novo: derruba a antiga");
+});
+
 Test("Port: personagem novo com as armas iniciais (INI_WEAPON1..3), a primeira equipada, e o equipamento no save", () =>
 {
     var s = DW4.Script.Save.CharacterSave.New("Gui", 2, "p_girumon", 0, "stagml11", 3, [268, 275, 274]);
@@ -2663,6 +2706,105 @@ if (args.Length == 1)
     });
 }
 else Console.WriteLine("(sem pasta do jogo: só testes sintéticos; passe a pasta files\\ da cópia de trabalho para conferir os dados)");
+
+Test("Online: menu do F pelo que o servidor conta (InteractView)", () =>
+{
+    IReadOnlyList<DW4.Gameplay.Online.InteractOption> O(DW4.Gameplay.Online.InteractView v) => DW4.Gameplay.Online.PlayerInteraction.Options(v);
+    DW4.Gameplay.Online.InteractView V(bool party = false, bool inMine = false, bool leader = false, int occ = 0, bool friend = true,
+        bool sent = false, bool other = false) => new(party, inMine, leader, occ, friend, sent, other, false);
+    True(O(V())[0].Enabled, "amigo sem grupo: convidar liga");
+    Equal("Só amigos entram no grupo. Adicione como amigo primeiro.", O(V(friend: false))[0].Reason, "não amigo");
+    True(O(V(friend: false))[1].Enabled, "não amigo: adicionar liga");
+    Equal("Só o líder convida.", O(V(party: true))[0].Reason, "não líder");
+    Equal("Grupo cheio (4).", O(V(party: true, leader: true, occ: 4))[0].Reason, "cheio");
+    Equal("Já está no seu grupo.", O(V(party: true, inMine: true, leader: true, occ: 2))[0].Reason, "mesmo grupo");
+    Equal("Já está em outro grupo.", O(V(other: true))[0].Reason, "outro grupo");
+    Equal("Pedido já enviado.", O(V(friend: false, sent: true))[1].Reason, "pedido enviado");
+});
+
+Test("Online: servidor só deixa o F entre quem está na mesma instância", () =>
+{
+    var w = new DW4.Net.World();
+    w.Join(1, new DW4.Net.Identity(10, "A", null), "a");
+    w.Join(2, new DW4.Net.Identity(20, "B", null), "b");
+    DW4.Net.PlayerState S(string stage) => new(stage, 0, 0, 0, 0, "", "p_girumon", 1);
+    True(!w.SameInstance(1, 2), "sem estado ainda");
+    w.Update(1, S("stagml11")); w.Update(2, S("stagml11"));
+    True(w.SameInstance(1, 2), "cidade");
+    w.Update(2, S("dng101b1"));
+    True(!w.SameInstance(1, 2), "um na dungeon");
+    w.Update(1, S("dng101b1"));
+    True(w.SameInstance(1, 2), "os dois na mesma dungeon: F vale (mesmo sem grupo)");
+});
+
+Test("Online: grupo de combate (só a party na mesma fase; o primeiro a chegar roda os inimigos)", () =>
+{
+    var w = new DW4.Net.World();
+    DW4.Net.PlayerState S(string stage) => new(stage, 0, 0, 0, 0, "", "p_girumon", 1);
+    w.Join(1, new(10, "A", null), "a");
+    w.Join(2, new(20, "B", null), "b");
+    w.Join(3, new(30, "C", null), "c");
+    var o = w.Update(1, S("dng101b1"));
+    True(o.Any(x => x.To == 1 && x.Message is DW4.Net.CoopGroup { HostId: 1, Members.Length: 1 }), "sozinho: anfitrião de si mesmo");
+    w.Update(2, S("dng101b1"));
+    Equal(1, w.GroupOf(2).Count, "sem party: cada um no seu grupo (mesmo se vendo)");
+    True(w.Relay(1, [1, 2], true).Count == 0, "sem party: nada é repassado");
+    w.SetParty(1, "p"); o = w.SetParty(2, "p");
+    True(o.Any(x => x.To == 1 && x.Message is DW4.Net.CoopGroup { HostId: 1, Members.Length: 2 }), "party na mesma fase: grupo de 2, anfitrião o primeiro");
+    var r = w.Relay(2, [9], false);
+    True(r.Count == 1 && r[0] is { To: 1, Reliable: false, Message: DW4.Net.CoopFrom { FromId: 2 } }, "repassa para o outro membro");
+    w.SetParty(3, "p");
+    Equal(0, w.GroupOf(3).Count, "da party mas ainda sem fase: fora do grupo");
+    w.Update(3, S("stagml11"));
+    Equal(2, w.GroupOf(1).Count, "da party em outra fase: grupo separado");
+    o = w.Leave(1);
+    True(o.Any(x => x.To == 2 && x.Message is DW4.Net.CoopGroup { HostId: 2, Members.Length: 1 }), "anfitrião saiu: o próximo assume");
+    Equal("dng101b1#p:p", DW4.Net.World.CombatGroup("dng101b1", new(20, "B", "p")), "chave do grupo");
+});
+
+Test("Online: quadro da party (HP e MP dos membros, só quando muda)", () =>
+{
+    var w = new DW4.Net.World();
+    DW4.Net.PlayerState S(string stage, int hp) => new(stage, 0, 0, 0, 0, "", "p_girumon", 3, "", hp, 100, 20, 40);
+    w.Join(1, new(10, "A", "p"), "Ana");
+    w.Join(2, new(20, "B", "p"), "Bia");
+    w.Join(3, new(30, "C", null), "Caio");
+    w.Update(1, S("dng101b1", 100));
+    var o = w.Update(2, S("stagml11", 90));
+    var r = o.Where(x => x.Message is DW4.Net.PartyRoster).ToList();
+    True(r.Count == 2 && r.All(x => x.Reliable), "os dois membros recebem");
+    var roster = (DW4.Net.PartyRoster)r[0].Message;
+    True(roster.Members.Length == 2 && roster.Members[1] is { Character: "Bia", Hp: 90, MaxHp: 100, Mp: 20, MaxMp: 40, Stage: "stagml11" }, "nome, HP, MP e fase");
+    True(!w.Update(2, S("stagml11", 90) with { X = 5 }).Any(x => x.Message is DW4.Net.PartyRoster), "andar não manda de novo");
+    True(w.Update(2, S("stagml11", 50)).Count(x => x.Message is DW4.Net.PartyRoster) == 2, "HP mudou: manda");
+    True(!w.Update(3, S("stagml11", 10)).Any(x => x.Message is DW4.Net.PartyRoster), "sem party: nada");
+    o = w.SetParty(2, null);
+    True(o.Any(x => x.To == 2 && x.Message is DW4.Net.PartyRoster { Members.Length: 0 }), "saiu da party: quadro vazio");
+    True(o.Any(x => x.To == 1 && x.Message is DW4.Net.PartyRoster { Members.Length: 1 }), "quem ficou vê só a si");
+    var back = (DW4.Net.PartyRoster)DW4.Net.Codec.Read(DW4.Net.Codec.Write(roster));
+    True(back.Members.SequenceEqual(roster.Members), "ida e volta do pacote");
+    var st = (DW4.Net.PlayerState)DW4.Net.Codec.Read(DW4.Net.Codec.Write(S("x", 7)));
+    True(st is { Hp: 7, MaxHp: 100, Mp: 20, MaxMp: 40 }, "estado leva HP e MP");
+});
+
+Test("Online: pacotes do combate em grupo (ida e volta, limites)", () =>
+{
+    object[] all = [new DW4.Net.EnemySpawn(7, 12, 1, 2, 3, 0.5f, 340, "GENE-03"), new DW4.Net.EnemySeq(7, "SQ_ATCK1", "common"),
+        new DW4.Net.EnemyHit(7, 55, "SQ_SDMG"), new DW4.Net.EnemyKilled(7, 2, false), new DW4.Net.EnemyRemoved(7), new DW4.Net.Wipeout("GENE-03")];
+    foreach (var m in all) Equal(m, DW4.Net.CoopCodec.Read(DW4.Net.CoopCodec.Write(m)), m.GetType().Name);
+    var poses = Enumerable.Range(0, 45).Select(i => new DW4.Net.EnemyPose(i, i, 0, 0, 0, 100)).ToArray();
+    var sync = (DW4.Net.EnemySync)DW4.Net.CoopCodec.Read(DW4.Net.CoopCodec.Write(new DW4.Net.EnemySync(poses)));
+    Equal(DW4.Net.CoopCodec.MaxPoses, sync.Poses.Length, "sincronia cortada no máximo");
+    True(DW4.Net.CoopCodec.Write(new DW4.Net.EnemySync(poses)).Length <= DW4.Net.Protocol.MaxPayload, "cabe num pacote");
+    var g = new DW4.Net.CoopGroup(3, [3, 4]);
+    var back = (DW4.Net.CoopGroup)DW4.Net.Codec.Read(DW4.Net.Codec.Write(g));
+    True(back.HostId == 3 && back.Members.SequenceEqual(new[] { 3, 4 }), "CoopGroup");
+    var rel = (DW4.Net.CoopRelay)DW4.Net.Codec.Read(DW4.Net.Codec.Write(new DW4.Net.CoopRelay(true, [1, 2, 3])));
+    True(rel.Reliable && rel.Payload.SequenceEqual(new byte[] { 1, 2, 3 }), "CoopRelay");
+    bool threw = false;
+    try { DW4.Net.CoopCodec.Read([2, 200]); } catch (FormatException) { threw = true; }
+    True(threw, "sincronia com contagem falsa");
+});
 
 Console.WriteLine($"{passed} ok, {failed} falharam");
 return failed == 0 ? 0 : 1;

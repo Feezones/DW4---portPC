@@ -31,3 +31,8 @@ SOFTWARE.
 ## Lua 4.0
 
 O leitor de chunks (`tools/DW4.Formats/Lua/Lua40Chunk.cs`) foi escrito a partir de `lundump.c`, `lopcodes.h` e `llimits.h` da tag v4.0 de https://github.com/lua/lua. A licença é MIT, Copyright © 1994-2000 Tecgraf, PUC-Rio.
+
+## LiteNetLib (Ruslan Pyrch)
+
+Pacote NuGet `LiteNetLib` 2.1.5 (https://github.com/RevenantX/LiteNetLib), usado pelo cliente (`src/DW4.Client`) e pelo servidor
+(`src/DW4.Server`) do online. Licença MIT (https://licenses.nuget.org/MIT), Copyright Ruslan Pyrch.

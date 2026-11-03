@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Servidor do online do DW4 (ADR 0003): processo sem janela na mesma VPS da DMO.API. -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AssemblyName>dw4-servidor</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- LiteNetLib (MIT, github.com/RevenantX/LiteNetLib): aprovada pelo responsável em 2026-11-02 (ADR 0003). -->
+    <PackageReference Include="LiteNetLib" Version="2.1.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DW4.Net\DW4.Net.csproj" />
+  </ItemGroup>
+
+</Project>

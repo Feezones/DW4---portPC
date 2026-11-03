@@ -26,7 +26,7 @@ public partial class MainMenu : Control
     // textos da stagIS13; "Hard" não está nos textos exportados.
     static readonly string[] Difficulties = ["Normal", "Hard", "Very Hard"];
     // O cliente desenha e controla as formas cuja pasta foi exportada (<fatia>/formas/<modelo>, ver Fatia.Evolve.cs).
-    static readonly string Common = OS.GetEnvironment("DW4_FATIA") is { Length: > 0 } d ? d : @"D:\dw4-work\fatia";
+    static readonly string Common = DataPaths.Fatia;
     static bool Playable(string model) => Fatia.HasPlayerModel(Common, model);
     const int NameMax = 12; // DECISÃO DO PORT: o limite do jogo não foi lido
 
@@ -43,7 +43,11 @@ public partial class MainMenu : Control
 
     public override void _Ready()
     {
+        DataPaths.MigrateOldUserData();
         PortSettings.Apply(GetTree().Root);
+        Online.Claim(); // gasta o ticket do launcher antes que ele vença (2 min)
+        // Pacote do launcher: a versão publicada vai para o log (para os relatos de teste); a janela fica só "Digimon World 4".
+        if (DataPaths.Version is { Length: > 0 } version) GD.Print($"[versao] {version}; dados em {DataPaths.Fatia}");
         if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_VER_MODELO").Length > 0)
         {
             CallDeferred(Node.MethodName.AddSibling, new ModelViewer());
@@ -58,7 +62,7 @@ public partial class MainMenu : Control
         }
         _shinka = LoadShinka();
         SetAnchorsPreset(LayoutPreset.FullRect);
-        var stages = OS.GetEnvironment("DW4_FASES") is { Length: > 0 } s ? s : @"D:\dw4-work\fases";
+        var stages = DataPaths.Fases;
         var problems = new List<string>();
         _stages = stages;
         _art = TitleArt.Create(this, stages, -1, problems);
@@ -129,6 +133,7 @@ public partial class MainMenu : Control
 
     public override void _Process(double delta)
     {
+        Online.Poll(null);
         FitScreen();
         if (_art == null) return;
         _art.Tick((float)delta);
@@ -172,7 +177,7 @@ public partial class MainMenu : Control
     // Nomes das formas (NAME e MODEL_NAME da shinka), lidos da pasta de trabalho: nada do jogo fica no repositório.
     static List<(string, string, int[])> LoadShinka()
     {
-        var stages = OS.GetEnvironment("DW4_FASES") is { Length: > 0 } s ? s : @"D:\dw4-work\fases";
+        var stages = DataPaths.Fases;
         var csv = Path.Combine(stages, Session.NewGameStage, "db", "db_shinka.csv");
         if (!File.Exists(csv)) return [];
         var lines = File.ReadAllLines(csv);
@@ -279,7 +284,12 @@ public partial class MainMenu : Control
         catch (Exception e) when (e is KeyNotFoundException or IndexOutOfRangeException or ArgumentException or InvalidOperationException) { return (0, 0); }
     }
 
-    void ShowSlots() => ShowSlotsUi();
+    void ShowSlots()
+    {
+        // As vagas são da conta do launcher: sem ela (exe aberto direto), nenhuma vaga aparece.
+        if (Session.Account == null) { Message("Abra o Digimon World 4 pelo launcher RE:DIGITAL, com a sua conta conectada, para ver e criar os seus Digimon.", ShowTitle); return; }
+        ShowSlotsUi();
+    }
 
     void Play(int slot, CharacterSave c)
     {
@@ -312,7 +322,7 @@ public partial class MainMenu : Control
         Title($"Apagar {c.Name} ({FormName(c.CurrentForm)} nv {c.Level})?", 26);
         Title("Isso não pode ser desfeito.", 18);
         var no = Btn(_root, "Não, manter", ShowSlots);
-        Btn(_root, "Sim, apagar", () => { Session.Store.Delete(Session.Account, slot); ShowSlots(); });
+        Btn(_root, "Sim, apagar", () => { Session.Store.Delete(Session.Account!, slot); ShowSlots(); });
         no.CallDeferred(Control.MethodName.GrabFocus);
     }
 

@@ -10,7 +10,7 @@ namespace DW4.Client;
 /// Fase carregada pelo nome (Fase 5). Pastas fora do repositório:
 ///   &lt;fases&gt;\&lt;fase&gt;   gerada por dw4 fase-exportar &lt;ndmw.afs&gt; &lt;area.afs&gt; &lt;fase&gt; &lt;fases&gt; (com fase.json);
 ///   &lt;comum&gt;          o que não é da fase: Guilmon, arma, skillup.json (a pasta da fatia antiga).
-/// DW4_FASE escolhe a fase (padrão dng101b1), DW4_FASES a pasta das fases (padrão D:\dw4-work\fases) e DW4_FATIA a comum.
+/// DW4_FASE escolhe a fase (padrão dng101b1), DW4_FASES a pasta das fases e DW4_FATIA a comum (padrões em DataPaths).
 /// Sem &lt;fases&gt;\&lt;fase&gt;, tudo vem da pasta comum, como na fatia antiga.
 /// </summary>
 public partial class Fatia
@@ -24,9 +24,9 @@ public partial class Fatia
 
     void ChooseStage()
     {
-        _common = OS.GetEnvironment("DW4_FATIA") is { Length: > 0 } d ? d : @"D:\dw4-work\fatia";
+        _common = DataPaths.Fatia;
         _stageName = OS.GetEnvironment("DW4_FASE") is { Length: > 0 } f ? f : "dng101b1";
-        var stages = OS.GetEnvironment("DW4_FASES") is { Length: > 0 } s ? s : @"D:\dw4-work\fases";
+        var stages = DataPaths.Fases;
         var dir = Path.Combine(stages, _stageName);
         _dir = Directory.Exists(dir) ? dir : _common;
         if (_dir == _common && _stageName != "dng101b1") _problems.Add($"falta {dir} (dw4 fase-exportar … {_stageName} {stages}): usando a dng1 da fatia");

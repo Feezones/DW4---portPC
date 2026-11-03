@@ -57,7 +57,7 @@ public partial class Fatia : IBeEngine
     void RunGameStart(BeHost host)
     {
         Session.PendingGameStart = false;
-        var stages = OS.GetEnvironment("DW4_FASES") is { Length: > 0 } s ? s : @"D:\dw4-work\fases";
+        var stages = DataPaths.Fases;
         var file = Path.Combine(stages, "stagis10", "lua", "gameStart.lua");
         if (!File.Exists(file)) { _problems.Add($"falta {file} (dw4 fase-exportar … stagIS10): flags do começo de jogo não refeitas"); return; }
         var gs = new StageScripts(new Dictionary<string, byte[]> { ["gameStart.lua"] = File.ReadAllBytes(file) }, host) { Error = (n, m) => ScriptLog($"ERRO {n}: {m}") };
@@ -86,7 +86,7 @@ public partial class Fatia : IBeEngine
         ScriptLog(m.ToString());
         // A trava do ISEND zera em todo SELECTCTRL GENERATE, antes de quem trata a janela (troca de área, mensagem) consumir a mensagem.
         if (m.Class == "SELECTCTRL" && m.Command == "GENERATE") { _confirmArmed = false; _selectEnded = false; }
-        if (DeliverToPlayerStatus(m) || DeliverToSavePoint(m) || DeliverToQuestTimer(m) || DeliverToEvolve(m) || DeliverToBank(m) || DeliverToXData(m) || DeliverToShop(m) || DeliverToListMenu(m) || DeliverToStageChange(m) || DeliverToWindows(m) || DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToBossBar(m) || DeliverToEnemies(m) || DeliverToObjects(m)) return;
+        if (DeliverToPlayerStatus(m) || DeliverToQuickItems(m) || DeliverToSavePoint(m) || DeliverToQuestTimer(m) || DeliverToEvolve(m) || DeliverToBank(m) || DeliverToXData(m) || DeliverToShop(m) || DeliverToListMenu(m) || DeliverToStageChange(m) || DeliverToWindows(m) || DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToBossBar(m) || DeliverToEnemies(m) || DeliverToObjects(m)) return;
         switch (m.Class, m.Command)
         {
             // FATO: "HITLANDMODEL doorwallNN OFFHIT" desliga a parede de colisão da porta (filho do igSwitch da colisão #1862).
