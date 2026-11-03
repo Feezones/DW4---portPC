@@ -77,16 +77,21 @@ public sealed class DmoApi(Uri baseUri, string serviceKey) : IAccountApi
 }
 
 /// <summary>
-/// Teste local sem a DMO.API (DW4_DEV=1): o ticket "dev:Nome" vira a conta Nome. Sem amigos; a party fica em memória (convidar e
-/// aceitar pelo menu do F juntam os dois, até 4; sair do jogo tira da party) para testar o quadro e o combate em grupo. Nunca
-/// ligar em produção.
+/// Teste local sem a DMO.API (DW4_DEV=1): o ticket "dev:Nome" vira a conta Nome. Amizade e party ficam em memória enquanto o
+/// servidor roda: pedido de amizade fica pendente até o aceite (o menu do F só libera o convite de grupo para amigos); convidar e
+/// aceitar juntam os dois na party, até 4; sair do jogo tira da party. Para testar o quadro e o combate em grupo. Nunca ligar em
+/// produção.
 /// </summary>
 public sealed class DevApi : IAccountApi
 {
     readonly object _lock = new();
     readonly Dictionary<long, string> _partyOf = [];
     readonly Dictionary<string, long> _leaderOf = [];
+    readonly HashSet<(long From, long To)> _requests = [];
+    readonly HashSet<(long, long)> _friends = [];
     int _next;
+
+    static (long, long) Pair(Identity a, Identity b) => a.AccountId < b.AccountId ? (a.AccountId, b.AccountId) : (b.AccountId, a.AccountId);
 
     public Task<Identity?> RedeemAsync(string ticket, string ip) =>
         Task.FromResult(ticket.StartsWith("dev:", StringComparison.Ordinal) && ticket.Length > 4
@@ -125,8 +130,30 @@ public sealed class DevApi : IAccountApi
                     }
                     _partyOf[me.AccountId] = theirs;
                     return Task.FromResult(new SocialReply(true, "", Accepted: true));
+                case "friend-request":
+                    if (_friends.Contains(Pair(me, target))) return Task.FromResult(new SocialReply(false, $"{target.Tamer} já é seu amigo."));
+                    // O outro já tinha pedido: vira amizade na hora (como no launcher), sem pergunta para ele.
+                    if (_requests.Remove((target.AccountId, me.AccountId)))
+                    {
+                        _friends.Add(Pair(me, target));
+                        return Task.FromResult(new SocialReply(true, "", Accepted: true));
+                    }
+                    _requests.Add((me.AccountId, target.AccountId));
+                    return Task.FromResult(new SocialReply(true, ""));
+                case "friend-accept":
+                    // Quem aceita é "me"; quem pediu é "target".
+                    if (!_requests.Remove((target.AccountId, me.AccountId)) && !_friends.Contains(Pair(me, target)))
+                        return Task.FromResult(new SocialReply(false, "Esse pedido de amizade não existe mais."));
+                    _friends.Add(Pair(me, target));
+                    return Task.FromResult(new SocialReply(true, "", Accepted: true));
+                case "friend-decline":
+                    _requests.Remove((target.AccountId, me.AccountId));
+                    return Task.FromResult(new SocialReply(true, ""));
                 case "relation":
-                    return Task.FromResult(new SocialReply(true, "", "none", mine != null, mine != null && _leaderOf[mine] == me.AccountId,
+                    string relation = _friends.Contains(Pair(me, target)) ? "friend"
+                        : _requests.Contains((me.AccountId, target.AccountId)) ? "requestSent"
+                        : _requests.Contains((target.AccountId, me.AccountId)) ? "requestReceived" : "none";
+                    return Task.FromResult(new SocialReply(true, "", relation, mine != null, mine != null && _leaderOf[mine] == me.AccountId,
                         mine != null && mine == theirs, mine == null ? 0 : _partyOf.Values.Count(v => v == mine), theirs != null && theirs != mine));
                 default:
                     return Task.FromResult(new SocialReply(true, ""));
