@@ -262,6 +262,7 @@ public partial class Fatia
         if (e.Anim != null)
         {
             var names = e.Anim.GetAnimationList();
+            foreach (var n in names) TrimWrapSample(e.Anim.GetAnimation(n));
             kind.Wait ??= Pick(names, "wait01", "wait");
             kind.Hurt ??= Pick(names, "Sdmg01", "dmg");
             foreach (var n in new[] { kind.Wait, kind.Run })
@@ -284,6 +285,37 @@ public partial class Fatia
         _enemies.Add(e);
         SendSpawn(e);
         return e;
+    }
+
+    // Tira a amostra final que repete a primeira pose (AnimationWrap): sem isso a trnsIN acabava com o inimigo embaixo da terra.
+    static void TrimWrapSample(Animation a)
+    {
+        if (a.HasMeta("dw4_wrap")) return;
+        a.SetMeta("dw4_wrap", true);
+        bool jump = false;
+        double end = -1;
+        for (int t = 0; t < a.GetTrackCount(); t++)
+        {
+            int k = a.TrackGetKeyCount(t);
+            if (k < 3) continue;
+            double prevTime = a.TrackGetKeyTime(t, k - 2), lastTime = a.TrackGetKeyTime(t, k - 1);
+            if (!AnimationWrap.IsClosingGap(prevTime, lastTime) || Math.Abs(lastTime - a.Length) > 1e-3) continue;
+            end = Math.Max(end, prevTime);
+            jump |= a.TrackGetType(t) switch
+            {
+                Animation.TrackType.Position3D => AnimationWrap.IsWrapJump(N(a.TrackGetKeyValue(t, 0).AsVector3()),
+                    N(a.TrackGetKeyValue(t, k - 2).AsVector3()), N(a.TrackGetKeyValue(t, k - 1).AsVector3())),
+                Animation.TrackType.Rotation3D => AnimationWrap.IsWrapJump(Q(a.TrackGetKeyValue(t, 0).AsQuaternion()),
+                    Q(a.TrackGetKeyValue(t, k - 2).AsQuaternion()), Q(a.TrackGetKeyValue(t, k - 1).AsQuaternion())),
+                _ => false,
+            };
+        }
+        if (!jump || end <= 0) return;
+        for (int t = 0; t < a.GetTrackCount(); t++)
+            for (int k = a.TrackGetKeyCount(t) - 1; k >= 0 && a.TrackGetKeyTime(t, k) > end + 1e-4; k--)
+                a.TrackRemoveKey(t, k);
+        a.Length = (float)end;
+        static System.Numerics.Quaternion Q(Quaternion q) => new(q.X, q.Y, q.Z, q.W);
     }
 
     string? EnemyAnimName(Enemy e, string action) =>
