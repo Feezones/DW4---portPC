@@ -70,6 +70,55 @@ public sealed class IgbCharacter
         IgbObject? Ref(IgbObject o, int slot) => Field(o, "ObjectRef", slot) is { } v ? Slot(v.AsInt32(le)) as IgbObject : null;
         IEnumerable<IgbObject> Refs(IgbObject o) => o.Fields.Where(v => v.Desc.ShortName == "ObjectRef").Select(v => Slot(v.AsInt32(le))).OfType<IgbObject>();
 
+        // Pele rígida por osso (n_digilff, n_digilfm do lobby; e_goburi): igSkin → igModelViewMatrixBoneSelect (String@2 = nome do
+        // osso, ObjectRef@7 → igNodeList dos filhos). FATO: o nó leva o nome do osso e as geometrias ficam abaixo dele.
+        // HIPÓTESE: cada geometria fica presa inteira ao osso do igModelViewMatrixBoneSelect mais próximo acima dela, com os
+        // vértices no espaço desse osso (a matriz "modelview" do osso substitui a do modelo).
+        IgbSkinMesh ReadRigid(IgbObject skin, IgbObject top)
+        {
+            var mesh = new IgbSkinMesh { Name = Field(skin, "String", 2)?.Text ?? $"skin{skin.Index}" };
+            var stack = new Stack<(IgbObject node, int image, int bone)>();
+            var seen = new HashSet<int>();
+            stack.Push((top, -1, -1));
+            while (stack.Count > 0)
+            {
+                var (node, image, bone) = stack.Pop();
+                if (!seen.Add(node.Index)) continue;
+                c.Notes.Add($"{mesh.Name}: nó #{node.Index} {node.TypeName} \"{Field(node, "String", 2)?.Text}\" (osso {bone})");
+                if (f.Is(node, "igModelViewMatrixBoneSelect"))
+                {
+                    string boneName = Field(node, "String", 2)?.Text ?? "";
+                    int found = c.Bones.FindIndex(b => b.Name == boneName);
+                    if (found >= 0) bone = found;
+                    else c.Notes.Add($"{mesh.Name}: osso \"{boneName}\" do igModelViewMatrixBoneSelect #{node.Index} não existe");
+                }
+                if (f.Is(node, "igAttrSet"))
+                {
+                    var attrs = scene.AttrList(node);
+                    foreach (var a in attrs.Where(a => f.Is(a, "igTextureBindAttr")))
+                    {
+                        int img = scene.FindImage(a);
+                        if (img >= 0) image = img;
+                    }
+                    foreach (var g in attrs.Where(a => f.Is(a, "igGeometryAttr")))
+                    {
+                        var part = scene.ReadGeometry(g);
+                        part.ImageIndex = image;
+                        part.RigidBone = Math.Max(bone, 0);
+                        mesh.Parts.Add(part);
+                        if (image >= 0) mesh.ImageIndex = image;
+                    }
+                }
+                foreach (var r in Refs(node))
+                {
+                    if (f.Is(r, "igNodeList")) foreach (var ch in scene.ObjectList(r).Where(x => f.Is(x, "igNode"))) stack.Push((ch, image, bone));
+                    else if (f.Is(r, "igNode") && r.Index != node.Index) stack.Push((r, image, bone));
+                }
+            }
+            c.Notes.Add($"{mesh.Name}: pele rígida por osso, {mesh.Parts.Count} geometrias em {mesh.Parts.Select(p => p.RigidBone).Distinct().Count()} ossos");
+            return mesh;
+        }
+
         HashSet<int>? only = null;
         if (actor != null)
         {
@@ -112,6 +161,19 @@ public sealed class IgbCharacter
         foreach (var skin in f.Slots.OfType<IgbObject>().Where(o => f.Is(o, "igSkin") && Mine(o)))
         {
             var bms = Refs(skin).FirstOrDefault(r => f.Is(r, "igBlendMatrixSelect"));
+            if (bms == null && Refs(skin).FirstOrDefault(r => f.Is(r, "igModelViewMatrixBoneSelect")) is { } mvb)
+            {
+                // FATO (n_digilff/n_digilfm do #821, e_goburi do #607): o igModelViewMatrixBoneSelect "CharaRoot" tem logo abaixo um
+                // igBlendMatrixSelect com a paleta e a geometria (pele normal, índice por vértice). Só sem ele a pele é rígida.
+                var nested = scene.Reachable(mvb).Select(i => Slot(i)).OfType<IgbObject>().FirstOrDefault(o => f.Is(o, "igBlendMatrixSelect"));
+                if (nested == null)
+                {
+                    c.Skins.Add(ReadRigid(skin, mvb));
+                    continue;
+                }
+                c.Notes.Add($"igSkin #{skin.Index}: igModelViewMatrixBoneSelect \"{Field(mvb, "String", 2)?.Text}\" com igBlendMatrixSelect #{nested.Index} abaixo: pele normal");
+                bms = nested;
+            }
             if (bms == null) { c.Notes.Add($"igSkin #{skin.Index} sem igBlendMatrixSelect"); continue; }
             var palette = new List<int>();
             var intList = Refs(bms).FirstOrDefault(r => f.Is(r, "igIntList"));

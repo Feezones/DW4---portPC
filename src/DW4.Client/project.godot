@@ -1,13 +1,18 @@
-; Cliente da fatia vertical (Fase 3). Os recursos do jogo NÃO ficam aqui: são lidos em tempo de execução da pasta
-; de trabalho indicada por DW4_FATIA (padrão D:\dw4-work\fatia), gerada pelas ferramentas a partir do disco do usuário.
+; Cliente do port. Os recursos do jogo NÃO ficam aqui: são lidos em tempo de execução da pasta de dados (DataPaths.cs:
+; D:\dw4-work pela Godot, "dados" ao lado do DW4.exe exportado). icone.png/icone.ico também ficam fora do git: o
+; tools/scripts/publicar.ps1 gera os dois a partir do ícone do launcher antes de exportar.
 
 config_version=5
 
 [application]
 
-config/name="DW4 - fatia vertical"
-run/main_scene="res://Fatia.tscn"
+config/name="Digimon World 4"
+run/main_scene="res://MainMenu.tscn"
 config/features=PackedStringArray("4.7", "C#", "Forward Plus")
+boot_splash/show_image=false
+boot_splash/bg_color=Color(0, 0, 0, 1)
+config/icon="res://icone.png"
+config/windows_native_icon="res://icone.ico"
 
 [dotnet]
 
@@ -16,3 +21,5 @@ project/assembly_name="DW4.Client"
 [physics]
 
 common/physics_ticks_per_second=60
+3d/physics_engine="Jolt Physics"
+

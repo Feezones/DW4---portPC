@@ -35,3 +35,20 @@ Leitura estática dos IGB e dos scripts Lua em 2026-10-25. FATO = lido; HIPÓTES
 ## Consequência para o port
 
 A progressão está quase toda nos scripts Lua, que chamam a API be:* do motor. Ver a decisão em docs/formatos/lua.md (executar os scripts originais numa VM Lua 4.0 ou traduzi-los).
+
+## Começo de jogo e dificuldade (2026-10-25, FATO)
+
+- Cadeia do original: stagIS08 (logos; logo.lua → NEXTSTAGE stagis09) → stagIS09 (filme de abertura; nextStage.lua → stagis10)
+  → stagIS10 (título: TITLE2 RUN, telas do motor).
+- gameStart.lua (stagIS10) roda a cada começo de jogo:
+  - zera COUNTER 2 e as flags de trabalho (23..34, 36..66, 71..73, 82, 84..85, 100..319, 328, 334, 336..391, 409, 415..425,
+    457..468, …);
+  - liga itens da FLAGFOLDER pelas flags 518+;
+  - copia as flags permanentes da dificuldade escolhida (blocos 700+) para as de trabalho (ex.: FLG 49 ← FLG 803 no Normal).
+  - Ou seja, o progresso fica nas permanentes, e as de trabalho são refeitas a cada sessão.
+- hostLoad.lua: FLG 77 → dificuldade máxima 2 (Very Hard); FLG 711 → 1 (Hard); senão 0 (só Normal).
+- No port:
+  - `Session.Begin` marca o começo de jogo, e a primeira fase roda a gameStart.lua na GAMERAM da vaga antes do boot.
+  - A dificuldade vem de `GameRam.DifficultyMax`: personagem novo só pode Normal; ao entrar numa vaga com flags, o menu
+    pergunta a dificuldade até o máximo.
+  - Teste: "Jogo: gameStart.lua da stagIS10 …".

@@ -19,6 +19,7 @@ public sealed class StageScripts
         _chunks = chunks;
         Host = host;
         Vm.Globals["be"] = host.Table;
+        host.RunNow ??= name => Has(name) && Run(name); // o primeiro conjunto de scripts da fase (o gameStart.lua reusa o host)
     }
 
     public bool Has(string name) => _chunks.ContainsKey(name);
@@ -37,6 +38,25 @@ public sealed class StageScripts
         Host.Model = model;
         try { return Run(name); }
         finally { Host.Model = previous; }
+    }
+
+    /// <summary>
+    /// Roda o script de textos (txt_status.lua) para uma tela e devolve os TEXTSET pedidos, sem entregar nada ao motor.
+    /// FATO: o script define F(texto, fonte, nó, alinhamento) = sd TEXTCTL TEXTSET texto, ALIGN fonte/nó/alinhamento e SWITCH
+    /// fonte/nó/DISPON, e cada bloco "if be:TXTgetCallNo() == n" chama F com mswkPRGxxxx = "FONTE/nó/I&lt;k&gt;". Os índices k
+    /// mudam por fase (o pacote de textos de cada fase tem outra ordem). <paramref name="fallback"/>: chunk da pasta comum.
+    /// </summary>
+    public List<BeMessage> RunText(string name, int callNo, byte[]? fallback = null)
+    {
+        var got = new List<BeMessage>();
+        if (!_chunks.TryGetValue(name, out var chunk) && (chunk = fallback!) == null) return got;
+        var (prevNo, prevCapture) = (Host.TextCallNo, Host.Capture);
+        Host.TextCallNo = callNo;
+        Host.Capture = m => { if (m.Class == "TEXTCTL" && m.Command == "TEXTSET") got.Add(m); };
+        try { Vm.DoChunk(chunk); }
+        catch (LuaException ex) { Error?.Invoke(name, ex.Message); }
+        finally { (Host.TextCallNo, Host.Capture) = (prevNo, prevCapture); }
+        return got;
     }
 
     /// <summary>Executa o script de um gatilho de área (entrada ou saída).</summary>

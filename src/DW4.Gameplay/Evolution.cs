@@ -34,6 +34,9 @@ public sealed class Evolution
         Current = digimonNo;
     }
 
+    /// <summary>Volta a forma atual gravada (save do port); −1 = nenhuma.</summary>
+    public void Restore(int current) => Current = current is >= 0 and < Forms ? current : -1;
+
     /// <summary>SETSHINKA: libera a forma; true se ela ainda não estava liberada.</summary>
     public bool Unlock(int digimonNo)
     {

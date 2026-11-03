@@ -64,6 +64,36 @@ public static class IgbSequences
         return result;
     }
 
+    /// <summary>
+    /// Caixas do corpo do ator (FATO, Guilmon #857 e Numemon #179: beModelCtrlInfo → beModelCtrlInfoDataHit "HIT" → igAABoxList →
+    /// igAABox min/max, no espaço do ator). Não há osso: cada caixa é fixa no ator. Vazio se o ator não tem.
+    /// </summary>
+    public static List<(float[] Min, float[] Max)> ReadHitBody(IgbFile f, byte[] data, string? actor, List<string> notes)
+    {
+        var scene = IgbScene.Read(f, data);
+        bool le = f.Header.LittleEndian;
+        IgbSlot? Slot(int i) => i >= 0 && i < f.Slots.Count ? f.Slots[i] : null;
+        HashSet<int>? only = null;
+        if (actor != null)
+        {
+            var info = f.Slots.OfType<IgbObject>().FirstOrDefault(o => f.Is(o, "beModelCtrlInfo")
+                && o.Fields.FirstOrDefault(v => v.Desc.ShortName == "String" && v.Desc.Slot == 2)?.Text == actor);
+            if (info == null) return [];
+            only = scene.Reachable(info);
+        }
+        var result = new List<(float[], float[])>();
+        foreach (var hit in f.Slots.OfType<IgbObject>().Where(o => f.Is(o, "beModelCtrlInfoDataHit") && (only == null || only.Contains(o.Index))))
+            foreach (var r in hit.Fields.Where(v => v.Desc.ShortName == "ObjectRef"))
+                if (Slot(r.AsInt32(le)) is IgbObject list && f.Is(list, "igAABoxList"))
+                    foreach (var box in scene.ObjectList(list))
+                    {
+                        var v = Values(box, le).OfType<float[]>().ToList();
+                        if (v.Count >= 2) result.Add((v[0], v[1]));
+                    }
+        if (result.Count == 0 && actor != null) notes.Add($"ator \"{actor}\" sem caixa de corpo (beModelCtrlInfoDataHit)");
+        return result;
+    }
+
     static Dictionary<string, List<IgbSeqCommand>> ReadLists(IgbFile f, byte[] data, string? actor, List<string> notes,
         string infoClass, string dataClass, string prefix)
     {

@@ -124,3 +124,16 @@ Transcrição em `src/DW4.Gameplay/DamageFormula.cs`, `PlayerGrowth.cs`, `SkillG
 ## Próximo passo
 
 Ler do mesmo jeito os casos `P2EISHITCHECK` (1), `P2EISCRITICAL` (2), `E2PDAMAGE` (3), `P2EEXPUP` e os de estado; descobrir como o jogo monta os parâmetros do jogador (`RECALCPLAYER`: shinka + arma + armaduras + chips); confirmar a hipótese do Int@7.
+
+### Painel de técnicas: escolha (lido em 2026-10-26)
+
+- FATO (atualização do painel, 0x8034A228..0x8034AB70): o painel guarda 3 listas (+0x10, +0x14, +0x18) e mostra a do estado
+  +0x8 (0, 1, 2). Três botões trocam o estado (bits internos 0x800, 0x400, 0x200 da palavra de toques +0x48/+0x4C do controle);
+  apertar o botão da lista que já está aberta toca CURSOR_CANCEL. O cursor anda para a anterior ou a próxima (bits 0x1/0x10 e
+  0x4/0x40 de segurados/tocados), com repetição pelo temporizador "FIRE". O cursor é o ator i_wzslcursel (GENERATE ao abrir,
+  SQ_CLOSE ao fechar, som WINDOW_CLOSE). A confirmação segue a regra já lida (0x80349474): sem recarga e MP ≥ custo, desconta,
+  põe a recarga e devolve o LABEL (TechniquePanel).
+- No mesmo código há DISKFOLDER, EMGHEAL e x_250healhit00/x_250curehit00: uma das listas é a de discos (cura de emergência).
+- DESCONHECIDO: o que é a terceira lista e quais botões do controle do GameCube correspondem aos bits internos (o jogo remapeia o
+  controle antes). O port mantém a barra (1..6, roda/LB-RB, K/botão direito/Y), que faz o mesmo papel: escolher a anterior/
+  próxima e confirmar com a mesma regra.

@@ -90,7 +90,35 @@ public static class ActionAnimations
     {
         if (!actions.TryGetValue(action, out var cmds)) return null;
         if (cmds.FirstOrDefault(c => c.Kind == "WAITCHECK" && c.S(0) == "Frame") is { } w) return w.F(1);
-        return Motion(actions, action) is { } m ? motionFrames(m) : null;
+        // Animações em fila: MOTIONSET, WAITCHECK "Motion", MOTIONSET… (FATO: MDMG01 do e_goburi = Sdmg01 OS, espera, Sdmg02 OS).
+        // A ação dura a soma; antes contava só a primeira e o recuo de dano acabava na metade (relato de 2026-10-30).
+        float? total = null;
+        foreach (var m in Chain(actions, action))
+            if (motionFrames(m) is { } f) total = (total ?? 0) + f;
+        return total;
+    }
+
+    /// <summary>
+    /// Animações tocadas em sequência pela ação: a primeira e cada MOTIONSET que vem depois de um WAITCHECK "Motion" (as que não
+    /// esperam, como no RUNNS1 "waitS" → "runS", substituem a anterior na hora e não somam).
+    /// </summary>
+    public static List<string> Chain(IReadOnlyDictionary<string, List<SeqCommand>> actions, string action)
+    {
+        var chain = new List<string>();
+        if (!actions.TryGetValue(action, out var cmds)) return chain;
+        bool waited = true;
+        foreach (var c in cmds)
+        {
+            if (c.Kind == "WAITCHECK" && c.S(0) == "Motion") waited = true;
+            else if (c.Kind == "MOTIONSET")
+            {
+                if (waited || chain.Count == 0) chain.Add(c.S(0)); else chain[^1] = c.S(0);
+                waited = false;
+            }
+        }
+        // Sem WAITCHECK entre elas, vale a primeira (comportamento antigo do Motion).
+        if (!cmds.Any(c => c.Kind == "WAITCHECK" && c.S(0) == "Motion")) return Motion(actions, action) is { } first ? [first] : [];
+        return chain;
     }
 }
 
@@ -106,8 +134,8 @@ public sealed record HitBox(int Type, float StartFrame, float Frames, Vector3 Po
 ///    (SQ_ATCK1 do Numemon: ACTION "NATK01" e depois as caixas 70004), a caixa vale para a ação atual.
 ///    "AllClear" descarta as agendadas.
 ///  · ACTION toca a animação; as caixas agendadas valem nos quadros [início, início + duração) dessa ação.
-///  · WCHECK "Action" (e "Moving", usado nos recuos de dano do Numemon) espera a animação acabar; "Atck0N" também espera, e só continua se o ataque foi apertado
-///    durante a ação (janela de combo); senão a sequência termina. Outros WCHECK não bloqueiam aqui.
+///  · WCHECK "Action" (e "Moving", usado nos recuos de dano do Numemon) espera a animação acabar; "Atck0N" é o golpe carregado (ver o case)
+///    : segue se o ataque continua segurado, e o último espera soltar. Outros WCHECK não bloqueiam aqui.
 ///  · Uma ACTION precedida de HITBOX tipo 60000 (sonda de conversa, seguida de "TALKWF") só acontece se a sonda achar
 ///    alguém para conversar; sem NPC por perto, a ação e o WCHECK "Action" seguinte são pulados.
 ///  · MOVE guarda o último comando de movimento; JUMP termina indicando a próxima sequência.
@@ -118,13 +146,18 @@ public sealed class SequenceRunner
     public const float FramesPerSecond = 30f;
     /// <summary>Tipo de HITBOX da sonda de conversa (HIPÓTESE).</summary>
     public const int TalkProbe = 60000;
+    /// <summary>Golpe carregado (tame) que fecha o combo do SQ_ATCK1.</summary>
+    public const string ChargedSequence = "SQ_ATCKTM";
 
     readonly IReadOnlyDictionary<string, List<SeqCommand>> _seqs;
+    public IReadOnlyDictionary<string, List<SeqCommand>> Sequences => _seqs;
     readonly Func<string, float?> _animFrames;
     List<SeqCommand> _cmds = [];
     int _pc, _end;
     readonly List<HitBox> _pending = [];
-    bool _attackBuffered, _skipWait;
+    bool _skipWait;
+    // Botão de ataque segurado sem soltar desde o início da ação atual (para o golpe carregado, SQ_ATCKTM).
+    bool _heldSinceAction, _held;
 
     public SequenceRunner(IReadOnlyDictionary<string, List<SeqCommand>> sequences, Func<string, float?> animationFrames)
     {
@@ -142,6 +175,20 @@ public sealed class SequenceRunner
     public string? Next { get; private set; }
     /// <summary>Contador de ações iniciadas (muda quando é preciso tocar uma nova animação).</summary>
     public int ActionSerial { get; private set; }
+    /// <summary>Comandos que o runner não executa (LABELCTRL, AIMAP, LUACALL, CTRL…), entregues a quem roda a sequência.</summary>
+    public Action<SeqCommand>? Command { get; set; }
+    /// <summary>WCHECK que o runner não sabe medir ("TurnY", "Landing"…): false segura a sequência; sem resposta, segue.</summary>
+    public Func<string, bool>? Condition { get; set; }
+    /// <summary>Chamado na hora em que um MOVE roda (o pulo precisa da velocidade antes do WCHECK "TurnY" seguinte).</summary>
+    public Action<SeqCommand>? MoveStarted { get; set; }
+    /// <summary>
+    /// HIPÓTESE (inimigos): caixas agendadas antes de uma ação valem pelo tempo pedido mesmo quando a ação seguinte começa. FATO que
+    /// pede isso: o SQ_MAGIC do f_apocaly põe 6 caixas 70070 dos quadros 24 a 118 antes do ACTN04 (animação curta) e do BLST03.
+    /// Desligado no jogador: o arco do VATCS1 não deve vazar para a pose de carregar.
+    /// </summary>
+    public bool CarryHitBoxes { get; init; }
+    /// <summary>As caixas que passaram da ação anterior para a atual (CarryHitBoxes).</summary>
+    public IReadOnlyList<HitBox> CarriedHitBoxes { get; private set; } = [];
     /// <summary>A sonda de conversa (60000) da última ACTION pulada, até quem confere conversa consumi-la (TakeTalkProbe).</summary>
     public HitBox? TalkProbeBox { get; private set; }
     public HitBox? TakeTalkProbe() { var h = TalkProbeBox; TalkProbeBox = null; return h; }
@@ -177,22 +224,25 @@ public sealed class SequenceRunner
         _end = end < 0 ? cmds.Count : end;
         _pending.Clear();
         Sequence = sequence;
+        CarriedHitBoxes = [];
         Action = null;
         ActionHitBoxes = [];
         Next = null;
         Running = true;
-        _attackBuffered = false;
+        _held = _heldSinceAction = true; // o toque que começou a sequência
         _skipWait = false;
         _muteki = false;
         Advance();
         return true;
     }
 
-    /// <summary>Avança <paramref name="dt"/> segundos. <paramref name="attackPressed"/> = botão de ataque apertado neste passo.</summary>
-    public void Tick(float dt, bool attackPressed)
+    /// <summary>Avança <paramref name="dt"/> segundos. <paramref name="attackPressed"/> = botão de ataque apertado neste passo;
+    /// <paramref name="attackHeld"/> = botão de ataque segurado agora (o padrão repete o apertado: sem informação de segurar).</summary>
+    public void Tick(float dt, bool attackPressed, bool? attackHeld = null)
     {
         if (!Running) return;
-        if (attackPressed && Action != null) _attackBuffered = true;
+        _held = attackHeld ?? attackPressed;
+        if (!_held) _heldSinceAction = false;
         ActionFrame += dt * FramesPerSecond;
         Advance();
     }
@@ -221,25 +271,53 @@ public sealed class SequenceRunner
                     _skipWait = true;
                     break;
                 case "ACTION":
+                {
+                    // Caixas da ação anterior que ainda não acabaram seguem valendo (CarryHitBoxes), no tempo da nova ação.
+                    var carried = CarryHitBoxes && Action != null
+                        ? ActionHitBoxes.Where(h => h.Frames > 0 && h.StartFrame + h.Frames > ActionFrame).Select(h => h with { StartFrame = h.StartFrame - ActionFrame }).ToList()
+                        : [];
                     Action = c.S(0);
                     ActionFrame = 0;
                     ActionLength = _animFrames(Action) ?? 0;
-                    ActionHitBoxes = _pending.ToList();
+                    CarriedHitBoxes = carried;
+                    ActionHitBoxes = [.. carried, .. _pending];
                     _pending.Clear();
-                    _attackBuffered = false;
+                    _heldSinceAction = _held;
                     ActionSerial++;
                     break;
+                }
                 case "WCHECK" when _skipWait && c.S(0) == "Action":
                     _skipWait = false;
                     break;
-                case "WCHECK" when c.S(0) is "Action" or "Moving" || c.S(0).StartsWith("Atck", StringComparison.Ordinal):
+                // FATO (Guilmon #857, ações): VATCS1 = "vatcS" uma vez (o golpe); KATCS1 = "katcS02" em laço com WAITCHECK "Frame" 60
+                // (pose de carregar); KATCS2 = "katcS02" em laço sem fim (carregado); o SQ_ATCKTM toca KATCS3 = "katcS03" (solta).
+                // SQ_ATCK1: VATCS1 → "Atck01" → KATCS1 → "Atck02" → KATCS2 → "Atck03" → JUMP "SQ_ATCKTM". HIPÓTESE forte pelas
+                // animações: AtckNN não é janela de combo, é o carregar ("TM" = tame, 溜め): Atck01/Atck02 seguem só se o ataque
+                // continua segurado desde o início da ação; Atck03 espera enquanto segura e, ao soltar, dispara o golpe carregado.
+                // Toques repetidos repetem o golpe (VATCS1 de novo).
+                case "WCHECK" when c.S(0).StartsWith("Atck", StringComparison.Ordinal):
+                {
+                    bool release = _pc + 1 < _end && _cmds[_pc + 1].Kind == "JUMP" && _cmds[_pc + 1].S(0) == ChargedSequence;
+                    if (release)
+                    {
+                        if (_held) return; // carregando: espera soltar
+                        break;
+                    }
                     if (Action != null && ActionFrame < ActionLength) return; // espera a animação
-                    if (c.S(0).StartsWith("Atck", StringComparison.Ordinal) && !_attackBuffered) { Finish(null); return; }
+                    if (!_heldSinceAction) { Finish(null); return; }
                     break;
+                }
+                case "WCHECK" when c.S(0) is "Action" or "Moving":
+                    if (Action != null && ActionFrame < ActionLength) return; // espera a animação
+                    break;
+                // Esperas que dependem do mundo (pulo: "TurnY" = começou a descer, "Landing" = tocou o chão): quem roda decide.
+                case "WCHECK" when Condition?.Invoke(c.S(0)) == false:
+                    return;
                 case "WCHECK":
                     break;
                 case "MOVE":
                     Move = c;
+                    MoveStarted?.Invoke(c);
                     break;
                 case "MUTEKI" when c.S(0) == "ON":
                     _muteki = true;
@@ -248,6 +326,7 @@ public sealed class SequenceRunner
                     Finish(c.S(0));
                     return;
                 default:
+                    Command?.Invoke(c); // LABELCTRL, AIMAP, LUACALL…: quem roda a sequência decide
                     if (!Skipped.Contains(c.Kind)) Skipped.Add(c.Kind);
                     break;
             }

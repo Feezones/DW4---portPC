@@ -13,6 +13,7 @@
     <ProjectReference Include="..\DW4.Formats\DW4.Formats.csproj" />
     <ProjectReference Include="..\..\src\DW4.Gameplay\DW4.Gameplay.csproj" />
     <ProjectReference Include="..\..\src\DW4.Script\DW4.Script.csproj" />
+    <ProjectReference Include="..\..\src\DW4.Net\DW4.Net.csproj" />
   </ItemGroup>
 
 </Project>

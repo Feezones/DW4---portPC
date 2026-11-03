@@ -1,3 +1,5 @@
+using DW4.Gameplay;
+
 namespace DW4.Script.Be;
 
 /// <summary>
@@ -22,10 +24,47 @@ public sealed class GameRam
         if (n >= 0 && n < Flags.Length) Flags[n] = on ? (byte)1 : (byte)0;
     }
 
+    /// <summary>
+    /// GATESTAGENAME / GATESTAGENO (SYSsetGateStage, 0x802EBCFC): para onde o portão da sala leva. FATO: o NO vale −1 de
+    /// início (tabela de campos). HIPÓTESE: o nome começa vazio e o be devolve nil (o start.lua do lobby testa "not nome").
+    /// </summary>
+    public string? GateStageName { get; set; }
+    public int GateStageNo { get; set; } = -1;
+
+    /// <summary>Registro de cada jogador (o 0x802EB9C4 pega o PLAYERDATA p+1 da GAMERAM): LEVEL, BIT, formas, pastas.</summary>
+    public BePlayer[] Players { get; } = Enumerable.Range(0, 4).Select(_ => new BePlayer()).ToArray();
+
     public int Counter(int n) => n >= 0 && n < Counters.Length ? Counters[n] : 0;
+
+    /// <summary>
+    /// Dificuldade máxima que dá para escolher ao começar. FATO (hostLoad.lua da stagIS10, LISsetDifficultMax): FLG 77 → 2 (Very
+    /// Hard), senão FLG 711 → 1 (Hard), senão 0 (só Normal).
+    /// </summary>
+    public int DifficultyMax => FlagOn(77) == 1 ? 2 : FlagOn(711) == 1 ? 1 : 0;
 
     public void SetCounter(int n, int v)
     {
         if (n >= 0 && n < Counters.Length) Counters[n] = v;
     }
+}
+
+/// <summary>
+/// Registro de um jogador na GAMERAM que os SYS* dos scripts usam. FATO (tabela de campos em 0x804EA930): LEVEL e BIT
+/// inteiros; CARDLIST com 50 bytes; BASE_ISUSE (16 bytes), BASE_LEVEL e BASE_EXP (16 inteiros) são as formas, que o port
+/// guarda no <see cref="Evolution"/>; DEVICEFOLDER, DISKFOLDER e FLAGFOLDER ficam no <see cref="Inventory"/> (BIT também).
+/// </summary>
+public sealed class BePlayer
+{
+    public const int CardCount = 50;
+
+    /// <summary>Nível da forma atual (LEVEL). O cliente liga ao nível do jogador.</summary>
+    public Func<int> Level { get; set; } = () => 1;
+    public Evolution Forms { get; set; } = new();
+    public Inventory Items { get; set; } = new();
+    /// <summary>CARDLIST: 1 = carta obtida (SYSctlCardFolder "SET"/"CLR"/"KAZU").</summary>
+    public byte[] Cards { get; } = new byte[CardCount];
+    /// <summary>Equipamento em uso (POWERSOCKET[0] = arma, armaduras e chips). null = ainda não definido (o cliente escolhe).</summary>
+    public Equipment? Equipment { get; set; }
+    /// <summary>HIPÓTESE: SYSctlDeviceFolder "ISEQUIP" pergunta se o item está equipado; o cliente responde.</summary>
+    public Func<ItemRef, bool> IsEquipped { get; set; } = _ => false;
 }

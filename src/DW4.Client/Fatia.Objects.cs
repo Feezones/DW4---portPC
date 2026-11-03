@@ -5,6 +5,7 @@ using System.Linq;
 using Godot;
 using DW4.Gameplay;
 using DW4.Script.Be;
+using NVector3 = System.Numerics.Vector3;
 
 namespace DW4.Client;
 
@@ -25,9 +26,15 @@ public partial class Fatia
         public required HudActor Actor { get; init; }
         public Dictionary<string, List<SeqCommand>> Sequences { get; init; } = [];
         public Dictionary<string, List<SeqCommand>> Actions { get; init; } = [];
+        /// <summary>Caixas do corpo (beModelCtrlInfoDataHit); vazio = a caixa da g_box (GboxSize).</summary>
+        public List<(NVector3 Min, NVector3 Max)> BodyBoxes { get; init; } = [];
         public StaticBody3D? Body { get; set; }
         public Generator? Gen { get; init; }
         public int Hp { get; set; }
+        (double X, double Y, double Z) IBeModel.Position => (Actor.Root.GlobalPosition.X, Actor.Root.GlobalPosition.Y, Actor.Root.GlobalPosition.Z);
+        double IBeModel.Yaw => Actor.Root.Rotation.Y;
+        string? IBeModel.SequenceName => Seq?.Sequence;
+        string IBeModel.ModelName => Name;
         public int BulletKind { get; set; }
         public bool Dead { get; set; }
         public bool Erased => Seq?.Erased == true;
@@ -36,6 +43,24 @@ public partial class Fatia
         public ObjectSequencer? Seq { get; set; }
         /// <summary>BoxSerial da última caixa que já acertou o jogador (um acerto por caixa ligada).</summary>
         public int HitSerial { get; set; } = -1;
+        /// <summary>Personagem com esqueleto (NPC n_*, exportado em npcs&lt;nome&gt;) e a ação que está tocando.</summary>
+        /// <summary>Modelo dono (GENERATE "f_apocaly/I&lt;0&gt;/…": o f_bit fica preso ao chefe e usa os atributos dele nos golpes).</summary>
+        public Enemy? Owner { get; set; }
+        /// <summary>IA de objeto com mapas (f_bit: MAP00 e MAP01, SQ_PHASE2 troca pelo AIMAP) e a sequência que ela pediu.</summary>
+        public EnemyBrain? Brain { get; set; }
+        public string? AiSequence { get; set; }
+        /// <summary>FLASHSET já visto (Fatia.Flash) e ação e quadro já vistos pelos disparadores (Fatia.Shots).</summary>
+        public int FlashSerial { get; set; }
+        public string? ShotAction { get; set; }
+        public float ShotFrame { get; set; }
+        /// <summary>NPC passeando (o script ligou um mapa de IA, ex.: SQ_WALKON → AIMAP MAP01) e o ponto atual do aim_&lt;nome&gt;.lua.</summary>
+        public bool Wander { get; set; }
+        public Vector3? Target { get; set; }
+        /// <summary>NPC no chão: o deslocamento do MOVE não atravessa parede e segue a altura do chão (DECISÃO DO PORT, sem a colisão do jogo).</summary>
+        public bool Grounded { get; init; }
+        public bool Blocked { get; set; }
+        public AnimationPlayer? CharacterAnim { get; set; }
+        public int CharacterMotionSerial { get; set; } = -1;
 
         /// <summary>"SQ_WAIT" ou "SQ_WAIT/ON" (SETLABEL: guarda o rótulo e começa a sequência nele).</summary>
         public void SetSequence(string spec)
@@ -51,10 +76,40 @@ public partial class Fatia
             if (Seq == null) return;
             float alpha = Seq.Alpha;
             Seq.Tick(dt);
+            if (Seq.Motion.AnyActive && dt > 0)
+            {
+                // MOVE/MOVEEX: deslocamento no espaço local do objeto e giro Y em graus (HIPÓTESE: quadros a 30 Hz, como os inimigos).
+                var (local, yawDeg) = Seq.Motion.Step(dt * SequenceRunner.FramesPerSecond);
+                Actor.Root.RotateY(yawDeg * MathF.PI / 180);
+                if (Grounded) MoveOnGround(new Vector3(local.X, local.Y, local.Z));
+                else Actor.Root.TranslateObjectLocal(new Vector3(local.X, local.Y, local.Z));
+            }
             if (Seq.Alpha != alpha) Actor.SetAlpha(Seq.Alpha);
             Actor.Root.Visible = Seq.Alpha > 0;
+            // DECISÃO DO PORT (parede invisível): objeto transparente (FADE em 0, ainda entrando ou sumindo) não segura o jogador.
+            if (Body != null) Body.ProcessMode = Actor.Root.Visible ? Node.ProcessModeEnum.Inherit : Node.ProcessModeEnum.Disabled;
             Actor.Time = Seq.Frame / 60f;
             Actor.Update();
+        }
+
+        // Anda no plano: um raio na altura do peito barra paredes (e o jogador); outro para baixo acha o chão (degraus até 12).
+        void MoveOnGround(Vector3 local)
+        {
+            var root = Actor.Root;
+            var move = root.GlobalBasis * local;
+            move.Y = 0;
+            if (move.LengthSquared() < 1e-8f) return;
+            var space = root.GetWorld3D().DirectSpaceState;
+            var from = root.GlobalPosition + Vector3.Up * 4;
+            var ahead = PhysicsRayQueryParameters3D.Create(from, from + move + move.Normalized() * 2.5f);
+            if (space.IntersectRay(ahead).Count > 0) { Blocked = true; return; }
+            var next = root.GlobalPosition + move;
+            var down = PhysicsRayQueryParameters3D.Create(next + Vector3.Up * 12, next + Vector3.Down * 30);
+            down.HitBackFaces = false;
+            var floor = space.IntersectRay(down);
+            if (floor.Count == 0) { Blocked = true; return; } // sem chão à frente: não anda para o vazio
+            next.Y = ((Vector3)floor["position"]).Y;
+            root.GlobalPosition = next;
         }
     }
 
@@ -86,23 +141,40 @@ public partial class Fatia
         var o = new WorldObject
         {
             Name = name, Index = index, Actor = actor, Gen = gen,
+            Actions = json != null ? SeqCommand.LoadActions(json) : [],
+            BodyBoxes = json != null ? HitBody.Load(json) : [],
             Seq = json != null ? new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)) : null,
+            Grounded = name.StartsWith("n_", StringComparison.Ordinal),
         };
+        // f_* (f_bit): IA de luta. n_*: IA de passeio, ligada quando o script manda um AIMAP (ver UpdateNpcAi).
+        if (o.Seq != null && name.StartsWith("n_", StringComparison.Ordinal)) o.Seq.ReturnToWaitAtEnd = true; // NPC: SQ_TALK sem JUMP volta ao SQ_WAIT (HIPÓTESE)
+        // g_* com mapa de IA (FATO: g_cannon01 MAP00 2500/3600/6400 "NEAR": perto → SQ_FIRE) também ganha o cérebro.
+        if ((name.StartsWith("f_", StringComparison.Ordinal) || name.StartsWith("n_", StringComparison.Ordinal) || name.StartsWith("g_", StringComparison.Ordinal)) && json != null && AiMap.LoadAll(json) is { Count: > 0 } maps) o.Brain = new EnemyBrain(maps, SeqCommand.LoadAll(json), () => _rng.Next(16));
         AddChild(actor.Root);
         // HIPÓTESE: rotação do GENERATE em graus no eixo do mundo (0/±90/180 nos scripts; o −90° do Numemon já bate assim).
         actor.Root.Position = pos;
         actor.Root.RotationDegrees = rotDeg;
+        AttachCharacter(o);
         o.SetSequence("SQ_WAIT");
+        // FATO (tabela enemy: g_box, g_boxfield, g_bbarrelsz01, g_woodencasez0x… com HPMAX 100; lua-trace dos hit_g_*.lua: golpe comum
+        // tira 34 da pedra, 50 do arbusto, 100 da caixa, e o script manda SQ_SDMG enquanto sobra HP). Antes só a caixa de gerador
+        // tinha HP; o resto começava com 0 e quebrava no primeiro golpe. HIPÓTESE: os g_* fora da tabela também têm 100 (as contas
+        // dos scripts, 3 golpes na pedra e 2 no arbusto, só fecham assim).
+        if (name.StartsWith("g_", StringComparison.Ordinal))
+            o.Hp = _db != null && _db.Contains("enemy") && _db["enemy"].RowsWhere("MODEL", name).DefaultIfEmpty(-1).First() is int hpRow and >= 0
+                ? _db["enemy"].Int(hpRow, "HPMAX") : GboxHp;
         _objects.Add(o);
         return o;
     }
 
-    WorldObject? SpawnBox(Vector3 at, float rotDeg, Generator gen)
+    // Objetos destrutíveis gerados por gerador (g_box, e nos campos g_boxfield, g_bbarrelsz01, g_woodencasez01…).
+    // HIPÓTESE: corpo 14 × 10 × 14 do g_box para todos até ler o HIT de cada um.
+    WorldObject? SpawnBox(string model, Vector3 at, float rotDeg, Generator gen)
     {
-        if (Spawn("g_box", 0, at, new Vector3(0, rotDeg, 0), gen) is not { } box) return null;
+        if (Spawn(model, 0, at, new Vector3(0, rotDeg, 0), gen) is not { } box) return null;
         box.Hp = _db != null && _db.Contains("enemy") ? _db["enemy"].Int(gen.EnemyRow, "HPMAX") : GboxHp;
         box.SetSequence("SQ_ENTR");
-        var body = new StaticBody3D { Position = at + new Vector3(0, GboxSize.Y / 2, 0) };
+        var body = new StaticBody3D { Name = $"corpo_{model}", Position = at + new Vector3(0, GboxSize.Y / 2, 0) };
         body.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = GboxSize } });
         AddChild(body);
         box.Body = body;
@@ -112,13 +184,37 @@ public partial class Fatia
     bool DeliverToObjects(BeMessage m)
     {
         if (m.Class != "MODELCTRL" || m.Name == null) return false;
+        // DECISÃO DO PORT: o Save Keeper da Central Area (stagml12 n_digilfm 0, conversa n_digilfm_00.lua → saveshop.lua → stagIS12)
+        // não aparece: o port grava sozinho (docs/decisoes-port-pc.md).
+        if (m.Command == "GENERATE" && m.Name == "n_digilfm" && m.Index == 0 && _stageName.Equals("stagml12", StringComparison.OrdinalIgnoreCase)) return true;
         if (m.Command == "GENERATE")
         {
             if (m.Arg(0) is { Kind: 'V', Numbers.Length: 3 } p)
             {
                 var rot = m.Arg(1) is { Kind: 'V', Numbers.Length: 3 } r ? new Vector3((float)r.Numbers[0], (float)r.Numbers[1], (float)r.Numbers[2]) : Vector3.Zero;
-                Spawn(m.Name, m.Index, new Vector3((float)p.Numbers[0], (float)p.Numbers[1], (float)p.Numbers[2]), rot);
+                var spawned = Spawn(m.Name, m.Index, new Vector3((float)p.Numbers[0], (float)p.Numbers[1], (float)p.Numbers[2]), rot);
+                if (spawned != null) MakeHittable(spawned);
             }
+            // FATO (bit_f_apocaly.lua, hit_g_b01cpole.lua): GENERATE "f_apocaly/I<0>/V<0,30,0>/V<0,90,0>/SQ_ENTR" = dono, índice
+            // do dono, posição, rotação e sequência inicial. HIPÓTESE: posição no mundo (= a do chefe no pedestal; assim as caixas
+            // 70069, com y −3..−6, alcançam o jogador no topo) e o objeto acompanha o dono dali em diante.
+            else if (m.Text(0) is { } ownerName && _enemies.FirstOrDefault(e => e.Kind.Model == ownerName && !e.Dead) is { } owner
+                && m.Arg(2) is { Kind: 'V', Numbers.Length: 3 } at)
+            {
+                var rot = m.Arg(3) is { Kind: 'V', Numbers.Length: 3 } r ? new Vector3((float)r.Numbers[0], (float)r.Numbers[1], (float)r.Numbers[2]) : Vector3.Zero;
+                if (Spawn(m.Name, m.Index, new Vector3((float)at.Numbers[0], (float)at.Numbers[1], (float)at.Numbers[2]), rot) is { } child)
+                {
+                    child.Owner = owner;
+                    child.Actor.Root.Reparent(owner.Body, keepGlobalTransform: true);
+                    if (m.Text(4) is { } first && first.StartsWith("SQ_", StringComparison.Ordinal)) child.SetSequence(first);
+                    MakeHittable(child);
+                }
+            }
+            // FATO (hit_g_boxfield.lua da stag0001, 3ª etapa do tutorial): MODELCTRL g_tcounter00 GENERATE sem argumentos. O g_tcounter00
+            // é o relógio da etapa: SQ_WAIT espera 180 quadros, SQ_FINISH faz LUACALL "ded" (ded_g_tcounter00.lua: demo "stageend",
+            // apaga o que sobrou e START GENE-a03, a 4ª etapa). Sem posição o port não gerava nada e a etapa nunca acabava (relato
+            // de 2026-11-02). HIPÓTESE: sem posição, nasce na origem.
+            else if (m.Args.Count == 0) Spawn(m.Name, m.Index, Vector3.Zero, Vector3.Zero); // relógio: sem corpo para golpe
             return false;
         }
         var targets = _objects.Where(o => o.Name == m.Name && (m.Index < 0 || o.Index == m.Index)).ToList();
@@ -127,6 +223,12 @@ public partial class Fatia
             // O analisador separa os argumentos por "/": "SQ_WAIT/ON" chega como dois; SETLABEL usa o texto inteiro.
             if (m.Command == "SETLABEL" && m.RawArgs is { Length: > 0 } label) o.SetSequence(label);
             else if (m.Command.StartsWith("SQ_", StringComparison.Ordinal)) o.SetSequence(m.Command);
+            // MOVETRANS "V<pos>/V<rot em graus>": põe o objeto no lugar e na direção (fim da conversa: volta à direção de antes).
+            else if (m.Command == "MOVETRANS" && m.Arg(0) is { Kind: 'V', Numbers.Length: 3 } mp)
+            {
+                o.Actor.Root.GlobalPosition = new Vector3((float)mp.Numbers[0], (float)mp.Numbers[1], (float)mp.Numbers[2]);
+                if (m.Arg(1) is { Kind: 'V', Numbers.Length: 3 } mr) o.Actor.Root.RotationDegrees = new Vector3((float)mr.Numbers[0], (float)mr.Numbers[1], (float)mr.Numbers[2]);
+            }
         }
         return false;
     }
@@ -137,6 +239,11 @@ public partial class Fatia
         {
             var o = _objects[i];
             o.Tick(dt);
+            if (o.Seq?.Motion.Attached is { } rl && AttachTarget(rl, o.Name) is { } at) o.Actor.Root.GlobalTransform = at;
+            UpdateObjectAi(o, dt);
+            CheckObjectFlash(o);
+            while (o.Seq?.TakeLuaCallWithName() is { } lua) RunLuaCall(lua.Name, o.Name, o, lua.Call); // LUACALL das peças f_* (ex.: f_devl1f2 "bmh")
+            UpdateCharacterAnim(o);
             CheckFloorHit(o);
             if (!o.Erased) continue;
             o.Actor.Root.QueueFree();
@@ -145,32 +252,109 @@ public partial class Fatia
         }
     }
 
+    // NPCs do lobby (n_agumon, n_leomon…): o nó do ator no IGB é um igActor, então o desenho vem do personagem exportado
+    // (dw4 fase-exportar → npcs<nome>…personagem.gltf). A animação segue a ACTION da sequência do objeto (MOTIONSET).
+    static readonly bool DiagNpc = OS.GetEnvironment("DW4_DIAG_NPC") == "1";
+
+    void AttachCharacter(WorldObject o)
+    {
+        var dir = Path.Combine(_dir, "npcs", o.Name);
+        var file = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "personagem.gltf", SearchOption.AllDirectories).FirstOrDefault() : null;
+        if (file == null) return;
+        var doc = new GltfDocument();
+        var state = new GltfState();
+        if (doc.AppendFromFile(file, state) != Error.Ok || doc.GenerateScene(state) is not Node3D model) { _problems.Add($"{file}: erro ao ler"); return; }
+        if (!FindAll<MeshInstance3D>(model).Any()) _problems.Add($"{o.Name}: personagem sem malha (pele igSkin sem igBlendMatrixSelect, formato ainda não lido)");
+        o.Actor.Root.AddChild(model);
+        o.CharacterAnim = FindAll<AnimationPlayer>(model).FirstOrDefault();
+        // DEPURAÇÃO (DW4_DIAG_NPC=1): o que cada NPC tem e o que recebe (T-pose dos NPCs).
+        if (DiagNpc) GD.Print($"[npc] {o.Name}/{o.Index}: AnimationPlayer {(o.CharacterAnim != null ? string.Join(",", o.CharacterAnim.GetAnimationList()) : "nenhum")}, esqueletos {FindAll<Skeleton3D>(model).Count()}");
+        if (o.CharacterAnim is { } ca && o.Seq != null)
+            o.Seq.MotionLength = m => ca.HasAnimation(m) ? (float)ca.GetAnimation(m).Length * ObjectSequencer.FramesPerSecond : null;
+    }
+
+    // Segue o movimento (MOTIONSET) da sequência, que continua nas ações sem MOTIONSET (DELAY01 depois do WALK01).
+    void UpdateCharacterAnim(WorldObject o)
+    {
+        if (o.CharacterAnim is not { } anim || o.Seq is not { CurrentMotion: { } motion } seq || seq.MotionSerial == o.CharacterMotionSerial) return;
+        o.CharacterMotionSerial = seq.MotionSerial;
+        if (DiagNpc) GD.Print($"[npc] {o.Name}/{o.Index}: {seq.Sequence} pede {motion} (laço {seq.MotionLoop}) → {(anim.HasAnimation(motion) ? "toca" : "NÃO EXISTE")}");
+        if (!anim.HasAnimation(motion)) return;
+        anim.GetAnimation(motion).LoopMode = seq.MotionLoop ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
+        anim.Play(motion, seq.MotionBlend / ObjectSequencer.FramesPerSecond);
+    }
+
     // Golpe físico do jogador contra as caixas: roda o hit_<nome>.lua no contexto do objeto (FATO: hit_g_box.lua tira 100
     // de HP se o golpe não for técnica 40040..40099 e põe SQ_DDMG); com HP ≤ 0, o gerador "zera" e roda o _callLua (gboxNN.lua).
     void CheckObjectHits()
     {
         if (_runner == null || _stage == null) return;
-        foreach (var h in _runner.ActiveHitBoxes().Where(h => h.Type == 10000))
+        foreach (var h in _runner.ActiveHitBoxes().Where(h => h.Type is 10000 or 20000))
         {
             var c = BoxCenter(h);
             foreach (var o in _objects.Where(o => o.Body != null && !o.Dead && !_objectsHitThisAction.Contains(o)).ToList())
             {
-                var p = o.Actor.Root.Position;
-                if (Math.Abs(c.X - p.X) > h.Size.X / 2 + GboxSize.X / 2 || Math.Abs(c.Z - p.Z) > h.Size.Z / 2 + GboxSize.Z / 2
-                    || c.Y + h.Size.Y / 2 < p.Y || c.Y - h.Size.Y / 2 > p.Y + GboxSize.Y) continue;
+                var p = o.Actor.Root.GlobalPosition; // global: o f_bit fica preso ao chefe
+                bool touch = o.BodyBoxes.Count > 0
+                    ? HitBody.Hits(N(c), h.Size, _move.Facing, N(p), o.Actor.Root.GlobalRotation.Y, o.Actor.Root.GlobalBasis.Scale.X, o.BodyBoxes)
+                    : !(Math.Abs(c.X - p.X) > h.Size.X / 2 + GboxSize.X / 2 || Math.Abs(c.Z - p.Z) > h.Size.Z / 2 + GboxSize.Z / 2
+                        || c.Y + h.Size.Y / 2 < p.Y || c.Y - h.Size.Y / 2 > p.Y + GboxSize.Y);
+                if (!touch) continue;
                 _objectsHitThisAction.Add(o);
-                o.BulletKind = h.Type;
-                var script = $"hit_{o.Name}.lua";
-                if (_stage.Has(script)) _stage.RunAs(script, o);
-                if (o.Hp <= 0)
-                {
-                    o.Dead = true;
-                    o.Body?.QueueFree();
-                    o.Body = null;
-                    ScriptLog($"{o.Gen?.Name}: {o.Name} destruída");
-                    GeneratedDied(o.Gen, o);
-                }
+                StrikeObject(o, h.Type);
             }
+        }
+    }
+
+    // Golpe do jogador num objeto: o hit_<objeto>.lua tira o HP (MDLaddHp) e escolhe SQ_SDMG ou SQ_DDMG. FATO: o golpe carregado
+    // (20000) vai direto ao SQ_DDMG sem mexer no HP; o objeto quebra por ele também.
+    void StrikeObject(WorldObject o, int type)
+    {
+        o.BulletKind = type;
+        var script = $"hit_{o.Name}.lua";
+        if (_stage != null && _stage.Has(script)) _stage.RunAs(script, o);
+        if (DiagNpc) GD.Print($"[golpe-obj] {o.Name}/{o.Index}: tipo {type}, HP {o.Hp}, {o.Sequence}");
+        if (o.Hp > 0 && o.Sequence != "SQ_DDMG") return;
+        o.Dead = true;
+        o.Body?.QueueFree();
+        o.Body = null;
+        ScriptLog($"{o.Gen?.Name}: {o.Name} destruída");
+        if (o.Gen != null) DropAt(o.Gen, o.Actor.Root.GlobalPosition);
+        GeneratedDied(o.Gen, o);
+    }
+
+    // IA de objeto (f_bit): parado em SQ_WAIT, o cérebro sorteia pelo mapa (MAP00: SQ_SMN01/02; MAP01, depois do SQ_PHASE2:
+    // SQ_ATK01..15 e SQ_ATKROT, FATO pelos mapas) e a sequência roda até voltar ao SQ_WAIT (JUMP "SQ_WAIT" no fim de cada ataque).
+    void UpdateObjectAi(WorldObject o, float dt)
+    {
+        if (o.Name.StartsWith("n_", StringComparison.Ordinal)) { UpdateNpcAi(o, dt); return; }
+        if (o.Brain is not { } brain || o.Seq is not { } seq || o.Dead) return;
+        if (seq.TakeAiMap() is { } map) { brain.SetMap(map); brain.Release(); o.AiSequence = null; }
+        if (o.AiSequence != null)
+        {
+            if (seq.Sequence == o.AiSequence && seq.Running) return;
+            brain.Release();
+            o.AiSequence = null;
+        }
+        var p = o.Actor.Root.GlobalPosition;
+        var t = _player.GlobalPosition;
+        // HIPÓTESE (nome da ação: "homing"): a torreta ligada (SQ_WAIT no rótulo ON, ação HMNG01) vira para o jogador no máximo o
+        // giro por quadro do mapa (0,0349 = 2°); FATO: o SQ_WAIT "ON" tem MOVE "Stop" e HMNG01, e o tiro sai para a frente (+z).
+        if (o.Name.StartsWith("g_", StringComparison.Ordinal) && seq.Action == "HMNG01")
+        {
+            var root = o.Actor.Root;
+            float want = MathF.Atan2(t.X - p.X, t.Z - p.Z);
+            float diff = Mathf.Wrap(want - root.GlobalRotation.Y, -MathF.PI, MathF.PI);
+            float step = brain.Map.TurnPerFrame * dt * SequenceRunner.FramesPerSecond;
+            root.RotateY(Math.Clamp(diff, -step, step));
+        }
+        if (seq.Sequence != "SQ_WAIT") return; // entrada, saída e as sequências pedidas pelos scripts mandam
+        brain.Tick(dt, new System.Numerics.Vector3(p.X, p.Y, p.Z), new System.Numerics.Vector3(t.X, t.Y, t.Z), o.Actor.Root.GlobalRotation.Y);
+        if (brain.External is { } ext)
+        {
+            if (DiagNpc) GD.Print($"[obj-ia] {o.Name}/{o.Index}: {ext} (estava em {seq.Sequence}, ação {seq.Action})");
+            o.SetSequence(ext);
+            o.AiSequence = ext;
         }
     }
 
@@ -185,13 +369,12 @@ public partial class Fatia
         foreach (var h in o.Seq.ActiveHitBoxes)
         {
             if (h.Type / 10000 != 7) continue; // 7xxxx: golpe contra o jogador (como o 70004 do Numemon)
-            var c = root.GlobalPosition + new Vector3(h.Position.X, h.Position.Y, h.Position.Z).Rotated(Vector3.Up, root.Rotation.Y);
-            if (!(Math.Abs(c.X - g.X) <= h.Size.X / 2 + 2.5f && Math.Abs(c.Z - g.Z) <= h.Size.Z / 2 + 2.5f
-                && c.Y + h.Size.Y / 2 >= g.Y && c.Y - h.Size.Y / 2 <= g.Y + 7)) continue;
+            var c = root.GlobalPosition + new Vector3(h.Position.X, h.Position.Y, h.Position.Z).Rotated(Vector3.Up, root.GlobalRotation.Y);
+            if (!HitsPlayer(c, h.Size, root.GlobalRotation.Y)) continue;
             o.HitSerial = o.Seq.BoxSerial;
             _hitsTaken++;
-            string? reaction = EnemyStrikes(h.Type, o.Name);
-            if (reaction != null && _runner != null && (_runner.Start(reaction, WeaponStyle) || _runner.Start(reaction, "common")))
+            string? reaction = EnemyStrikes(h.Type, o.Owner?.Kind.Stats, o.Name); // f_bit: os atributos do chefe dono
+            if (reaction != null && _runner != null && (_runner.Start(reaction, StyleOf(reaction)) || _runner.Start(reaction, "common")))
             {
                 _wazaPending = null;
                 _move.Stop();

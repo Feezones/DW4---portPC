@@ -36,4 +36,29 @@ public static class IgbDrops
         }
         return result;
     }
+
+    /// <summary>
+    /// Listas de cada gerador. FATO (#200): beGeneraterData String@2 nome, ObjectRef@14 → beGeneraterPlayerDataList; cada
+    /// beGeneraterPlayerData (uma por número de jogadores, 1..4) tem ObjectRef@4 → beGeneraterItemDataList do drop por inimigo e
+    /// ObjectRef@5 → a do drop final; cada ItemDataList lista 3 objetos com nome (uma lista por dificuldade, 0..2: nZ1…, hZ1…, vZ1…).
+    /// </summary>
+    public static Dictionary<string, List<(string?[] Each, string?[] Last)>> GeneratorLists(IgbFile f, byte[] data)
+    {
+        var scene = IgbScene.Read(f, data);
+        bool le = f.Header.LittleEndian;
+        IgbObject? Ref(IgbObject o, int slot) =>
+            o.Fields.FirstOrDefault(v => v.Desc.Slot == slot && v.Desc.ShortName == "ObjectRef") is { } v && v.AsInt32(le) is int i && i >= 0 && i < f.Slots.Count
+                ? f.Slots[i] as IgbObject : null;
+        string? Name(IgbObject o) => o.Fields.FirstOrDefault(v => v.Desc.ShortName == "String")?.Text;
+        string?[] Names(IgbObject? itemList) => itemList == null ? [] : scene.ObjectList(itemList).Select(Name).ToArray();
+        var result = new Dictionary<string, List<(string?[], string?[])>>();
+        foreach (var gen in f.Slots.OfType<IgbObject>().Where(o => f.Is(o, "beGeneraterData")))
+        {
+            var players = Ref(gen, 14);
+            if (Name(gen) is not { } name || players == null) continue;
+            result[name] = scene.ObjectList(players).Where(p => f.Is(p, "beGeneraterPlayerData"))
+                .Select(p => (Names(Ref(p, 4)), Names(Ref(p, 5)))).ToList();
+        }
+        return result;
+    }
 }

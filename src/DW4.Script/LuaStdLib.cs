@@ -168,6 +168,30 @@ public static class LuaStdLib
             return at < 0 ? One(null) : [(double)(at + 1), (double)(at + pat.Length)];
         });
 
+        R("gsub", a =>
+        {
+            // gsub(s, padrão, troca[, n]) → (texto, trocas). Os scripts do jogo só usam padrões sem caracteres especiais
+            // (boot.lua: gsub(nome, "p_", "m_") e "q_"); padrões de verdade e troca por função/tabela ainda não implementados.
+            var s = Str(a, 0, "gsub");
+            var pat = Str(a, 1, "gsub");
+            if (pat.Length == 0 || pat.IndexOfAny("^$*+?.([%-".ToCharArray()) >= 0 || a.Length < 3 || a[2] is not (string or double))
+                throw new LuaException($"gsub: padrão \"{pat}\" ou troca ainda não implementados");
+            var repl = Lua.ToStr(a[2]) ?? "";
+            int max = a.Length > 3 && a[3] != null ? (int)Num(a, 3, "gsub") : int.MaxValue;
+            var sb = new System.Text.StringBuilder();
+            int at = 0, count = 0;
+            while (count < max)
+            {
+                int found = s.IndexOf(pat, at, StringComparison.Ordinal);
+                if (found < 0) break;
+                sb.Append(s, at, found - at).Append(repl);
+                at = found + pat.Length;
+                count++;
+            }
+            sb.Append(s, at, s.Length - at);
+            return [sb.ToString(), (double)count];
+        });
+
         // lmathlib (graus, como no 4.0)
         const double Rad = Math.PI / 180;
         R("abs", a => One(Math.Abs(Num(a, 0, "abs"))));
