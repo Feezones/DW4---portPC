@@ -2797,9 +2797,10 @@ Test("Online: pacotes do combate em grupo (ida e volta, limites)", () =>
     object[] all = [new DW4.Net.EnemySpawn(7, 12, 1, 2, 3, 0.5f, 340, "GENE-03"), new DW4.Net.EnemySeq(7, "SQ_ATCK1", "common"),
         new DW4.Net.EnemyHit(7, 55, "SQ_SDMG"), new DW4.Net.EnemyKilled(7, 2, false), new DW4.Net.EnemyRemoved(7), new DW4.Net.Wipeout("GENE-03")];
     foreach (var m in all) Equal(m, DW4.Net.CoopCodec.Read(DW4.Net.CoopCodec.Write(m)), m.GetType().Name);
-    var poses = Enumerable.Range(0, 45).Select(i => new DW4.Net.EnemyPose(i, i, 0, 0, 0, 100)).ToArray();
+    var poses = Enumerable.Range(0, 45).Select(i => new DW4.Net.EnemyPose(i, i, 0, 0, 0, 100, 12)).ToArray();
     var sync = (DW4.Net.EnemySync)DW4.Net.CoopCodec.Read(DW4.Net.CoopCodec.Write(new DW4.Net.EnemySync(poses)));
     Equal(DW4.Net.CoopCodec.MaxPoses, sync.Poses.Length, "sincronia cortada no máximo");
+    Equal(12, sync.Poses[3].Row, "a pose leva a linha do inimigo");
     True(DW4.Net.CoopCodec.Write(new DW4.Net.EnemySync(poses)).Length <= DW4.Net.Protocol.MaxPayload, "cabe num pacote");
     var g = new DW4.Net.CoopGroup(3, [3, 4]);
     var back = (DW4.Net.CoopGroup)DW4.Net.Codec.Read(DW4.Net.Codec.Write(g));

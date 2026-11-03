@@ -61,6 +61,8 @@ public partial class Fatia
         /// <summary>EXP e drop já dados por esta morte.</summary>
         public bool Rewarded { get; set; }
         public float ProxyKillWait { get; set; }
+        /// <summary>Última vez (s) que a sincronia do anfitrião citou esta cópia.</summary>
+        public double ProxySeen { get; set; }
         // IBeModel (hit_<modelo>.lua do chefe roda no contexto dele).
         public int Index => 0;
         public int BulletKind { get; set; }
