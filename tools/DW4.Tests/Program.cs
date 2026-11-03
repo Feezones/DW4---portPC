@@ -281,9 +281,12 @@ Test("Online: troca de itens (travar, confirmar, tudo ou nada, mudança destrava
 
 Test("Online: protocolo de rede (ida e volta de cada pacote, pacote quebrado recusado)", () =>
 {
-    var st = new DW4.Net.PlayerState("stagml11", 1.5f, 10, -43, 0.7f, "wait01", "p_girumon", 12);
+    var st = new DW4.Net.PlayerState("stagml11", 1.5f, 10, -43, 0.7f, "wait01", "p_girumon", 12, "w_sword01");
     object[] all = [new DW4.Net.Hello(DW4.Net.Protocol.Version, "RDT1abc", "Gui", "p_girumon", 12), st, new DW4.Net.Welcome(3, "Tamer"),
-        new DW4.Net.Reject("não"), new DW4.Net.Spawn(4, "Ana", "TamerAna", st), new DW4.Net.Despawn(4), new DW4.Net.RemoteState(4, st)];
+        new DW4.Net.Reject("não"), new DW4.Net.Spawn(4, "Ana", "TamerAna", st), new DW4.Net.Despawn(4), new DW4.Net.RemoteState(4, st),
+        new DW4.Net.Interact(4, "party-accept", "inv-9"),
+        new DW4.Net.InteractResult(4, "relation", true, "", "friend", true, true, false, 3, false),
+        new DW4.Net.SocialPrompt("party", 4, "TamerAna", "inv-9")];
     foreach (var m in all) Equal(m, DW4.Net.Codec.Read(DW4.Net.Codec.Write(m)), m.GetType().Name);
     var bytes = DW4.Net.Codec.Write(st);
     bool threw = false;
@@ -294,7 +297,7 @@ Test("Online: protocolo de rede (ida e volta de cada pacote, pacote quebrado rec
     True(threw, "tipo desconhecido");
 });
 
-Test("Online: servidor (cidade aberta, dungeon por grupo, aparecer e sumir, conta repetida)", () =>
+Test("Online: servidor (todos na fase se veem, combate por grupo, aparecer e sumir, conta repetida)", () =>
 {
     var w = new DW4.Net.World();
     DW4.Net.PlayerState S(string stage) => new(stage, 0, 0, 0, 0, "wait01", "p_girumon", 5);
@@ -307,12 +310,12 @@ Test("Online: servidor (cidade aberta, dungeon por grupo, aparecer e sumir, cont
     True(o.Count == 1 && o[0] is { To: 1, Reliable: false, Message: DW4.Net.RemoteState }, "estado repassado sem garantia");
     o = w.Update(1, S("dng101b1"));
     True(o.Any(x => x.To == 2 && x.Message is DW4.Net.Despawn { PlayerId: 1 }), "foi para a dungeon: some da cidade");
-    True(w.Update(2, S("dng101b1")).Count == 0, "dungeon sem grupo: instâncias separadas");
-    o = w.SetParty(1, "p1");
-    True(o.Count == 0, "grupo novo, ainda sozinho na instância");
-    o = w.SetParty(2, "p1");
-    True(o.Any(x => x.To == 1 && x.Message is DW4.Net.Spawn { PlayerId: 2 }), "mesmo grupo: mesma dungeon");
-    Equal("dng101b1#p:p1", DW4.Net.World.InstanceOf("DNG101B1", new(1, "x", "p1")), "nome da instância");
+    o = w.Update(2, S("dng101b1"));
+    True(o.Any(x => x.To == 1 && x.Message is DW4.Net.Spawn { PlayerId: 2 }), "dungeon sem grupo: os dois se veem (pedido do responsável)");
+    True(w.SetParty(1, "p1").Count == 0 && w.SetParty(2, "p1").Count == 0, "entrar no grupo não muda quem se vê");
+    Equal("dng101b1", DW4.Net.World.InstanceOf("DNG101B1", new(1, "x", "p1")), "visão: a fase");
+    Equal("dng101b1#p:p1", DW4.Net.World.CombatGroup("DNG101B1", new(1, "x", "p1")), "combate: o grupo");
+    Equal("dng101b1#a:7", DW4.Net.World.CombatGroup("DNG101B1", new(7, "x", null)), "combate sem grupo: a conta");
     o = w.Leave(2);
     True(o.Count == 1 && o[0].Message is DW4.Net.Despawn { PlayerId: 2 }, "saiu: some para o outro");
     Equal<int?>(1, w.Join(5, new(10, "Alfa", null), "Gui"), "mesma conta de novo: derruba a antiga");
@@ -2702,6 +2705,36 @@ if (args.Length == 1)
     });
 }
 else Console.WriteLine("(sem pasta do jogo: só testes sintéticos; passe a pasta files\\ da cópia de trabalho para conferir os dados)");
+
+Test("Online: menu do F pelo que o servidor conta (InteractView)", () =>
+{
+    IReadOnlyList<DW4.Gameplay.Online.InteractOption> O(DW4.Gameplay.Online.InteractView v) => DW4.Gameplay.Online.PlayerInteraction.Options(v);
+    DW4.Gameplay.Online.InteractView V(bool party = false, bool inMine = false, bool leader = false, int occ = 0, bool friend = true,
+        bool sent = false, bool other = false) => new(party, inMine, leader, occ, friend, sent, other, false);
+    True(O(V())[0].Enabled, "amigo sem grupo: convidar liga");
+    Equal("Só amigos entram no grupo. Adicione como amigo primeiro.", O(V(friend: false))[0].Reason, "não amigo");
+    True(O(V(friend: false))[1].Enabled, "não amigo: adicionar liga");
+    Equal("Só o líder convida.", O(V(party: true))[0].Reason, "não líder");
+    Equal("Grupo cheio (4).", O(V(party: true, leader: true, occ: 4))[0].Reason, "cheio");
+    Equal("Já está no seu grupo.", O(V(party: true, inMine: true, leader: true, occ: 2))[0].Reason, "mesmo grupo");
+    Equal("Já está em outro grupo.", O(V(other: true))[0].Reason, "outro grupo");
+    Equal("Pedido já enviado.", O(V(friend: false, sent: true))[1].Reason, "pedido enviado");
+});
+
+Test("Online: servidor só deixa o F entre quem está na mesma instância", () =>
+{
+    var w = new DW4.Net.World();
+    w.Join(1, new DW4.Net.Identity(10, "A", null), "a");
+    w.Join(2, new DW4.Net.Identity(20, "B", null), "b");
+    DW4.Net.PlayerState S(string stage) => new(stage, 0, 0, 0, 0, "", "p_girumon", 1);
+    True(!w.SameInstance(1, 2), "sem estado ainda");
+    w.Update(1, S("stagml11")); w.Update(2, S("stagml11"));
+    True(w.SameInstance(1, 2), "cidade");
+    w.Update(2, S("dng101b1"));
+    True(!w.SameInstance(1, 2), "um na dungeon");
+    w.Update(1, S("dng101b1"));
+    True(w.SameInstance(1, 2), "os dois na mesma dungeon: F vale (mesmo sem grupo)");
+});
 
 Console.WriteLine($"{passed} ok, {failed} falharam");
 return failed == 0 ? 0 : 1;

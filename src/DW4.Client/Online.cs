@@ -31,6 +31,10 @@ public static class Online
     static Hello? s_hello;
     static double s_lastSend;
     static PlayerState? s_lastState;
+    // Resgate do ticket na abertura (ver Claim): conexão só para gastar o ticket dentro dos 2 min; o pedido de entrar com o
+    // personagem que chegar nesse meio tempo espera aqui.
+    static bool s_claiming;
+    static (string Character, string Model, int Level)? s_wanted;
 
     public static Status State { get; private set; } = Status.Off;
     public static string? Error { get; private set; }
@@ -39,6 +43,18 @@ public static class Online
     public static readonly Dictionary<int, RemotePlayer> Remotes = [];
     /// <summary>Avisos para o chat do jogo ("Conectado", "Ana entrou"...).</summary>
     public static event Action<string>? Notice;
+    /// <summary>Resposta do servidor ao menu do F.</summary>
+    public static event Action<InteractResult>? Result;
+    /// <summary>Pedido de amizade ou convite de grupo de outro jogador.</summary>
+    public static event Action<SocialPrompt>? Prompt;
+
+    /// <summary>Menu do F: pede ao servidor (false se não está online).</summary>
+    public static bool Interact(int target, string action, string inviteId = "")
+    {
+        if (State != Status.Online) return false;
+        Send(new Interact(target, action, inviteId), true);
+        return true;
+    }
 
     static string? Arg(string name)
     {
@@ -53,17 +69,55 @@ public static class Online
     public static string? ServerAddress => Arg("--servidor") ?? (OS.GetEnvironment("DW4_SERVIDOR") is { Length: > 0 } s ? s : DefaultServer);
     static string? Ticket => Session.LauncherTicket ?? (OS.IsDebugBuild() && OS.GetEnvironment("DW4_TICKET") is { Length: > 0 } t ? t : null);
 
-    /// <summary>Conecta (uma vez por abertura do jogo) com o personagem da vaga. Sem ticket ou sem servidor, fica local.</summary>
+    /// <summary>
+    /// Na abertura do jogo: gasta o ticket já. O ticket do launcher só vale 2 min para o primeiro uso, e a abertura, o menu e a
+    /// criação do personagem passam disso (o amigo do responsável foi recusado assim em 2026-11-02). Depois do primeiro uso a
+    /// DMO.API aceita o mesmo ticket do mesmo IP por 12 h, então a entrada com o personagem (Connect) reconecta à vontade.
+    /// </summary>
+    public static void Claim()
+    {
+        if (s_claiming || State != Status.Off || Ticket == null) return;
+        s_claiming = true;
+        Open("", "", 0);
+        if (State != Status.Connecting) s_claiming = false;
+    }
+
+    /// <summary>
+    /// Conecta com o personagem da vaga (a cada fase, se ainda não está online: assim volta sozinho depois de uma queda). Sem
+    /// ticket, fica local.
+    /// </summary>
     public static void Connect(string character, string model, int level)
     {
+        if (s_claiming) { s_wanted = (character, model, level); return; }
         if (State is Status.Connecting or Status.Online) return;
+        Open(character, model, level);
+    }
+
+    static void EndClaim()
+    {
+        s_claiming = false;
+        s_net?.Stop();
+        (s_net, s_server) = (null, null);
+        Remotes.Clear();
+        if (State != Status.Failed) State = Status.Off;
+        if (s_wanted is { } w && State == Status.Off) { s_wanted = null; Open(w.Character, w.Model, w.Level); }
+        s_wanted = null;
+    }
+
+    static void Open(string character, string model, int level)
+    {
         if (Ticket is not { } ticket || ServerAddress is not { } address) { State = Status.Off; return; }
+        s_net?.Stop(); // tentativa anterior que falhou
+        (s_net, s_server) = (null, null);
+        Remotes.Clear();
         var (host, port) = Split(address);
         s_hello = new Hello(Protocol.Version, ticket, character, model, level);
         var l = new EventBasedNetListener();
-        l.PeerConnectedEvent += p => { s_server = p; Send(s_hello!, true); };
+        NetManager? net = null; // eventos atrasados de uma conexão já trocada (fim do resgate) são ignorados
+        l.PeerConnectedEvent += p => { if (s_net != net) return; s_server = p; Send(s_hello!, true); };
         l.PeerDisconnectedEvent += (_, info) =>
         {
+            if (s_net != net) return;
             // Recusa do servidor: o motivo vem junto do pedido de desconexão.
             if (info.AdditionalData is { AvailableBytes: > 0 } extra)
                 try { if (Codec.Read(extra.GetRemainingBytes()) is Reject r) { Fail(r.Reason); return; } } catch (FormatException) { }
@@ -71,10 +125,11 @@ public static class Online
         };
         l.NetworkReceiveEvent += (_, reader, _, _) =>
         {
+            if (s_net != net) return;
             try { OnMessage(Codec.Read(reader.GetRemainingBytes())); }
             catch (FormatException ex) { GD.PushWarning("[online] pacote inválido: " + ex.Message); }
         };
-        s_net = new NetManager(l) { DisconnectTimeout = 15000, AutoRecycle = true };
+        s_net = net = new NetManager(l) { DisconnectTimeout = 15000, AutoRecycle = true };
         s_net.Start();
         s_net.Connect(host, port, Protocol.ConnectionKey);
         State = Status.Connecting;
@@ -91,6 +146,10 @@ public static class Online
     {
         switch (m)
         {
+            case Welcome w when s_claiming:
+                GD.Print($"[online] ticket aceito ({w.Tamer})");
+                EndClaim();
+                break;
             case Welcome w:
                 (MyId, Tamer, State) = (w.PlayerId, w.Tamer, Status.Online);
                 Notice?.Invoke($"Online como {w.Tamer}.");
@@ -101,6 +160,12 @@ public static class Online
                 break;
             case Spawn s:
                 Remotes[s.PlayerId] = new RemotePlayer { Id = s.PlayerId, Character = s.Character, Tamer = s.Tamer, State = s.State, ReceivedAt = Now };
+                break;
+            case InteractResult ir:
+                Result?.Invoke(ir);
+                break;
+            case SocialPrompt sp:
+                Prompt?.Invoke(sp);
                 break;
             case Despawn d:
                 Remotes.Remove(d.PlayerId);
@@ -120,6 +185,7 @@ public static class Online
         GD.PushWarning("[online] " + why);
         Notice?.Invoke(why + " Jogando sem os outros jogadores.");
         s_server = null;
+        if (s_claiming) { s_claiming = false; s_wanted = null; }
     }
 
     static double Now => Time.GetTicksMsec() / 1000.0;
@@ -143,6 +209,7 @@ public static class Online
     /// <summary>Volta ao menu ou fecha o jogo.</summary>
     public static void Disconnect()
     {
+        if (s_claiming) return; // o resgate da abertura termina sozinho
         s_net?.Stop();
         s_net = null;
         s_server = null;

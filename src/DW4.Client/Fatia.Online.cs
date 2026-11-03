@@ -19,6 +19,8 @@ public partial class Fatia
         public AnimationPlayer? Anim;
         public Nameplate? Plate;
         public string ModelName = "";
+        public string? WeaponName; // null = ainda sem arma posta
+        public BoneAttachment3D? WeaponRight, WeaponLeft;
     }
 
     readonly Dictionary<int, Avatar> _avatars = [];
@@ -26,7 +28,9 @@ public partial class Fatia
     void SetupOnline()
     {
         Online.Notice += OnlineNotice;
-        TreeExiting += () => Online.Notice -= OnlineNotice;
+        Online.Result += OnInteractResult;
+        Online.Prompt += OnSocialPrompt;
+        TreeExiting += () => { Online.Notice -= OnlineNotice; Online.Result -= OnInteractResult; Online.Prompt -= OnSocialPrompt; };
         Online.Connect(PlayerName, PlayerModel, _level);
     }
 
@@ -36,7 +40,7 @@ public partial class Fatia
     {
         var p = _player.GlobalPosition;
         return new PlayerState(_stageName, MathF.Round(p.X, 2), MathF.Round(p.Y, 2), MathF.Round(p.Z, 2), MathF.Round(_move.Facing, 3),
-            _anim?.CurrentAnimation ?? "", PlayerModel, _level);
+            _anim?.CurrentAnimation ?? "", PlayerModel, _level, WeaponModel ?? "");
     }
 
     void TickOnline(float dt)
@@ -59,6 +63,7 @@ public partial class Fatia
                 _avatars[r.Id] = a;
             }
             if (a.ModelName != r.State.Model) SetAvatarModel(a, r.State.Model);
+            if (a.WeaponName != r.State.Weapon) SetAvatarWeapon(a, r.State.Weapon);
             // Mais de 30 unidades de distância (teleporte, troca de entrada): pula direto.
             a.Root.Position = a.Root.Position.DistanceTo(target) > 30 ? target : a.Root.Position.Lerp(target, Math.Min(1f, dt * 12f));
             if (a.Model != null) a.Model.Rotation = new Vector3(0, r.State.Facing, 0);
@@ -71,8 +76,9 @@ public partial class Fatia
     void SetAvatarModel(Avatar a, string model)
     {
         a.Model?.QueueFree();
-        (a.Model, a.Anim, a.Plate) = (null, null, null);
+        (a.Model, a.Anim, a.Plate, a.WeaponRight, a.WeaponLeft) = (null, null, null, null, null);
         a.ModelName = model;
+        a.WeaponName = null; // o modelo novo vem sem arma; o próximo quadro põe a arma de novo
         // Só formas que o cliente tem (o nome vem do outro jogador: nada de caminho).
         if (model.Length == 0 || model.IndexOfAny(['/', '\\', '.']) >= 0) return;
         string folder = model == "p_girumon" && System.IO.Directory.Exists(System.IO.Path.Combine(_common, "guilmon"))
@@ -82,5 +88,17 @@ public partial class Fatia
         a.Model = m;
         a.Anim = FindAll<AnimationPlayer>(m).FirstOrDefault();
         a.Plate = Nameplate.Attach(m);
+    }
+
+    // Arma na mão do outro jogador: o mesmo modelo e os mesmos ossos da arma do jogador (Fatia.Weapon.cs).
+    void SetAvatarWeapon(Avatar a, string weapon)
+    {
+        a.WeaponRight?.QueueFree();
+        a.WeaponLeft?.QueueFree();
+        (a.WeaponRight, a.WeaponLeft) = (null, null);
+        a.WeaponName = weapon;
+        if (a.Model == null || weapon.IndexOfAny(['/', '\\', '.']) >= 0) return;
+        // Sem arma equipada ("") fica a arma padrão, como na mão do próprio jogador (RefreshWeapon).
+        (a.WeaponRight, a.WeaponLeft) = AttachWeapon(a.Model, weapon.Length > 0 ? weapon : null);
     }
 }

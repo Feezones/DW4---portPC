@@ -16,7 +16,7 @@ public partial class Fatia
     Control? _chatBox;
     Nameplate? _plate;
     // A janela de itens rápida (Fatia.QuickItems) também segura os comandos do jogo, como o chat.
-    bool ChatOpen => _chat.Typing || _quickOpen;
+    bool ChatOpen => _chat.Typing || _quickOpen || _interactOpen;
 
     string PlayerName => Session.Character?.Name is { Length: > 0 } n ? n : FormName;
 

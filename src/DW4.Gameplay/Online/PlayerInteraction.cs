@@ -10,6 +10,10 @@ public enum InteractAction { InviteToParty, AddFriend, Trade }
 /// <summary>Uma linha do menu do F: ação, se dá para escolher e, se não, por quê.</summary>
 public sealed record InteractOption(InteractAction Action, string Label, bool Enabled, string? Reason);
 
+/// <summary>O menu visto pelo servidor: a party (ocupadas = membros + convites pendentes) e a relação com o alvo.</summary>
+public sealed record InteractView(bool HasParty, bool TargetInMyParty, bool AmLeader, int PartyOccupied, bool TargetIsFriend,
+    bool FriendRequestSent, bool TargetInOtherParty, bool Busy);
+
 /// <summary>O que o jogador sabe de si e do alvo para montar o menu.</summary>
 public sealed record InteractContext(PartyGroup? MyParty, string Me, bool TargetIsFriend, bool FriendRequestSent, bool TargetInOtherParty, bool Busy);
 
@@ -36,15 +40,22 @@ public static class PlayerInteraction
         return best;
     }
 
-    public static IReadOnlyList<InteractOption> Options(string target, InteractContext c)
+    public static IReadOnlyList<InteractOption> Options(string target, InteractContext c) =>
+        Options(new InteractView(c.MyParty != null, c.MyParty?.Contains(target) == true,
+            c.MyParty != null && PartyGroup.Names.Equals(c.MyParty.Leader, c.Me),
+            c.MyParty == null ? 0 : c.MyParty.Count + c.MyParty.PendingInvites.Count,
+            c.TargetIsFriend, c.FriendRequestSent, c.TargetInOtherParty, c.Busy));
+
+    /// <summary>O mesmo menu a partir do que o servidor do DW4 conta (party da DMO.API), sem um <see cref="PartyGroup"/> local.</summary>
+    public static IReadOnlyList<InteractOption> Options(InteractView c)
     {
         InteractOption invite;
-        if (c.MyParty?.Contains(target) == true) invite = new(InteractAction.InviteToParty, "Convidar para o grupo", false, "Já está no seu grupo.");
+        if (c.TargetInMyParty) invite = new(InteractAction.InviteToParty, "Convidar para o grupo", false, "Já está no seu grupo.");
         else if (c.TargetInOtherParty) invite = new(InteractAction.InviteToParty, "Convidar para o grupo", false, "Já está em outro grupo.");
         else if (!c.TargetIsFriend) invite = new(InteractAction.InviteToParty, "Convidar para o grupo", false, "Só amigos entram no grupo. Adicione como amigo primeiro.");
-        else if (c.MyParty != null && !PartyGroup.Names.Equals(c.MyParty.Leader, c.Me))
+        else if (c.HasParty && !c.AmLeader)
             invite = new(InteractAction.InviteToParty, "Convidar para o grupo", false, "Só o líder convida.");
-        else if (c.MyParty != null && c.MyParty.Count + c.MyParty.PendingInvites.Count >= Party.MaxPlayers)
+        else if (c.HasParty && c.PartyOccupied >= Party.MaxPlayers)
             invite = new(InteractAction.InviteToParty, "Convidar para o grupo", false, $"Grupo cheio ({Party.MaxPlayers}).");
         else invite = new(InteractAction.InviteToParty, "Convidar para o grupo", true, null);
 
