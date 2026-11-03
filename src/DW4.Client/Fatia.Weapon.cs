@@ -34,24 +34,37 @@ public partial class Fatia
         var dir = model != null ? Path.Combine(_common, "armas", model) : null;
         var stylesFile = dir != null ? Path.Combine(dir, "estilos.json") : null;
         _styles = stylesFile != null && File.Exists(stylesFile) ? WeaponStyles.FromJson(File.ReadAllText(stylesFile)) : WeaponStyles.Fallback;
-        if (_model == null || FindAll<Skeleton3D>(_model).FirstOrDefault() is not { } skeleton) return;
+        if (_model == null) return;
         _weaponAttach?.QueueFree();
         _weaponAttach = null;
         _weaponAttachLeft?.QueueFree();
         _weaponAttachLeft = null;
+        (_weaponAttach, _weaponAttachLeft) = AttachWeapon(_model, model);
+        SetupStyleAnims();
+    }
+
+    /// <summary>
+    /// Prende a arma <paramref name="model"/> (pasta &lt;fatia&gt;\armas\&lt;MODEL&gt;; null = a pasta antiga "arma") no esqueleto de
+    /// <paramref name="character"/>: mão direita e, nas armas duplas, mão esquerda. Serve ao jogador e aos outros jogadores.
+    /// </summary>
+    (BoneAttachment3D? Right, BoneAttachment3D? Left) AttachWeapon(Node3D character, string? model)
+    {
+        if (FindAll<Skeleton3D>(character).FirstOrDefault() is not { } skeleton) return (null, null);
+        var dir = model != null ? Path.Combine(_common, "armas", model) : null;
         var mesh = dir != null && Directory.Exists(dir) ? Load(Path.Combine("armas", model!), "cena.gltf") : Load("arma", "cena.gltf");
-        if (mesh == null) return;
+        if (mesh == null) return (null, null);
         if (skeleton.FindBone(WeaponBone) < 0) _problems.Add($"osso {WeaponBone} não existe para a arma");
-        _weaponAttach = new BoneAttachment3D { BoneName = WeaponBone };
-        skeleton.AddChild(_weaponAttach);
-        _weaponAttach.AddChild(mesh);
+        var right = new BoneAttachment3D { BoneName = WeaponBone };
+        skeleton.AddChild(right);
+        right.AddChild(mesh);
+        BoneAttachment3D? leftAttach = null;
         if (dir != null && SplitLeftHand(dir, mesh) is { } left && skeleton.FindBone(WeaponBoneLeft) >= 0)
         {
-            _weaponAttachLeft = new BoneAttachment3D { BoneName = WeaponBoneLeft };
-            skeleton.AddChild(_weaponAttachLeft);
-            _weaponAttachLeft.AddChild(left);
+            leftAttach = new BoneAttachment3D { BoneName = WeaponBoneLeft };
+            skeleton.AddChild(leftAttach);
+            leftAttach.AddChild(left);
         }
-        SetupStyleAnims();
+        return (right, leftAttach);
     }
 
     // Tira da malha da arma as superfícies do lado esquerdo (maos.json: um lado por superfície da malha "cena", na ordem) e

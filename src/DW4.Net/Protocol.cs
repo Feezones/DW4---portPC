@@ -9,7 +9,7 @@ namespace DW4.Net;
 public static class Protocol
 {
     /// <summary>Muda quando o formato muda; cliente e servidor de versões diferentes não conversam.</summary>
-    public const int Version = 1;
+    public const int Version = 2; // 2: arma equipada no PlayerState (0.6.1)
     /// <summary>Chave de conexão da LiteNetLib (recusa quem não é o DW4 antes de qualquer pacote).</summary>
     public const string ConnectionKey = "DW4-online-1";
     public const int DefaultPort = 7031;
@@ -35,7 +35,7 @@ public enum MsgType : byte
 public sealed record Hello(int Version, string Ticket, string Character, string Model, int Level);
 
 /// <summary>Estado do jogador: fase, posição, direção, animação. Também anuncia troca de fase, forma e nível.</summary>
-public sealed record PlayerState(string Stage, float X, float Y, float Z, float Facing, string Anim, string Model, int Level);
+public sealed record PlayerState(string Stage, float X, float Y, float Z, float Facing, string Anim, string Model, int Level, string Weapon = "");
 
 public sealed record Welcome(int PlayerId, string Tamer);
 public sealed record Reject(string Reason);
@@ -92,12 +92,12 @@ public static class Codec
 
     static void State(BinaryWriter w, PlayerState s)
     {
-        Str(w, s.Stage); w.Write(s.X); w.Write(s.Y); w.Write(s.Z); w.Write(s.Facing); Str(w, s.Anim); Str(w, s.Model); w.Write(s.Level);
+        Str(w, s.Stage); w.Write(s.X); w.Write(s.Y); w.Write(s.Z); w.Write(s.Facing); Str(w, s.Anim); Str(w, s.Model); w.Write(s.Level); Str(w, s.Weapon);
     }
 
     static PlayerState State(BinaryReader r)
     {
-        var s = new PlayerState(Str(r), r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), Str(r), Str(r), r.ReadInt32());
+        var s = new PlayerState(Str(r), r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), Str(r), Str(r), r.ReadInt32(), Str(r));
         if (!float.IsFinite(s.X) || !float.IsFinite(s.Y) || !float.IsFinite(s.Z) || !float.IsFinite(s.Facing)) throw new FormatException("número inválido");
         return s;
     }

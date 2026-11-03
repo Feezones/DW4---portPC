@@ -281,7 +281,7 @@ Test("Online: troca de itens (travar, confirmar, tudo ou nada, mudança destrava
 
 Test("Online: protocolo de rede (ida e volta de cada pacote, pacote quebrado recusado)", () =>
 {
-    var st = new DW4.Net.PlayerState("stagml11", 1.5f, 10, -43, 0.7f, "wait01", "p_girumon", 12);
+    var st = new DW4.Net.PlayerState("stagml11", 1.5f, 10, -43, 0.7f, "wait01", "p_girumon", 12, "w_sword01");
     object[] all = [new DW4.Net.Hello(DW4.Net.Protocol.Version, "RDT1abc", "Gui", "p_girumon", 12), st, new DW4.Net.Welcome(3, "Tamer"),
         new DW4.Net.Reject("não"), new DW4.Net.Spawn(4, "Ana", "TamerAna", st), new DW4.Net.Despawn(4), new DW4.Net.RemoteState(4, st)];
     foreach (var m in all) Equal(m, DW4.Net.Codec.Read(DW4.Net.Codec.Write(m)), m.GetType().Name);
