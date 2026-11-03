@@ -453,7 +453,9 @@ public partial class Fatia
 
     void UpdateEnemies(float dt)
     {
-        foreach (var e in _enemies.ToList()) UpdateEnemy(e, dt);
+        foreach (var e in _enemies.ToList())
+            if (!_frozenModels.Contains(e.Kind.Model)) UpdateEnemy(e, dt);
+        TickBossBarModel();
     }
 
     void UpdateEnemy(Enemy e, float dt)
@@ -494,9 +496,10 @@ public partial class Fatia
                 }
                 else e.Runner.Tick(dt, false);
                 // FATO (f_luce SQ_BOMBn → JUMP "SQ_ATCKOF", que põe o MAP02 e leva ao voo/pouso): JUMP para outra sequência continua
-                // nela; só SQ_WAIT (e SQ_ERAS) devolvem o inimigo à IA.
+                // nela; só SQ_WAIT (e SQ_ERAS) devolvem o inimigo à IA. Com HP 0, só segue para a queda (FATO, e_blosso: SQ_DDMG/common →
+                // JUMP "SQ_DFORMC", rótulo BOSS do SQ_ENTR, LUACALL "ded" → ded_e_blosso.lua abre as portas; antes o chefe sumia sem isso).
                 if (e.Started && !e.Runner.Running && e.Runner.Next is { } next && next is not ("SQ_WAIT" or "SQ_ERAS") && e.Kind.Sequences.ContainsKey(next)
-                    && e.Hp > 0 && StartEnemySequence(e, next))
+                    && (e.Hp > 0 || next.StartsWith("SQ_DFORM", StringComparison.Ordinal)) && StartEnemySequence(e, next))
                 {
                     e.Brain.Force(next);
                     e.Serial = -1;
@@ -663,6 +666,7 @@ public partial class Fatia
                 bool touch = e.Kind.BodyBoxes.Count > 0
                     ? HitBody.Hits(N(c), h.Size, _move.Facing, N(p), e.Yaw, e.Model?.Scale.X ?? 1, e.Kind.BodyBoxes)
                     : Math.Abs(c.X - p.X) <= h.Size.X / 2 + e.HitHalf && Math.Abs(c.Z - p.Z) <= h.Size.Z / 2 + e.HitHalf && c.Y + h.Size.Y / 2 >= p.Y && c.Y - h.Size.Y / 2 <= p.Y + e.HitHeight;
+                if (DiagNpc && c.DistanceTo(p) < 40) GD.Print($"[golpe] {e.Kind.Model}: caixa {c.Round()} {h.Size} contra {p.Round()} (caixas do corpo {e.Kind.BodyBoxes.Count}, escala {e.Model?.Scale.X ?? 1:0.##}) → {(touch ? "acerta" : "erra")}");
                 if (!touch) continue;
                 _enemiesHitThisAction.Add(e);
                 _hits++;
