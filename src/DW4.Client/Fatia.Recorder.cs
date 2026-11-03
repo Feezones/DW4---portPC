@@ -37,6 +37,20 @@ public partial class Fatia
 
     // Na troca de ação do jogador: a caixa 60000 dura 1 quadro (Set 60000 1 1) numa ação de 1 quadro, então a sonda é
     // conferida uma vez por ação, sem depender do quadro exato.
+    // Alcance para virar o golpe para quem fala: a sonda (7 à frente, caixa 3) mais o volume do NPC (10) dá ~13,5; 16 cobre o balcão.
+    const float TalkReach = 16f;
+
+    /// <summary>NPC com conversa (hit_&lt;nome&gt;.lua) mais perto, no alcance da sonda e na mesma altura; null se não houver.</summary>
+    WorldObject? TalkTarget()
+    {
+        if (_stage == null) return null;
+        var pp = _player.GlobalPosition;
+        return _objects.Where(o => o.Name.StartsWith("n_", StringComparison.Ordinal) && !o.Dead && o.Actor.Root.IsInsideTree())
+            .Select(o => (o, d: new Vector2(o.Actor.Root.GlobalPosition.X - pp.X, o.Actor.Root.GlobalPosition.Z - pp.Z).Length()))
+            .Where(x => x.d <= TalkReach && Math.Abs(x.o.Actor.Root.GlobalPosition.Y - pp.Y) < 15 && _stage.Has($"hit_{x.o.Name}.lua"))
+            .OrderBy(x => x.d).Select(x => x.o).FirstOrDefault();
+    }
+
     void CheckTalkProbe()
     {
         if (_runner == null || _stage == null) return;
@@ -49,9 +63,11 @@ public partial class Fatia
             foreach (var o in _objects.Where(o => o.Name.StartsWith("n_", StringComparison.Ordinal) && !o.Dead).ToList())
             {
                 var p = o.Actor.Root.GlobalPosition;
+                if (DiagNpc && c.DistanceTo(p) < 40) GD.Print($"[sonda] {o.Name}/{o.Index} em {p.Round()}: sonda {c.Round()} tamanho {h.Size}, jogador {_player.GlobalPosition.Round()}");
                 if (Math.Abs(c.X - p.X) > h.Size.X / 2 + TalkVolume.X / 2 || Math.Abs(c.Z - p.Z) > h.Size.Z / 2 + TalkVolume.Z / 2
                     || c.Y + h.Size.Y / 2 < p.Y || c.Y - h.Size.Y / 2 > p.Y + TalkVolume.Y) continue;
                 var script = $"hit_{o.Name}.lua";
+                if (DiagNpc) GD.Print($"[conversa] {o.Name}/{o.Index}: {script} {(_stage.Has(script) ? "roda" : "NÃO EXISTE")}");
                 if (!_stage.Has(script)) continue;
                 o.BulletKind = TalkProbe;
                 _stage.RunAs(script, o);

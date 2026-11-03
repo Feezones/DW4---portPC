@@ -389,7 +389,14 @@ public partial class Fatia : Node3D
         {
             attacking = _techKey >= 0 ? StartTechnique(_techKey) && _runner.Running : _runner.Start("SQ_ATCK1", StyleOf("SQ_ATCK1"));
             _techKey = -1;
-            if (attacking && !_demo && !_usingPad && MouseGround() is { } aim)
+            // Perto de quem fala, o golpe vira para ele: a sonda de conversa (Fatia.Recorder.cs) sai 7 à frente e, virada para o
+            // cursor, errava o NPC (Digi-Lab, banco e os outros do lobby só respondiam com o cursor em cima deles).
+            if (attacking && !_demo && TalkTarget() is { } npc)
+            {
+                var to = npc.Actor.Root.GlobalPosition - _player.GlobalPosition;
+                if (to.X * to.X + to.Z * to.Z > 0.01f) _move.Face(MathF.Atan2(to.X, to.Z));
+            }
+            else if (attacking && !_demo && !_usingPad && MouseGround() is { } aim)
             {
                 // DECISÃO DO PORT PARA PC (não é do original): o golpe sai na direção do cursor do mouse.
                 var to = aim - _player.GlobalPosition;
