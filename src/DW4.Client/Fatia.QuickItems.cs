@@ -207,7 +207,6 @@ public partial class Fatia
     {
         if (_db == null || _pf == null || !_padEnabled || !_playerCtrl || InCutscene || _hp <= 0) return;
         if (_runner?.Running == true && _runner.Sequence != "SQ_WAIT" && _runner.Sequence != "SQ_WALK") { Toast("Agora não dá para usar item."); return; }
-        if (IsGateDisk(row)) { UseGateDisk(row); return; }
         if (_inventory.UseDisk(_db, row) is not { } heal) return;
         int hp = _hp, mp = _mp;
         _hp = Math.Min(_pf.MaxHp, _hp + heal.Hp);
@@ -218,25 +217,5 @@ public partial class Fatia
         if (_mp > mp) Float(_player, $"MP +{_mp - mp}", Colors.LightBlue);
         _lastEvent = $"usou {DiskName(row)}";
         ScriptLog($"usou {DiskName(row)} (HP {hp}→{_hp}, MP {mp}→{_mp})");
-    }
-
-    /// <summary>
-    /// Gate Disk: FATO (docs/gameplay/fase4-levantamento-missoes.md, fase5-lobby-be.md) o uso roda a gatedisc.lua da fase, que
-    /// grava o portão de volta (SYSsetGateStage) e sai para o Emergency Gate do lobby (SETGENERATEPOS I&lt;3&gt;, NEXTSTAGE
-    /// "stagML11"). O port tratava todo disco como cura: o Gate Disk era gasto (HP/MP 0) e nada acontecia.
-    /// HIPÓTESE: o disco é reconhecido pelo nome da conItem ("Gate"); a coluna de tipo do jogo ainda não foi lida.
-    /// Sem gatedisc.lua na fase, o disco não é gasto.
-    /// </summary>
-    bool IsGateDisk(int row) =>
-        _db != null && _db.Contains("conItem") && _db["conItem"].Text(row, "NAME").Contains("Gate", StringComparison.OrdinalIgnoreCase);
-
-    void UseGateDisk(int row)
-    {
-        if (_stage?.Has("gatedisc.lua") != true) { Toast($"{DiskName(row)} não funciona aqui."); return; }
-        if (_inventory.UseDisk(_db!, row) == null) return;
-        if (_runner != null && _runner.Start("SQ_ITEM", StyleOf("SQ_ITEM"))) _move.Stop();
-        _lastEvent = $"usou {DiskName(row)}";
-        ScriptLog($"usou {DiskName(row)}: gatedisc.lua");
-        _stage.Run("gatedisc.lua");
     }
 }
