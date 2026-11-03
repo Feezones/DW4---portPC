@@ -45,6 +45,7 @@ public partial class MainMenu : Control
     {
         DataPaths.MigrateOldUserData();
         PortSettings.Apply(GetTree().Root);
+        Online.Claim(); // gasta o ticket do launcher antes que ele vença (2 min)
         // Pacote do launcher: a versão publicada vai para o log (para os relatos de teste); a janela fica só "Digimon World 4".
         if (DataPaths.Version is { Length: > 0 } version) GD.Print($"[versao] {version}; dados em {DataPaths.Fatia}");
         if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_VER_MODELO").Length > 0)
@@ -132,6 +133,7 @@ public partial class MainMenu : Control
 
     public override void _Process(double delta)
     {
+        Online.Poll(null);
         FitScreen();
         if (_art == null) return;
         _art.Tick((float)delta);
