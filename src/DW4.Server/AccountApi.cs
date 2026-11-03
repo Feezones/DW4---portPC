@@ -77,17 +77,69 @@ public sealed class DmoApi(Uri baseUri, string serviceKey) : IAccountApi
 }
 
 /// <summary>
-/// Teste local sem a DMO.API (DW4_DEV=1): o ticket "dev:Nome" vira a conta Nome, sem party. Nunca ligar em produção.
+/// Teste local sem a DMO.API (DW4_DEV=1): o ticket "dev:Nome" vira a conta Nome. Sem amigos; a party fica em memória (convidar e
+/// aceitar pelo menu do F juntam os dois, até 4; sair do jogo tira da party) para testar o quadro e o combate em grupo. Nunca
+/// ligar em produção.
 /// </summary>
 public sealed class DevApi : IAccountApi
 {
+    readonly object _lock = new();
+    readonly Dictionary<long, string> _partyOf = [];
+    readonly Dictionary<string, long> _leaderOf = [];
+    int _next;
+
     public Task<Identity?> RedeemAsync(string ticket, string ip) =>
         Task.FromResult(ticket.StartsWith("dev:", StringComparison.Ordinal) && ticket.Length > 4
             ? new Identity((long)(uint)ticket[4..].ToLowerInvariant().GetHashCode() + 1, ticket[4..], null) : null);
 
-    public Task<string?> PresenceAsync(long accountId, bool online) => Task.FromResult<string?>(null);
+    public Task<string?> PresenceAsync(long accountId, bool online)
+    {
+        lock (_lock)
+        {
+            if (!online) Leave(accountId);
+            return Task.FromResult(_partyOf.GetValueOrDefault(accountId));
+        }
+    }
 
-    /// <summary>Sem amigos nem party de verdade: o menu mostra "none" e os pedidos dão certo (para ver as janelas).</summary>
-    public Task<SocialReply> SocialAsync(Identity me, string action, Identity target, string inviteId) =>
-        Task.FromResult(action == "relation" ? new SocialReply(true, "", "none") : new SocialReply(true, "", InviteId: action == "party-invite" ? "dev-1" : ""));
+    public Task<SocialReply> SocialAsync(Identity me, string action, Identity target, string inviteId)
+    {
+        lock (_lock)
+        {
+            var mine = _partyOf.GetValueOrDefault(me.AccountId);
+            var theirs = _partyOf.GetValueOrDefault(target.AccountId);
+            switch (action)
+            {
+                case "party-invite":
+                    if (theirs != null) return Task.FromResult(new SocialReply(false, "Esse jogador já está num grupo."));
+                    if (mine != null && _leaderOf[mine] != me.AccountId) return Task.FromResult(new SocialReply(false, "Só o líder convida."));
+                    if (mine != null && _partyOf.Values.Count(v => v == mine) >= 4) return Task.FromResult(new SocialReply(false, "O grupo está cheio."));
+                    return Task.FromResult(new SocialReply(true, "", InviteId: $"dev-{target.AccountId}"));
+                case "party-accept":
+                    // Quem aceita é "me"; quem convidou é "target".
+                    if (mine != null) return Task.FromResult(new SocialReply(false, "Você já está num grupo."));
+                    if (theirs == null)
+                    {
+                        theirs = $"dev-party-{++_next}";
+                        _partyOf[target.AccountId] = theirs;
+                        _leaderOf[theirs] = target.AccountId;
+                    }
+                    _partyOf[me.AccountId] = theirs;
+                    return Task.FromResult(new SocialReply(true, "", Accepted: true));
+                case "relation":
+                    return Task.FromResult(new SocialReply(true, "", "none", mine != null, mine != null && _leaderOf[mine] == me.AccountId,
+                        mine != null && mine == theirs, mine == null ? 0 : _partyOf.Values.Count(v => v == mine), theirs != null && theirs != mine));
+                default:
+                    return Task.FromResult(new SocialReply(true, ""));
+            }
+        }
+    }
+
+    // Saiu do jogo: sai da party; sobrou 1, a party acaba (regra do launcher). O líder que sai passa para o próximo.
+    void Leave(long accountId)
+    {
+        if (!_partyOf.Remove(accountId, out var party)) return;
+        var left = _partyOf.Where(kv => kv.Value == party).Select(kv => kv.Key).ToList();
+        if (left.Count <= 1) { foreach (var a in left) _partyOf.Remove(a); _leaderOf.Remove(party); }
+        else if (_leaderOf[party] == accountId) _leaderOf[party] = left[0];
+    }
 }
