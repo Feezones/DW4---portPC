@@ -93,6 +93,7 @@ conferido na janela. O estado vem do repositório, dos testes (81 ok) e das jane
 
 ## Já resolvido (referência)
 
+- Mecha Rogue 04 ×3 (dng308b3): giro SQ_ATCK4 pelo CTRL "toWait", vitória e portas (2026-11-03, docs/gameplay/chefe-mecha-rogue.md).
 - Mammothmon (dng102b3): investida, sopro, presas, vitória e portas como no original (2026-11-03, docs/gameplay/chefe-mammothmon.md).
 - Blossomon (dng101b2) se move, bate, e ao cair abre as portas; barra de HP com a arte do jogo (2026-11-03, docs/gameplay/chefe-blossomon.md).
 - NPCs do lobby respondem ao ataque com o cursor em qualquer lugar (2026-11-02, docs/gameplay/npcs-lobby.md). Falta: janela CNOS do Appraisal Keeper.

@@ -91,6 +91,9 @@ public partial class Fatia
             case "LABELCTRL" when c.S(0) is { } label:
                 e.Labels[c.S(1) is { Length: > 0 } seq ? seq : "SQ_WAIT"] = label;
                 break;
+            case "CTRL" when c.S(0) == "toWait":
+                e.AiCanCut = true;
+                break;
             case "AIMAP" when c.S(0) is { } map:
                 e.Brain?.SetMap(map);
                 break;
@@ -122,6 +125,7 @@ public partial class Fatia
             var only = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, $"{name}_*.lua").Select(Path.GetFileName).ToList() : [];
             script = only.Count == 1 ? only[0] : null;
         }
+        if (DiagNpc) GD.Print($"[luacall] {model}: {name} → {script ?? "sem script"}");
         if (script != null)
         {
             var host = _stage.Host;
@@ -155,6 +159,7 @@ public partial class Fatia
         if (DiagNpc) GD.Print($"[ini] {Engine.GetPhysicsFrames()} {e.Kind.Model}: {seq} (mapa {e.Brain?.Map.Name ?? "-"}) anim {e.Anim?.CurrentAnimation ?? "-"}");
         e.Motion.SequenceChanged(); // 0x8030EA38: troca de sequência
         e.HitLua = null;
+        e.AiCanCut = false;
         if (e.Labels.TryGetValue(seq, out var l) && e.Runner.Start(seq, l)) return true;
         if (e.Runner.Start(seq, "common") || e.Runner.Start(seq, "NORM")) return true;
         var first = e.Kind.Sequences.TryGetValue(seq, out var cmds) ? cmds.FirstOrDefault(c => c.Kind == "LABEL")?.S(0) : null;

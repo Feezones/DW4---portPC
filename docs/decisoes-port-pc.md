@@ -4,6 +4,7 @@ Mudanças pedidas para o PC que **não existem no original**. Ficam separadas da
 
 | Data | Decisão | Pedido por | Onde |
 |---|---|---|---|
+| 2026-11-03 | CTRL "toWait" de uma sequência de inimigo deixa a IA do mapa atual cortar com outro golpe (HIPÓTESE; Mecha Rogue 04: corrida do SQ_ATCK2 → SQ_ATCK4). | feelipe | `Fatia.Enemies.cs` (AiCanCut), docs/gameplay/chefe-mecha-rogue.md |
 | 2026-11-03 | Mammothmon: ENEMY <modelo> <n> SQ_… do script vale como MODELCTRL para aquele inimigo (a investida de abertura do matg11.lua). | feelipe | `Fatia.Boss.cs` (DeliverToEnemies), docs/gameplay/chefe-mammothmon.md |
 | 2026-11-03 | Blossomon: ENEMY/MODELCTRL <modelo> OFCTRL/ONCTRL travam e soltam só aquele modelo; com HP 0 o inimigo segue para as SQ_DFORM* (LUACALL "ded" abre as portas); a barra de chefe e_* segue o HP sem o hit_<modelo>.lua. | feelipe (chefe travado e portas fechadas) | `Fatia.Recorder.cs`, `Fatia.Enemies.cs`, `Fatia.Boss.cs`, docs/gameplay/chefe-blossomon.md |
 | 2026-11-02 | Com um NPC que fala a até 16, o ataque vira para ele em vez de para o cursor: a sonda de conversa sai do golpe e, virada para o cursor, errava os NPCs do lobby (Digi-Lab, banco). | feelipe (NPCs do lobby não funcionavam) | `src/DW4.Client/Fatia.Recorder.cs` (`TalkTarget`), docs/gameplay/npcs-lobby.md |
