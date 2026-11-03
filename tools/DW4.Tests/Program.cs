@@ -1176,6 +1176,11 @@ Test("Combate (FIGHTCALC): dano do jogador e do inimigo, acerto, crítico, exper
     Equal(968L, PlayerGrowth.NextExp(2), "NEXTEXP 2");
     Equal(17000L, PlayerGrowth.NextExp(10), "NEXTEXP 10");
     Equal(0L, PlayerGrowth.NextExp(999), "NEXTEXP 999");
+    // Queda (BKCHIPBITEXP 0x80377F70): perde 2/10 do degrau anterior, sem cair abaixo do início do nível
+    Equal(0L, PlayerGrowth.DeathExpLoss(1, 200), "queda no nível 1 não perde EXP");
+    Equal(68L, PlayerGrowth.DeathExpLoss(2, 900), "nível 2: 341·2/10");
+    Equal(125L, PlayerGrowth.DeathExpLoss(3, 2000), "nível 3: (968−341)·2/10");
+    Equal(32L, PlayerGrowth.DeathExpLoss(3, 1000), "nível 3: não desce abaixo de NEXTEXP 2");
 
     // Skill: limite por nível e +1 com taxa sintética
     Equal(1080, SkillGrowth.Limit(36), "limite 36");

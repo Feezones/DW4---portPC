@@ -65,6 +65,7 @@ public partial class Fatia
 
     void TickPrints(float dt)
     {
+        TickRaiseDebug(dt);
         if (OS.IsDebugBuild() && _debugGenClock < 5 && OS.GetEnvironment("DW4_GERAR") is { Length: > 0 } gen && (_debugGenClock += dt) >= 5)
             Deliver(new DW4.Script.Be.BeMessage("MODELCTRL", gen, 0, "GENERATE", [], null));
         if (_printAt.Count == 0) return;

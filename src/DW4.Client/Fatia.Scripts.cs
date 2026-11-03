@@ -41,8 +41,14 @@ public partial class Fatia : IBeEngine
         // A GAMERAM sobrevive à troca de fase (recarga da cena): flags e contadores são do jogo, não da cena.
         // LEVEL e as formas do registro do jogador 0 (SYSgetPlayerLevel, SYSisGetShinkaDigimon, SYSctlShinka).
         // DEPURAÇÃO (só no build Debug, não é do jogo): DW4_FLG=4,409 liga essas flags da GAMERAM ao abrir a fase (estado do enredo).
-        if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_FLG") is { Length: > 0 } flags)
+        // Só na primeira fase aberta pelo processo: depois a GAMERAM segue sozinha (assim dá para conferir o que a morte ou a troca
+        // de fase fazem com as flags).
+        if (OS.IsDebugBuild() && !s_debugFlagsApplied && OS.GetEnvironment("DW4_FLG") is { Length: > 0 } flags)
+        {
+            s_debugFlagsApplied = true;
             foreach (var f in flags.Split(',', StringSplitOptions.RemoveEmptyEntries)) if (int.TryParse(f, out int n)) Ram.SetFlag(n, true);
+        }
+        if (DiagNpc) GD.Print($"[flags] {_stageName}: 2 (1º destino) = {Ram.FlagOn(2)}, 409 (missão do quadro) = {Ram.FlagOn(409)}, 501 = {Ram.FlagOn(501)}");
         Ram.Players[0].Level = () => _level;
         if (Ram.Players[0].Forms.Current < 0 && _shinkaRow is >= 0 and < Evolution.Forms) Ram.Players[0].Forms.Start(_shinkaRow);
         var host = new BeHost(this, Ram, sys) { Unimplemented = (n, _) => ScriptLog($"be:{n} ainda não implementado") };
@@ -50,6 +56,7 @@ public partial class Fatia : IBeEngine
         if (Session.PendingGameStart) RunGameStart(host);
         _stage.Boot();
         _stage.Start();
+        SpawnBackupChip();
         return true;
     }
 
@@ -124,6 +131,8 @@ public partial class Fatia : IBeEngine
 
     public (double X, double Y, double Z, double Yaw)? PlayerPose(int player) =>
         player == 0 ? (_player.GlobalPosition.X, _player.GlobalPosition.Y, _player.GlobalPosition.Z, _move.Facing) : null;
+
+    static bool s_debugFlagsApplied;
 
     public double? Query(BeMessage m) => QueryShop(m) ?? QueryListMenu(m) ?? QueryStageChange(m) ?? QueryWindows(m) ?? QueryRecorder(m) ?? m.Command switch
     {

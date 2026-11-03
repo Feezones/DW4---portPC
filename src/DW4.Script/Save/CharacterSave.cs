@@ -45,6 +45,11 @@ public sealed class CharacterSave
     public Dictionary<int, int> Disks { get; set; } = [];
     /// <summary>Atalhos de disco do port (teclas 1–5): linhas da conItem, −1 = vazio.</summary>
     public int[] QuickItems { get; set; } = [];
+    /// <summary>Backup chip deixado na queda (fase vazia = nenhum): posição, BIT e EXP guardados.</summary>
+    public string ChipStage { get; set; } = "";
+    public float[] ChipPos { get; set; } = [0, 0, 0];
+    public int ChipBit { get; set; }
+    public long ChipExp { get; set; }
     public List<int> ImportantItems { get; set; } = [];
     /// <summary>FLAG (1024 bytes) e CARDLIST (50 bytes) em base64; COUNTER (16 inteiros).</summary>
     public string Flags { get; set; } = "";
@@ -99,6 +104,7 @@ public sealed class CharacterSave
             Devices = p.Items.Devices.Select(d => new ItemSave(d.Table, d.Row)).ToList(),
             Disks = p.Items.DiskCounts.Where(kv => kv.Value > 0).ToDictionary(kv => kv.Key, kv => kv.Value),
             QuickItems = (int[])p.Items.QuickItems.Clone(),
+            ChipStage = p.Items.ChipStage, ChipPos = (float[])p.Items.ChipPos.Clone(), ChipBit = p.Items.ChipBit, ChipExp = p.Items.ChipExp,
             ImportantItems = p.Items.ImportantFlags.OrderBy(x => x).ToList(),
             Flags = Convert.ToBase64String(ram.Flags), Cards = Convert.ToBase64String(p.Cards), Counters = (int[])ram.Counters.Clone(),
         };
@@ -132,6 +138,8 @@ public sealed class CharacterSave
         foreach (var row in ImportantItems) inv.Add(new ItemRef("impItem", row));
         inv.RestoreBank(BankBit, BankDevices.Select(d => new ItemRef(d.Table, d.Row)));
         for (int i = 0; i < Math.Min(QuickItems.Length, inv.QuickItems.Length); i++) inv.QuickItems[i] = QuickItems[i];
+        (inv.ChipStage, inv.ChipBit, inv.ChipExp) = (ChipStage ?? "", ChipBit, ChipExp);
+        if (ChipPos is { Length: 3 }) inv.ChipPos = (float[])ChipPos.Clone();
         p.Items = inv;
         p.Equipment = WeaponRow >= 0 ? new Equipment(WeaponRow, Armor1Row, Armor2Row) { WeaponChips = WeaponChips.ToList(), ArmorChips = ArmorChips.ToList(), ReserveWeapons = ReserveWeapons.ToList() } : null;
         CopyBase64(Cards, p.Cards);

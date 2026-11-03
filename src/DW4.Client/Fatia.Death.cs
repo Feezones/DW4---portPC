@@ -24,9 +24,13 @@ public partial class Fatia
     bool _gameOver;
     float _deathTimer = -1;
 
+    // DEPURAÇÃO (só no build Debug): DW4_MORRER=5 zera o HP aos 5 s (conferir o fluxo da queda sem lutar).
+    static float s_debugDeathClock;
+
     void TickDeath(float dt)
     {
         if (_pf == null || _leaving) return;
+        if (OS.IsDebugBuild() && s_debugDeathClock >= 0 && float.TryParse(OS.GetEnvironment("DW4_MORRER"), out float dieAt) && (s_debugDeathClock += dt) >= dieAt) { s_debugDeathClock = -1; _hp = 0; _inventory.Bit += 123; } // +123 BIT para conferir o backup chip
         if (_hp > 0) { _deathTimer = -1; _gameOver = false; return; }
         if (_deathTimer < 0) { _deathTimer = 0; return; }
         _deathTimer += dt;
@@ -43,10 +47,10 @@ public partial class Fatia
         _gameOver = false;
         bool field = !_stageName.StartsWith("stagML", StringComparison.OrdinalIgnoreCase);
         int lost = field ? _inventory.Bit : 0;
-        if (field) _inventory.Bit = 0;
+        if (field) DropBackupChip(); // BIT e EXP perdida ficam no backup chip (Fatia.BackupChip.cs)
         _hp = _pf.MaxHp;
         _mp = _pf.MaxMp;
-        ScriptLog($"caiu: {(field ? $"perdeu {lost} BIT; " : "")}volta ao lobby");
+        ScriptLog($"caiu: {(field ? $"{lost} BIT no backup chip; " : "")}volta ao lobby");
         _nextEntry = DeathEntry;
         NextStage(LobbyStage);
     }
