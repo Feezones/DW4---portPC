@@ -15,6 +15,9 @@ Primeira etapa do coop (ADR 0003): os jogadores se veem e andam juntos. Combate,
 
 1. O launcher pede o ticket (`api/auth/game-ticket`) e abre `DW4.exe -- --conta <usuário> --ticket <ticket>`. O jogo conecta no servidor oficial (`Online.DefaultServer`, `209.126.83.192:7031`, a VPS da DMO.API); `--servidor host:porta` ou `DW4_SERVIDOR` trocam o endereço.
 2. O jogo conecta (UDP, chave `DW4-online-1`) e manda `Hello` com o ticket, o nome do personagem, a forma e o nível.
+   O jogo gasta o ticket logo ao abrir (`Online.Claim`, no menu), porque ele só vale 2 min para o primeiro uso e a abertura,
+   o menu e a criação de personagem passam disso. Depois, ao entrar na fase, reconecta com o personagem (o mesmo ticket vale
+   do mesmo IP por 12 h); se cair, tenta de novo na próxima troca de fase.
 3. O servidor resgata o ticket na DMO.API (mesma regra do DMO: 1º uso em 2 min; reconexão do mesmo IP por 12 h).
    Válido: `Welcome`; inválido: a desconexão leva o motivo, e o jogo segue local avisando no chat.
 4. A cada 30 s o servidor manda o heartbeat de presença; a resposta traz a party, que decide a instância.
