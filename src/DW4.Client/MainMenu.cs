@@ -295,6 +295,9 @@ public partial class MainMenu : Control
     {
         if (!Playable(c.Model)) { Message($"{FormName(c.CurrentForm)} ainda não tem modelo no cliente.", ShowSlots); return; }
         // FATO (hostLoad.lua): a dificuldade é escolhida a cada começo, até o máximo liberado pelas flags da vaga.
+        // Vagas gravadas antes da PermanentFlags (até a 0.6.3): o enredo só nas flags de trabalho; passa para as permanentes
+        // antes da dificuldade (FLG 711/77) e da gameStart.lua lerem.
+        DW4.Script.Save.PermanentFlags.Repair(c);
         var ram = new DW4.Script.Be.GameRam();
         c.Apply(ram, 0);
         if (ram.DifficultyMax == 0) { c.Difficulty = 0; Enter(slot, c); return; }

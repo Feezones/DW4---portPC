@@ -1202,6 +1202,29 @@ Test("Combate (FIGHTCALC): dano do jogador e do inimigo, acerto, crítico, exper
     True(new MersenneTwister().Next() == new MersenneTwister(MersenneTwister.GameSeed).Next(), "semente do jogo 5150");
 });
 
+Test("Port: PermanentFlags passa o enredo para o bloco da dificuldade (tabela do start.lua da stagIS12)", () =>
+{
+    var ram = new GameRam { Difficulty = 0 };
+    ram.SetFlag(2, true); ram.SetFlag(70, true); ram.SetFlag(49, true); ram.SetFlag(99, true);
+    ram.Players[0].Items.Add(new ItemRef("impItem", 11));
+    DW4.Script.Save.PermanentFlags.Commit(ram);
+    Equal(1, ram.FlagOn(701), "Normal: FLG 701 ← 2");
+    Equal(1, ram.FlagOn(711), "Normal: FLG 711 ← 70 (libera o Hard)");
+    Equal(1, ram.FlagOn(801), "Normal: FLG 801 ← 49");
+    Equal(1, ram.FlagOn(724), "Normal: FLG 724 ← 99");
+    Equal(1, ram.FlagOn(529), "Normal: FLG 529 ← FLAGFOLDER 11");
+    Equal(1, ram.DifficultyMax, "Hard liberado");
+    ram.SetFlag(2, false);
+    DW4.Script.Save.PermanentFlags.Commit(ram);
+    Equal(0, ram.FlagOn(701), "desligar também passa");
+    var hard = new GameRam { Difficulty = 1 };
+    hard.SetFlag(70, true); hard.SetFlag(1, true);
+    DW4.Script.Save.PermanentFlags.Commit(hard);
+    Equal(1, hard.FlagOn(77), "Hard: FLG 77 ← 70 (libera o Very Hard)");
+    Equal(1, hard.FlagOn(7), "Hard: FLG 7 ← 1");
+    Equal(0, hard.FlagOn(700), "Hard não mexe no bloco do Normal");
+});
+
 Test("PowerPC: desmontagem de instruções conhecidas e DOL sintético (seções, r13, string e ponteiro)", () =>
 {
     (uint W, uint Pc, string Text)[] cases =
@@ -2316,6 +2339,33 @@ if (args.Length == 1)
         Equal(0, fresh.DifficultyMax, "novo: só Normal");
         fresh.SetFlag(711, true); Equal(1, fresh.DifficultyMax, "FLG 711: até Hard");
         fresh.SetFlag(77, true); Equal(2, fresh.DifficultyMax, "FLG 77: até Very Hard");
+    });
+
+    Test("Jogo: o enredo gravado volta depois da gameStart.lua (PermanentFlags = start.lua da stagIS12), nas três dificuldades", () =>
+    {
+        var file = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fases", "stagis10", "lua", "gameStart.lua");
+        True(File.Exists(file), $"exportada: {file}");
+        // Trabalho que a gameStart.lua refaz: 1..6, 19..20, 67..70, 83, 86, 89..99, 320..327, 329..333, 334, 335, 49, 82, 383.
+        int[] story = [1, 2, 3, 4, 5, 6, 19, 20, 67, 70, 83, 86, 89, 99, 320, 327, 329, 333, 334, 335, 49, 82, 383];
+        for (int d = 0; d < 3; d++)
+        {
+            var ram = new GameRam { Difficulty = d };
+            foreach (var f in story) ram.SetFlag(f, true);
+            ram.Players[0].Items.Add(new ItemRef("impItem", 4));
+            var save = DW4.Script.Save.CharacterSave.Capture(ram, 0, "Gui", "stagml11", 0);
+            DW4.Script.Save.PermanentFlags.Repair(save); // vaga antiga (só trabalho) consertada ao entrar
+            var back = new GameRam();
+            save.Apply(back, 0);
+            var gs = new StageScripts(new Dictionary<string, byte[]> { ["gameStart.lua"] = File.ReadAllBytes(file) }, new BeHost(new RecordingEngine(), back, new BeSystem { FolderName = "stagis10" }));
+            True(gs.Run("gameStart.lua"), $"dificuldade {d}: roda");
+            foreach (var f in story) Equal(1, back.FlagOn(f), $"dificuldade {d}: FLG {f} depois da gameStart.lua");
+            True(back.Players[0].Items.Has(new ItemRef("impItem", 4)), $"dificuldade {d}: item da FLAGFOLDER");
+            // Sem o Commit (como até a 0.6.3), a FLG 2 (base da Ofanimon) some e o jogo recomeça do tutorial.
+            var old = new GameRam();
+            DW4.Script.Save.CharacterSave.Capture(ram, 0, "Gui", "stagml11", 0).Apply(old, 0);
+            new StageScripts(new Dictionary<string, byte[]> { ["gameStart.lua"] = File.ReadAllBytes(file) }, new BeHost(new RecordingEngine(), old, new BeSystem { FolderName = "stagis10" })).Run("gameStart.lua");
+            Equal(0, old.FlagOn(2), $"dificuldade {d}: sem o Commit a FLG 2 se perde");
+        }
     });
 
     Test("Jogo: NPC da stagML02 (n_digilfm): SQ_SHOK espera o movimento (WAITCHECK \"Motion\"); o andar continua no DELAY01", () =>
