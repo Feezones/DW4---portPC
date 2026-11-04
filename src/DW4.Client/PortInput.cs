@@ -22,7 +22,11 @@ public static class PortInput
             else InputMap.AddAction(name, 0.35f);
             foreach (var device in new[] { InputBindings.Keyboard, InputBindings.Pad })
                 foreach (var binding in b.Get(device, a.Id))
+                {
+                    // Celular: o toque vira clique do mouse nos menus; sem isso, tocar em qualquer lugar da tela atacaria.
+                    if (DataPaths.Mobile && binding.StartsWith("mouse:", StringComparison.Ordinal)) continue;
                     if (ToEvent(binding) is { } ev) InputMap.ActionAddEvent(name, ev);
+                }
         }
     }
 

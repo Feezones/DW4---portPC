@@ -150,6 +150,7 @@ public partial class Fatia : Node3D
     public override void _Ready()
     {
         PortSettings.ApplyLanguage(PortSettings.Current); // a fase pode abrir direto (DW4_FASE), sem passar pelo menu inicial
+        if (DataPaths.Mobile) AddChild(new TouchControls()); // celular: botões na tela (some com o controle Bluetooth)
         ChooseStage();
         var env = new Godot.Environment { AmbientLightSource = Godot.Environment.AmbientSource.Color, AmbientLightColor = new Color(0.6f, 0.6f, 0.65f), BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black };
         // FATO (stag0102 #621): igFogAttr 60..300 com cor (0,8 0,7 0,8). Fundo na cor da neblina e neblina por profundidade.
@@ -400,7 +401,7 @@ public partial class Fatia : Node3D
                 var to = npc.Actor.Root.GlobalPosition - _player.GlobalPosition;
                 if (to.X * to.X + to.Z * to.Z > 0.01f) _move.Face(MathF.Atan2(to.X, to.Z));
             }
-            else if (attacking && !_demo && !_bot && !_usingPad && MouseGround() is { } aim) // o bot mira sozinho
+            else if (attacking && !_demo && !_bot && !_usingPad && !DataPaths.Mobile && MouseGround() is { } aim) // o bot mira sozinho
             {
                 // DECISÃO DO PORT PARA PC (não é do original): o golpe sai na direção do cursor do mouse.
                 var to = aim - _player.GlobalPosition;

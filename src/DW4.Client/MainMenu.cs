@@ -43,6 +43,13 @@ public partial class MainMenu : Control
 
     public override void _Ready()
     {
+        // Celular: login e atualização dos dados antes de tudo (MobileBoot.cs); depois volta para cá.
+        if (DataPaths.Mobile && !MobileBoot.Done)
+        {
+            Visible = false;
+            GetTree().CallDeferred(SceneTree.MethodName.ChangeSceneToFile, MobileBoot.Scene);
+            return;
+        }
         DataPaths.MigrateOldUserData();
         PortSettings.Apply(GetTree().Root);
         Online.Claim(); // gasta o ticket do launcher antes que ele vença (2 min)

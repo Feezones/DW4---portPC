@@ -70,6 +70,15 @@ public static class Session
     static string? s_account, s_ticket;
     static bool s_argsRead;
 
+    /// <summary>Celular: a conta e o ticket vêm da tela de login do próprio jogo (MobileBoot), no lugar dos argumentos do launcher.</summary>
+    public static void UseLogin(string account, string ticket)
+    {
+        s_argsRead = true;
+        s_account = account.Trim().ToLowerInvariant();
+        s_ticket = ticket;
+        GD.Print("[conta] conta da tela de login do celular");
+    }
+
     static void ReadLauncherArgs()
     {
         if (s_argsRead) return;
