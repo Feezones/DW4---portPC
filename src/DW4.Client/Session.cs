@@ -158,6 +158,12 @@ public static class Session
         OS.SetEnvironment("DW4_FASE", stage);
         OS.SetEnvironment("DW4_ENTRADA", entry.ToString());
         OS.SetEnvironment("DW4_INICIO", "");
+        // DEPURAÇÃO (só no build Debug): DW4_INICIO_VAGA="x,y,z" nasce nesse ponto ao entrar pela vaga (uma vez).
+        if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_INICIO_VAGA") is { Length: > 0 } inicioVaga)
+        {
+            OS.SetEnvironment("DW4_INICIO", inicioVaga);
+            OS.SetEnvironment("DW4_INICIO_VAGA", "");
+        }
         tree.ChangeSceneToFile(GameScene);
         return true;
     }
