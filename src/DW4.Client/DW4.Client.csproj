@@ -1,0 +1,22 @@
+<Project Sdk="Godot.NET.Sdk/4.7.2">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <RootNamespace>DW4.Client</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DW4.Gameplay\DW4.Gameplay.csproj" />
+    <ProjectReference Include="..\DW4.Script\DW4.Script.csproj" />
+    <ProjectReference Include="..\DW4.Media\DW4.Media.csproj" />
+    <ProjectReference Include="..\DW4.Net\DW4.Net.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- LiteNetLib (MIT, github.com/RevenantX/LiteNetLib): transporte do online, aprovada pelo responsável em 2026-11-02 (ADR 0003). -->
+    <PackageReference Include="LiteNetLib" Version="2.1.5" />
+  </ItemGroup>
+
+</Project>
