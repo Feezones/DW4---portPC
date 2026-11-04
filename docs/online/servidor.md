@@ -79,7 +79,8 @@ o celular usam as mesmas 4 vagas da conta.
   No editor da Godot sem ticket as vagas continuam em arquivo (`LocalCharacterStore`), só para desenvolver.
 - **Migração:** as vagas antigas do aparelho (`user://accounts/<conta>/slotN.json`) sobem sozinhas ao abrir a tela de vagas, na mesma
   vaga se livre, senão na primeira livre (`SlotMigration`); o arquivo vira `slotN.json.enviado` (cópia, o jogo não lê mais). As que
-  não cabem ficam no aparelho e o menu avisa.
+  não cabem ficam no aparelho e o menu avisa. No celular nada sobe (DECISÃO DO RESPONSÁVEL, 2026-11-04: valem os saves do PC):
+  as vagas locais só viram `.enviado` e o celular usa as da conta.
 - **Uma sessão por conta:** a conta que entra em outro aparelho derruba a anterior com `Protocol.KickedReason`; o aparelho derrubado
   volta ao menu sem gravar e não reconecta sozinho (senão os dois ficariam se derrubando e gravando um por cima do outro).
 

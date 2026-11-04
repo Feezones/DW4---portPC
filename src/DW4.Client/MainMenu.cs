@@ -347,6 +347,16 @@ public partial class MainMenu : Control
         try { mine = local.List(account); }
         catch (Exception e) when (e is IOException or ArgumentException) { GD.PrintErr($"[migração] vagas locais: {e.Message}"); return (server, null); }
         if (mine.All(c => c == null)) return (server, null);
+        // DECISÃO DO RESPONSÁVEL (2026-11-04): os saves do PC vão para a conta; os do celular são descartados (ficam só como
+        // slotN.json.enviado, sem subir), e o celular passa a usar os do PC que estão na conta.
+        if (DataPaths.Mobile)
+        {
+            for (int i = 0; i < mine.Count; i++)
+                if (mine[i] != null)
+                    try { local.MarkMigrated(account, i); GD.Print($"[migração] celular: vaga local {i + 1} ({mine[i]!.Name}) descartada"); }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException) { GD.PrintErr($"[migração] {e.Message}"); }
+            return (server, null);
+        }
         var slots = server.ToArray();
         var sent = new List<string>();
         var left = new List<string>();
