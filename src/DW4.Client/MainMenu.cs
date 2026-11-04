@@ -151,6 +151,8 @@ public partial class MainMenu : Control
     }
 
     // Título do jogo: "Press START" → menu de duas linhas. Teclado, controle e mouse (clique confirma, roda troca a linha).
+    static readonly bool Touch = DataPaths.Mobile || OS.IsDebugBuild() && OS.GetEnvironment("DW4_TOQUE") == "1";
+
     bool TitleInput(InputEvent e)
     {
         if (_art == null || _title == TitleState.None || _movieOn) return false;
@@ -160,7 +162,7 @@ public partial class MainMenu : Control
             || e is InputEventJoypadButton { Pressed: true, ButtonIndex: JoyButton.Start };
         bool cancel = e.IsActionPressed("ui_cancel") || e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Right };
         // Celular: o toque vira clique. No menu do título, a linha tocada (Game Start em cima, Option embaixo) é a escolhida.
-        if (DataPaths.Mobile && _title == TitleState.Menu && e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } tap)
+        if (Touch && _title == TitleState.Menu && e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } tap)
             _titleLine = tap.Position.Y > GetViewportRect().Size.Y * 0.655f ? 1 : 0;
         switch (_title)
         {
@@ -358,7 +360,13 @@ public partial class MainMenu : Control
         _root.AddChild(new SettingsPanel(ShowTitle));
     }
 
-    public override void _Input(InputEvent e) => DeviceIcons.Seen(e);
+    public override void _Input(InputEvent e)
+    {
+        DeviceIcons.Seen(e);
+        // Clique/toque no título vem aqui, antes da interface: o MainMenu (Control de tela cheia) segurava o clique e ele
+        // nunca chegava ao _UnhandledInput (no celular o título não respondia ao toque).
+        if (e is InputEventMouseButton && TitleInput(e) && IsInsideTree()) GetViewport().SetInputAsHandled();
+    }
 
     // Celular: o botão "voltar" do Android vale como Cancelar (Esc / B).
     public override void _Notification(int what)
