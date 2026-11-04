@@ -865,6 +865,48 @@ Test("Objeto: caixa do HITBOX vale do quadro inicial até o fim da duração; AI
     Equal(null, s.TakeLuaCall(), "uma vez");
 });
 
+Test("Objeto: interruptor do portão (g_sbutton da stag0101) só tem IA com CTRL isLive; ligado, SQ_SWON só volta ao SQ_WAIT", () =>
+{
+    // FATO: sequências do g_sbutton (ndmw #614, igb-seq), resumidas.
+    SeqCommand C(string k, params object[] v) => new(k, v);
+    var seqs = new Dictionary<string, List<SeqCommand>>
+    {
+        ["SQ_ONLOOP"] = [C("LABELCTRL", "ONLOOP", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
+        ["SQ_POWEROF"] = [C("LABELCTRL", "DEF", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
+        ["SQ_POWERON"] = [C("LABELCTRL", "OFF", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
+        ["SQ_SWOF"] = [C("LABEL", "OFF"), C("JUMP", "SQ_WAIT"), C("LABEL", "ON"), C("LABELCTRL", "OFF", "SQ_WAIT"), C("LABELCTRL", "OFF", "SQ_SWON"),
+            C("LABELCTRL", "OFF", "SQ_SWOF"), C("ACTION", "ON2OFF"), C("WCHECK", "Action"), C("LUACALL", "off", ""), C("JUMP", "SQ_WAIT")],
+        ["SQ_SWON"] = [C("LABEL", "OFF"), C("LABELCTRL", "ON", "SQ_WAIT"), C("LABELCTRL", "ON", "SQ_SWON"), C("LABELCTRL", "ON", "SQ_SWOF"),
+            C("ACTION", "OFF2ON"), C("WCHECK", "Action"), C("LUACALL", "hit", ""), C("JUMP", "SQ_WAIT"), C("LABEL", "ON"), C("JUMP", "SQ_WAIT")],
+        ["SQ_WAIT"] = [C("LABEL", "DEF"), C("ACTION", "WAIT01"), C("LABEL", "OFF"), C("ACTION", "OFSW01"), C("CTRL", "isLive"),
+            C("LABEL", "ON"), C("ACTION", "ONSW01"), C("CTRL", "isLive"), C("LABEL", "ONLOOP"), C("ACTION", "ONSW01")],
+    };
+    var actions = new Dictionary<string, List<SeqCommand>>
+    {
+        ["OFF2ON"] = [C("JOINTSET", "", 90f, 120f, "OS"), C("WAITCHECK", "Joint", 0f)],
+        ["ON2OFF"] = [C("JOINTSET", "", 380f, 410f, "OS"), C("WAITCHECK", "Joint", 0f)],
+        ["ONSW01"] = [C("JOINTSET", "", 130f, 370f, "LP")],
+        ["OFSW01"] = [C("JOINTSET", "", 20f, 80f, "LP")],
+        ["WAIT01"] = [C("JOINTSET", "", 1f, 10f, "LP")],
+    };
+    var s = new ObjectSequencer(seqs, actions);
+    True(s.HasLiveGate, "usa isLive");
+    s.Start("SQ_WAIT");
+    True(!s.Live, "DEF (sem as ID Passes): IA desligada");
+    s.Start("SQ_ONLOOP");
+    True(!s.Live, "ONLOOP (vaga sem jogador, já acesa): IA desligada, ninguém apaga");
+    s.Start("SQ_POWERON");
+    True(s.Live && s.Label("SQ_WAIT") == "OFF", "POWERON: OFF com IA");
+    True(s.OnlyJumpsBack("SQ_SWOF"), "longe e apagado: SQ_SWOF/OFF só volta (não recomeça o OFSW01)");
+    True(!s.OnlyJumpsBack("SQ_SWON"), "perto: SQ_SWON/OFF acende");
+    s.Start("SQ_SWON");
+    for (int i = 0; i < 120 && s.Sequence != "SQ_WAIT"; i++) s.Tick(1 / ObjectSequencer.FramesPerSecond);
+    Equal("hit", s.TakeLuaCall(), "acendeu: hit_g_sbutton.lua");
+    True(s.Sequence == "SQ_WAIT" && s.Live && s.Action == "ONSW01", $"aceso com IA ({s.Sequence}, {s.Action})");
+    True(s.OnlyJumpsBack("SQ_SWON"), "parado em cima: SQ_SWON/ON não recomeça nem chama o hit de novo");
+    True(!s.OnlyJumpsBack("SQ_SWOF"), "saiu de cima: SQ_SWOF/ON apaga");
+});
+
 Test("Sequência: caixas agendadas antes de uma ação curta passam para a ação seguinte (CarryHitBoxes, SQ_MAGIC do f_apocaly)", () =>
 {
     SeqCommand C(string k, params object[] v) => new(k, v);
