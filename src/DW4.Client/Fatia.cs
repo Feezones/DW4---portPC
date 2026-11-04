@@ -110,7 +110,7 @@ public partial class Fatia : Node3D
     public override void _Notification(int what)
     {
         if (what == NotificationWMCloseRequest && !_leaving) SaveProgress();
-        if (what == NotificationApplicationFocusOut) _hasFocus = false;
+        if (what == NotificationApplicationFocusOut) _hasFocus = OS.IsDebugBuild() && OS.GetEnvironment("DW4_TECLAS").Length > 0; // teclas de depuração: janela sem foco
         else if (what == NotificationApplicationFocusIn) _hasFocus = true;
     }
     // Troca de fase pedida: a cena vai ser recarregada, a física para de rodar (evita !is_inside_tree).
@@ -279,6 +279,7 @@ public partial class Fatia : Node3D
     {
         if (_ending != null) { GetViewport().SetInputAsHandled(); return; } // créditos: Fatia.Ending.cs lê as teclas
         if (ChatInput(e)) { GetViewport().SetInputAsHandled(); return; } // chat aberto: nada chega ao jogo
+        if (SaveWindowInput(e)) { if (IsInsideTree()) GetViewport().SetInputAsHandled(); return; } // a escolha pode trocar de fase
         if (TechBarInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (MenuInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (QuickItemInput(e)) { GetViewport().SetInputAsHandled(); return; }
@@ -308,6 +309,7 @@ public partial class Fatia : Node3D
     public override void _Input(InputEvent e)
     {
         DeviceIcons.Seen(e);
+        if (e is InputEventMouse mouse) _mousePos = mouse.Position; // janelas com arte (Fatia.ShopArt.cs)
         if (e is InputEventJoypadButton { Pressed: true } || e is InputEventJoypadMotion { AxisValue: > 0.5f or < -0.5f }) _usingPad = true;
         else if (e is InputEventKey { Pressed: true } || e is InputEventMouseButton { Pressed: true }) _usingPad = false;
     }

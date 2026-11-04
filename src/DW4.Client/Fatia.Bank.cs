@@ -39,6 +39,7 @@ public partial class Fatia
     void OpenBankBits(bool deposit, string status = "", int cursor = 0)
     {
         var inv = _inventory;
+        if (DiagNpc) GD.Print($"[banco] pasta {inv.Bit}, banco {inv.BankBit}, valor {_bankAmount} {status}");
         int max = deposit ? inv.Bit : Math.Min(inv.BankBit, Math.Max(0, Inventory.BitMax - inv.Bit));
         _bankAmount = Math.Clamp(_bankAmount, 0, max);
         var rows = new List<ArtRow>
@@ -54,7 +55,9 @@ public partial class Fatia
             }),
             new("Voltar", "", () => OpenBankArt()),
         };
-        OpenArtMenu(deposit ? "SQ_BITPUTINOPEN" : "SQ_BITDRAWOUTOPEN", deposit ? "Depositar BITS" : "Sacar BITS",
+        // DECISÃO DO PORT: o SQ_BITPUTINOPEN/SQ_BITDRAWOUTOPEN do jogo é uma caixa pequena de número com setas; a tela do port é uma
+        // lista (valor, passo, tudo, confirmar), que ficava solta em volta da caixa. Vai na janela de lista do banco.
+        OpenArtMenu("SQ_AWINOPEN", deposit ? "Depositar BITS" : "Sacar BITS",
             BankHead + "  esq./dir. muda a linha" + (status.Length > 0 ? $"  {status}" : ""), rows, () => OpenBankArt(), cursor);
     }
 

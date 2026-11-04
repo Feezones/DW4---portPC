@@ -22,7 +22,9 @@ public partial class Fatia
     }
 
     // Primeira tela do X-data: as escolhas do jogo (mswkPRG1150..1152).
-    void OpenXDataMenu() => Menu("SQ_XDATASTATUSOPEN", $"{TextKey("mswkPRG1100", "¶ Data Keeper")}\n¶ Data: {_inventory.XData}",
+    // A primeira tela é só escolha (frases longas): vai na janela larga do banco (SQ_AWINOPEN); a de duas colunas (SQ_XDATASTATUSOPEN,
+    // nome à esquerda e custo à direita) fica para os atributos. Antes as frases passavam por cima da coluna da direita.
+    void OpenXDataMenu() => Menu("SQ_AWINOPEN", $"{TextKey("mswkPRG1100", "¶ Data Keeper")}\n¶ Data: {_inventory.XData}",
     [
         (TextKey("mswkPRG1150", "Raise Digimon parameter."), () => OpenXDataStatus()),
         (TextKey("mswkPRG1151", "Raise Ability Chip parameter."), () => OpenXDataChips()),
