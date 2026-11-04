@@ -425,6 +425,7 @@ public partial class Fatia : Node3D
         vel.Z = v.Y;
         vel.Y = VerticalVelocity(vel.Y, dt);
         _player.Velocity = vel;
+        UpdatePlayerMask();
         _player.MoveAndSlide();
         StepUp(new Vector3(v.X, 0, v.Y), dt); // degraus baixos (Fatia.Step.cs)
         NoteWall();
@@ -1036,14 +1037,46 @@ public partial class Fatia : Node3D
     StaticBody3D MakeStaticBody(Node3D collision)
     {
         var body = new StaticBody3D();
+        // Peças por tipo do beHitLandModelInfo @10 (CollisionKinds.cs): parapeito (2050) e parede de inimigo (8) em corpos próprios,
+        // nas camadas que o jogador e os inimigos olham (UpdatePlayerMask, SpawnEnemy).
+        var edge = new StaticBody3D { Name = "parapeito", CollisionLayer = CollisionKinds.EdgeLayer, CollisionMask = 0 };
+        var enemyOnly = new StaticBody3D { Name = "parede_inimigo", CollisionLayer = CollisionKinds.EnemyLayer, CollisionMask = 0 };
+        body.AddChild(edge);
+        body.AddChild(enemyOnly);
+        var kinds = CollisionKinds.For(_stageName);
         foreach (var mi in FindAll<MeshInstance3D>(collision))
         {
             var trimesh = mi.Mesh.CreateTrimeshShape();
             if (OS.GetEnvironment("DW4_DIAG_FACES") == "1") GD.Print($"[faces] backface {trimesh.BackfaceCollision}");
             var shape = new CollisionShape3D { Shape = trimesh, Transform = mi.GlobalTransformIn(collision) };
-            body.AddChild(shape);
             var path = new List<string>();
             for (Node? n = mi; n != null && n != collision; n = n.GetParent()) path.Add(n.Name);
+            var kind = kinds.Of(path);
+            if (kind == CollisionKind.Normal) body.AddChild(shape);
+            else
+            {
+                // Só as faces de parede (|normal.y| < 0,5) mudam de camada; o chão da mesma peça continua segurando todo mundo
+                // (FATO: os grupos 2050 também têm pisos, como hitmvbox/hitflisland da stag0404 e hitmagnetflore da stag0403).
+                var faces = mi.Mesh.GetFaces();
+                var basis = shape.Transform.Basis;
+                var walls = new List<Vector3>();
+                var floors = new List<Vector3>();
+                for (int f = 0; f + 2 < faces.Length; f += 3)
+                {
+                    var nrm = (basis * (faces[f + 1] - faces[f])).Cross(basis * (faces[f + 2] - faces[f]));
+                    var into = nrm.LengthSquared() > 1e-12f && Mathf.Abs(nrm.Normalized().Y) < 0.5f ? walls : floors;
+                    into.Add(faces[f]); into.Add(faces[f + 1]); into.Add(faces[f + 2]);
+                }
+                ConcavePolygonShape3D Faces(List<Vector3> v) { var c = new ConcavePolygonShape3D(); c.SetFaces(v.ToArray()); return c; }
+                shape.Shape = Faces(walls);
+                (kind == CollisionKind.Edge ? edge : enemyOnly).AddChild(shape);
+                if (floors.Count > 0)
+                {
+                    var floorShape = new CollisionShape3D { Shape = Faces(floors), Transform = shape.Transform };
+                    body.AddChild(floorShape);
+                    _collisionShapes.Add((string.Join("/", path), floorShape));
+                }
+            }
             // Parede invisível (relato do usuário, 2026-11-02: ponte da stag0101, parado em (462, 47, 96)). FATO (dw4
             // colisao-auditoria): a peça "limit_Circle" (beHitLandModelInfo com @10 = 4; chão = 1, paredes e portas = 2) é um
             // cilindro de 32 triângulos com a mesma caixa (403..517, 0..250, 93..207) em dng101b1, dng101b2, stag0001, stag0101 e
