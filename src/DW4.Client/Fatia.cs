@@ -342,6 +342,7 @@ public partial class Fatia : Node3D
         TickStageChange(dt);
         if (_leaving) return;
         TickObjects(dt);
+        SyncPartySwitches();
         TickFlashes(dt);
         TickQuickItems();
         var input = Input.GetVector(PortInput.Name("esquerda"), PortInput.Name("direita"), PortInput.Name("cima"), PortInput.Name("baixo"));

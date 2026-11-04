@@ -337,7 +337,8 @@ public partial class Fatia
             o.AiSequence = null;
         }
         var p = o.Actor.Root.GlobalPosition;
-        var t = _player.GlobalPosition;
+        // Interruptor de portão: reage a qualquer membro da party na fase (Fatia.PartySwitches.cs).
+        var t = o.Name == "g_sbutton" ? NearestMember(p) : _player.GlobalPosition;
         // HIPÓTESE (nome da ação: "homing"): a torreta ligada (SQ_WAIT no rótulo ON, ação HMNG01) vira para o jogador no máximo o
         // giro por quadro do mapa (0,0349 = 2°); FATO: o SQ_WAIT "ON" tem MOVE "Stop" e HMNG01, e o tiro sai para a frente (+z).
         if (o.Name.StartsWith("g_", StringComparison.Ordinal) && seq.Action == "HMNG01")
