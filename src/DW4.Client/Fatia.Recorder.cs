@@ -163,6 +163,8 @@ public partial class Fatia
     // DECISÃO DA FATIA: a janela i_messwn e a fonte do jogo ainda não foram exportadas; o texto sai numa caixa da Godot embaixo.
     void ShowMessage(string? text)
     {
+        // A caixa da Godot não tem o ícone ¶ (X-Data) da fonte do jogo: "Guardião dos ¶ Dados" saía com o ¶ solto.
+        text = text?.Replace("¶ ", "X-").Replace("¶", "X");
         if (_messagePanel == null)
         {
             var layer = new CanvasLayer { Layer = 4 }; // acima do fade (i_fadewn01, camada 3): o aviso da troca de fase aparece com a tela preta

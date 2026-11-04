@@ -4,6 +4,7 @@ Mudanças pedidas para o PC que **não existem no original**. Ficam separadas da
 
 | Data | Decisão | Pedido por | Onde |
 |---|---|---|---|
+| 2026-11-03 | Janelas dos NPCs: menu com arte (banco, X-data, Digi-Lab) volta a responder (teclas seguradas do quadro anterior); mouse em todas as janelas com arte; teclas do jogo nas janelas de botões; "¶ " vira "X-" fora dos ícones; X-data e depositar/sacar na janela de lista larga; Guardião da Avaliação abre com os textos do jogo. | feelipe (0.6.3: janelas abrem e não respondem) | `Fatia.ArtMenu.cs`, `Fatia.ShopArt.cs`, `Fatia.SavePoint.cs`, `Fatia.Appraisal.cs`, docs/gameplay/janelas-npc.md |
 | 2026-11-03 | Online: todos na mesma fase se veem (cidade e dungeon); inimigos, dano e drops compartilhados só dentro da party (sem party, cada um com os seus). | feelipe | `World.InstanceOf`, `World.CombatGroup` |
 | 2026-11-02 | ~~Substituída pela linha acima.~~ Online: as fases da cidade (`stagml*`) são abertas (todos se veem e podem se aproximar para o F); dungeons, chefes e tutorial são uma instância por grupo (sem grupo, uma por conta), como a partida de até 4 do original. | Claude, plano aprovado (ADR 0003) | `src/DW4.Net/World.cs`, `docs/online/servidor.md` |
 | 2026-11-03 | Espera e passeio da IA dos inimigos usam a ação e o MOVE do rótulo guardado do SQ_WAIT/SQ_WALK (Apocalymon fase 2: wait02, run03, 0,6). | feelipe | `Fatia.Enemies.cs` (IdleBlock), docs/gameplay/fase5-chefe-bs01.md |

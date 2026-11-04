@@ -81,10 +81,13 @@ public partial class Fatia
         _shopArtTexts.Clear();
         if (variant.Length == 0) return;
         var font = GameFont()!;
-        void Put(string text, float x, float yTop, float width, bool right = false, Color? color = null)
+        void Put(string text, float x, float yTop, float width, bool right = false, Color? color = null, bool fit = false)
         {
             if (string.IsNullOrEmpty(text)) return;
-            var mesh = font.Build("MINIMUM", text, 16, width, out var size);
+            // fit: uma linha só, encolhendo a letra (até 11) para caber na coluna em vez de passar para a coluna do lado.
+            float height = 16;
+            if (fit && font.Build("MINIMUM", text, 16, 4000, out var full) != null && full.X > width) height = Math.Max(11, 16 * width / full.X);
+            var mesh = font.Build("MINIMUM", text, height, fit ? 4000 : width, out var size);
             if (mesh == null) return;
             var mi = new MeshInstance3D { Mesh = mesh, MaterialOverride = font.Material(color ?? new Color(0.92f, 0.92f, 0.92f), 120) };
             mi.Position = new Vector3(right ? x + width - size.X : x, yTop, 60);
@@ -94,7 +97,8 @@ public partial class Fatia
         // Posições pelas linhas da arte (capturas de 2026-10-30 na tela 16:9): as linhas do j_shwin vêm a cada 19 unidades, a primeira
         // em y 113 (o texto fica logo acima de cada linha); a variante SINKA (LABO) tem a lista no painel da esquerda.
         bool sinka = variant.StartsWith("SQ_SINKA", StringComparison.Ordinal);
-        float titleX = sinka ? -300 : -142, titleY = sinka ? 118 : 153, rowX = sinka ? -283 : -128, rowY = sinka ? 93 : 128;
+        float titleX = sinka ? -300 : -142, titleY = sinka ? 118 : 153;
+        var (rowX, rowY) = ShopArtRowOrigin(variant);
         bool xdata = variant.StartsWith("SQ_XDATA", StringComparison.Ordinal);
         float nameW = sinka ? 200 : xdata ? 110 : 168, priceRight = sinka ? -62 : xdata ? 120 : 228, helpX = sinka ? -300 : -142, helpY = sinka ? -150 : -100;
         // Quadro do jogador do j_shbase (canto de cima à esquerda): o nível depois de "Lv.".
@@ -107,10 +111,52 @@ public partial class Fatia
             var color = r == cursor ? new Color(1f, 0.95f, 0.4f) : (Color?)null;
             Put(r == cursor ? ">" : "", rowX - 18, y, 12, color: color);
             // Sem valor à direita, o nome pode ocupar a linha toda (não quebra por cima da linha de baixo).
-            Put(parts[0], rowX, y, parts.Length > 1 ? nameW : 340, color: color);
+            // Sem valor à direita, o nome vai até o fim da coluna da esquerda da arte (j_shwin: x 87 na janela larga, −8 na de
+            // atributos do X-data; capturas de 2026-11-03), encolhendo se precisar.
+            Put(parts[0], rowX, y, parts.Length > 1 ? nameW : sinka ? 340 : variant == "SQ_XDATASTATUSOPEN" ? -8 - rowX : 87 - rowX, color: color, fit: parts.Length == 1);
             if (parts.Length > 1) Put(parts[1], priceRight - 98, y, 98, right: true, color: color);
         }
         Put(help, helpX, helpY, 300);
+    }
+
+    // Canto da primeira linha da lista (x do texto, alto da linha) na tela 640 × 480 da arte, por variante do j_shwin.
+    static (float X, float Y) ShopArtRowOrigin(string variant) =>
+        variant.StartsWith("SQ_SINKA", StringComparison.Ordinal) ? (-283f, 93f) : (-128f, 128f);
+
+    // Mouse nas janelas com a arte (loja, banco, X-data, LABO): linha da página sob o cursor, ou −1. A arte é 640 × 480 centrada e
+    // escalada pela altura (KeepAspectCentered); a linha r ocupa de rowY − 19·r − 16 até rowY − 19·r + 3.
+    int ShopArtRowAtMouse(string variant, int rowsInPage)
+    {
+        var size = GetViewport().GetVisibleRect().Size;
+        float s = Math.Min(size.X / 640f, size.Y / 480f);
+        if (s <= 0) return -1;
+        var m = _mousePos;
+        float ax = (m.X - size.X / 2) / s, ay = (size.Y / 2 - m.Y) / s;
+        var (rowX, rowY) = ShopArtRowOrigin(variant);
+        if (ax < rowX - 24 || ax > rowX + 380) return -1;
+        for (int r = 0; r < rowsInPage; r++)
+        {
+            float top = rowY - ShopRowStep * r + 3;
+            if (ay <= top && ay > top - ShopRowStep) return r;
+        }
+        return -1;
+    }
+
+    // Estado do mouse nas janelas com arte: passar por cima escolhe a linha, clique esquerdo confirma nela, direito volta.
+    Vector2 _shopMouseLast = new(-1, -1), _mousePos = new(-1, -1);
+    bool _shopLeftHeld = true, _shopRightHeld = true;
+
+    /// <summary>(linha sob o cursor quando ele se moveu, −1 se não; clique esquerdo novo; clique direito novo).</summary>
+    (int Hover, bool Click, bool Back) ShopMouse(string variant, int rowsInPage)
+    {
+        var pos = _mousePos;
+        bool moved = pos.DistanceSquaredTo(_shopMouseLast) > 1;
+        _shopMouseLast = pos;
+        int under = ShopArtRowAtMouse(variant, rowsInPage);
+        bool left = Input.IsMouseButtonPressed(MouseButton.Left), right = Input.IsMouseButtonPressed(MouseButton.Right);
+        bool click = left && !_shopLeftHeld, back = right && !_shopRightHeld;
+        (_shopLeftHeld, _shopRightHeld) = (left, right);
+        return (moved ? under : -1, click && under >= 0, back);
     }
 
     void TickShopArt(float dt)
