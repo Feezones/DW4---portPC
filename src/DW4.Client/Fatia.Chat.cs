@@ -63,6 +63,8 @@ public partial class Fatia
         _chatInput!.Visible = true;
         _chatInput.Text = "";
         _chatInput.GrabFocus();
+        if (Touch) _chatInput.PlaceholderText = "Mensagem";
+        if (DataPaths.Mobile) DisplayServer.VirtualKeyboardShow(""); // celular: abre o teclado do Android
         RefreshChat();
         return true;
     }
@@ -72,6 +74,7 @@ public partial class Fatia
         _chat.Close();
         if (_chatInput == null) return;
         _chatInput.ReleaseFocus();
+        if (DataPaths.Mobile) DisplayServer.VirtualKeyboardHide();
         _chatInput.Visible = false;
         RefreshChat();
     }
