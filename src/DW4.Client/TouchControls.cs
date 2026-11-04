@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Godot;
 
@@ -13,6 +14,8 @@ public partial class TouchControls : CanvasLayer
     sealed record Pad(string Action, string Label, float X, float Y, float R);
 
     // Posição em relação ao canto (x negativo = da direita, y negativo = de baixo), em pixels da tela lógica (1600×900).
+    // Pedido do usuário (2026-11-04): sem PAUSA; MENU (o TAB: status/inventário) no canto de cima à esquerda e a engrenagem do
+    // lado (as opções do Esc).
     static readonly Pad[] Pads =
     [
         new("ataque", "ATQ", -175, -175, 100),
@@ -22,11 +25,21 @@ public partial class TouchControls : CanvasLayer
         new("tecnica_proxima", "TÉC ›", -500, -270, 46),
         new("confirmar", "OK", -90, 230, 46),
         new("cancelar", "VOLTAR", -210, 230, 46),
-        new("status", "MENU", -90, 95, 46),
+        new("status", "MENU", 90, 95, 46),
+        new("pausa", Gear, 210, 95, 46),
         new("itens", "ITENS", -210, 95, 46),
-        new("chat", "CHAT", -330, 95, 46),
-        new("pausa", "PAUSA", 90, 95, 46),
+        new("chat", "CHAT", -90, 95, 46),
     ];
+
+    const string Gear = "⚙";
+    // Com uma janela aberta (menu, itens, chat, loja, pausa) só fica este: manda o Esc, que fecha a janela como no PC.
+    static readonly Pad Close = new(Esc, "FECHAR", -90, 95, 46);
+    const string Esc = "esc";
+
+    /// <summary>Janela aberta: some com os botões de luta e deixa o toque para a interface (Fatia liga).</summary>
+    public Func<bool>? Blocked;
+    /// <summary>Ponto da tela em cima de algo da interface que se toca (atalhos de itens): o analógico não começa ali.</summary>
+    public Func<Vector2, bool>? UiAt;
 
     const float StickRadius = 120;
 
@@ -35,6 +48,8 @@ public partial class TouchControls : CanvasLayer
     public override void _Ready()
     {
         Layer = 90;
+        // DEPURAÇÃO (só build Debug, DW4_TOQUE=1 no PC): o mouse vira toque para testar os botões sem celular.
+        if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_TOQUE") == "1") Input.EmulateTouchFromMouse = true;
         _surface = new Surface { AnchorRight = 1, AnchorBottom = 1, MouseFilter = Control.MouseFilterEnum.Ignore };
         AddChild(_surface);
     }
@@ -53,20 +68,42 @@ public partial class TouchControls : CanvasLayer
         }
     }
 
-    public override void _Process(double delta) => _surface.QueueRedraw();
+    public override void _Process(double delta)
+    {
+        bool blocked = Blocked?.Invoke() == true;
+        if (blocked != _surface.BlockedMode) { _surface.ReleaseAll(); _surface.BlockedMode = blocked; }
+        _surface.UiAt = UiAt;
+        _surface.QueueRedraw();
+    }
 
-    // Botão "voltar" do Android no jogo: abre a pausa, como o Esc.
+    // Botão "voltar" do Android no jogo: vale como o Esc (fecha a janela aberta ou abre a pausa).
     public override void _Notification(int what)
     {
-        if (what != NotificationWMGoBackRequest) return;
-        var name = PortInput.Name("pausa");
-        Input.ParseInputEvent(new InputEventAction { Action = name, Pressed = true });
-        Input.ParseInputEvent(new InputEventAction { Action = name, Pressed = false });
+        if (what == NotificationWMGoBackRequest) Surface.Send(Esc, true, true);
     }
 
     partial class Surface : Control
     {
         readonly Dictionary<int, string> _held = []; // dedo → ação do botão
+        public bool BlockedMode;
+        public Func<Vector2, bool>? UiAt;
+        Pad[] Current => BlockedMode ? [Close] : Pads;
+
+        // Aperta/solta como um evento de verdade (InputEventAction): o jogo pergunta tanto "está apertado" (Input) quanto
+        // "acabou de apertar" (o evento, ex.: MENU, DEF, CHAT, ITENS); o Input.ActionPress só fazia o primeiro.
+        public static void Send(string action, bool pressed, bool tap = false)
+        {
+            if (action == Esc)
+            {
+                if (!pressed) return;
+                Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, PhysicalKeycode = Key.Escape, Pressed = true });
+                Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, PhysicalKeycode = Key.Escape, Pressed = false });
+                return;
+            }
+            var name = PortInput.Name(action);
+            Input.ParseInputEvent(new InputEventAction { Action = name, Pressed = pressed, Strength = pressed ? 1 : 0 });
+            if (tap) Input.ParseInputEvent(new InputEventAction { Action = name, Pressed = false });
+        }
         int _stickFinger = -1;
         Vector2 _stickBase, _stick;
 
@@ -82,14 +119,15 @@ public partial class TouchControls : CanvasLayer
             {
                 if (t.Pressed)
                 {
-                    foreach (var p in Pads)
+                    foreach (var p in Current)
                         if (t.Position.DistanceTo(At(p)) <= p.R * 1.15f)
                         {
                             _held[t.Index] = p.Action;
-                            Input.ActionPress(PortInput.Name(p.Action));
+                            Send(p.Action, true);
                             GetViewport().SetInputAsHandled();
                             return;
                         }
+                    if (BlockedMode || UiAt?.Invoke(t.Position) == true) return; // o toque vai para a interface
                     if (t.Position.X < Size.X * 0.45f && t.Position.Y > Size.Y * 0.3f && _stickFinger < 0)
                     {
                         _stickFinger = t.Index;
@@ -100,7 +138,7 @@ public partial class TouchControls : CanvasLayer
                 }
                 else
                 {
-                    if (_held.Remove(t.Index, out var action)) Input.ActionRelease(PortInput.Name(action));
+                    if (_held.Remove(t.Index, out var action)) Send(action, false);
                     if (t.Index == _stickFinger) { _stickFinger = -1; Move(Vector2.Zero); }
                 }
             }
@@ -132,10 +170,21 @@ public partial class TouchControls : CanvasLayer
 
         public void ReleaseAll()
         {
-            foreach (var a in _held.Values) Input.ActionRelease(PortInput.Name(a));
+            foreach (var a in _held.Values) Send(a, false);
             _held.Clear();
             _stickFinger = -1;
             Move(Vector2.Zero);
+        }
+
+        // Engrenagem desenhada (a fonte padrão não tem o ⚙): 8 dentes em volta de um anel.
+        void DrawGear(Vector2 c, float r, Color color)
+        {
+            for (int i = 0; i < 8; i++)
+            {
+                var dir = Vector2.Right.Rotated(i * Mathf.Tau / 8);
+                DrawLine(c + dir * r * 0.75f, c + dir * r * 1.25f, color, r * 0.42f);
+            }
+            DrawArc(c, r * 0.72f, 0, Mathf.Tau, 32, color, r * 0.36f);
         }
 
         public override void _Draw()
@@ -144,17 +193,19 @@ public partial class TouchControls : CanvasLayer
             var fill = new Color(1, 1, 1, 0.16f);
             var ring = new Color(1, 1, 1, 0.45f);
             var press = new Color(1, 0.55f, 0.2f, 0.45f);
-            foreach (var p in Pads)
+            foreach (var p in Current)
             {
                 var c = At(p);
                 bool down = _held.ContainsValue(p.Action);
                 DrawCircle(c, p.R, down ? press : fill);
                 DrawArc(c, p.R, 0, Mathf.Tau, 48, ring, 3);
-                int size = p.R > 60 ? 30 : 22;
+                if (p.Label == Gear) { DrawGear(c, p.R * 0.5f, new Color(1, 1, 1, 0.85f)); continue; }
+                int size = p.R > 60 ? 30 : p.Label.Length > 5 ? 18 : 22;
                 var w = font.GetStringSize(p.Label, HorizontalAlignment.Left, -1, size).X;
                 DrawString(font, c + new Vector2(-w / 2, size * 0.35f), p.Label, HorizontalAlignment.Left, -1, size, new Color(1, 1, 1, 0.85f));
             }
-            if (_stickFinger >= 0)
+            if (BlockedMode) { }
+            else if (_stickFinger >= 0)
             {
                 DrawCircle(_stickBase, StickRadius, fill);
                 DrawArc(_stickBase, StickRadius, 0, Mathf.Tau, 48, ring, 3);

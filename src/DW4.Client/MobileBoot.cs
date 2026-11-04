@@ -36,40 +36,165 @@ public partial class MobileBoot : Control
     System.Action? _goAction;
     string _account = "";
 
+    // ---- Visual (pedido do usuário, 2026-11-04: "mais amigável e na estética do jogo") ----
+    // As janelas do DW4: fundo azul-marinho, borda ciano, títulos dourados e botões vinho com borda lilás (como as vagas do
+    // menu). O fundo imita o túnel do título. Antes do primeiro download não há nada do jogo no celular; depois, o logotipo
+    // original (fases/stagis10/titulo) entra no lugar do título escrito.
+    internal static readonly Color Navy = new(0.05f, 0.06f, 0.16f, 0.94f), Cyan = new(0.35f, 0.85f, 1f), Gold = new(1f, 0.85f, 0.35f),
+        Lilac = new(0.55f, 0.5f, 1f), Wine = new(0.32f, 0.07f, 0.16f), Soft = new(0.78f, 0.82f, 0.95f);
+
+    internal static StyleBoxFlat Box(Color bg, Color border, int width = 3, int radius = 12, int margin = 14)
+    {
+        var b = new StyleBoxFlat { BgColor = bg, BorderColor = border, CornerDetail = 8, AntiAliasing = true };
+        b.SetBorderWidthAll(width);
+        b.SetCornerRadiusAll(radius);
+        b.SetContentMarginAll(margin);
+        return b;
+    }
+
+    internal static Theme MakeTheme()
+    {
+        var t = new Theme { DefaultFontSize = 30 };
+        t.SetColor("font_color", "Label", Colors.White);
+        t.SetColor("font_outline_color", "Label", new Color(0.02f, 0.03f, 0.12f));
+        t.SetConstant("outline_size", "Label", 6);
+        foreach (var (state, bg, border) in new[] { ("normal", Wine, Lilac), ("hover", Wine.Lightened(0.08f), Gold), ("pressed", Wine.Lightened(0.2f), Gold),
+            ("focus", new Color(0, 0, 0, 0), Gold), ("disabled", Wine.Darkened(0.4f), Lilac.Darkened(0.5f)) })
+            t.SetStylebox(state, "Button", state == "focus" ? Box(bg, border, 3, 12, 10) : Box(bg, border, 3, 12, 10));
+        t.SetColor("font_color", "Button", Colors.White);
+        t.SetColor("font_hover_color", "Button", Gold);
+        t.SetColor("font_pressed_color", "Button", Gold);
+        t.SetColor("font_focus_color", "Button", Gold);
+        t.SetColor("font_disabled_color", "Button", new Color(1, 1, 1, 0.4f));
+        t.SetStylebox("normal", "LineEdit", Box(new Color(0.02f, 0.03f, 0.1f, 0.95f), Lilac, 2, 10, 12));
+        t.SetStylebox("focus", "LineEdit", Box(new Color(0, 0, 0, 0), Gold, 3, 10, 12));
+        t.SetStylebox("read_only", "LineEdit", Box(new Color(0.02f, 0.03f, 0.1f, 0.6f), Lilac.Darkened(0.4f), 2, 10, 12));
+        t.SetColor("font_color", "LineEdit", Colors.White);
+        t.SetColor("font_placeholder_color", "LineEdit", new Color(0.7f, 0.72f, 0.9f, 0.6f));
+        t.SetColor("caret_color", "LineEdit", Gold);
+        t.SetColor("font_color", "CheckBox", Soft);
+        t.SetColor("font_hover_color", "CheckBox", Gold);
+        t.SetColor("font_pressed_color", "CheckBox", Soft);
+        t.SetColor("font_hover_pressed_color", "CheckBox", Gold);
+        var empty = new StyleBoxEmpty();
+        foreach (var st in new[] { "normal", "hover", "pressed", "focus", "hover_pressed" }) t.SetStylebox(st, "CheckBox", empty);
+        t.SetStylebox("background", "ProgressBar", Box(new Color(0.02f, 0.03f, 0.1f, 0.95f), Cyan, 2, 10, 0));
+        t.SetStylebox("fill", "ProgressBar", Box(Cyan.Darkened(0.15f), Cyan.Lightened(0.3f), 0, 10, 0));
+        t.SetColor("font_color", "ProgressBar", Colors.White);
+        t.SetColor("font_outline_color", "ProgressBar", new Color(0.02f, 0.03f, 0.12f));
+        t.SetConstant("outline_size", "ProgressBar", 6);
+        return t;
+    }
+
+    /// <summary>Fundo: o túnel azul do título (octógonos que vêm na direção da tela e raios girando devagar).</summary>
+    internal sealed partial class Tunnel : Control
+    {
+        float _t;
+        public override void _Process(double delta) { _t += (float)delta; QueueRedraw(); }
+
+        public override void _Draw()
+        {
+            var size = Size;
+            var c = size / 2;
+            DrawRect(new Rect2(Vector2.Zero, size), new Color(0.13f, 0.17f, 0.55f));
+            float max = size.Length() * 0.62f;
+            // brilho no centro
+            for (int i = 8; i >= 1; i--) DrawCircle(c, max * 0.08f * i, new Color(0.45f, 0.55f, 1f, 0.07f));
+            DrawCircle(c, max * 0.06f, new Color(0.95f, 0.97f, 1f, 0.9f));
+            float spin = _t * 0.08f;
+            for (int k = 0; k < 8; k++)
+            {
+                var dir = Vector2.Right.Rotated(spin + k * Mathf.Tau / 8);
+                DrawLine(c + dir * max * 0.06f, c + dir * max, new Color(0.03f, 0.04f, 0.18f, 0.8f), 12);
+            }
+            // octógonos: a fase (0..1) cresce com o tempo e o tamanho cresce rápido perto da borda (perspectiva)
+            for (int k = 0; k < 9; k++)
+            {
+                float f = (k / 9f + _t * 0.05f) % 1f;
+                float r = max * 0.05f / (1.05f - f);
+                if (r > max) continue;
+                var pts = new Vector2[9];
+                for (int i = 0; i <= 8; i++) pts[i] = c + Vector2.Right.Rotated(spin + Mathf.Pi / 8 + i * Mathf.Tau / 8) * r;
+                DrawPolyline(pts, new Color(0.85f, 0.95f, 1f, 0.15f + 0.5f * f), 1.5f + 4 * f, true);
+            }
+            // escurece as bordas para o painel ler bem
+            DrawRect(new Rect2(Vector2.Zero, size), new Color(0, 0, 0.08f, 0.2f));
+        }
+    }
+
+    Label _hello = null!, _tip = null!;
+    bool _fakeDownload;
+    double _tipTime;
+    int _tipIndex;
+
+    static readonly string[] Tips =
+    [
+        "Dica: o analógico aparece onde você encosta o dedo, na metade esquerda da tela.",
+        "Dica: segure ATQ para carregar o golpe.",
+        "Dica: arraste um disco da janela de ITENS até um atalho para usar com um toque.",
+        "Dica: com um controle Bluetooth, os botões da tela somem sozinhos.",
+        "Dica: chame os amigos para a party pelo launcher do PC ou pelo menu do jogo.",
+        "Dica: a sua conta é a mesma do PC. As vagas e o progresso são os mesmos.",
+    ];
+
     public override void _Ready()
     {
         SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(new ColorRect { Color = new Color(0.04f, 0.05f, 0.09f), AnchorRight = 1, AnchorBottom = 1 });
-        // Formulário no alto da tela: o teclado do Android cobre a metade de baixo com o celular deitado.
+        Theme = MakeTheme();
+        AddChild(new Tunnel { AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore });
+        // Tudo no alto da tela: o teclado do Android cobre a metade de baixo com o celular deitado.
         var top = new MarginContainer { AnchorRight = 1, AnchorBottom = 1 };
-        top.AddThemeConstantOverride("margin_top", 40);
-        top.AddThemeConstantOverride("margin_left", 80);
-        top.AddThemeConstantOverride("margin_right", 80);
+        top.AddThemeConstantOverride("margin_top", 24);
+        top.AddThemeConstantOverride("margin_left", 60);
+        top.AddThemeConstantOverride("margin_right", 60);
         AddChild(top);
         var col = new VBoxContainer();
-        col.AddThemeConstantOverride("separation", 14);
+        col.AddThemeConstantOverride("separation", 10);
         top.AddChild(col);
-        var title = new Label { Text = "Digimon World 4", HorizontalAlignment = HorizontalAlignment.Center };
-        title.AddThemeFontSizeOverride("font_size", 56);
-        col.AddChild(title);
+        col.AddChild(Logo());
 
-        _form = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ShrinkCenter, CustomMinimumSize = new Vector2(720, 0) };
+        var panel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ShrinkCenter, CustomMinimumSize = new Vector2(940, 0) };
+        var style = Box(Navy, Cyan, 3, 16, 26);
+        style.ShadowColor = new Color(0, 0, 0, 0.5f);
+        style.ShadowSize = 14;
+        panel.AddThemeStyleboxOverride("panel", style);
+        col.AddChild(panel);
+        var inner = new VBoxContainer();
+        inner.AddThemeConstantOverride("separation", 12);
+        panel.AddChild(inner);
+
+        _hello = new Label { Text = "Bem-vindo, Tamer!", HorizontalAlignment = HorizontalAlignment.Center };
+        _hello.AddThemeFontSizeOverride("font_size", 40);
+        _hello.AddThemeColorOverride("font_color", Gold);
+        inner.AddChild(_hello);
+
+        _form = new VBoxContainer();
         _form.AddThemeConstantOverride("separation", 12);
-        col.AddChild(_form);
-        _form.AddChild(Small("Entre com a sua conta do RE:DIGITAL (a mesma do launcher)."));
-        _user = new LineEdit { PlaceholderText = "Usuário", CustomMinimumSize = new Vector2(0, 72) };
-        _pass = new LineEdit { PlaceholderText = "Senha", Secret = true, CustomMinimumSize = new Vector2(0, 72) };
-        foreach (var e in new[] { _user, _pass }) e.AddThemeFontSizeOverride("font_size", 34);
+        inner.AddChild(_form);
+        var hint = Small("Entre com a sua conta RE:DIGITAL, a mesma do launcher do PC.");
+        hint.HorizontalAlignment = HorizontalAlignment.Center;
+        _form.AddChild(hint);
+        _user = new LineEdit { PlaceholderText = "Usuário", CustomMinimumSize = new Vector2(0, 70) };
+        _pass = new LineEdit { PlaceholderText = "Senha", Secret = true, CustomMinimumSize = new Vector2(0, 70) };
+        foreach (var e in new[] { _user, _pass }) e.AddThemeFontSizeOverride("font_size", 32);
         _user.TextSubmitted += _ => _pass.GrabFocus();
         _pass.TextSubmitted += _ => Login();
         _form.AddChild(_user);
-        _form.AddChild(_pass);
+        var passRow = new HBoxContainer();
+        passRow.AddThemeConstantOverride("separation", 10);
+        _pass.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        passRow.AddChild(_pass);
+        var show = new Button { Text = "Ver", ToggleMode = true, CustomMinimumSize = new Vector2(110, 70), FocusMode = FocusModeEnum.None };
+        show.AddThemeFontSizeOverride("font_size", 26);
+        show.Toggled += on => { _pass.Secret = !on; show.Text = on ? "Ocultar" : "Ver"; };
+        passRow.AddChild(show);
+        _form.AddChild(passRow);
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", 24);
         _remember = new CheckBox { Text = "Lembrar de mim", ButtonPressed = true };
-        _remember.AddThemeFontSizeOverride("font_size", 30);
-        _enter = new Button { Text = "Entrar", CustomMinimumSize = new Vector2(260, 72), SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _enter.AddThemeFontSizeOverride("font_size", 34);
+        _remember.AddThemeFontSizeOverride("font_size", 28);
+        _enter = new Button { Text = "Entrar", CustomMinimumSize = new Vector2(300, 74), SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _enter.AddThemeFontSizeOverride("font_size", 36);
         _enter.Pressed += Login;
         row.AddChild(_remember);
         row.AddChild(_enter);
@@ -77,35 +202,102 @@ public partial class MobileBoot : Control
 
         _status = new Label { HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart };
         _status.AddThemeFontSizeOverride("font_size", 32);
-        col.AddChild(_status);
-        _bar = new ProgressBar { CustomMinimumSize = new Vector2(900, 36), SizeFlagsHorizontal = SizeFlags.ShrinkCenter, MaxValue = 1, Visible = false };
-        col.AddChild(_bar);
+        inner.AddChild(_status);
+        _bar = new ProgressBar { CustomMinimumSize = new Vector2(0, 46), MaxValue = 1, Visible = false, ShowPercentage = true };
+        _bar.AddThemeFontSizeOverride("font_size", 26);
+        inner.AddChild(_bar);
         _detail = Small("");
         _detail.HorizontalAlignment = HorizontalAlignment.Center;
-        col.AddChild(_detail);
-        _go = new Button { Text = "Baixar", CustomMinimumSize = new Vector2(420, 80), SizeFlagsHorizontal = SizeFlags.ShrinkCenter, Visible = false };
+        inner.AddChild(_detail);
+        var buttons = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+        buttons.AddThemeConstantOverride("separation", 20);
+        inner.AddChild(buttons);
+        _go = new Button { Text = "Baixar", CustomMinimumSize = new Vector2(400, 78), Visible = false };
         _go.AddThemeFontSizeOverride("font_size", 34);
         _go.Pressed += () => _goAction?.Invoke();
-        col.AddChild(_go);
-        _skip = new Button { Text = "Agora não", CustomMinimumSize = new Vector2(300, 64), SizeFlagsHorizontal = SizeFlags.ShrinkCenter, Visible = false };
+        _skip = new Button { Text = "Agora não", CustomMinimumSize = new Vector2(260, 78), Visible = false };
         _skip.AddThemeFontSizeOverride("font_size", 28);
         _skip.Pressed += SkipApp;
-        col.AddChild(_skip);
-        var version = Small($"app {ProjectSettings.GetSetting("application/config/version", "").AsString()}");
+        foreach (var b in new[] { _go, _enter }) b.AddThemeStyleboxOverride("normal", Box(Wine, Gold, 3, 12, 10));
+        buttons.AddChild(_go);
+        buttons.AddChild(_skip);
+        _tip = Small("");
+        _tip.HorizontalAlignment = HorizontalAlignment.Center;
+        _tip.AddThemeColorOverride("font_color", Gold.Lerp(Colors.White, 0.4f));
+        _tip.Visible = false;
+        inner.AddChild(_tip);
+
+        var version = Small($"versão {ProjectSettings.GetSetting("application/config/version", "").AsString()}");
         version.HorizontalAlignment = HorizontalAlignment.Right;
+        version.AddThemeFontSizeOverride("font_size", 20);
         col.AddChild(version);
 
         DisplayServer.ScreenSetKeepOn(true);
+        // DEPURAÇÃO (só build Debug): DW4_TELA=baixando mostra a tela de download com números de mentira (para fotografar).
+        if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_TELA") == "baixando")
+        {
+            _form.Visible = false; _fakeDownload = true; _hello.Text = "Olá, feelipe!"; _status.Text = "Baixando o mundo digital…";
+            _bar.Visible = true; _bar.Value = 0.42; _detail.Text = $"752.3 MB de 1.76 GB  ·  8.4 MB/s{Eta(1100L << 20, 8.4 * (1 << 20))}"; return;
+        }
         if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_TESTE_ATUALIZAR") == "1") { _form.Visible = false; CheckUpdate(); return; }
         if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_APP_CDN") is { Length: > 0 }) { _form.Visible = false; CheckApp(); return; }
         TryRemembered();
     }
 
+    // Logotipo original se os dados já estão no celular; senão, o nome escrito em dourado.
+    Control Logo()
+    {
+        try
+        {
+            GameFiles.Init();
+            var path = Path.Combine(DataPaths.Fases, "stagis10", "titulo", "img03122_logo.png");
+            if (GameFiles.Exists(path) && Image.LoadFromFile(GameFiles.GodotPath(path)) is { } img && !img.IsEmpty())
+                return new TextureRect
+                {
+                    Texture = ImageTexture.CreateFromImage(img), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+                    StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, CustomMinimumSize = new Vector2(0, 200), MouseFilter = MouseFilterEnum.Ignore,
+                };
+        }
+        catch (Exception e) { GD.Print($"[celular] sem logotipo: {e.Message}"); }
+        var box = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
+        box.AddThemeConstantOverride("separation", 0);
+        var title = new Label { Text = "DIGIMON WORLD 4", HorizontalAlignment = HorizontalAlignment.Center };
+        title.AddThemeFontSizeOverride("font_size", 84);
+        title.AddThemeColorOverride("font_color", Gold);
+        title.AddThemeColorOverride("font_outline_color", new Color(0.55f, 0.12f, 0.05f));
+        title.AddThemeConstantOverride("outline_size", 16);
+        box.AddChild(title);
+        var sub = new Label { Text = "RE:DIGITAL", HorizontalAlignment = HorizontalAlignment.Center };
+        sub.AddThemeFontSizeOverride("font_size", 30);
+        sub.AddThemeColorOverride("font_color", Cyan);
+        box.AddChild(sub);
+        return box;
+    }
+
     static Label Small(string text)
     {
-        var l = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart, Modulate = new Color(0.8f, 0.83f, 0.9f) };
+        var l = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart };
         l.AddThemeFontSizeOverride("font_size", 26);
+        l.AddThemeColorOverride("font_color", Soft);
         return l;
+    }
+
+    // Tempo que falta, pelo ritmo atual.
+    static string Eta(long left, double speed)
+    {
+        if (speed < 1024) return "";
+        double s = left / speed;
+        return s < 60 ? "  ·  menos de 1 min" : s < 3600 ? $"  ·  faltam ~{Math.Ceiling(s / 60):0} min" : $"  ·  faltam ~{s / 3600:0.0} h";
+    }
+
+    void TickTip(double delta, bool on)
+    {
+        _tip.Visible = on;
+        if (!on) return;
+        _tipTime -= delta;
+        if (_tipTime > 0 && _tip.Text.Length > 0) return;
+        _tipTime = 7;
+        _tip.Text = Tips[_tipIndex++ % Tips.Length];
     }
 
     void Busy(bool busy, string status)
@@ -125,20 +317,21 @@ public partial class MobileBoot : Control
         _user.Text = user;
         if (refresh.Length == 0) return;
         Busy(true, $"Entrando como {user}…");
+        _hello.Text = $"Olá de novo, {user}!";
         var r = await Call("api/auth/refresh", new Dictionary<string, object> { ["refreshToken"] = refresh }, null);
         if (r.Ok) { await AfterLogin(r); return; }
-        if (r.Status is 400 or 401) { DirAccess.RemoveAbsolute(ProjectSettings.GlobalizePath(AccountFile)); Busy(false, "A sessão expirou. Entre de novo."); }
+        if (r.Status is 400 or 401) { DirAccess.RemoveAbsolute(ProjectSettings.GlobalizePath(AccountFile)); Busy(false, "Sua sessão expirou. É só entrar de novo."); }
         else Busy(false, r.Message);
     }
 
     async void Login()
     {
-        if (_user.Text.Trim().Length == 0 || _pass.Text.Length == 0) { _status.Text = "Informe usuário e senha."; return; }
+        if (_user.Text.Trim().Length == 0 || _pass.Text.Length == 0) { _status.Text = "Preencha o usuário e a senha."; return; }
         DisplayServer.VirtualKeyboardHide();
         Busy(true, "Entrando…");
         var r = await Call("api/auth/login", new Dictionary<string, object> { ["username"] = _user.Text.Trim(), ["password"] = _pass.Text }, null);
         _pass.Text = "";
-        if (!r.Ok) { Busy(false, r.Status == 429 ? "Muitas tentativas. Espere um pouco e tente de novo." : r.Message.Length > 0 ? r.Message : "Usuário ou senha inválidos."); return; }
+        if (!r.Ok) { Busy(false, r.Status == 429 ? "Muitas tentativas. Espere um minutinho e tente de novo." : r.Message.Length > 0 ? r.Message : "Usuário ou senha não conferem."); return; }
         await AfterLogin(r);
     }
 
@@ -154,12 +347,13 @@ public partial class MobileBoot : Control
             cfg.SaveEncryptedPass(AccountFile, OS.GetUniqueId());
         }
         else DirAccess.RemoveAbsolute(ProjectSettings.GlobalizePath(AccountFile));
-        Busy(true, "Abrindo a sessão do jogo…");
+        Busy(true, "Abrindo o portal…");
         var t = await Call("api/auth/game-ticket", null, access);
         if (!t.Ok) { Busy(false, t.Message.Length > 0 ? t.Message : "Não foi possível abrir a sessão do jogo."); return; }
         _account = t.Str("username") is { Length: > 0 } tu ? tu : user;
         Session.UseLogin(_account, t.Str("ticket"));
         _form.Visible = false;
+        _hello.Text = $"Olá, {_account}!";
         CheckApp();
     }
 
@@ -173,7 +367,7 @@ public partial class MobileBoot : Control
     void CheckApp()
     {
         _go.Visible = false;
-        _status.Text = "Procurando versão nova do app…";
+        _status.Text = "Conferindo se há versão nova do app…";
         _detail.Text = "";
         if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_CDN") is { Length: > 0 }) { CheckUpdate(); return; }
         _app = new AppUpdater(OS.GetUserDataDir());
@@ -191,8 +385,8 @@ public partial class MobileBoot : Control
                 CheckUpdate();
                 break;
             case AppUpdater.Stage.Available when !_go.Visible:
-                _status.Text = $"Versão nova do app: {a.Name}";
-                _detail.Text = $"{Fmt(a.Size)} para baixar. Depois toque em \"Instalar\" na tela do Android (seus dados e saves ficam).";
+                _status.Text = $"Tem versão nova do app! ({a.Name})";
+                _detail.Text = $"{Fmt(a.Size)}. Depois é só tocar em \"Instalar\" na tela do Android. Seus dados e personagens continuam.";
                 _go.Text = "Atualizar o app";
                 _goAction = () => { _go.Visible = false; _skip.Visible = false; _bar.Visible = true; a.StartDownload(); };
                 _go.Visible = true;
@@ -292,7 +486,7 @@ public partial class MobileBoot : Control
     {
         _go.Visible = false;
         _skip.Visible = false;
-        _status.Text = "Procurando atualização…";
+        _status.Text = "Conferindo os dados do jogo…";
         _detail.Text = "";
         // DEPURAÇÃO (só build Debug): DW4_CDN=host:porta usa um CDN de teste sem TLS, assinado pela chave PEM de DW4_CDN_CHAVE.
         _updater = OS.IsDebugBuild() && OS.GetEnvironment("DW4_CDN") is { Length: > 0 } cdn
@@ -310,13 +504,16 @@ public partial class MobileBoot : Control
 
     public override void _Process(double delta)
     {
+        _status.Visible = _status.Text.Length > 0;
+        _detail.Visible = _detail.Text.Length > 0;
+        TickTip(delta, _fakeDownload || _updater?.Phase == MobileUpdater.Stage.Downloading || _app?.Phase == AppUpdater.Stage.Downloading);
         if (_app is { } app) { ProcessApp(app); return; }
         if (_updater is not { } u) return;
         if (u.Error is { } error)
         {
             _updater = null;
             _bar.Visible = false;
-            _status.Text = "Não deu para atualizar o jogo.";
+            _status.Text = "Ops! O download parou.";
             _detail.Text = error;
             _go.Text = "Tentar de novo";
             _go.Visible = true;
@@ -331,8 +528,8 @@ public partial class MobileBoot : Control
                 break;
             case MobileUpdater.Stage.Ready when !_go.Visible && !_bar.Visible:
                 if (u.DownloadBytes == 0 && u.FilesToWrite == 0) { Finish(u); return; }
-                _status.Text = u.FirstInstall ? "Primeira vez: é preciso baixar os dados do jogo." : $"Atualização {u.Version} disponível.";
-                _detail.Text = $"{Fmt(u.DownloadBytes)} para baixar ({u.FilesToWrite} arquivos). Use o Wi-Fi, se puder.";
+                _status.Text = u.FirstInstall ? "Primeira vez por aqui! Vamos baixar o mundo digital." : $"Atualização {u.Version} chegou!";
+                _detail.Text = $"{Fmt(u.DownloadBytes)} para baixar. Se puder, use o Wi-Fi. Dá para fechar e continuar depois de onde parou.";
                 _goAction = StartDownload;
                 _go.Text = u.DownloadBytes > 20 << 20 ? "Baixar agora" : "Atualizar";
                 _go.Visible = true;
@@ -340,9 +537,9 @@ public partial class MobileBoot : Control
                 break;
             case MobileUpdater.Stage.Downloading:
                 long got = Interlocked.Read(ref u.GotBytes);
-                _status.Text = $"Baixando os dados do jogo ({u.Version})…";
+                _status.Text = "Baixando o mundo digital…";
                 _bar.Value = u.DownloadBytes > 0 ? (double)got / u.DownloadBytes : 0;
-                _detail.Text = $"{Fmt(got)} de {Fmt(u.DownloadBytes)}  ·  {u.FilesDone}/{u.FilesToWrite} arquivos  ·  {Fmt((long)u.Speed)}/s";
+                _detail.Text = $"{Fmt(got)} de {Fmt(u.DownloadBytes)}  ·  {Fmt((long)u.Speed)}/s{Eta(u.DownloadBytes - got, u.Speed)}";
                 break;
             case MobileUpdater.Stage.Finished:
                 Finish(u);

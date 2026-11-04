@@ -92,10 +92,12 @@ public partial class MainMenu : Control
         if (_art != null)
         {
             // Sobre o fundo animado: painel escuro com a fonte do jogo (a NORMAL, a das falas).
-            _panel = new PanelContainer { SelfModulate = new Color(1, 1, 1, 0.92f) };
+            _panel = new PanelContainer();
+            _panel.AddThemeStyleboxOverride("panel", MenuPanel());
             _panel.AddChild(_root);
             center.AddChild(_panel);
-            if (BitmapFont.Load(System.IO.Path.Combine(stages, "fonte"))?.ToFontFile("NORMAL") is { } gf) center.Theme = _gameTheme = new Theme { DefaultFont = gf, DefaultFontSize = 26 };
+            if (BitmapFont.Load(System.IO.Path.Combine(stages, "fonte"))?.ToFontFile("NORMAL") is { } gf) { _gameTheme = new Theme { DefaultFont = gf, DefaultFontSize = 26 }; _gameFont = gf; }
+            center.Theme = MenuTheme();
         }
         else center.AddChild(_root);
         ShowTitle();
@@ -210,6 +212,8 @@ public partial class MainMenu : Control
     void Clear()
     {
         foreach (var c in _root.GetChildren()) { _root.RemoveChild(c); c.QueueFree(); }
+        _titleMenu?.QueueFree();
+        _titleMenu = null;
         // Fora do título: some o logotipo e os menus do jogo; o fundo animado fica.
         if (_art != null)
         {
@@ -245,25 +249,102 @@ public partial class MainMenu : Control
         return b;
     }
 
+    // Entrada do jogo (pedido do usuário, 2026-11-04: "substitui o menu de entrar no game por uma versão nova baseada na tela de
+    // login"): o fundo e o logotipo do título original ficam; o "Press Start" e o "Game Start / Option" deram lugar a um painel
+    // no estilo do login do celular (MobileBoot), com botões grandes que funcionam no toque, no mouse, no teclado e no controle.
+    Control? _titleMenu;
+    Font? _gameFont;
+
+    static StyleBoxFlat MenuPanel()
+    {
+        var s = MobileBoot.Box(MobileBoot.Navy, MobileBoot.Cyan, 3, 16, 24);
+        s.ShadowColor = new Color(0, 0, 0, 0.5f);
+        s.ShadowSize = 14;
+        return s;
+    }
+
+    Theme MenuTheme()
+    {
+        var t = MobileBoot.MakeTheme();
+        if (_gameFont != null) { t.DefaultFont = _gameFont; t.DefaultFontSize = 30; }
+        return t;
+    }
+
     void ShowTitle()
     {
         Clear();
+        _title = TitleState.None;
+        _panel?.Set(CanvasItem.PropertyName.Visible, false);
+        var holder = new Control { MouseFilter = MouseFilterEnum.Ignore, Theme = MenuTheme() };
+        holder.SetAnchorsPreset(LayoutPreset.FullRect);
+        AddChild(holder);
+        _titleMenu = holder;
+        var box = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
+        box.AddThemeConstantOverride("separation", 0);
         if (_art != null)
         {
-            _panel!.Visible = false;
             _art.Visible = true;
             if (!_art.Has("j_startback")) _art.Play("j_startback", "SQ_OPEN");
             _art.Play("j_startlogo", "SQ_OPEN");
-            _art.Play("j_startmenu01", "SQ_OPEN");
-            _title = TitleState.Press;
-            return;
+            // o logotipo ocupa a metade de cima; o painel vem logo abaixo dele
+            box.AnchorLeft = 0; box.AnchorRight = 1; box.AnchorTop = 0.57f; box.AnchorBottom = 1;
         }
-        Title("Digimon World 4", 52);
-        Title("port para PC", 20);
-        var first = Btn(_root, "Jogar online", ShowSlots);
-        Btn(_root, "Configurações", ShowSettings);
-        Btn(_root, "Sair", () => GetTree().Quit());
-        first.CallDeferred(Control.MethodName.GrabFocus);
+        else
+        {
+            holder.AddChild(new MobileBoot.Tunnel { AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore });
+            box.AnchorLeft = 0; box.AnchorRight = 1; box.AnchorTop = 0.12f; box.AnchorBottom = 1;
+            var name = new Label { Text = "DIGIMON WORLD 4", HorizontalAlignment = HorizontalAlignment.Center };
+            name.AddThemeFontSizeOverride("font_size", 84);
+            name.AddThemeColorOverride("font_color", MobileBoot.Gold);
+            name.AddThemeColorOverride("font_outline_color", new Color(0.55f, 0.12f, 0.05f));
+            name.AddThemeConstantOverride("outline_size", 16);
+            box.AddChild(name);
+        }
+        holder.AddChild(box);
+        // escala pela altura da janela (base 900, a tela lógica do celular)
+        var scaler = new CenterContainer { SizeFlagsVertical = SizeFlags.ShrinkBegin, MouseFilter = MouseFilterEnum.Ignore };
+        box.AddChild(scaler);
+        var panel = new PanelContainer { CustomMinimumSize = new Vector2(640, 0) };
+        panel.AddThemeStyleboxOverride("panel", MenuPanel());
+        scaler.AddChild(panel);
+        var col = new VBoxContainer();
+        col.AddThemeConstantOverride("separation", 12);
+        panel.AddChild(col);
+        var hello = new Label { Text = Session.Account is { Length: > 0 } acc ? $"Olá, {acc}!" : "Bem-vindo, Tamer!", HorizontalAlignment = HorizontalAlignment.Center };
+        hello.AddThemeFontSizeOverride("font_size", 32);
+        hello.AddThemeColorOverride("font_color", MobileBoot.Gold);
+        col.AddChild(hello);
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", 12);
+        Button Big(string text, Action click, bool primary = false)
+        {
+            var b = new Button { Text = text, CustomMinimumSize = new Vector2(0, primary ? 64 : 56), SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            b.AddThemeFontSizeOverride("font_size", primary ? 34 : 26);
+            if (primary) b.AddThemeStyleboxOverride("normal", MobileBoot.Box(MobileBoot.Wine, MobileBoot.Gold, 3, 12, 10));
+            b.Pressed += click;
+            b.MouseEntered += () => b.GrabFocus();
+            ((Container)(primary ? col : row)).AddChild(b);
+            return b;
+        }
+        var play = Big("Jogar", ShowSlots, primary: true);
+        col.AddChild(row);
+        Big("Configurações", ShowSettings);
+        if (!DataPaths.Mobile) Big("Sair", () => GetTree().Quit());
+        var version = new Label { Text = DataPaths.Mobile ? $"versão {ProjectSettings.GetSetting("application/config/version", "").AsString()}" : DataPaths.Version is { Length: > 0 } v ? $"versão {v}" : "", HorizontalAlignment = HorizontalAlignment.Right };
+        version.AddThemeFontSizeOverride("font_size", 18);
+        version.AddThemeColorOverride("font_color", MobileBoot.Soft);
+        col.AddChild(version);
+        void Fit()
+        {
+            if (!IsInstanceValid(scaler) || !IsInsideTree()) return;
+            float k = GetViewportRect().Size.Y / 900f;
+            panel.PivotOffset = new Vector2(panel.Size.X / 2, 0);
+            panel.Scale = new Vector2(k, k) * (_art != null ? 1f : 1f);
+        }
+        holder.Resized += Fit;
+        panel.Resized += Fit;
+        Callable.From(Fit).CallDeferred();
+        play.CallDeferred(Control.MethodName.GrabFocus);
     }
 
     // ---------- vagas ----------
