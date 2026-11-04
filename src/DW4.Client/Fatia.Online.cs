@@ -88,7 +88,7 @@ public partial class Fatia
         a.WeaponName = null; // o modelo novo vem sem arma; o próximo quadro põe a arma de novo
         // Só formas que o cliente tem (o nome vem do outro jogador: nada de caminho).
         if (model.Length == 0 || model.IndexOfAny(['/', '\\', '.']) >= 0) return;
-        string folder = model == "p_girumon" && System.IO.Directory.Exists(System.IO.Path.Combine(_common, "guilmon"))
+        string folder = model == "p_girumon" && GameFiles.DirExists(System.IO.Path.Combine(_common, "guilmon"))
             ? "guilmon" : System.IO.Path.Combine("formas", model);
         if (Load(folder, "personagem.gltf") is not { } m) return;
         a.Root.AddChild(m);

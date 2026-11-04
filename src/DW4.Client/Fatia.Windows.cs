@@ -54,7 +54,7 @@ public partial class Fatia
         if (_winTried) return _winData != null;
         _winTried = true;
         var dir = Path.Combine(_dir, "janelas");
-        if (!Directory.Exists(dir)) return false;
+        if (!GameFiles.DirExists(dir)) return false;
         _winData = HudData.Load(dir, _problems, "*_hud.json", null);
         if (_winData == null) return false;
         var vp = _winViewport = new SubViewport { Size = new Vector2I(640, 480), TransparentBg = true, OwnWorld3D = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Always };
@@ -147,9 +147,9 @@ public partial class Fatia
         var actor = new HudActor(_winData, root, slot: 0, drawOrder: 10 + _windows.Count * 8, widen: _winExtra, widenFull: _winExtraFull);
         _winRoot.AddChild(actor.Root);
         var seqDir = Path.Combine(_dir, "janelas", name);
-        var seqFile = Directory.Exists(seqDir) ? Directory.EnumerateFiles(seqDir, "*_seq.json").FirstOrDefault() : null;
+        var seqFile = GameFiles.DirExists(seqDir) ? GameFiles.EnumerateFiles(seqDir, "*_seq.json").FirstOrDefault() : null;
         ObjectSequencer? seq = null;
-        if (seqFile != null) { var json = File.ReadAllText(seqFile); seq = new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)); }
+        if (seqFile != null) { var json = GameFiles.ReadAllText(seqFile); seq = new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)); }
         var w = new WindowActor { Name = name, Index = index, Actor = actor, Seq = seq };
         _windows[(name, index)] = w;
         return w;

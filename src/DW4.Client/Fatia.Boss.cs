@@ -125,7 +125,7 @@ public partial class Fatia
         if (!_stage.Has(script))
         {
             var dir = Path.Combine(_dir, "lua");
-            var only = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, $"{name}_*.lua").Select(Path.GetFileName).ToList() : [];
+            var only = GameFiles.DirExists(dir) ? GameFiles.EnumerateFiles(dir, $"{name}_*.lua").Select(Path.GetFileName).ToList() : [];
             script = only.Count == 1 ? only[0] : null;
         }
         if (DiagNpc) GD.Print($"[luacall] {model}: {name} → {script ?? "sem script"}");

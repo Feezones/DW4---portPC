@@ -76,7 +76,7 @@ public partial class MainMenu : Control
         // Música do título (FATO, first.lua da stagIS10: SYSgetArea 0 → AM_TITLE, senão AM_TITLE2; no beSoundInfo #806, AM_TITLE2 =
         // [0.20] = ndmw #20). DECISÃO DO PORT: toca em laço no título e nas telas de vagas, criação e configurações.
         var music = System.IO.Path.Combine(stages, "stagis10", "audio", "ndmw_0020.wav");
-        if (System.IO.File.Exists(music) && Fatia.ReadWav(music, problems) is { } wav)
+        if (GameFiles.Exists(music) && Fatia.ReadWav(music, problems) is { } wav)
         {
             if (wav.LoopMode == AudioStreamWav.LoopModeEnum.Disabled) { wav.LoopMode = AudioStreamWav.LoopModeEnum.Forward; wav.LoopBegin = 0; wav.LoopEnd = wav.Data.Length / (wav.Stereo ? 4 : 2); }
             _music = new AudioStreamPlayer { Stream = wav, Bus = PortSettings.MusicBus };
@@ -186,8 +186,8 @@ public partial class MainMenu : Control
     {
         var stages = DataPaths.Fases;
         var csv = Path.Combine(stages, Session.NewGameStage, "db", "db_shinka.csv");
-        if (!File.Exists(csv)) return [];
-        var lines = File.ReadAllLines(csv);
+        if (!GameFiles.Exists(csv)) return [];
+        var lines = GameFiles.ReadAllLines(csv);
         var head = lines[0].TrimStart('\uFEFF').Split(';');
         int name = Array.IndexOf(head, "NAME"), model = Array.IndexOf(head, "MODEL_NAME");
         if (name < 0 || model < 0) return [];
@@ -274,9 +274,9 @@ public partial class MainMenu : Control
             if (_slotDb == null)
             {
                 var dir = System.IO.Path.Combine(_stages, Session.NewGameStage, "db");
-                var file = System.IO.Directory.Exists(dir) ? System.IO.Directory.EnumerateFiles(dir, "*_db.json").FirstOrDefault() : null;
+                var file = GameFiles.DirExists(dir) ? GameFiles.EnumerateFiles(dir, "*_db.json").FirstOrDefault() : null;
                 if (file == null) return (0, 0);
-                _slotDb = GameTables.FromJson(System.IO.File.ReadAllText(file));
+                _slotDb = GameTables.FromJson(GameFiles.ReadAllText(file));
             }
             var ram = new DW4.Script.Be.GameRam();
             c.Apply(ram, 0);

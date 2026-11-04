@@ -153,7 +153,7 @@ public partial class TouchControls : CanvasLayer
             }
             else
             {
-                var hint = new Vector2(220, Size.Y - 220);
+                var hint = new Vector2(330, Size.Y - 250); // longe do HP no canto
                 DrawArc(hint, StickRadius, 0, Mathf.Tau, 48, new Color(1, 1, 1, 0.2f), 3);
             }
             var fps = $"{Engine.GetFramesPerSecond():0} FPS";

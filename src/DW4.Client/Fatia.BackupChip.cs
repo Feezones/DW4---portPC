@@ -40,8 +40,8 @@ public partial class Fatia
         var dir = Path.Combine(DataPaths.Fases, "_comum", "g_000bcaps");
         if (HudData.Load(dir, _problems, "objetos.json", "falta <fases>\\_comum\\g_000bcaps (dw4 igb-objetos ndmw.afs 179 … g_000bcaps): backup chip sem modelo") is not { } data
             || !data.Actors.TryGetValue("g_000bcaps", out int root)) return;
-        var seqFile = Directory.EnumerateFiles(dir, "*_seq.json").FirstOrDefault();
-        var json = seqFile != null ? File.ReadAllText(seqFile) : null;
+        var seqFile = GameFiles.EnumerateFiles(dir, "*_seq.json").FirstOrDefault();
+        var json = seqFile != null ? GameFiles.ReadAllText(seqFile) : null;
         var actor = new HudActor(data, root, slot: 0);
         _chip = new WorldObject
         {

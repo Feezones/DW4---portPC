@@ -31,7 +31,7 @@ public partial class Fatia
         if (_shopArtTried) return _shopArtData != null;
         _shopArtTried = true;
         var dir = Path.Combine(_dir, "loja");
-        if (!Directory.Exists(dir) || GameFont() == null) return false;
+        if (!GameFiles.DirExists(dir) || GameFont() == null) return false;
         _shopArtData = HudData.Load(dir, _problems, "*_hud.json", null);
         if (_shopArtData == null) return false;
         var vp = new SubViewport { Size = new Vector2I(640, 480), TransparentBg = true, OwnWorld3D = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Always };
@@ -70,9 +70,9 @@ public partial class Fatia
                     _shopArtRoot.AddChild(actor.Root);
                     if (name == "j_shback") actor.Root.Position = new Vector3(0, 0, -2000); // fundo atrás (como o i_stback do menu)
                     var dir = Path.Combine(_dir, "loja", name);
-                    var file = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "*_seq.json").FirstOrDefault() : null;
+                    var file = GameFiles.DirExists(dir) ? GameFiles.EnumerateFiles(dir, "*_seq.json").FirstOrDefault() : null;
                     ObjectSequencer? seq = null;
-                    if (file != null) { var json = File.ReadAllText(file); seq = new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)); seq.Start(seqName); }
+                    if (file != null) { var json = GameFiles.ReadAllText(file); seq = new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)); seq.Start(seqName); }
                     _shopArtActors.Add((actor, seq));
                 }
         }

@@ -136,8 +136,8 @@ public partial class Fatia
         if (ObjectData() is not { } data || !data.Actors.TryGetValue(name, out int root)) return null;
         var actor = new HudActor(data, root, slot: 0);
         var seqDir = Path.Combine(_dir, "objetos", name);
-        var seqFile = Directory.Exists(seqDir) ? Directory.EnumerateFiles(seqDir, "*_seq.json").FirstOrDefault() : null;
-        var json = seqFile != null ? File.ReadAllText(seqFile) : null;
+        var seqFile = GameFiles.DirExists(seqDir) ? GameFiles.EnumerateFiles(seqDir, "*_seq.json").FirstOrDefault() : null;
+        var json = seqFile != null ? GameFiles.ReadAllText(seqFile) : null;
         var o = new WorldObject
         {
             Name = name, Index = index, Actor = actor, Gen = gen,
@@ -259,11 +259,11 @@ public partial class Fatia
     void AttachCharacter(WorldObject o)
     {
         var dir = Path.Combine(_dir, "npcs", o.Name);
-        var file = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "personagem.gltf", SearchOption.AllDirectories).FirstOrDefault() : null;
+        var file = GameFiles.DirExists(dir) ? GameFiles.EnumerateFiles(dir, "personagem.gltf", SearchOption.AllDirectories).FirstOrDefault() : null;
         if (file == null) return;
         var doc = new GltfDocument();
         var state = new GltfState();
-        if (doc.AppendFromFile(file, state) != Error.Ok || doc.GenerateScene(state) is not Node3D model) { _problems.Add($"{file}: erro ao ler"); return; }
+        if (doc.AppendFromFile(GameFiles.GodotPath(file), state) != Error.Ok || doc.GenerateScene(state) is not Node3D model) { _problems.Add($"{file}: erro ao ler"); return; }
         if (!FindAll<MeshInstance3D>(model).Any()) _problems.Add($"{o.Name}: personagem sem malha (pele igSkin sem igBlendMatrixSelect, formato ainda não lido)");
         o.Actor.Root.AddChild(model);
         o.CharacterAnim = FindAll<AnimationPlayer>(model).FirstOrDefault();

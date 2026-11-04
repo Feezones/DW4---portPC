@@ -109,9 +109,9 @@ public sealed class TitleArt
             var hud = new HudActor(_h, root, slot: 0, drawOrder: _actors.Count * 20, skipFlat: actor == _background);
             (actor == _background ? _bgRoot : _root).AddChild(hud.Root);
             if (actor == _background && _bgRect != null) _bgRect.Visible = true;
-            var file = Directory.Exists(Path.Combine(_dir, actor)) ? Directory.EnumerateFiles(Path.Combine(_dir, actor), "*_seq.json").FirstOrDefault() : null;
+            var file = GameFiles.DirExists(Path.Combine(_dir, actor)) ? GameFiles.EnumerateFiles(Path.Combine(_dir, actor), "*_seq.json").FirstOrDefault() : null;
             ObjectSequencer? seq = null;
-            if (file != null) { var json = File.ReadAllText(file); seq = new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)); }
+            if (file != null) { var json = GameFiles.ReadAllText(file); seq = new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)); }
             _actors[actor] = a = (hud, seq);
         }
         a.Actor.Root.Visible = true;

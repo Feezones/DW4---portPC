@@ -33,7 +33,7 @@ public partial class Fatia
         var model = WeaponModel;
         var dir = model != null ? Path.Combine(_common, "armas", model) : null;
         var stylesFile = dir != null ? Path.Combine(dir, "estilos.json") : null;
-        _styles = stylesFile != null && File.Exists(stylesFile) ? WeaponStyles.FromJson(File.ReadAllText(stylesFile)) : WeaponStyles.Fallback;
+        _styles = stylesFile != null && GameFiles.Exists(stylesFile) ? WeaponStyles.FromJson(GameFiles.ReadAllText(stylesFile)) : WeaponStyles.Fallback;
         if (_model == null) return;
         _weaponAttach?.QueueFree();
         _weaponAttach = null;
@@ -51,7 +51,7 @@ public partial class Fatia
     {
         if (FindAll<Skeleton3D>(character).FirstOrDefault() is not { } skeleton) return (null, null);
         var dir = model != null ? Path.Combine(_common, "armas", model) : null;
-        var mesh = dir != null && Directory.Exists(dir) ? Load(Path.Combine("armas", model!), "cena.gltf") : Load("arma", "cena.gltf");
+        var mesh = dir != null && GameFiles.DirExists(dir) ? Load(Path.Combine("armas", model!), "cena.gltf") : Load("arma", "cena.gltf");
         if (mesh == null) return (null, null);
         if (skeleton.FindBone(WeaponBone) < 0) _problems.Add($"osso {WeaponBone} não existe para a arma");
         var right = new BoneAttachment3D { BoneName = WeaponBone };
@@ -71,9 +71,9 @@ public partial class Fatia
     // devolve-as numa malha própria; sem o arquivo (arma de uma mão), null.
     static Node3D? SplitLeftHand(string dir, Node3D scene)
     {
-        var file = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "maos.json", SearchOption.AllDirectories).FirstOrDefault() : null;
+        var file = GameFiles.DirExists(dir) ? GameFiles.EnumerateFiles(dir, "maos.json", SearchOption.AllDirectories).FirstOrDefault() : null;
         if (file == null || FindAll<MeshInstance3D>(scene).FirstOrDefault(m => m.Mesh is ArrayMesh) is not { } mi) return null;
-        var sides = System.Text.Json.JsonSerializer.Deserialize<string[]>(File.ReadAllText(file)) ?? [];
+        var sides = System.Text.Json.JsonSerializer.Deserialize<string[]>(GameFiles.ReadAllText(file)) ?? [];
         var src = (ArrayMesh)mi.Mesh;
         if (sides.Length != src.GetSurfaceCount()) return null;
         var right = new ArrayMesh();

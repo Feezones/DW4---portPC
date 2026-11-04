@@ -56,8 +56,8 @@ public partial class Fatia
         if (_starters != null) return _starters;
         _starters = [];
         var file = Path.Combine(_dir, "disparos.json");
-        if (!File.Exists(file)) return _starters;
-        using var doc = JsonDocument.Parse(File.ReadAllText(file));
+        if (!GameFiles.Exists(file)) return _starters;
+        using var doc = JsonDocument.Parse(GameFiles.ReadAllText(file));
         foreach (var d in doc.RootElement.GetProperty("disparos").EnumerateArray())
         {
             string effect = d.GetProperty("nome").GetString() ?? "";
@@ -82,9 +82,9 @@ public partial class Fatia
     {
         if (_shotSeqs.TryGetValue(name, out var known)) return known;
         var dir = Path.Combine(_dir, "disparos", name);
-        var file = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "*_seq.json").FirstOrDefault() : null;
+        var file = GameFiles.DirExists(dir) ? GameFiles.EnumerateFiles(dir, "*_seq.json").FirstOrDefault() : null;
         if (file == null) return _shotSeqs[name] = null;
-        var json = File.ReadAllText(file);
+        var json = GameFiles.ReadAllText(file);
         return _shotSeqs[name] = (SeqCommand.LoadAll(json), SeqCommand.LoadActions(json));
     }
 
@@ -148,7 +148,7 @@ public partial class Fatia
         if (_shotModelsTried) return _shotModels;
         _shotModelsTried = true;
         var dir = Path.Combine(_dir, "disparos");
-        if (File.Exists(Path.Combine(dir, "objetos.json"))) _shotModels = HudData.Load(dir, _problems, "objetos.json", null);
+        if (GameFiles.Exists(Path.Combine(dir, "objetos.json"))) _shotModels = HudData.Load(dir, _problems, "objetos.json", null);
         return _shotModels;
     }
 

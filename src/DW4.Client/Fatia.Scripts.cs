@@ -29,12 +29,12 @@ public partial class Fatia : IBeEngine
     bool StartScripts()
     {
         var dir = Path.Combine(_dir, "lua");
-        if (!File.Exists(Path.Combine(dir, "boot.lua")))
+        if (!GameFiles.Exists(Path.Combine(dir, "boot.lua")))
         {
             _problems.Add($"sem scripts em {dir} (dw4 lua-extrair ndmw.afs 179 <fatia>\\lua): músicas fixas");
             return false;
         }
-        var chunks = Directory.GetFiles(dir).ToDictionary(f => Path.GetFileName(f), File.ReadAllBytes);
+        var chunks = GameFiles.GetFiles(dir).ToDictionary(f => Path.GetFileName(f), GameFiles.ReadAllBytes);
         // HIPÓTESE: nome da pasta da dng1; o boot.lua só o usa para montar a lista de arquivos, que a fatia não usa.
         var sys = new BeSystem { FolderName = _stageName };
         sys.Players[0] = (PlayerModel, new[] { "w_sword01", "w_sword01", "w_sword01" });
@@ -66,8 +66,8 @@ public partial class Fatia : IBeEngine
         Session.PendingGameStart = false;
         var stages = DataPaths.Fases;
         var file = Path.Combine(stages, "stagis10", "lua", "gameStart.lua");
-        if (!File.Exists(file)) { _problems.Add($"falta {file} (dw4 fase-exportar … stagIS10): flags do começo de jogo não refeitas"); return; }
-        var gs = new StageScripts(new Dictionary<string, byte[]> { ["gameStart.lua"] = File.ReadAllBytes(file) }, host) { Error = (n, m) => ScriptLog($"ERRO {n}: {m}") };
+        if (!GameFiles.Exists(file)) { _problems.Add($"falta {file} (dw4 fase-exportar … stagIS10): flags do começo de jogo não refeitas"); return; }
+        var gs = new StageScripts(new Dictionary<string, byte[]> { ["gameStart.lua"] = GameFiles.ReadAllBytes(file) }, host) { Error = (n, m) => ScriptLog($"ERRO {n}: {m}") };
         ScriptLog(gs.Run("gameStart.lua") ? "gameStart.lua da stagIS10 rodou" : "gameStart.lua não rodou");
     }
 
@@ -155,9 +155,9 @@ public partial class Fatia : IBeEngine
     void StartCameraDemo(string name)
     {
         var files = _demoPatterns.Select(p => Path.Combine(_dir, p.Replace("<nome>", name))).ToList();
-        var file = files.FirstOrDefault(File.Exists) ?? files.FirstOrDefault() ?? Path.Combine(_dir, "camera-demo", name);
-        if (!File.Exists(file)) { _problems.Add($"falta {file} (dw4 igb-camera-demo ndmw.afs 182 <fatia>\\camera-demo): sem a demo {name}"); return; }
-        _cameraDemo = CameraDemo.FromJson(File.ReadAllText(file));
+        var file = files.FirstOrDefault(GameFiles.Exists) ?? files.FirstOrDefault() ?? Path.Combine(_dir, "camera-demo", name);
+        if (!GameFiles.Exists(file)) { _problems.Add($"falta {file} (dw4 igb-camera-demo ndmw.afs 182 <fatia>\\camera-demo): sem a demo {name}"); return; }
+        _cameraDemo = CameraDemo.FromJson(GameFiles.ReadAllText(file));
         _cameraDemoT = 0;
     }
 

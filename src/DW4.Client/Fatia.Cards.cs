@@ -21,8 +21,8 @@ public partial class Fatia
         {
             _cardTried = true;
             var dir = Path.Combine(_dir, "..", "cartas");
-            var file = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "*_db.json").FirstOrDefault() : null;
-            _cardDb = file != null ? GameTables.FromJson(File.ReadAllText(file)) : null;
+            var file = GameFiles.DirExists(dir) ? GameFiles.EnumerateFiles(dir, "*_db.json").FirstOrDefault() : null;
+            _cardDb = file != null ? GameTables.FromJson(GameFiles.ReadAllText(file)) : null;
             if (_cardDb == null) _problems.Add("falta a tabela das cartas (dw4 fase-exportar → <fases>/cartas): loja de cartas desligada");
         }
         return _cardDb != null && _cardDb.Contains("card") ? _cardDb["card"] : null;

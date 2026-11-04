@@ -233,7 +233,7 @@ public partial class Fatia
         _choice = -1;
         if (_choicePanel != null) _choicePanel.Visible = false;
         var stages = DataPaths.Fases;
-        if (stage == _stageName || System.IO.Directory.Exists(System.IO.Path.Combine(stages, stage)))
+        if (stage == _stageName || GameFiles.DirExists(System.IO.Path.Combine(stages, stage)))
         {
             // Recarrega a cena com a fase e a entrada pedidas (o first.lua decide a demo pela entrada). A GAMERAM continua.
             SaveProgress(stage, _nextEntry);

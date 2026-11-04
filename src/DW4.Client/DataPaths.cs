@@ -21,7 +21,10 @@ public static class DataPaths
 
     public static string MobileRoot => Path.Combine(OS.GetUserDataDir(), "dados");
 
-    static string Root => Editor ? @"D:\dw4-work" : Mobile ? MobileRoot : Path.Combine(ExeDir, "dados");
+    /// <summary>Pasta "dados" (fatia, fases, arquivos e, no pacote novo, pacotes\*.zip).</summary>
+    public static string DataRoot => Root;
+
+    static string Root => Env("DW4_DADOS") ?? (Editor ? @"D:\dw4-work" : Mobile ? MobileRoot : Path.Combine(ExeDir, "dados"));
 
     static string? Env(string name) => OS.GetEnvironment(name) is { Length: > 0 } v ? v : null;
 

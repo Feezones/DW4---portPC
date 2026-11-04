@@ -163,15 +163,15 @@ public partial class Fatia
     string? EnemyDir(string model)
     {
         var dir = Path.Combine(_dir, "inimigos", model);
-        if (Directory.Exists(dir)) return dir;
+        if (GameFiles.DirExists(dir)) return dir;
         // FATO (varredura 2026-10-25): alguns campos usam inimigos cujo IGB não está entre os da fase (e_mummy na stag0204,
         // e_mecha3/e_megadra na stag0403). HIPÓTESE: o modelo é o mesmo exportado em outra fase; usa a primeira que tiver.
         var stagesRoot = Path.GetDirectoryName(_dir);
-        if (stagesRoot != null && Directory.Exists(stagesRoot))
-            foreach (var other in Directory.EnumerateDirectories(stagesRoot).OrderBy(d => d, StringComparer.Ordinal))
-                if (Directory.Exists(Path.Combine(other, "inimigos", model))) return Path.Combine(other, "inimigos", model);
+        if (stagesRoot != null && GameFiles.DirExists(stagesRoot))
+            foreach (var other in GameFiles.EnumerateDirectories(stagesRoot).OrderBy(d => d, StringComparer.Ordinal))
+                if (GameFiles.DirExists(Path.Combine(other, "inimigos", model))) return Path.Combine(other, "inimigos", model);
         dir = Path.Combine(_dir, "numemon");
-        return model == "e_nume" && Directory.Exists(dir) ? dir : null;
+        return model == "e_nume" && GameFiles.DirExists(dir) ? dir : null;
     }
 
     EnemyKind? Kind(int row)
@@ -194,13 +194,13 @@ public partial class Fatia
     EnemyKind? LoadEnemyKind(string model, int row)
     {
         var root = EnemyDir(model);
-        var file = root != null ? Directory.EnumerateFiles(root, "personagem.gltf", SearchOption.AllDirectories).FirstOrDefault() : null;
+        var file = root != null ? GameFiles.EnumerateFiles(root, "personagem.gltf", SearchOption.AllDirectories).FirstOrDefault() : null;
         if (file == null) return LoadRigidEnemyKind(model, row);
         var doc = new GltfDocument();
         var state = new GltfState();
-        if (doc.AppendFromFile(file, state) != Error.Ok) { _problems.Add($"{file}: erro ao ler"); return null; }
-        var seqFile = Directory.EnumerateFiles(root!, "*_seq.json", SearchOption.AllDirectories).FirstOrDefault();
-        string? json = seqFile != null ? File.ReadAllText(seqFile) : null;
+        if (doc.AppendFromFile(GameFiles.GodotPath(file), state) != Error.Ok) { _problems.Add($"{file}: erro ao ler"); return null; }
+        var seqFile = GameFiles.EnumerateFiles(root!, "*_seq.json", SearchOption.AllDirectories).FirstOrDefault();
+        string? json = seqFile != null ? GameFiles.ReadAllText(seqFile) : null;
         if (json == null) _problems.Add($"falta o *_seq.json de {model}: sem IA");
         var seqs = json != null ? SeqCommand.LoadAll(json) : [];
         var acts = json != null ? SeqCommand.LoadActions(json) : [];
@@ -226,8 +226,8 @@ public partial class Fatia
             return null;
         }
         var seqDir = Path.Combine(_dir, "objetos", model);
-        var seqFile = Directory.Exists(seqDir) ? Directory.EnumerateFiles(seqDir, "*_seq.json").FirstOrDefault() : null;
-        string? json = seqFile != null ? File.ReadAllText(seqFile) : null;
+        var seqFile = GameFiles.DirExists(seqDir) ? GameFiles.EnumerateFiles(seqDir, "*_seq.json").FirstOrDefault() : null;
+        string? json = seqFile != null ? GameFiles.ReadAllText(seqFile) : null;
         return new EnemyKind
         {
             Model = model, Row = row, RigidRoot = root, Stats = _db?.Enemy(row), Json = json,
@@ -343,9 +343,9 @@ public partial class Fatia
     void LoadStageData()
     {
         var genFile = Path.Combine(_dir, "geradores.json");
-        if (File.Exists(genFile))
+        if (GameFiles.Exists(genFile))
         {
-            using var doc = JsonDocument.Parse(File.ReadAllText(genFile));
+            using var doc = JsonDocument.Parse(GameFiles.ReadAllText(genFile));
             foreach (var g in doc.RootElement.GetProperty("generators").EnumerateArray())
             {
                 static Vector3 V(JsonElement a) => new(a[0].GetSingle(), a[1].GetSingle(), a[2].GetSingle());
@@ -371,9 +371,9 @@ public partial class Fatia
         }
         else if (_dir == _common) _problems.Add("falta geradores.json (dw4 igb-geradores ndmw.afs 184 <fatia>): sem ondas, Numemon fixo");
         var matFile = Path.Combine(_dir, "gatilhos.json");
-        if (File.Exists(matFile))
+        if (GameFiles.Exists(matFile))
         {
-            using var doc = JsonDocument.Parse(File.ReadAllText(matFile));
+            using var doc = JsonDocument.Parse(GameFiles.ReadAllText(matFile));
             foreach (var v in doc.RootElement.GetProperty("volumes").EnumerateArray())
             {
                 var mn = v.GetProperty("min");
@@ -401,11 +401,11 @@ public partial class Fatia
     void ArmUnreferencedGenerators()
     {
         var luaDir = Path.Combine(_dir, "lua");
-        if (!Directory.Exists(luaDir)) return;
+        if (!GameFiles.DirExists(luaDir)) return;
         var cited = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var file in Directory.EnumerateFiles(luaDir, "*.lua"))
+        foreach (var file in GameFiles.EnumerateFiles(luaDir, "*.lua"))
             foreach (System.Text.RegularExpressions.Match s in System.Text.RegularExpressions.Regex.Matches(
-                System.Text.Encoding.Latin1.GetString(File.ReadAllBytes(file)), @"[ -~]{3,}"))
+                System.Text.Encoding.Latin1.GetString(GameFiles.ReadAllBytes(file)), @"[ -~]{3,}"))
                 cited.Add(s.Value);
         foreach (var g in _generators.Values.Where(g => !cited.Contains(g.Name)))
         {

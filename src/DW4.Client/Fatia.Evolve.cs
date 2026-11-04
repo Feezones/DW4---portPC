@@ -20,7 +20,7 @@ namespace DW4.Client;
 /// </summary>
 public partial class Fatia
 {
-    string PlayerFolder => PlayerModel == "p_girumon" && System.IO.Directory.Exists(System.IO.Path.Combine(_common, "guilmon"))
+    string PlayerFolder => PlayerModel == "p_girumon" && GameFiles.DirExists(System.IO.Path.Combine(_common, "guilmon"))
         ? "guilmon" : System.IO.Path.Combine("formas", PlayerModel);
 
     string FormName => _db != null && _shinkaRow >= 0 ? _db["shinka"].Text(_shinkaRow, "NAME") : PlayerModel;
@@ -29,8 +29,8 @@ public partial class Fatia
 
     /// <summary>A pasta do modelo da forma existe na pasta comum? (o menu inicial só deixa criar o que o cliente desenha).</summary>
     public static bool HasPlayerModel(string commonDir, string model) =>
-        System.IO.Directory.Exists(System.IO.Path.Combine(commonDir, "formas", model))
-        || model == "p_girumon" && System.IO.Directory.Exists(System.IO.Path.Combine(commonDir, "guilmon"));
+        GameFiles.DirExists(System.IO.Path.Combine(commonDir, "formas", model))
+        || model == "p_girumon" && GameFiles.DirExists(System.IO.Path.Combine(commonDir, "guilmon"));
 
     bool DeliverToEvolve(BeMessage m)
     {

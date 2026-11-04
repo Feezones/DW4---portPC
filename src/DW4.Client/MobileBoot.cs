@@ -327,6 +327,27 @@ public sealed class MobileUpdater
     readonly object _lock = new();
     StreamWriter? _log;
     byte[] _manifestBytes = [];
+    HashSet<string> _keep = [];
+
+    /// <summary>
+    /// Apaga os arquivos de dados que saíram do manifesto (ex.: os 52 mil soltos da 0.6.5 depois que vieram os pacotes por
+    /// fase) e as pastas que ficaram vazias. Os arquivos do controle (.instalados, .manifesto.json) ficam.
+    /// </summary>
+    void Cleanup()
+    {
+        var dados = Full("dados");
+        if (!Directory.Exists(dados)) return;
+        int removed = 0;
+        foreach (var f in Directory.EnumerateFiles(dados, "*", SearchOption.AllDirectories).ToList())
+        {
+            var rel = "dados/" + Path.GetRelativePath(dados, f).Replace('\\', '/');
+            if (_keep.Contains(rel) || rel is "dados/.instalados" or "dados/.manifesto.json") continue;
+            try { File.Delete(f); removed++; } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        foreach (var d in Directory.EnumerateDirectories(dados, "*", SearchOption.AllDirectories).OrderByDescending(d => d.Length).ToList())
+            try { if (!Directory.EnumerateFileSystemEntries(d).Any()) Directory.Delete(d); } catch (IOException) { }
+        if (removed > 0) GD.Print($"[atualizar] {removed} arquivos antigos apagados");
+    }
 
     public MobileUpdater(string userDir, string host = CdnHost, string manifestPath = ManifestPath, string? testKey = null)
     {
@@ -406,6 +427,8 @@ public sealed class MobileUpdater
             for (int i = 0; i < f.Chunks.Length; i++)
                 if (!_local.ContainsKey(f.Chunks[i]) && needChunks.Add(f.Chunks[i])) DownloadBytes += ChunkLength(f, i);
         FilesToWrite = _todo.Count;
+        _keep = files.Select(f => f.Path).ToHashSet(StringComparer.Ordinal);
+        if (_todo.Count == 0) Cleanup();
         // Arquivos de dados que saíram do manifesto ficam no disco por enquanto (não atrapalham o jogo).
         Phase = Stage.Ready;
     }
@@ -485,6 +508,8 @@ public sealed class MobileUpdater
         lock (_lock) { _log.Dispose(); _log = null; }
         if (Error != null) return;
         File.WriteAllBytes(ManifestCopy, _manifestBytes);
+        Note = "Limpando arquivos antigos…";
+        Cleanup();
         Phase = Stage.Finished;
     }
 

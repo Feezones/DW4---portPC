@@ -26,10 +26,10 @@ public sealed class SoundEffects
         _dir = dir;
         _owner = owner;
         _load = load;
-        if (!System.IO.Directory.Exists(dir)) { problems.Add($"falta {dir} (dw4 igb-sons ndmw.afs 178 e 898 <fatia>\\sons): sem efeitos"); return; }
-        foreach (var file in System.IO.Directory.EnumerateFiles(dir, "*_sons.json"))
+        if (!GameFiles.DirExists(dir)) { problems.Add($"falta {dir} (dw4 igb-sons ndmw.afs 178 e 898 <fatia>\\sons): sem efeitos"); return; }
+        foreach (var file in GameFiles.EnumerateFiles(dir, "*_sons.json"))
         {
-            using var doc = JsonDocument.Parse(System.IO.File.ReadAllText(file));
+            using var doc = JsonDocument.Parse(GameFiles.ReadAllText(file));
             // beSoundData por slot: [nome, Int3, S4 tipo, S5 índice, Int6 cue, S7 canais, S8 volume…].
             foreach (var s in doc.RootElement.GetProperty("sounds").EnumerateArray())
             {
@@ -70,7 +70,7 @@ public sealed class SoundEffects
         if (!_streams.TryGetValue(cue, out var stream))
         {
             var file = System.IO.Path.Combine(_dir, $"A9{(cue >> 16) & 0xFF:X2}_{(cue >> 8) & 0xFF:X2}.wav");
-            _streams[cue] = stream = System.IO.File.Exists(file) ? _load(file) : null;
+            _streams[cue] = stream = GameFiles.Exists(file) ? _load(file) : null;
             // DECISÃO DA FATIA: toca uma vez; o loop (passos, carga) depende de quem para o som, que ainda não foi lido.
             if (stream != null) stream.LoopMode = AudioStreamWav.LoopModeEnum.Disabled;
         }

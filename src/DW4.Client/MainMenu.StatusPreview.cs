@@ -15,14 +15,14 @@ public partial class MainMenu
 {
     void ShowStatusPreview(string tab)
     {
-        var dbFile = Directory.Exists(Path.Combine(Common, "db")) ? Directory.EnumerateFiles(Path.Combine(Common, "db"), "*_db.json").FirstOrDefault() : null;
+        var dbFile = GameFiles.DirExists(Path.Combine(Common, "db")) ? GameFiles.EnumerateFiles(Path.Combine(Common, "db"), "*_db.json").FirstOrDefault() : null;
         if (dbFile == null) { GD.PrintErr("[status] falta o *_db.json"); return; }
-        var db = GameTables.FromJson(File.ReadAllText(dbFile));
+        var db = GameTables.FromJson(GameFiles.ReadAllText(dbFile));
         var texts = new System.Collections.Generic.Dictionary<string, string>();
         var tf = Path.Combine(Common, "textos", "textos.json");
-        if (File.Exists(tf))
+        if (GameFiles.Exists(tf))
         {
-            using var doc = JsonDocument.Parse(File.ReadAllText(tf));
+            using var doc = JsonDocument.Parse(GameFiles.ReadAllText(tf));
             foreach (var t in doc.RootElement.GetProperty("texts").EnumerateArray()) texts[t.GetProperty("key").GetString() ?? ""] = t.GetProperty("text").GetString() ?? "";
         }
         int shinka = 2, level = 30;
@@ -41,14 +41,14 @@ public partial class MainMenu
         Equipment eq = new(274, 0, 0) { ReserveWeapons = [275, -1], WeaponChips = [48], ArmorChips = [120] };
         var font = BitmapFont.Load(Path.Combine(Common, "fonte"));
         var facesFile = Path.Combine(Common, "menu");
-        var faceImg = Directory.Exists(facesFile) ? Directory.EnumerateFiles(facesFile, "*charaicon.png").FirstOrDefault() : null;
+        var faceImg = GameFiles.DirExists(facesFile) ? GameFiles.EnumerateFiles(facesFile, "*charaicon.png").FirstOrDefault() : null;
         var screen = new StatusScreen(new StatusContext
         {
             Db = db, Inventory = () => inv, Equipment = () => eq, SetEquipment = e => eq = e,
             Preview = e => db.Player(shinka, level, e, skill), Player = () => db.Player(shinka, level, eq, skill),
             Numbers = () => (level, 1290, 210, PlayerGrowth.NextExp(level - 1) + 9000), Name = "Feelipe", ShinkaRow = shinka, Skill = () => skill,
             Forms = forms, TextByKey = k => texts.TryGetValue(k, out var t) ? t : null, Font = font,
-            Faces = faceImg != null && Image.LoadFromFile(faceImg) is { } img ? ImageTexture.CreateFromImage(img) : null,
+            Faces = faceImg != null && Image.LoadFromFile(GameFiles.GodotPath(faceImg)) is { } img ? ImageTexture.CreateFromImage(img) : null,
         });
         _center.Visible = false;
         AddChild(screen);

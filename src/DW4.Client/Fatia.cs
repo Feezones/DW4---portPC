@@ -133,8 +133,8 @@ public partial class Fatia : Node3D
     (Vector3 Position, float RotYDeg)? EntryPoint(int group, int slotIndex = 0)
     {
         var file = System.IO.Path.Combine(_dir, "pontos_entrada.json");
-        if (!System.IO.File.Exists(file)) { _problems.Add($"falta {file} (dw4 igb-entradas ndmw.afs 179 <fatia>): início no ponto fixo"); return null; }
-        using var doc = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(file));
+        if (!GameFiles.Exists(file)) { _problems.Add($"falta {file} (dw4 igb-entradas ndmw.afs 179 <fatia>): início no ponto fixo"); return null; }
+        using var doc = System.Text.Json.JsonDocument.Parse(GameFiles.ReadAllText(file));
         foreach (var pt in doc.RootElement.GetProperty("points").EnumerateArray())
         {
             if (pt.GetProperty("index").GetInt32() != group) continue;
@@ -150,7 +150,7 @@ public partial class Fatia : Node3D
     public override void _Ready()
     {
         PortSettings.ApplyLanguage(PortSettings.Current); // a fase pode abrir direto (DW4_FASE), sem passar pelo menu inicial
-        if (DataPaths.Mobile) AddChild(new TouchControls()); // celular: botões na tela (some com o controle Bluetooth)
+        if (DataPaths.Mobile || OS.IsDebugBuild() && OS.GetEnvironment("DW4_TOQUE") == "1") AddChild(new TouchControls()); // celular: botões na tela (some com o controle Bluetooth)
         ChooseStage();
         var env = new Godot.Environment { AmbientLightSource = Godot.Environment.AmbientSource.Color, AmbientLightColor = new Color(0.6f, 0.6f, 0.65f), BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black };
         // FATO (stag0102 #621): igFogAttr 60..300 com cor (0,8 0,7 0,8). Fundo na cor da neblina e neblina por profundidade.
@@ -170,8 +170,8 @@ public partial class Fatia : Node3D
 
         // Luz (FATO, boot.lua): SYSgetLightMode() == 0 ("Suave") carrega o LS_pack, senão o LH_pack; o fase-exportar grava o LS como
         // cena_ls.gltf (texturas em cenario/<cena>/ls). Sem ele, fica o LH.
-        bool soft = Ram.LightMode == 0 && System.IO.Directory.Exists(StagePath("cenario"))
-            && System.IO.Directory.EnumerateFiles(StagePath("cenario"), "cena_ls.gltf", System.IO.SearchOption.AllDirectories).Any();
+        bool soft = Ram.LightMode == 0 && GameFiles.DirExists(StagePath("cenario"))
+            && GameFiles.EnumerateFiles(StagePath("cenario"), "cena_ls.gltf", System.IO.SearchOption.AllDirectories).Any();
         // O LS (texturas em ls/) ainda não foi visto na tela e o mapa do tutorial (stag0001) apareceu preto: se ele não carrega, não
         // tem malha ou perde as texturas que o LH tem, fica o cena.gltf.
         var scenery = soft ? Load("cenario", "cena_ls.gltf") : null;
@@ -217,7 +217,7 @@ public partial class Fatia : Node3D
             if (seqFile == null) _problems.Add($"falta o *_seq.json de {PlayerModel} em {PlayerFolder} (dw4 igb-seq)");
             else
             {
-                var json = System.IO.File.ReadAllText(seqFile);
+                var json = GameFiles.ReadAllText(seqFile);
                 _actions = SeqCommand.LoadActions(json);
                 if (_actions.Count == 0) _problems.Add("o *_seq.json não tem ações: regere com o igb-seq atual");
                 var sequences = SeqCommand.LoadAll(json);
@@ -254,7 +254,7 @@ public partial class Fatia : Node3D
             foreach (var idx in new[] { 6, 35 })
             {
                 var wav = System.IO.Path.Combine(_dir, "audio", $"ndmw_{idx:D4}.wav");
-                if (!System.IO.File.Exists(wav)) { _problems.Add($"falta {wav} (dw4 adx-wav ndmw.afs <fatia>\\audio 6 35)"); continue; }
+                if (!GameFiles.Exists(wav)) { _problems.Add($"falta {wav} (dw4 adx-wav ndmw.afs <fatia>\\audio 6 35)"); continue; }
                 if (LoadWav(wav) is { } stream) { var p = new AudioStreamPlayer { Stream = stream, Bus = PortSettings.EffectsBus }; AddChild(p); p.Play(); }
             }
         }
@@ -262,8 +262,8 @@ public partial class Fatia : Node3D
         // Câmeras por volume da fase (fase.json); campos sem aaacamera ficam com a câmera de seguir (HIPÓTESE da fatia).
         _cameraSets = _cameraFiles
             .Select(f => System.IO.Path.Combine(_dir, f))
-            .Where(p => { bool ok = System.IO.File.Exists(p); if (!ok) _problems.Add($"falta {p}"); return ok; })
-            .Select(p => CameraZones.FromJson(System.IO.File.ReadAllText(p))).ToArray();
+            .Where(p => { bool ok = GameFiles.Exists(p); if (!ok) _problems.Add($"falta {p}"); return ok; })
+            .Select(p => CameraZones.FromJson(GameFiles.ReadAllText(p))).ToArray();
         // FATO (boot.lua): SYSgetCameraMode() == 0 carrega o aaaCamera.igb, senão o aaaCameraL.igb (a "camera_afastada" da fase.json).
         if (Ram.CameraMode != 0 && _cameraSets.Length > 1) _cameraSet = 1;
         _camera = new Camera3D { Fov = PortSettings.Current.Fov, Far = 4000, Current = true };
@@ -542,8 +542,8 @@ public partial class Fatia : Node3D
     string? SeqFile(string sub)
     {
         var root = StagePath(sub);
-        return System.IO.Directory.Exists(root)
-            ? System.IO.Directory.EnumerateFiles(root, "*_seq.json", System.IO.SearchOption.AllDirectories).FirstOrDefault() : null;
+        return GameFiles.DirExists(root)
+            ? GameFiles.EnumerateFiles(root, "*_seq.json", System.IO.SearchOption.AllDirectories).FirstOrDefault() : null;
     }
 
     float? AnimFrames(string action) => ActionAnimations.Length(_actions, action, motion =>
@@ -555,11 +555,11 @@ public partial class Fatia : Node3D
     void LoadCombat()
     {
         var dbDir = System.IO.Path.Combine(_dir, "db");
-        var dbFile = System.IO.Directory.Exists(dbDir) ? System.IO.Directory.EnumerateFiles(dbDir, "*_db.json").FirstOrDefault() : null;
+        var dbFile = GameFiles.DirExists(dbDir) ? GameFiles.EnumerateFiles(dbDir, "*_db.json").FirstOrDefault() : null;
         if (dbFile == null) { _problems.Add("falta o *_db.json (dw4 igb-db area.afs 3 <fatia>\\db): combate desligado"); return; }
-        _db = GameTables.FromJson(System.IO.File.ReadAllText(dbFile));
+        _db = GameTables.FromJson(GameFiles.ReadAllText(dbFile));
         var skillFile = StagePath("skillup.json");
-        if (System.IO.File.Exists(skillFile)) _skillGrowth = SkillGrowth.FromJson(System.IO.File.ReadAllText(skillFile));
+        if (GameFiles.Exists(skillFile)) _skillGrowth = SkillGrowth.FromJson(GameFiles.ReadAllText(skillFile));
         else _problems.Add("falta skillup.json (dw4 dol-skilltab <main.dol> <fatia>): skill não sobe");
         _shinkaRow = _db["shinka"].RowsWhere("MODEL_NAME", PlayerModel).DefaultIfEmpty(-1).First();
         // DECISÃO DA FATIA: Guilmon com a w_sword01 α (linha 25, SKILLPOINT 1: equipável com as skills iniciais). No jogo
@@ -586,11 +586,11 @@ public partial class Fatia : Node3D
         _mp = _pf.MaxMp;
         if (!_db.Contains("pcTech")) _problems.Add("a pcTech não está no *_db.json: técnicas desligadas");
         var dropsDir = System.IO.Path.Combine(_dir, "drops");
-        var dropsFile = System.IO.Directory.Exists(dropsDir) ? System.IO.Directory.EnumerateFiles(dropsDir, "*_drops.json").FirstOrDefault() : null;
+        var dropsFile = GameFiles.DirExists(dropsDir) ? GameFiles.EnumerateFiles(dropsDir, "*_drops.json").FirstOrDefault() : null;
         if (dropsFile == null) { if (_dir == _common) _problems.Add("falta o *_drops.json (dw4 igb-drops ndmw.afs 183 <fatia>\\drops): sem drops"); }
         else
         {
-            var dropsJson = System.IO.File.ReadAllText(dropsFile);
+            var dropsJson = GameFiles.ReadAllText(dropsFile);
             _dropLists = Drops.FromJson(dropsJson);
             using var dd = System.Text.Json.JsonDocument.Parse(dropsJson);
             if (dd.RootElement.TryGetProperty("generators", out var gens))
@@ -922,7 +922,7 @@ public partial class Fatia : Node3D
     /// <summary>WAV PCM 16 bits com o chunk "smpl" do adx-wav (início e fim inclusivo do loop).</summary>
     public static AudioStreamWav? ReadWav(string file, List<string> problems)
     {
-        var b = System.IO.File.ReadAllBytes(file);
+        var b = GameFiles.ReadAllBytes(file);
         if (b.Length < 12 || System.Text.Encoding.ASCII.GetString(b, 0, 4) != "RIFF") { problems.Add($"{file}: não é WAV"); return null; }
         int channels = 0, rate = 0, loopStart = -1, loopEnd = -1;
         byte[]? data = null;
@@ -945,12 +945,12 @@ public partial class Fatia : Node3D
     Node3D? Load(string sub, string fileName)
     {
         var root = StagePath(sub);
-        var file = System.IO.Directory.Exists(root)
-            ? System.IO.Directory.EnumerateFiles(root, fileName, System.IO.SearchOption.AllDirectories).FirstOrDefault() : null;
+        var file = GameFiles.DirExists(root)
+            ? GameFiles.EnumerateFiles(root, fileName, System.IO.SearchOption.AllDirectories).FirstOrDefault() : null;
         if (file == null) { _problems.Add($"falta {fileName} em {root}"); return null; }
         var doc = new GltfDocument();
         var state = new GltfState();
-        var err = doc.AppendFromFile(file, state);
+        var err = doc.AppendFromFile(GameFiles.GodotPath(file), state);
         if (err != Error.Ok) { _problems.Add($"{file}: {err}"); return null; }
         return doc.GenerateScene(state) as Node3D;
     }

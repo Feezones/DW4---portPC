@@ -39,8 +39,8 @@ public partial class Fatia
     {
         if (_shopDb != null) return _shopDb;
         var dir = Path.Combine(_dir, "db");
-        var file = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "ndmw_*_db.json").FirstOrDefault() : null;
-        return _shopDb = file != null ? GameTables.FromJson(File.ReadAllText(file)) : null;
+        var file = GameFiles.DirExists(dir) ? GameFiles.EnumerateFiles(dir, "ndmw_*_db.json").FirstOrDefault() : null;
+        return _shopDb = file != null ? GameTables.FromJson(GameFiles.ReadAllText(file)) : null;
     }
 
     bool DeliverToShop(BeMessage m)

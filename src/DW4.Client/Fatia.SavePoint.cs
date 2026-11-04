@@ -38,9 +38,9 @@ public partial class Fatia
         {
             _textByKey = [];
             var file = Path.Combine(_dir, "textos", "textos.json");
-            if (File.Exists(file))
+            if (GameFiles.Exists(file))
             {
-                using var doc = JsonDocument.Parse(File.ReadAllText(file));
+                using var doc = JsonDocument.Parse(GameFiles.ReadAllText(file));
                 foreach (var t in doc.RootElement.GetProperty("texts").EnumerateArray())
                     if (t.TryGetProperty("key", out var k) && k.GetString() is { } ks) _textByKey[ks] = t.GetProperty("text").GetString() ?? "";
             }

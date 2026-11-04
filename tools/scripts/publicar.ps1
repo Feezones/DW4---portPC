@@ -1,8 +1,8 @@
-# Publica uma versão nova do port no launcher RE:DIGITAL (jogo "dw4"): exporta o DW4.exe, monta o pacote com os dados
+﻿# Publica uma versão nova do port no launcher RE:DIGITAL (jogo "dw4"): exporta o DW4.exe, monta o pacote com os dados
 # extraídos e gera o manifesto assinado no CDN local. Os launchers acham a versão nova ao abrir ou a cada 30 minutos e
 # baixam só o que mudou.
 #
-# Os dados extraídos (fatia, fases, area.afs) vão no pacote do CDN por decisão do responsável (2026-11-02); nunca no git.
+# Os dados extraídos (fatia e fases em pacotes por fase, area.afs) vão no pacote do CDN por decisão do responsável (2026-11-02); nunca no git.
 # Este script não sobe nada para a internet: o envio do CDN local para a produção é um passo separado, com OK.
 #
 # A exportação .NET autocontida usa os runtime packs win-x64 do nuget.org (cache em %USERPROFILE%\.nuget\packages).
@@ -94,15 +94,16 @@ if (-not $SemExportar) {
     }
 }
 
-# 2. Dados: espelha a fatia e as fases (robocopy /MIR só regrava o que mudou) e o area.afs da abertura.
-function Espelhar($de, $para, [string[]]$semPastas = @()) {
-    $rc = @($de, $para, "/MIR", "/NJH", "/NJS", "/NFL", "/NDL", "/NP", "/R:1", "/W:1")
-    if ($semPastas.Count) { $rc += "/XD"; $rc += $semPastas }
-    robocopy @rc | Out-Null
-    if ($LASTEXITCODE -ge 8) { throw "robocopy falhou ($LASTEXITCODE): $de" }
-}
-Espelhar (Join-Path $Trabalho "fatia") (Join-Path $Pacote "dados\fatia") @("analise", "colisao_antiga_*")
-Espelhar (Join-Path $Trabalho "fases") (Join-Path $Pacote "dados\fases")
+# 2. Dados: pacotes por fase (dw4 empacotar, 2026-11-04: o launcher faz um pedido por arquivo e eram 52 mil) e o area.afs da
+#    abertura, solto. A música repetida em várias fases vai uma vez só. As pastas soltas de antes saem do pacote (o launcher
+#    apaga dos jogadores o que saiu do manifesto). Só os pacotes que mudaram são regravados.
+$tools = Join-Path $repo "tools\DW4.Tools"
+dotnet build $tools -c Release -v quiet -nologo | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "não compilou o tools\DW4.Tools (dw4 empacotar)" }
+$dw4 = Join-Path $tools "bin\Release\net10.0\dw4.exe"
+& $dw4 empacotar (Join-Path $Trabalho "fatia") (Join-Path $Trabalho "fases") (Join-Path $Pacote "dados\pacotes")
+if ($LASTEXITCODE -ne 0) { throw "dw4 empacotar falhou ($LASTEXITCODE)" }
+Remove-Item (Join-Path $Pacote "dados\fatia"), (Join-Path $Pacote "dados\fases") -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path (Join-Path $Pacote "dados\arquivos") | Out-Null
 Copy-Item (Join-Path $Trabalho "extracted\files\area.afs") (Join-Path $Pacote "dados\arquivos\area.afs") -Force
 

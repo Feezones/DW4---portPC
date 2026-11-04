@@ -147,10 +147,10 @@ public partial class Fatia
         {
             _textsTried = true;
             var file = Path.Combine(_dir, "textos", "textos.json");
-            if (!File.Exists(file)) _problems.Add($"falta {file} (dw4 igb-textos area.afs 9 <fatia>\\textos): mensagens sem texto");
+            if (!GameFiles.Exists(file)) _problems.Add($"falta {file} (dw4 igb-textos area.afs 9 <fatia>\\textos): mensagens sem texto");
             else
             {
-                using var doc = JsonDocument.Parse(File.ReadAllText(file));
+                using var doc = JsonDocument.Parse(GameFiles.ReadAllText(file));
                 _texts = doc.RootElement.GetProperty("texts").EnumerateArray()
                     .OrderBy(t => t.GetProperty("index").GetInt32())
                     .Select(t => (t.TryGetProperty("key", out var k) ? k.GetString() : null, t.GetProperty("text").GetString() ?? "")).ToList();
@@ -228,11 +228,11 @@ sealed class Minimap
         if (_actors.Any(a => a.Key == key)) return;
         var actor = new HudActor(_data, root, slot: cursor ? player : 0);
         var seqDir = Path.Combine(_dir, name);
-        var seqFile = Directory.Exists(seqDir) ? Directory.EnumerateFiles(seqDir, "*_seq.json").FirstOrDefault() : null;
+        var seqFile = GameFiles.DirExists(seqDir) ? GameFiles.EnumerateFiles(seqDir, "*_seq.json").FirstOrDefault() : null;
         ObjectSequencer? seq = null;
         if (seqFile != null)
         {
-            var json = File.ReadAllText(seqFile);
+            var json = GameFiles.ReadAllText(seqFile);
             seq = new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json));
             // j_map101b1: GENERATE "SQ_OPEN"; j_mapcur: um SQ_OPEN0n por jogador (HIPÓTESE: n = jogador).
             if (!(sequence != null && sequence.StartsWith("SQ_", StringComparison.Ordinal) && seq.Start(sequence))) seq.Start($"SQ_OPEN0{player}");
