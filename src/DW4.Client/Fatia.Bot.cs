@@ -109,7 +109,7 @@ public partial class Fatia
     {
         var only = OS.GetEnvironment("DW4_NPC"); // nome/índice, ex.: n_digilff/1
         var npcs = _objects.Where(o => o.Name.StartsWith("n_", StringComparison.Ordinal) && !o.Dead && (only.Length == 0 || only == $"{o.Name}/{o.Index}")).ToList();
-        _botNpcClock += 1.0 / 60;
+        if (_padEnabled && _playerCtrl && !TalkWindowOpen && _choice < 0 && _listChoice < 0 && !_menuOpen) _botNpcClock += 1.0 / 60; // só conta com o controle livre
         if (_botNpc < 0 || _botNpcClock > 10) { _botNpc++; _botNpcClock = 0; if (_botNpc < npcs.Count) GD.Print($"[npc-bot] -> {npcs[_botNpc].Name}/{npcs[_botNpc].Index} em {npcs[_botNpc].Actor.Root.GlobalPosition.Round()}"); }
         if (!_padEnabled || !_playerCtrl || TalkWindowOpen || _choice >= 0 || _listChoice >= 0 || _menuOpen) { attackDown = _tick % 30 < 2; return; }
         if (_botNpc >= npcs.Count) return;

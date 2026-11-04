@@ -4,6 +4,7 @@ Mudanças pedidas para o PC que **não existem no original**. Ficam separadas da
 
 | Data | Decisão | Pedido por | Onde |
 |---|---|---|---|
+| 2026-11-03 | Janelas dos NPCs: menu com arte (banco, X-data, Digi-Lab) volta a responder (teclas seguradas do quadro anterior); mouse em todas as janelas com arte; teclas do jogo nas janelas de botões; "¶ " vira "X-" fora dos ícones; X-data e depositar/sacar na janela de lista larga; Guardião da Avaliação abre com os textos do jogo. | feelipe (0.6.3: janelas abrem e não respondem) | `Fatia.ArtMenu.cs`, `Fatia.ShopArt.cs`, `Fatia.SavePoint.cs`, `Fatia.Appraisal.cs`, docs/gameplay/janelas-npc.md |
 | 2026-11-03 | Espera e passeio da IA dos inimigos usam a ação e o MOVE do rótulo guardado do SQ_WAIT/SQ_WALK (Apocalymon fase 2: wait02, run03, 0,6). | feelipe | `Fatia.Enemies.cs` (IdleBlock), docs/gameplay/fase5-chefe-bs01.md |
 | 2026-11-03 | CTRL "toWait" de uma sequência de inimigo deixa a IA do mapa atual cortar com outro golpe (HIPÓTESE; Mecha Rogue 04: corrida do SQ_ATCK2 → SQ_ATCK4). | feelipe | `Fatia.Enemies.cs` (AiCanCut), docs/gameplay/chefe-mecha-rogue.md |
 | 2026-11-03 | Mammothmon: ENEMY <modelo> <n> SQ_… do script vale como MODELCTRL para aquele inimigo (a investida de abertura do matg11.lua). | feelipe | `Fatia.Boss.cs` (DeliverToEnemies), docs/gameplay/chefe-mammothmon.md |
