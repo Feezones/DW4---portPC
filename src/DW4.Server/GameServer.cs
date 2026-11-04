@@ -89,6 +89,9 @@ public sealed class GameServer
             case Interact x when _world.IsOnline(p.Id):
                 OnInteract(p, x);
                 break;
+            case SaveList or SaveWrite or SaveDelete when _world.IsOnline(p.Id):
+                OnSave(p, msg);
+                break;
             case PlayerState s when _world.IsOnline(p.Id):
                 if (!Allow(p.Id)) return;
                 Send(_world.Update(p.Id, s));
@@ -114,7 +117,7 @@ public sealed class GameServer
         {
             Log($"[{old}] mesma conta entrou de novo; sessão antiga derrubada");
             Send(_world.Leave(old));
-            Reject(oldPeer, "Sua conta entrou em outro lugar.");
+            Reject(oldPeer, Protocol.KickedReason);
         }
         Log($"[{p.Id}] entrou: {who.Tamer} (conta {who.AccountId}) com {h.Character}");
         Send(p, new Welcome(p.Id, who.Tamer), true);
@@ -167,6 +170,80 @@ public sealed class GameServer
                 _ = SafeAsync(async () => { var party = await _api.PresenceAsync(acc, true); _main.Enqueue(() => Send(_world.SetParty(id, party))); });
     }
 
+    // ---------- vagas de personagem (saves no servidor) ----------
+
+    // Pedidos de save por conta, um depois do outro: duas gravações seguidas (troca de fase e F5) chegam à API na ordem em que o
+    // jogo mandou, então a mais nova nunca é sobrescrita pela mais velha.
+    readonly Dictionary<long, Task> _saveChain = [];
+    readonly Dictionary<int, (long Window, int Count)> _saveRate = [];
+    const int MaxSavesPer10s = 20;
+
+    /// <summary>
+    /// Lista, grava ou apaga uma vaga da conta deste jogador (a conta é a do ticket; o cliente nunca escolhe a conta). O save é
+    /// conferido (JSON de objeto, até <see cref="Protocol.MaxSaveJson"/>) antes de ir para a DMO.API.
+    /// </summary>
+    void OnSave(NetPeer p, object msg)
+    {
+        long window = Stopwatch.GetTimestamp() / Stopwatch.Frequency / 10;
+        var (w, n) = _saveRate.TryGetValue(p.Id, out var v) && v.Window == window ? v : (window, 0);
+        _saveRate[p.Id] = (w, n + 1);
+        int reqId = msg switch { SaveList x => x.ReqId, SaveWrite x => x.ReqId, SaveDelete x => x.ReqId, _ => 0 };
+        if (n >= MaxSavesPer10s) { Send(p, new SaveReply(reqId, false, "Muitas gravações seguidas. Tente de novo em instantes.", []), true); return; }
+        var who = _world.Who(p.Id)!;
+        Func<Task<SaveReply>> work;
+        switch (msg)
+        {
+            case SaveList:
+                work = async () =>
+                {
+                    var list = await _api.ListCharactersAsync(who.AccountId);
+                    return new SaveReply(reqId, true, "", list.Where(c => c.Slot is >= 0 and < Protocol.Slots)
+                        .Select(c => new SaveEntry(c.Slot, SaveData.Pack(c.Json))).ToArray());
+                };
+                break;
+            case SaveWrite x:
+                string json, name;
+                try { (json, name) = CheckSave(x.Data); }
+                catch (FormatException ex)
+                {
+                    Log($"[{p.Id}] save recusado ({ex.Message})");
+                    Send(p, new SaveReply(reqId, false, "Save inválido.", []), true);
+                    return;
+                }
+                work = async () => { await _api.SaveCharacterAsync(who.AccountId, x.Slot, name, json); return new SaveReply(reqId, true, "", []); };
+                break;
+            case SaveDelete x:
+                work = async () => { await _api.DeleteCharacterAsync(who.AccountId, x.Slot); return new SaveReply(reqId, true, "", []); };
+                break;
+            default: return;
+        }
+        var prev = _saveChain.TryGetValue(who.AccountId, out var t) ? t : Task.CompletedTask;
+        var next = prev.ContinueWith(async _ =>
+        {
+            SaveReply reply;
+            try { reply = await work(); }
+            catch (Exception ex) { Log($"API (save {who.Tamer}): {ex.Message}"); reply = new SaveReply(reqId, false, "Servidor da conta fora do ar. Tente de novo em instantes.", []); }
+            // A resposta vai para quem pediu, se ainda está conectado (a gravação vale mesmo se ele já saiu).
+            _main.Enqueue(() => { if (_peers.TryGetValue(p.Id, out var peer)) Send(peer, reply, true); });
+        }, TaskScheduler.Default).Unwrap();
+        _saveChain[who.AccountId] = next;
+        _ = next.ContinueWith(_ => _main.Enqueue(() => { if (_saveChain.TryGetValue(who.AccountId, out var cur) && cur == next) _saveChain.Remove(who.AccountId); }));
+    }
+
+    /// <summary>Descomprime e confere o save; devolve o JSON e o nome do Digimon (para a API).</summary>
+    public static (string Json, string Name) CheckSave(byte[] data)
+    {
+        var json = SaveData.Unpack(data);
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object) throw new FormatException("save não é um objeto");
+            var name = doc.RootElement.TryGetProperty("Name", out var n) && n.ValueKind == System.Text.Json.JsonValueKind.String ? n.GetString() ?? "" : "";
+            return (json, name.Length > 32 ? name[..32] : name);
+        }
+        catch (System.Text.Json.JsonException) { throw new FormatException("save não é JSON"); }
+    }
+
     void Drop(int id)
     {
         _peers.Remove(id);
@@ -174,6 +251,7 @@ public sealed class GameServer
         _rate.Remove(id);
         _lastInteract.Remove(id);
         _coopRate.Remove(id);
+        _saveRate.Remove(id);
         if (_world.Who(id) is { } who)
         {
             Log($"[{id}] saiu: {who.Tamer}");

@@ -88,7 +88,7 @@ Test("Port: vagas da conta (ICharacterStore local): 4 vagas, vazia = null, grava
     var root = Path.Combine(Path.GetTempPath(), "dw4-teste-vagas-" + Guid.NewGuid().ToString("N"));
     try
     {
-        DW4.Script.Save.ICharacterStore store = new DW4.Script.Save.LocalCharacterStore(root);
+        var store = new DW4.Script.Save.LocalCharacterStore(root);
         True(store.List("local") is { Count: 4 } l && l.All(x => x == null), "conta nova: 4 vagas vazias");
         store.Save("local", 2, DW4.Script.Save.CharacterSave.New("Gui", 2, "p_girumon", 0, "stagml11", 3));
         var list = store.List("local");
@@ -1530,6 +1530,149 @@ Test("Inimigos: a amostra que volta à pose inicial no fim da trnsIN é um salto
     var q90 = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2);
     True(AnimationWrap.IsWrapJump(q0, q90, q0), "giro de 90° de volta");
     True(!AnimationWrap.IsWrapJump(q0, Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.05f), q0), "giro pequeno fica");
+});
+
+Test("Saves no servidor: vaga local enviada vira .enviado e não aparece mais", () =>
+{
+    var root = Path.Combine(Path.GetTempPath(), "dw4-teste-migra-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        var store = new DW4.Script.Save.LocalCharacterStore(root);
+        store.Save("conta", 0, DW4.Script.Save.CharacterSave.New("Gui", 2, "p_girumon", 0, "stagml11", 0));
+        store.MarkMigrated("conta", 0);
+        True(store.Load("conta", 0) == null, "vaga local some depois de enviada");
+        True(File.Exists(store.PathOf("conta", 0) + ".enviado"), "fica a cópia slot1.json.enviado");
+        store.Save("conta", 0, DW4.Script.Save.CharacterSave.New("Gui2", 2, "p_girumon", 0, "stagml11", 0));
+        store.MarkMigrated("conta", 0);
+        True(File.Exists(store.PathOf("conta", 0) + ".enviado2"), "segunda cópia não apaga a primeira");
+    }
+    finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+});
+
+Test("Saves no servidor: migração das vagas locais (mesma vaga se livre, senão a primeira livre, sem vaga fica)", () =>
+{
+    DW4.Script.Save.CharacterSave C(string n) => DW4.Script.Save.CharacterSave.New(n, 0, "p_agumon", 0, "stagml11", 0);
+    var plan = DW4.Script.Save.SlotMigration.Plan([null, null, null, null], [C("a"), null, C("c"), null]);
+    Equal("0>0 2>2", string.Join(" ", plan.Select(p => $"{p.Local}>{p.Target}")), "conta vazia: cada um na sua vaga");
+    plan = DW4.Script.Save.SlotMigration.Plan([C("x"), null, C("y"), null], [C("a"), C("b"), null, null]);
+    Equal("0>3 1>1", string.Join(" ", plan.Select(p => $"{p.Local}>{p.Target}")), "vaga 1 ocupada no servidor: vai para a livre");
+    plan = DW4.Script.Save.SlotMigration.Plan([C("x"), C("y"), C("z"), null], [C("a"), C("b"), null, null]);
+    Equal("0>3 1>-1", string.Join(" ", plan.Select(p => $"{p.Local}>{p.Target}")), "só uma livre: o outro fica no aparelho");
+});
+
+Test("Saves no servidor: pacotes das vagas (ida e volta, gzip, limites)", () =>
+{
+    var save = DW4.Script.Save.CharacterSave.New("Gui", 2, "p_girumon", 0, "stagml11", 0);
+    var json = save.ToJson();
+    var packed = DW4.Net.SaveData.Pack(json);
+    True(packed.Length < json.Length / 2, $"comprime ({json.Length} → {packed.Length} bytes)");
+    Equal(json, DW4.Net.SaveData.Unpack(packed), "descomprime igual");
+    var w = (DW4.Net.SaveWrite)DW4.Net.Codec.Read(DW4.Net.Codec.Write(new DW4.Net.SaveWrite(7, 3, packed)));
+    True(w.ReqId == 7 && w.Slot == 3 && w.Data.SequenceEqual(packed), "SaveWrite");
+    Equal(new DW4.Net.SaveList(9), DW4.Net.Codec.Read(DW4.Net.Codec.Write(new DW4.Net.SaveList(9))), "SaveList");
+    Equal(new DW4.Net.SaveDelete(2, 1), DW4.Net.Codec.Read(DW4.Net.Codec.Write(new DW4.Net.SaveDelete(2, 1))), "SaveDelete");
+    var r = (DW4.Net.SaveReply)DW4.Net.Codec.Read(DW4.Net.Codec.Write(new DW4.Net.SaveReply(5, true, "", [new(0, packed), new(2, packed)])));
+    True(r.ReqId == 5 && r.Ok && r.Slots.Length == 2 && r.Slots[1].Slot == 2 && r.Slots[1].Data.SequenceEqual(packed), "SaveReply com vagas");
+    bool threw = false;
+    try { DW4.Net.Codec.Read(DW4.Net.Codec.Write(new DW4.Net.SaveDelete(1, 0)).Select((b, i) => i == 5 ? (byte)4 : b).ToArray()); } catch (FormatException) { threw = true; }
+    True(threw, "vaga 5 recusada");
+    threw = false;
+    try { DW4.Net.SaveData.Unpack([1, 2, 3]); } catch (FormatException) { threw = true; }
+    True(threw, "lixo no lugar do gzip recusado");
+    threw = false;
+    try { DW4.Net.SaveData.Unpack(DW4.Net.SaveData.Pack(new string('x', DW4.Net.Protocol.MaxSaveJson + 1))); } catch (FormatException) { threw = true; }
+    True(threw, "save gigante recusado");
+    Equal(("{\"Name\":\"Gui\"}", "Gui"), DW4.Server.GameServer.CheckSave(DW4.Net.SaveData.Pack("{\"Name\":\"Gui\"}")), "servidor lê o nome");
+    threw = false;
+    try { DW4.Server.GameServer.CheckSave(DW4.Net.SaveData.Pack("[1,2]")); } catch (FormatException) { threw = true; }
+    True(threw, "servidor recusa save que não é objeto");
+});
+
+Test("Saves no servidor: servidor de verdade (UDP local, DevApi) lista, grava, apaga e derruba a conta repetida", () =>
+{
+    var dir = Path.Combine(Path.GetTempPath(), "dw4-teste-servidor-" + Guid.NewGuid().ToString("N"));
+    Environment.SetEnvironmentVariable("DW4_DEV_SAVES", dir);
+    var server = new DW4.Server.GameServer(new DW4.Server.DevApi());
+    True(server.Start(0), "servidor abriu");
+    var stop = false;
+    var loop = new Thread(() => { while (!Volatile.Read(ref stop)) { server.Tick(); Thread.Sleep(5); } }) { IsBackground = true };
+    loop.Start();
+    try
+    {
+        // Cliente mínimo: conecta, manda Hello e guarda o que chegar.
+        (LiteNetLib.NetManager Net, LiteNetLib.NetPeer Peer, System.Collections.Concurrent.ConcurrentQueue<object> Inbox, Func<string?> Rejected) Client(string ticket)
+        {
+            var inbox = new System.Collections.Concurrent.ConcurrentQueue<object>();
+            string? rejected = null;
+            var l = new LiteNetLib.EventBasedNetListener();
+            l.NetworkReceiveEvent += (_, reader, _, _) => inbox.Enqueue(DW4.Net.Codec.Read(reader.GetRemainingBytes()));
+            l.PeerDisconnectedEvent += (_, info) =>
+            {
+                if (info.AdditionalData is { AvailableBytes: > 0 } d && DW4.Net.Codec.Read(d.GetRemainingBytes()) is DW4.Net.Reject r) rejected = r.Reason;
+            };
+            var net = new LiteNetLib.NetManager(l) { AutoRecycle = true };
+            net.Start();
+            var peer = net.Connect("127.0.0.1", server.Port, DW4.Net.Protocol.ConnectionKey);
+            l.PeerConnectedEvent += p => p.Send(DW4.Net.Codec.Write(new DW4.Net.Hello(DW4.Net.Protocol.Version, ticket, "", "", 0)), LiteNetLib.DeliveryMethod.ReliableOrdered);
+            return (net, peer, inbox, () => rejected);
+        }
+        T Wait<T>(LiteNetLib.NetManager net, System.Collections.Concurrent.ConcurrentQueue<object> inbox, Func<T, bool>? ok = null) where T : class
+        {
+            var until = DateTime.UtcNow.AddSeconds(5);
+            while (DateTime.UtcNow < until)
+            {
+                net.PollEvents();
+                while (inbox.TryDequeue(out var m)) if (m is T t && (ok == null || ok(t))) return t;
+                Thread.Sleep(5);
+            }
+            throw new InvalidOperationException($"não chegou {typeof(T).Name}");
+        }
+        void Send(LiteNetLib.NetPeer p, object m) => p.Send(DW4.Net.Codec.Write(m), LiteNetLib.DeliveryMethod.ReliableOrdered);
+
+        var a = Client("dev:Gui");
+        Wait<DW4.Net.Welcome>(a.Net, a.Inbox);
+        Send(a.Peer, new DW4.Net.SaveList(1));
+        True(Wait<DW4.Net.SaveReply>(a.Net, a.Inbox, r => r.ReqId == 1) is { Ok: true, Slots.Length: 0 }, "conta nova: sem vagas");
+        var save = DW4.Script.Save.CharacterSave.New("Guilmon", 2, "p_girumon", 0, "stagml11", 0);
+        save.Bit = 4321;
+        Send(a.Peer, new DW4.Net.SaveWrite(2, 1, DW4.Net.SaveData.Pack(save.ToJson())));
+        save.Bit = 9999; // gravação seguinte: tem que valer a mais nova
+        Send(a.Peer, new DW4.Net.SaveWrite(3, 1, DW4.Net.SaveData.Pack(save.ToJson())));
+        True(Wait<DW4.Net.SaveReply>(a.Net, a.Inbox, r => r.ReqId == 3).Ok, "gravou");
+        Send(a.Peer, new DW4.Net.SaveWrite(4, 2, DW4.Net.SaveData.Pack("não é json")));
+        True(!Wait<DW4.Net.SaveReply>(a.Net, a.Inbox, r => r.ReqId == 4).Ok, "save inválido recusado");
+        Send(a.Peer, new DW4.Net.SaveList(5));
+        var list = Wait<DW4.Net.SaveReply>(a.Net, a.Inbox, r => r.ReqId == 5);
+        True(list.Slots.Length == 1 && list.Slots[0].Slot == 1, "uma vaga, a 2");
+        var back = DW4.Script.Save.CharacterSave.FromJson(DW4.Net.SaveData.Unpack(list.Slots[0].Data))!;
+        True(back.Name == "Guilmon" && back.Bit == 9999, "volta o save mais novo (ordem garantida)");
+
+        // Outra conta não vê.
+        var b = Client("dev:Ana");
+        Wait<DW4.Net.Welcome>(b.Net, b.Inbox);
+        Send(b.Peer, new DW4.Net.SaveList(1));
+        True(Wait<DW4.Net.SaveReply>(b.Net, b.Inbox, r => r.ReqId == 1).Slots.Length == 0, "outra conta não vê as vagas");
+
+        // Mesma conta em outro aparelho: o antigo é derrubado com o motivo combinado.
+        var a2 = Client("dev:Gui");
+        Wait<DW4.Net.Welcome>(a2.Net, a2.Inbox);
+        var until = DateTime.UtcNow.AddSeconds(5);
+        while (a.Rejected() == null && DateTime.UtcNow < until) { a.Net.PollEvents(); Thread.Sleep(5); }
+        Equal(DW4.Net.Protocol.KickedReason, a.Rejected(), "aparelho antigo derrubado");
+        Send(a2.Peer, new DW4.Net.SaveDelete(1, 1));
+        True(Wait<DW4.Net.SaveReply>(a2.Net, a2.Inbox, r => r.ReqId == 1).Ok, "apagou");
+        Send(a2.Peer, new DW4.Net.SaveList(2));
+        True(Wait<DW4.Net.SaveReply>(a2.Net, a2.Inbox, r => r.ReqId == 2).Slots.Length == 0, "apagada some");
+        foreach (var c in new[] { a.Net, b.Net, a2.Net }) c.Stop();
+    }
+    finally
+    {
+        Volatile.Write(ref stop, true);
+        loop.Join();
+        server.Stop();
+        Environment.SetEnvironmentVariable("DW4_DEV_SAVES", null);
+        if (Directory.Exists(dir)) Directory.Delete(dir, true);
+    }
 });
 
 // ---------- dados do jogo (opcional) ----------

@@ -9,7 +9,7 @@ Primeira etapa do coop (ADR 0003): os jogadores se veem e andam juntos. Combate,
 | `src/DW4.Net` | protocolo e `World` (sem socket) | pacotes, instâncias de fase, quem vê quem |
 | `src/DW4.Server` | `dw4-servidor` (console, sem janela) | UDP com LiteNetLib, confere o ticket na DMO.API, repassa posições, heartbeat de presença |
 | `src/DW4.Client` (`Online.cs`, `Fatia.Online.cs`) | o jogo | conecta com o ticket, manda o próprio estado a 20 Hz, desenha os outros com a placa |
-| DMO.API (`privateDmoSite`) | `api/dw4/ticket/redeem`, `api/dw4/presence` | conta, Tamer e party; "no DW4" para os amigos |
+| DMO.API (`privateDmoSite`) | `api/dw4/ticket/redeem`, `api/dw4/presence`, `api/dw4/characters` | conta, Tamer e party; "no DW4" para os amigos; as vagas de personagem |
 
 ## Como entra
 
@@ -58,6 +58,34 @@ O estado do jogador leva HP e MP. O servidor manda `PartyRoster` (os membros da 
 com nível, HP, MP e fase) a todos eles quando algo disso muda. O jogo mostra os outros membros no lado esquerdo da tela
 (`Fatia.PartyHud.cs`): quem está em outra fase aparece apagado, com o nome dela.
 
+## Vagas de personagem no servidor (protocolo 4)
+
+DECISÃO DO RESPONSÁVEL (2026-11-04): "saves no banco, com digimon, itens, bits, historia, tudo tem q ser online, nada local". O PC e
+o celular usam as mesmas 4 vagas da conta.
+
+- **Banco:** `dbo.Dw4Character` no banco web da DMO.API (migração `web/0008_dw4_character.sql`; a API cria a tabela se faltar).
+  Uma linha por (conta, vaga 0..3) com o save inteiro (`Data`, o JSON do `CharacterSave`: formas, itens, bits, banco, equipamento,
+  discos, flags da história e as permanentes), a gravação anterior (`PreviousData`, para restaurar à mão) e `Revision`. Apagar põe
+  `Data` em NULL e guarda o save em `PreviousData`.
+- **API:** `GET api/dw4/characters/{conta}`, `PUT api/dw4/characters/{conta}/{vaga}` (`{ name, data }`), `DELETE` idem; só localhost
+  com `X-Service-Key`, como os outros `api/dw4/*`.
+- **Servidor do DW4:** `SaveList`, `SaveWrite`, `SaveDelete` → `SaveReply` (mesmo `ReqId`). A conta é sempre a do ticket (o jogo não
+  escolhe conta). O save vai em gzip (`SaveData`) e é conferido (JSON de objeto, até 512 KB). Os pedidos de uma conta vão à API um
+  depois do outro, na ordem em que chegaram (a gravação mais nova nunca é sobrescrita pela mais velha). Até 20 pedidos a cada 10 s.
+- **Jogo:** a conexão do menu (aberta pelo `Online.Claim`, sem personagem) fica aberta e é por ela que o menu lista, cria e apaga as
+  vagas (`OnlineCharacterStore`). No jogo, troca de fase, F5, evolução, ponto de save e saída gravam no servidor
+  (`Session.SaveProgress`); sair para o menu e fechar a janela esperam a confirmação e, se não gravou, perguntam (tentar de novo,
+  sair sem gravar, continuar). Gravação que falhou vai de novo quando a conexão volta. Sem servidor, o menu não abre as vagas.
+  No editor da Godot sem ticket as vagas continuam em arquivo (`LocalCharacterStore`), só para desenvolver.
+- **Migração:** as vagas antigas do aparelho (`user://accounts/<conta>/slotN.json`) sobem sozinhas ao abrir a tela de vagas, na mesma
+  vaga se livre, senão na primeira livre (`SlotMigration`); o arquivo vira `slotN.json.enviado` (cópia, o jogo não lê mais). As que
+  não cabem ficam no aparelho e o menu avisa.
+- **Uma sessão por conta:** a conta que entra em outro aparelho derruba a anterior com `Protocol.KickedReason`; o aparelho derrubado
+  volta ao menu sem gravar e não reconecta sozinho (senão os dois ficariam se derrubando e gravando um por cima do outro).
+
+Ordem de publicação: DMO.API (rotas e tabela) → `dw4-servidor` (protocolo 4) → jogo (PC e APK). Cliente do protocolo 3 recebe
+"Versão do jogo diferente" até atualizar.
+
 ## Rodar
 
 Variáveis de ambiente do `dw4-servidor`:
@@ -68,6 +96,7 @@ Variáveis de ambiente do `dw4-servidor`:
 | `DW4_API` | `http://127.0.0.1:5000/` | DMO.API na mesma máquina (os `api/dw4/*` só aceitam localhost) |
 | `DW4_CHAVE_SERVICO` | | a mesma `Dw4:ServiceKey` da DMO.API (32+ letras) |
 | `DW4_DEV=1` | | teste local sem a API: ticket `dev:Nome`. Nunca em produção |
+| `DW4_DEV_SAVES` | `saves-dev` ao lado do servidor | só com `DW4_DEV=1`: pasta das vagas do teste local |
 
 ```
 dotnet publish src/DW4.Server -c Release -o publicar/dw4-servidor

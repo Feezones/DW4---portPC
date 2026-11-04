@@ -13,6 +13,11 @@ public interface IAccountApi
     Task<string?> PresenceAsync(long accountId, bool online);
     /// <summary>Menu do F (api/dw4/social): a ação em nome de <paramref name="me"/> sobre <paramref name="target"/>.</summary>
     Task<SocialReply> SocialAsync(Identity me, string action, Identity target, string inviteId);
+    /// <summary>Vagas ocupadas da conta (api/dw4/characters): número da vaga e o JSON do save.</summary>
+    Task<IReadOnlyList<(int Slot, string Json)>> ListCharactersAsync(long accountId);
+    /// <summary>Grava a vaga (a DMO.API guarda a gravação anterior).</summary>
+    Task SaveCharacterAsync(long accountId, int slot, string name, string json);
+    Task DeleteCharacterAsync(long accountId, int slot);
 }
 
 /// <summary>Resposta de api/dw4/social já do jeito do <see cref="InteractResult"/>.</summary>
@@ -70,6 +75,30 @@ public sealed class DmoApi(Uri baseUri, string serviceKey) : IAccountApi
         return new SocialReply(true, message,
             InviteId: d.TryGetProperty("inviteId", out var iv) && iv.ValueKind == JsonValueKind.String ? iv.GetString() ?? "" : "",
             Accepted: d.TryGetProperty("accepted", out var ac) && ac.ValueKind == JsonValueKind.True);
+    }
+
+    public async Task<IReadOnlyList<(int Slot, string Json)>> ListCharactersAsync(long accountId)
+    {
+        using var resp = await _http.GetAsync($"api/dw4/characters/{accountId}");
+        if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"api/dw4/characters respondeu {(int)resp.StatusCode}");
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+        var list = new List<(int, string)>();
+        if (doc.RootElement.TryGetProperty("characters", out var cs) && cs.ValueKind == JsonValueKind.Array)
+            foreach (var c in cs.EnumerateArray())
+                list.Add((c.GetProperty("slot").GetInt32(), c.GetProperty("data").GetString() ?? ""));
+        return list;
+    }
+
+    public async Task SaveCharacterAsync(long accountId, int slot, string name, string json)
+    {
+        using var resp = await _http.PutAsJsonAsync($"api/dw4/characters/{accountId}/{slot}", new { name, data = json });
+        if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"api/dw4/characters (gravar) respondeu {(int)resp.StatusCode}");
+    }
+
+    public async Task DeleteCharacterAsync(long accountId, int slot)
+    {
+        using var resp = await _http.DeleteAsync($"api/dw4/characters/{accountId}/{slot}");
+        if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"api/dw4/characters (apagar) respondeu {(int)resp.StatusCode}");
     }
 
     static string? PartyId(JsonElement r) =>
@@ -159,6 +188,38 @@ public sealed class DevApi : IAccountApi
                     return Task.FromResult(new SocialReply(true, ""));
             }
         }
+    }
+
+    // Vagas do teste local: arquivos em DW4_DEV_SAVES (padrão saves-dev ao lado do servidor), <conta>/slotN.json.
+    static string DevSaves => Environment.GetEnvironmentVariable("DW4_DEV_SAVES") is { Length: > 0 } d ? d : Path.Combine(AppContext.BaseDirectory, "saves-dev");
+    static string SlotFile(long accountId, int slot) => Path.Combine(DevSaves, accountId.ToString(), $"slot{slot + 1}.json");
+
+    public Task<IReadOnlyList<(int Slot, string Json)>> ListCharactersAsync(long accountId)
+    {
+        lock (_lock)
+        {
+            var list = new List<(int, string)>();
+            for (int i = 0; i < Protocol.Slots; i++)
+                if (File.Exists(SlotFile(accountId, i))) list.Add((i, File.ReadAllText(SlotFile(accountId, i))));
+            return Task.FromResult<IReadOnlyList<(int, string)>>(list);
+        }
+    }
+
+    public Task SaveCharacterAsync(long accountId, int slot, string name, string json)
+    {
+        lock (_lock)
+        {
+            var f = SlotFile(accountId, slot);
+            Directory.CreateDirectory(Path.GetDirectoryName(f)!);
+            File.WriteAllText(f, json);
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteCharacterAsync(long accountId, int slot)
+    {
+        lock (_lock) { if (File.Exists(SlotFile(accountId, slot))) File.Delete(SlotFile(accountId, slot)); }
+        return Task.CompletedTask;
     }
 
     // Saiu do jogo: sai da party; sobrou 1, a party acaba (regra do launcher). O líder que sai passa para o próximo.

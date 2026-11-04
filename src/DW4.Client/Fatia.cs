@@ -109,7 +109,9 @@ public partial class Fatia : Node3D
 
     public override void _Notification(int what)
     {
-        if (what == NotificationWMCloseRequest && !_leaving) SaveProgress();
+        if (what == NotificationWMCloseRequest && Session.Active && !_leaving) CloseRequested();
+        // Celular indo para o fundo (pode ser fechado de lá): grava sem esperar.
+        if (what == NotificationApplicationPaused && Session.Active && !_leaving && !_closing) _ = SaveProgress();
         if (what == NotificationApplicationFocusOut) _hasFocus = OS.IsDebugBuild() && OS.GetEnvironment("DW4_TECLAS").Length > 0; // teclas de depuração: janela sem foco
         else if (what == NotificationApplicationFocusIn) _hasFocus = true;
     }

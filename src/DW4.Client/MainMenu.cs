@@ -218,6 +218,7 @@ public partial class MainMenu : Control
             _art.Remove("j_startmenu02");
         }
         _title = TitleState.None;
+        _loadToken++;
         if (_panel != null) _panel.Visible = true;
         // Telas de vagas e criação (MainMenu.Slots.cs).
         _screen?.QueueFree();
@@ -296,11 +297,74 @@ public partial class MainMenu : Control
         catch (Exception e) when (e is KeyNotFoundException or IndexOutOfRangeException or ArgumentException or InvalidOperationException) { return (0, 0); }
     }
 
-    void ShowSlots()
+    // Cada abertura da tela de vagas (e cada troca de tela) ganha um número: a resposta do servidor que chega depois que o jogador
+    // já saiu da tela é ignorada.
+    int _loadToken;
+
+    async void ShowSlots()
     {
         // As vagas são da conta do launcher: sem ela (exe aberto direto), nenhuma vaga aparece.
         if (Session.Account == null) { Message("Abra o Digimon World 4 pelo launcher RE:DIGITAL, com a sua conta conectada, para ver e criar os seus Digimon.", ShowTitle); return; }
-        ShowSlotsUi();
+        if (Session.MenuNotice is { } notice) { Session.MenuNotice = null; Message(notice, ShowSlots); return; }
+        var account = Session.Account;
+        Clear();
+        int token = ++_loadToken;
+        Title(Session.UsesServer ? "Carregando os seus Digimon do servidor..." : "Carregando os seus Digimon...", 24);
+        Btn(_root, "Voltar", ShowTitle).CallDeferred(Control.MethodName.GrabFocus);
+        IReadOnlyList<CharacterSave?> slots;
+        string? migrated = null;
+        try
+        {
+            slots = await Session.Store.ListAsync(account);
+            if (Session.UsesServer) (slots, migrated) = await MigrateLocalSlots(account, slots);
+        }
+        catch (Exception e) when (e is OnlineCharacterStore.StoreException or IOException or ArgumentException)
+        {
+            if (token != _loadToken || !IsInsideTree()) return;
+            GD.PrintErr($"[menu] vagas: {e.Message}");
+            Clear();
+            Title("Não deu para carregar os seus Digimon.", 28);
+            Title(e.Message, 20);
+            Title("Os personagens ficam na sua conta, no servidor: é preciso estar conectado para jogar.", 18);
+            Btn(_root, "Tentar de novo", () => { if (Online.Kicked) Online.ResetKick(); ShowSlots(); }).CallDeferred(Control.MethodName.GrabFocus);
+            Btn(_root, "Voltar", ShowTitle);
+            return;
+        }
+        if (token != _loadToken || !IsInsideTree()) return;
+        if (migrated != null) { _slots = slots; Message(migrated, () => ShowSlotsUi(_slots)); return; }
+        ShowSlotsUi(slots);
+    }
+
+    /// <summary>
+    /// Migração (2026-11-04): as vagas antigas deste aparelho (user://accounts/&lt;conta&gt;) sobem para a conta no servidor, cada
+    /// uma na mesma vaga se ela está livre, senão na primeira livre (SlotMigration). O arquivo enviado vira slotN.json.enviado
+    /// (cópia; o jogo não lê mais). Devolve as vagas atualizadas e o aviso para o jogador (null = não havia nada para enviar).
+    /// </summary>
+    static async System.Threading.Tasks.Task<(IReadOnlyList<CharacterSave?>, string?)> MigrateLocalSlots(string account, IReadOnlyList<CharacterSave?> server)
+    {
+        var local = new LocalCharacterStore(ProjectSettings.GlobalizePath("user://"));
+        IReadOnlyList<CharacterSave?> mine;
+        try { mine = local.List(account); }
+        catch (Exception e) when (e is IOException or ArgumentException) { GD.PrintErr($"[migração] vagas locais: {e.Message}"); return (server, null); }
+        if (mine.All(c => c == null)) return (server, null);
+        var slots = server.ToArray();
+        var sent = new List<string>();
+        var left = new List<string>();
+        foreach (var (from, to) in SlotMigration.Plan(server, mine))
+        {
+            var c = mine[from]!;
+            if (to < 0) { left.Add(c.Name); continue; }
+            await Session.Store.SaveAsync(account, to, c); // falha: a exceção sobe e o menu mostra "não deu para carregar"
+            try { local.MarkMigrated(account, from); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { GD.PrintErr($"[migração] não renomeou a vaga {from + 1}: {e.Message}"); }
+            slots[to] = c;
+            sent.Add(c.Name);
+            GD.Print($"[migração] vaga local {from + 1} ({c.Name}) → vaga {to + 1} da conta");
+        }
+        var text = sent.Count == 0 ? "" : $"Personagens deste aparelho enviados para a sua conta: {string.Join(", ", sent)}.\nAgora eles ficam no servidor (PC e celular usam os mesmos).";
+        if (left.Count > 0)
+            text += (text.Length > 0 ? "\n\n" : "") + $"Não couberam nas 4 vagas da conta e continuam só neste aparelho: {string.Join(", ", left)}. Apague uma vaga e abra esta tela de novo para trazer.";
+        return (slots, text);
     }
 
     void Play(int slot, CharacterSave c)
@@ -337,7 +401,18 @@ public partial class MainMenu : Control
         Title($"Apagar {c.Name} ({FormName(c.CurrentForm)} nv {c.Level})?", 26);
         Title("Isso não pode ser desfeito.", 18);
         var no = Btn(_root, "Não, manter", ShowSlots);
-        Btn(_root, "Sim, apagar", () => { Session.Store.Delete(Session.Account!, slot); ShowSlots(); });
+        Btn(_root, "Sim, apagar", async () =>
+        {
+            Clear();
+            Title("Apagando...", 24);
+            try { await Session.Store.DeleteAsync(Session.Account!, slot); }
+            catch (Exception e) when (e is OnlineCharacterStore.StoreException or IOException)
+            {
+                if (IsInsideTree()) Message($"Não deu para apagar: {e.Message}", ShowSlots);
+                return;
+            }
+            if (IsInsideTree()) ShowSlots();
+        });
         no.CallDeferred(Control.MethodName.GrabFocus);
     }
 

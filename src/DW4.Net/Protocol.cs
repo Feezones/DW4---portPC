@@ -9,7 +9,8 @@ namespace DW4.Net;
 public static class Protocol
 {
     /// <summary>Muda quando o formato muda; cliente e servidor de versões diferentes não conversam.</summary>
-    public const int Version = 3; // 2 (0.6.1): arma, menu do F; 3 (0.6.2): combate em grupo (CoopGroup, CoopRelay), HP/MP e PartyRoster
+    public const int Version = 4; // 2 (0.6.1): arma, menu do F; 3 (0.6.2): combate em grupo (CoopGroup, CoopRelay), HP/MP e PartyRoster;
+                                  // 4: vagas de personagem no servidor (SaveList, SaveWrite, SaveDelete, SaveReply)
     /// <summary>Chave de conexão da LiteNetLib (recusa quem não é o DW4 antes de qualquer pacote).</summary>
     public const string ConnectionKey = "DW4-online-1";
     public const int DefaultPort = 7031;
@@ -20,6 +21,17 @@ public static class Protocol
     public const int MaxGroup = 4;
     /// <summary>Tamanho máximo de um pacote do combate em grupo (cabe num datagrama sem fragmentar).</summary>
     public const int MaxPayload = 1100;
+    /// <summary>Tamanho máximo de um save comprimido num pacote (o JSON do jogo tem ~10 KB, ~2 KB comprimido).</summary>
+    public const int MaxSave = 128 * 1024;
+    /// <summary>Tamanho máximo do JSON de um save depois de descomprimir.</summary>
+    public const int MaxSaveJson = 512 * 1024;
+    /// <summary>Vagas de personagem por conta.</summary>
+    public const int Slots = 4;
+    /// <summary>
+    /// Motivo da recusa quando a mesma conta entra em outro aparelho: o cliente derrubado volta ao menu sem gravar e não reconecta
+    /// sozinho (senão os dois aparelhos ficariam se derrubando e gravando um por cima do outro).
+    /// </summary>
+    public const string KickedReason = "Sua conta entrou em outro lugar.";
 }
 
 public enum MsgType : byte
@@ -29,6 +41,9 @@ public enum MsgType : byte
     State = 2,
     Interact = 3,
     CoopRelay = 4,
+    SaveList = 5,
+    SaveWrite = 6,
+    SaveDelete = 7,
     // servidor → cliente
     Welcome = 10,
     Reject = 11,
@@ -40,6 +55,7 @@ public enum MsgType : byte
     CoopGroup = 17,
     CoopFrom = 18,
     PartyRoster = 19,
+    SaveReply = 20,
 }
 
 /// <summary>Cliente → servidor, ao conectar: ticket do launcher e o personagem da vaga.</summary>
@@ -93,6 +109,58 @@ public sealed record CoopRelay(bool Reliable, byte[] Payload);
 /// <summary>Servidor → cliente: pacote do combate em grupo vindo de <see cref="FromId"/>.</summary>
 public sealed record CoopFrom(int FromId, byte[] Payload);
 
+/// <summary>Cliente → servidor: as vagas de personagem da conta (a conta é a do ticket; resposta: <see cref="SaveReply"/> com as vagas).</summary>
+public sealed record SaveList(int ReqId);
+
+/// <summary>Cliente → servidor: grava a vaga <see cref="Slot"/> (0..3) com o save (JSON comprimido, <see cref="SaveData"/>).</summary>
+public sealed record SaveWrite(int ReqId, int Slot, byte[] Data);
+
+/// <summary>Cliente → servidor: apaga a vaga.</summary>
+public sealed record SaveDelete(int ReqId, int Slot);
+
+/// <summary>Uma vaga ocupada: número e o save (JSON comprimido).</summary>
+public sealed record SaveEntry(int Slot, byte[] Data);
+
+/// <summary>
+/// Servidor → cliente: resposta a <see cref="SaveList"/>, <see cref="SaveWrite"/> ou <see cref="SaveDelete"/> (mesmo ReqId).
+/// Ok=false traz o motivo em Message. Na lista, Slots = as vagas ocupadas.
+/// </summary>
+public sealed record SaveReply(int ReqId, bool Ok, string Message, SaveEntry[] Slots);
+
+/// <summary>Save no fio: o JSON do jogo em gzip (os bytes de FLAG e CARDLIST em base64 são quase todos zero e comprimem bem).</summary>
+public static class SaveData
+{
+    public static byte[] Pack(string json)
+    {
+        using var ms = new MemoryStream();
+        using (var gz = new System.IO.Compression.GZipStream(ms, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: true))
+        {
+            var b = Encoding.UTF8.GetBytes(json);
+            gz.Write(b, 0, b.Length);
+        }
+        return ms.ToArray();
+    }
+
+    /// <summary>Descomprime; <see cref="FormatException"/> se não é gzip ou passa de <see cref="Protocol.MaxSaveJson"/>.</summary>
+    public static string Unpack(byte[] data)
+    {
+        try
+        {
+            using var gz = new System.IO.Compression.GZipStream(new MemoryStream(data), System.IO.Compression.CompressionMode.Decompress);
+            using var outMs = new MemoryStream();
+            var buf = new byte[16384];
+            int n;
+            while ((n = gz.Read(buf, 0, buf.Length)) > 0)
+            {
+                outMs.Write(buf, 0, n);
+                if (outMs.Length > Protocol.MaxSaveJson) throw new FormatException("save grande demais");
+            }
+            return Encoding.UTF8.GetString(outMs.ToArray());
+        }
+        catch (InvalidDataException) { throw new FormatException("save comprimido inválido"); }
+    }
+}
+
 /// <summary>Grava e lê os pacotes. Erro de formato vira <see cref="FormatException"/> (o servidor derruba quem mandou).</summary>
 public static class Codec
 {
@@ -130,6 +198,14 @@ public static class Codec
                 break;
             case SocialPrompt x: w.Write((byte)MsgType.SocialPrompt); Str(w, x.Kind, 16); w.Write(x.FromId); Str(w, x.FromTamer); Str(w, x.InviteId, 64); break;
             case RemoteState x: w.Write((byte)MsgType.RemoteState); w.Write(x.PlayerId); State(w, x.State); break;
+            case SaveList x: w.Write((byte)MsgType.SaveList); w.Write(x.ReqId); break;
+            case SaveWrite x: w.Write((byte)MsgType.SaveWrite); w.Write(x.ReqId); w.Write((byte)x.Slot); Save(w, x.Data); break;
+            case SaveDelete x: w.Write((byte)MsgType.SaveDelete); w.Write(x.ReqId); w.Write((byte)x.Slot); break;
+            case SaveReply x:
+                w.Write((byte)MsgType.SaveReply); w.Write(x.ReqId); w.Write(x.Ok); Str(w, x.Message, 200);
+                w.Write((byte)Math.Min(x.Slots.Length, Protocol.Slots));
+                foreach (var e in x.Slots.Take(Protocol.Slots)) { w.Write((byte)e.Slot); Save(w, e.Data); }
+                break;
             default: throw new ArgumentException("mensagem desconhecida: " + msg.GetType().Name);
         }
         return ms.ToArray();
@@ -160,6 +236,10 @@ public static class Codec
                 MsgType.PartyRoster => ReadRoster(r),
                 MsgType.SocialPrompt => new SocialPrompt(Str(r, 16), r.ReadInt32(), Str(r), Str(r, 64)),
                 MsgType.RemoteState => new RemoteState(r.ReadInt32(), State(r)),
+                MsgType.SaveList => new SaveList(r.ReadInt32()),
+                MsgType.SaveWrite => new SaveWrite(r.ReadInt32(), Slot(r), Save(r)),
+                MsgType.SaveDelete => new SaveDelete(r.ReadInt32(), Slot(r)),
+                MsgType.SaveReply => ReadSaveReply(r),
                 _ => throw new FormatException($"tipo {(byte)type}"),
             };
             if (r.BaseStream.Position != data.Length) throw new FormatException("sobra no pacote");
@@ -185,6 +265,41 @@ public static class Codec
         for (int i = 0; i < n; i++)
             m[i] = new PartyEntry(r.ReadInt32(), Str(r), Str(r), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), Str(r));
         return new PartyRoster(m);
+    }
+
+    static SaveReply ReadSaveReply(BinaryReader r)
+    {
+        int id = r.ReadInt32();
+        bool ok = r.ReadBoolean();
+        string msg = Str(r, 200);
+        int n = r.ReadByte();
+        if (n > Protocol.Slots) throw new FormatException("vagas demais");
+        var slots = new SaveEntry[n];
+        for (int i = 0; i < n; i++) slots[i] = new SaveEntry(Slot(r), Save(r));
+        return new SaveReply(id, ok, msg, slots);
+    }
+
+    static int Slot(BinaryReader r)
+    {
+        int s = r.ReadByte();
+        if (s >= Protocol.Slots) throw new FormatException("vaga inválida");
+        return s;
+    }
+
+    static void Save(BinaryWriter w, byte[] b)
+    {
+        if (b.Length > Protocol.MaxSave) throw new ArgumentException("save grande demais");
+        w.Write(b.Length);
+        w.Write(b);
+    }
+
+    static byte[] Save(BinaryReader r)
+    {
+        int n = r.ReadInt32();
+        if (n is < 0 or > Protocol.MaxSave) throw new FormatException("save grande demais");
+        var b = r.ReadBytes(n);
+        if (b.Length != n) throw new EndOfStreamException();
+        return b;
     }
 
     static void Bytes(BinaryWriter w, byte[] b)

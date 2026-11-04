@@ -2,23 +2,28 @@ namespace DW4.Script.Save;
 
 /// <summary>
 /// Personagens de uma conta: 4 vagas, cada uma vazia ("Criar novo Digimon") ou com o personagem criado ali. DECISÃO DO PORT
-/// (pedido do responsável, docs/decisoes-port-pc.md): as vagas são da conta/jogador. Hoje só existe a implementação local
-/// (<see cref="LocalCharacterStore"/>); na Fase 6 uma implementação no servidor troca esta sem mudar as telas.
+/// (pedido do responsável, docs/decisoes-port-pc.md): as vagas são da conta/jogador. DECISÃO DO RESPONSÁVEL (2026-11-04: "saves no
+/// banco ... tudo tem que ser online, nada local"): no jogo as vagas ficam no servidor (OnlineCharacterStore do cliente, pela
+/// conexão do DW4 até a DMO.API); <see cref="LocalCharacterStore"/> sobra só para o editor sem servidor e para ler as vagas antigas
+/// do aparelho na migração (<see cref="SlotMigration"/>).
+/// As operações são assíncronas (vão e voltam do servidor).
 /// </summary>
 public interface ICharacterStore
 {
     const int Slots = 4;
 
     /// <summary>As 4 vagas da conta (null = vazia).</summary>
-    IReadOnlyList<CharacterSave?> List(string account);
-    CharacterSave? Load(string account, int slot);
-    void Save(string account, int slot, CharacterSave save);
-    void Delete(string account, int slot);
+    Task<IReadOnlyList<CharacterSave?>> ListAsync(string account);
+    Task SaveAsync(string account, int slot, CharacterSave save);
+    Task DeleteAsync(string account, int slot);
 }
 
 /// <summary>Vagas em arquivos: &lt;raiz&gt;/accounts/&lt;conta&gt;/slotN.json (N = 1..4). O cliente usa user:// como raiz.</summary>
 public sealed class LocalCharacterStore(string root) : ICharacterStore
 {
+    /// <summary>Sufixo do arquivo de uma vaga que já subiu para a conta no servidor (fica como cópia; o jogo não lê mais).</summary>
+    public const string MigratedSuffix = ".enviado";
+
     public string Root { get; } = root;
 
     public string PathOf(string account, int slot)
@@ -52,5 +57,52 @@ public sealed class LocalCharacterStore(string root) : ICharacterStore
     {
         var path = PathOf(account, slot);
         if (File.Exists(path)) File.Delete(path);
+    }
+
+    /// <summary>
+    /// Vaga local que já subiu para o servidor: o arquivo vira slotN.json.enviado (ou .enviado2, 3... se já existe), para o jogo
+    /// não subir de novo e o jogador ainda ter a cópia.
+    /// </summary>
+    public void MarkMigrated(string account, int slot)
+    {
+        var path = PathOf(account, slot);
+        if (!File.Exists(path)) return;
+        var target = path + MigratedSuffix;
+        for (int n = 2; File.Exists(target); n++) target = path + MigratedSuffix + n;
+        File.Move(path, target);
+    }
+
+    public Task<IReadOnlyList<CharacterSave?>> ListAsync(string account) => Task.FromResult(List(account));
+    public Task SaveAsync(string account, int slot, CharacterSave save) { Save(account, slot, save); return Task.CompletedTask; }
+    public Task DeleteAsync(string account, int slot) { Delete(account, slot); return Task.CompletedTask; }
+}
+
+/// <summary>
+/// Migração das vagas antigas do aparelho para a conta no servidor (2026-11-04). Cada personagem local vai para a mesma vaga se
+/// ela está livre no servidor, senão para a primeira livre; sem vaga livre, fica no aparelho (e o menu avisa).
+/// </summary>
+public static class SlotMigration
+{
+    /// <summary>Destino de cada vaga local ocupada: (vaga local, vaga no servidor ou −1 = não cabe).</summary>
+    public static List<(int Local, int Target)> Plan(IReadOnlyList<CharacterSave?> server, IReadOnlyList<CharacterSave?> local)
+    {
+        var taken = new bool[ICharacterStore.Slots];
+        for (int i = 0; i < ICharacterStore.Slots; i++) taken[i] = i < server.Count && server[i] != null;
+        var plan = new List<(int, int)>();
+        // Primeiro quem cabe na mesma vaga (o jogador reconhece o lugar), depois os outros na primeira livre.
+        var pending = new List<int>();
+        for (int i = 0; i < Math.Min(local.Count, ICharacterStore.Slots); i++)
+        {
+            if (local[i] == null) continue;
+            if (!taken[i]) { taken[i] = true; plan.Add((i, i)); }
+            else pending.Add(i);
+        }
+        foreach (var i in pending)
+        {
+            int free = Array.IndexOf(taken, false);
+            if (free >= 0) taken[free] = true;
+            plan.Add((i, free));
+        }
+        return plan.OrderBy(p => p.Item1).ToList();
     }
 }

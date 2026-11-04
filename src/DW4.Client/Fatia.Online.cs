@@ -31,9 +31,15 @@ public partial class Fatia
         Online.Result += OnInteractResult;
         Online.Prompt += OnSocialPrompt;
         Online.Coop += OnCoop;
+        Online.KickedOut += OnKicked;
+        Session.SaveFailed += OnSaveFailed;
+        // Com vaga, fechar a janela espera a gravação no servidor (CloseRequested).
+        GetTree().AutoAcceptQuit = !Session.Active;
         TreeExiting += () =>
         {
             Online.Notice -= OnlineNotice; Online.Result -= OnInteractResult; Online.Prompt -= OnSocialPrompt; Online.Coop -= OnCoop;
+            Online.KickedOut -= OnKicked; Session.SaveFailed -= OnSaveFailed;
+            GetTree().AutoAcceptQuit = true;
             Ram.Ninzu = 1;
         };
         Online.Connect(PlayerName, PlayerModel, _level);

@@ -69,7 +69,15 @@ public partial class Fatia
         else
             SaveWindow(TextKey("mswkMem0200", "Do you want to save?") + "\n(o port também grava sozinho ao trocar de fase)",
             [
-                (TextKey("mswkMem0201", "Save."), () => { SaveProgress(_stageName, int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var e) ? e : 0); SaveWindow(TextKey("mswkMem0216", "Digimon was saved."), [("OK", CloseSaveWindow)]); }),
+                (TextKey("mswkMem0201", "Save."), async () =>
+                {
+                    CloseSaveWindow();
+                    Toast("Gravando no servidor...", 20);
+                    bool ok = await SaveProgress(_stageName, CurrentEntry);
+                    if (!IsInsideTree()) return;
+                    HideToast();
+                    SaveWindow(ok ? TextKey("mswkMem0216", "Digimon was saved.") : $"Não gravou no servidor:\n{Session.LastError}", [("OK", CloseSaveWindow)]);
+                }),
                 ("Trocar de Digimon (voltar ao menu)", () => { CloseSaveWindow(); LeaveGame(); }),
                 ("Continuar", CloseSaveWindow),
             ]);
@@ -77,10 +85,15 @@ public partial class Fatia
 
     void AskSave() => SaveWindow(TextKey("mswkMem0200", "Do you want to save?"),
     [
-        (TextKey("mswkMem0201", "Save."), () =>
+        (TextKey("mswkMem0201", "Save."), async () =>
         {
-            SaveProgress(LobbyStage, LobbyEntry);
-            SaveWindow(Session.Active ? TextKey("mswkMem0216", "Digimon was saved.") : "Sem vaga escolhida no menu: nada foi gravado.",
+            CloseSaveWindow();
+            Toast("Gravando no servidor...", 20);
+            bool ok = await SaveProgress(LobbyStage, LobbyEntry);
+            if (!IsInsideTree()) return;
+            HideToast();
+            SaveWindow(!Session.Active ? "Sem vaga escolhida no menu: nada foi gravado."
+                : ok ? TextKey("mswkMem0216", "Digimon was saved.") : $"Não gravou no servidor:\n{Session.LastError}",
                 [("OK", AskLeave)]);
         }),
         (TextKey("mswkMem0202", "Do not save."), AskLeave),

@@ -70,8 +70,7 @@ public partial class Fatia
         ScriptLog($"digievolução: {model} (DIGIMONNO {digimonNo})");
         var p = _player.GlobalPosition;
         int entry = int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var e) ? e : 0;
-        try { Session.SaveProgress(Ram, _stageName, entry); }
-        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException) { GD.PrintErr($"[save] não gravou: {ex.Message}"); }
+        _ = Session.SaveProgress(Ram, _stageName, entry); // vai ao servidor; a conexão continua na recarga da cena
         OS.SetEnvironment("DW4_INICIO", string.Create(CultureInfo.InvariantCulture, $"{p.X},{p.Y + 1},{p.Z}"));
         _leaving = true;
         GetTree().ReloadCurrentScene();
