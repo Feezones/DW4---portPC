@@ -35,3 +35,22 @@ Relato do usuário: parede invisível no meio da ponte suspensa da stag0101 (F3:
 - O cliente reconhece também pela caixa (`IsLimitCircle`, Fatia.cs). Os outros `colisao-colonly` ficam: stag0203 (420
   triângulos de −2500 a 4300) e as telas stagis07/09/11/12/13 e stagml14 (caixa de 24 triângulos).
 - Bot sem janela (DW4_ANDAR=462,40 a partir da entrada 0): z 230 → 40 sem parede.
+
+## Parapeitos e paredes de inimigo (2026-11-04)
+
+Relato: não dava para pular para os pilares na beira do penhasco da stag0102. F3 (build de depuração): segura a peça
+`Stage0102_polySurfaceShape292`, contato em (−30,3; 120,5; −13,5).
+
+- **FATO:** a 292 é de um `beHitLandModelInfo` com @10 = 2050 (0x800 | 2), junto com 289..291: caixas altas (até y 254..320) nas
+  bordas da área jogável. A 292 cobre a mesma área do piso 239 (o alto do penhasco, y 118) e sobe até 320. Nenhum script da
+  fase cita essas peças (os HITLANDMODEL da stag0102 só mexem em hitbrossgatez010/011 e hitwall02z01).
+- **FATO:** @10 em todas as fases: 1 = 92, 2 = 153, 4 = 98, 1026 = 324, 2050 = 36, 8 = 14, 1025 = 6, 5123 = 2, 5125 = 1. O
+  2050 aparece em 36 HitLands de cidades, masmorras e arenas de chefe. O 8 é sobretudo `wallE*` (dng103f2, dng206f2, dng310f3,
+  dng412b4) e `hitR32x` (dng205b3, dngq4b2*). Os grupos 2050 com nome `hit*` também têm pisos (hitmvbox*, hitflislandz04,
+  hitmagnetflore*) e portões (hitcirclegatez03).
+- **HIPÓTESE:** 2050 é parapeito de borda: segura quem anda (não se cai andando) e não segura o pulo; 8 é parede só de inimigo
+  (wallE = enemy).
+- **No cliente** (`CollisionKinds.cs`, tabela por fase): as faces de parede (|normal.y| < 0,5) das peças 2050 sem `hit*` no nome
+  vão para a camada 2, que o jogador só olha fora do pulo (`UpdatePlayerMask`). As faces de parede das peças 8 vão para a camada 3,
+  que só os inimigos olham. O chão das mesmas peças continua segurando todo mundo.
+- A conferir no original: se o pulo passa mesmo pelo parapeito e se o jogador atravessa as `wallE`.

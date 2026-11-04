@@ -63,4 +63,11 @@ public partial class Fatia
             return;
         }
     }
+
+    /// <summary>
+    /// Parapeito (CollisionKinds, @10 = 2050) só segura o jogador no chão; num pulo (SQ_JUMP, a queda dele e o golpe carregado no
+    /// ar) ele passa, e é assim que se pula para os pilares da stag0102 (relato do usuário, 2026-11-04). HIPÓTESE do sentido do
+    /// bit 0x800; parede de inimigo (@10 = 8) nunca segura o jogador.
+    /// </summary>
+    void UpdatePlayerMask() => _player.CollisionMask = InAirSequence ? 1u : 1u | CollisionKinds.EdgeLayer;
 }
