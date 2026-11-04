@@ -9,8 +9,9 @@ namespace DW4.Net;
 public static class Protocol
 {
     /// <summary>Muda quando o formato muda; cliente e servidor de versões diferentes não conversam.</summary>
-    public const int Version = 4; // 2 (0.6.1): arma, menu do F; 3 (0.6.2): combate em grupo (CoopGroup, CoopRelay), HP/MP e PartyRoster;
-                                  // 4: vagas de personagem no servidor (SaveList, SaveWrite, SaveDelete, SaveReply)
+    public const int Version = 5; // 2 (0.6.1): arma, menu do F; 3 (0.6.2): combate em grupo (CoopGroup, CoopRelay), HP/MP e PartyRoster;
+                                  // 4: vagas de personagem no servidor (SaveList, SaveWrite, SaveDelete, SaveReply);
+                                  // 5 (0.6.8): chat pelo servidor (ChatSend, ChatFrom, ChatNotice)
     /// <summary>Chave de conexão da LiteNetLib (recusa quem não é o DW4 antes de qualquer pacote).</summary>
     public const string ConnectionKey = "DW4-online-1";
     public const int DefaultPort = 7031;
@@ -27,6 +28,8 @@ public static class Protocol
     public const int MaxSaveJson = 512 * 1024;
     /// <summary>Vagas de personagem por conta.</summary>
     public const int Slots = 4;
+    /// <summary>Letras de uma mensagem de chat (o mesmo limite da caixa do jogo, ChatLog.MaxLength).</summary>
+    public const int MaxChat = 120;
     /// <summary>
     /// Motivo da recusa quando a mesma conta entra em outro aparelho: o cliente derrubado volta ao menu sem gravar e não reconecta
     /// sozinho (senão os dois aparelhos ficariam se derrubando e gravando um por cima do outro).
@@ -44,6 +47,7 @@ public enum MsgType : byte
     SaveList = 5,
     SaveWrite = 6,
     SaveDelete = 7,
+    ChatSend = 8,
     // servidor → cliente
     Welcome = 10,
     Reject = 11,
@@ -56,7 +60,27 @@ public enum MsgType : byte
     CoopFrom = 18,
     PartyRoster = 19,
     SaveReply = 20,
+    ChatFrom = 21,
+    ChatNotice = 22,
 }
+
+/// <summary>Canal do chat no fio (mesma ordem do ChatChannel do jogo): todos no DW4, a party da conta ou privada.</summary>
+public enum ChatTo : byte { Global = 0, Party = 1, Whisper = 2 }
+
+/// <summary>
+/// Cliente → servidor: mensagem de chat. <see cref="To"/> é o destinatário da privada (nome do personagem da placa ou do Tamer);
+/// vazio nos outros canais.
+/// </summary>
+public sealed record ChatSend(ChatTo Channel, string To, string Text);
+
+/// <summary>
+/// Servidor → cliente: mensagem de chat de <see cref="FromId"/>. <see cref="Sender"/> é o nome que aparece (personagem, ou o Tamer
+/// sem personagem); na privada, <see cref="To"/> é o nome do destinatário (quem mandou recebe a cópia com ele).
+/// </summary>
+public sealed record ChatFrom(ChatTo Channel, int FromId, string Sender, string To, string Text);
+
+/// <summary>Servidor → cliente: aviso sobre o chat só para quem mandou ("Ana não está online.", "Você não está em um grupo.").</summary>
+public sealed record ChatNotice(string Text);
 
 /// <summary>Cliente → servidor, ao conectar: ticket do launcher e o personagem da vaga.</summary>
 public sealed record Hello(int Version, string Ticket, string Character, string Model, int Level);
@@ -201,6 +225,12 @@ public static class Codec
             case SaveList x: w.Write((byte)MsgType.SaveList); w.Write(x.ReqId); break;
             case SaveWrite x: w.Write((byte)MsgType.SaveWrite); w.Write(x.ReqId); w.Write((byte)x.Slot); Save(w, x.Data); break;
             case SaveDelete x: w.Write((byte)MsgType.SaveDelete); w.Write(x.ReqId); w.Write((byte)x.Slot); break;
+            case ChatSend x: w.Write((byte)MsgType.ChatSend); w.Write((byte)x.Channel); Str(w, x.To); Str(w, x.Text, Protocol.MaxChat); break;
+            case ChatFrom x:
+                w.Write((byte)MsgType.ChatFrom); w.Write((byte)x.Channel); w.Write(x.FromId); Str(w, x.Sender); Str(w, x.To);
+                Str(w, x.Text, Protocol.MaxChat);
+                break;
+            case ChatNotice x: w.Write((byte)MsgType.ChatNotice); Str(w, x.Text, 200); break;
             case SaveReply x:
                 w.Write((byte)MsgType.SaveReply); w.Write(x.ReqId); w.Write(x.Ok); Str(w, x.Message, 200);
                 w.Write((byte)Math.Min(x.Slots.Length, Protocol.Slots));
@@ -240,6 +270,9 @@ public static class Codec
                 MsgType.SaveWrite => new SaveWrite(r.ReadInt32(), Slot(r), Save(r)),
                 MsgType.SaveDelete => new SaveDelete(r.ReadInt32(), Slot(r)),
                 MsgType.SaveReply => ReadSaveReply(r),
+                MsgType.ChatSend => new ChatSend(Channel(r), Str(r), Str(r, Protocol.MaxChat)),
+                MsgType.ChatFrom => new ChatFrom(Channel(r), r.ReadInt32(), Str(r), Str(r), Str(r, Protocol.MaxChat)),
+                MsgType.ChatNotice => new ChatNotice(Str(r, 200)),
                 _ => throw new FormatException($"tipo {(byte)type}"),
             };
             if (r.BaseStream.Position != data.Length) throw new FormatException("sobra no pacote");
@@ -277,6 +310,13 @@ public static class Codec
         var slots = new SaveEntry[n];
         for (int i = 0; i < n; i++) slots[i] = new SaveEntry(Slot(r), Save(r));
         return new SaveReply(id, ok, msg, slots);
+    }
+
+    static ChatTo Channel(BinaryReader r)
+    {
+        var c = (ChatTo)r.ReadByte();
+        if (c is not (ChatTo.Global or ChatTo.Party or ChatTo.Whisper)) throw new FormatException("canal de chat inválido");
+        return c;
     }
 
     static int Slot(BinaryReader r)

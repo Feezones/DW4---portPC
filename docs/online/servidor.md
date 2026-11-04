@@ -87,6 +87,13 @@ o celular usam as mesmas 4 vagas da conta.
 Ordem de publicação: DMO.API (rotas e tabela) → `dw4-servidor` (protocolo 4) → jogo (PC e APK). Cliente do protocolo 3 recebe
 "Versão do jogo diferente" até atualizar.
 
+## Chat (protocolo 5)
+
+- Cliente manda `ChatSend` (canal, destinatário, texto até 120 letras); o servidor limpa o texto (`ChatLog.Clean`), aplica o `ChatFlood` por conta (5 em 5 s) e entrega pela `World.Chat`.
+- Geral: todos no DW4. Grupo: quem tem a mesma party da conta, em qualquer fase. Privada: pelo personagem da placa ou pelo Tamer, sem diferença de maiúsculas; quem manda recebe a cópia (`ChatFrom.To` = destinatário).
+- Não dá para entregar: só quem mandou recebe `ChatNotice` (`X não está online.`, `Você não está em um grupo.`, anti-spam).
+- O texto das mensagens não vai para o log.
+
 ## Rodar
 
 Variáveis de ambiente do `dw4-servidor`:

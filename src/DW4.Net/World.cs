@@ -152,6 +152,44 @@ public sealed class World
 
     public Identity? Who(int id) => _players.TryGetValue(id, out var p) ? p.Who : null;
 
+    // Nome no chat: o personagem da placa; sem personagem (só o ticket gasto), o Tamer.
+    static string ChatName(Player p) => p.Character is { Length: > 0 } c ? c : p.Who.Tamer;
+
+    /// <summary>
+    /// Chat (DECISÃO DO PORT, 0.6.8): geral = todos no DW4; grupo = a party da conta, em qualquer fase; privada = o jogador cujo
+    /// personagem ou Tamer se chama <paramref name="to"/> (sem diferença de maiúsculas), e quem mandou recebe a cópia. O texto já
+    /// vem limpo. Se não dá para entregar, nada sai e <paramref name="notice"/> diz por quê (só para quem mandou).
+    /// </summary>
+    public List<Outgoing> Chat(int from, ChatTo channel, string to, string text, out string? notice)
+    {
+        var res = new List<Outgoing>();
+        notice = null;
+        if (!_players.TryGetValue(from, out var me) || text.Length == 0) return res;
+        string name = ChatName(me);
+        switch (channel)
+        {
+            case ChatTo.Global:
+                foreach (var p in _players.Values) res.Add(new(p.Id, new ChatFrom(channel, from, name, "", text), true));
+                break;
+            case ChatTo.Party:
+                if (me.Who.PartyId is not { Length: > 0 } party) { notice = "Você não está em um grupo."; break; }
+                foreach (var p in _players.Values)
+                    if (p.Who.PartyId == party) res.Add(new(p.Id, new ChatFrom(channel, from, name, "", text), true));
+                break;
+            case ChatTo.Whisper:
+                var cmp = StringComparer.OrdinalIgnoreCase;
+                var target = _players.Values.FirstOrDefault(p => p.Character.Length > 0 && cmp.Equals(p.Character, to))
+                          ?? _players.Values.FirstOrDefault(p => cmp.Equals(p.Who.Tamer, to));
+                if (target == null) { notice = $"{to} não está online."; break; }
+                if (target.Id == from) { notice = "Essa mensagem é para você mesmo."; break; }
+                var msg = new ChatFrom(channel, from, name, ChatName(target), text);
+                res.Add(new(target.Id, msg, true));
+                res.Add(new(from, msg, true));
+                break;
+        }
+        return res;
+    }
+
     /// <summary>Os dois estão na mesma instância de fase (o menu do F só vale para quem o jogador vê).</summary>
     public bool SameInstance(int a, int b) =>
         _players.TryGetValue(a, out var pa) && _players.TryGetValue(b, out var pb) && pa.Instance != null && pa.Instance == pb.Instance;

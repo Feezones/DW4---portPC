@@ -62,6 +62,17 @@ public static class Online
         s_server?.Send(Codec.Write(new CoopRelay(reliable, CoopCodec.Write(msg))), reliable ? DeliveryMethod.ReliableOrdered : DeliveryMethod.Unreliable);
     }
 
+    /// <summary>Mensagem de chat que chegou do servidor (geral, grupo ou privada).</summary>
+    public static event Action<ChatFrom>? ChatIn;
+
+    /// <summary>Chat: manda a mensagem ao servidor (false se não está online; aí ela não sai).</summary>
+    public static bool SendChat(ChatTo channel, string to, string text)
+    {
+        if (State != Status.Online) return false;
+        Send(new ChatSend(channel, to, text), true);
+        return true;
+    }
+
     /// <summary>Menu do F: pede ao servidor (false se não está online).</summary>
     public static bool Interact(int target, string action, string inviteId = "")
     {
@@ -269,6 +280,12 @@ public static class Online
                 break;
             case PartyRoster pr:
                 Party = pr.Members;
+                break;
+            case ChatFrom c:
+                ChatIn?.Invoke(c);
+                break;
+            case ChatNotice n:
+                Session.SystemMessage(n.Text);
                 break;
             case CoopFrom cf:
                 try { Coop?.Invoke(cf.FromId, CoopCodec.Read(cf.Payload)); }

@@ -92,6 +92,9 @@ public sealed class GameServer
             case SaveList or SaveWrite or SaveDelete when _world.IsOnline(p.Id):
                 OnSave(p, msg);
                 break;
+            case ChatSend x when _world.IsOnline(p.Id):
+                OnChat(p, x);
+                break;
             case PlayerState s when _world.IsOnline(p.Id):
                 if (!Allow(p.Id)) return;
                 Send(_world.Update(p.Id, s));
@@ -127,6 +130,26 @@ public sealed class GameServer
     static readonly HashSet<string> Actions =
         ["relation", "friend-request", "party-invite", "friend-accept", "friend-decline", "party-accept", "party-decline"];
     readonly Dictionary<int, DateTime> _lastInteract = [];
+    // Contra spam no chat: 5 mensagens a cada 5 s por conta (a mesma regra do jogo, ChatFlood).
+    readonly DW4.Gameplay.ChatFlood _chatFlood = new();
+
+    /// <summary>
+    /// Chat (0.6.8): limpa o texto (uma linha, até 120 letras), segura o spam por conta e entrega pela <see cref="World"/>. O texto
+    /// não vai para o log.
+    /// </summary>
+    void OnChat(NetPeer p, ChatSend x)
+    {
+        var who = _world.Who(p.Id)!;
+        var text = DW4.Gameplay.ChatLog.Clean(x.Text);
+        if (text.Length == 0) return;
+        if (!_chatFlood.Allow(who.AccountId.ToString(), DateTime.UtcNow))
+        {
+            Send(p, new ChatNotice("Muitas mensagens seguidas. Espere um pouco."), true);
+            return;
+        }
+        Send(_world.Chat(p.Id, x.Channel, x.To.Trim(), text, out var notice));
+        if (notice != null) Send(p, new ChatNotice(notice), true);
+    }
 
     /// <summary>
     /// Menu do F: a ação vai para a DMO.API em nome da conta deste jogador (as regras de amigos e party são as do launcher).

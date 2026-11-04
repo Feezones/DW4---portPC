@@ -3002,6 +3002,137 @@ Test("Online: quadro da party (HP e MP dos membros, só quando muda)", () =>
     True(st is { Hp: 7, MaxHp: 100, Mp: 20, MaxMp: 40 }, "estado leva HP e MP");
 });
 
+Test("Online: pacotes do chat (ida e volta, canal inválido recusado)", () =>
+{
+    foreach (object m in new object[]
+    {
+        new DW4.Net.ChatSend(DW4.Net.ChatTo.Whisper, "Ana", "tudo bem?"),
+        new DW4.Net.ChatSend(DW4.Net.ChatTo.Global, "", "olá, ação"),
+        new DW4.Net.ChatFrom(DW4.Net.ChatTo.Party, 7, "Guilmon", "", "bora"),
+        new DW4.Net.ChatNotice("Ana não está online."),
+    })
+        Equal(m, DW4.Net.Codec.Read(DW4.Net.Codec.Write(m)), m.GetType().Name);
+    var bad = DW4.Net.Codec.Write(new DW4.Net.ChatSend(DW4.Net.ChatTo.Global, "", "x"));
+    bad[1] = 9;
+    bool refused = false;
+    try { DW4.Net.Codec.Read(bad); } catch (FormatException) { refused = true; }
+    True(refused, "canal 9 recusado");
+    Equal((int)ChatChannel.Whisper, (int)DW4.Net.ChatTo.Whisper, "mesma ordem do ChatChannel do jogo");
+});
+
+Test("Online: chat no servidor (geral para todos, grupo pela party em qualquer fase, privada pelo personagem ou Tamer)", () =>
+{
+    var w = new DW4.Net.World();
+    w.Join(1, new(10, "TamerA", "p"), "Ana");
+    w.Join(2, new(20, "TamerB", "p"), "Bia");
+    w.Join(3, new(30, "TamerC", null), "Caio");
+    w.Join(4, new(40, "TamerD", null), "");
+    w.Update(1, new("dng101b1", 0, 0, 0, 0, "", "p_girumon", 1));
+    w.Update(2, new("stagml11", 0, 0, 0, 0, "", "p_girumon", 1));
+    var o = w.Chat(1, DW4.Net.ChatTo.Global, "", "oi", out var n);
+    True(n == null && o.Count == 4 && o.All(x => x is { Reliable: true, Message: DW4.Net.ChatFrom { Sender: "Ana", Text: "oi" } }), "geral: todos, até quem mandou");
+    o = w.Chat(1, DW4.Net.ChatTo.Party, "", "bora", out n);
+    True(n == null && o.Select(x => x.To).OrderBy(x => x).SequenceEqual([1, 2]), "grupo: a party, mesmo em fases diferentes");
+    o = w.Chat(3, DW4.Net.ChatTo.Party, "", "eu", out n);
+    True(o.Count == 0 && n == "Você não está em um grupo.", "sem party: aviso");
+    o = w.Chat(3, DW4.Net.ChatTo.Whisper, "bia", "psiu", out n);
+    True(n == null && o.Select(x => x.To).OrderBy(x => x).SequenceEqual([2, 3])
+        && o.All(x => x.Message is DW4.Net.ChatFrom { Channel: DW4.Net.ChatTo.Whisper, Sender: "Caio", To: "Bia" }), "privada pelo personagem: ele e a cópia");
+    o = w.Chat(3, DW4.Net.ChatTo.Whisper, "TamerA", "oi", out n);
+    True(n == null && o.Any(x => x.To == 1), "privada pelo Tamer");
+    o = w.Chat(1, DW4.Net.ChatTo.Whisper, "Zé", "oi", out n);
+    True(o.Count == 0 && n == "Zé não está online.", "destinatário fora: aviso");
+    w.Chat(1, DW4.Net.ChatTo.Whisper, "ana", "eu", out n);
+    Equal("Essa mensagem é para você mesmo.", n, "para si mesmo");
+    o = w.Chat(4, DW4.Net.ChatTo.Global, "", "sem vaga", out _);
+    True(o.All(x => x.Message is DW4.Net.ChatFrom { Sender: "TamerD" }), "sem personagem: aparece o Tamer");
+    w.Leave(2);
+    w.Chat(1, DW4.Net.ChatTo.Whisper, "Bia", "oi", out n);
+    Equal("Bia não está online.", n, "saiu do jogo: fora");
+});
+
+Test("Online: chat de verdade (UDP local, DevApi: geral, amizade e grupo pelo F, grupo, privada, aviso e anti-spam)", () =>
+{
+    var server = new DW4.Server.GameServer(new DW4.Server.DevApi());
+    True(server.Start(0), "servidor abriu");
+    var stop = false;
+    var loop = new Thread(() => { while (!Volatile.Read(ref stop)) { server.Tick(); Thread.Sleep(5); } }) { IsBackground = true };
+    loop.Start();
+    try
+    {
+        (LiteNetLib.NetManager Net, LiteNetLib.NetPeer Peer, System.Collections.Concurrent.ConcurrentQueue<object> Inbox) Client(string ticket, string character)
+        {
+            var inbox = new System.Collections.Concurrent.ConcurrentQueue<object>();
+            var l = new LiteNetLib.EventBasedNetListener();
+            l.NetworkReceiveEvent += (_, reader, _, _) => inbox.Enqueue(DW4.Net.Codec.Read(reader.GetRemainingBytes()));
+            var net = new LiteNetLib.NetManager(l) { AutoRecycle = true };
+            net.Start();
+            l.PeerConnectedEvent += p => p.Send(DW4.Net.Codec.Write(new DW4.Net.Hello(DW4.Net.Protocol.Version, ticket, character, "p_girumon", 1)), LiteNetLib.DeliveryMethod.ReliableOrdered);
+            var peer = net.Connect("127.0.0.1", server.Port, DW4.Net.Protocol.ConnectionKey);
+            return (net, peer, inbox);
+        }
+        T Wait<T>((LiteNetLib.NetManager Net, LiteNetLib.NetPeer Peer, System.Collections.Concurrent.ConcurrentQueue<object> Inbox) c, Func<T, bool>? ok = null) where T : class
+        {
+            var until = DateTime.UtcNow.AddSeconds(5);
+            while (DateTime.UtcNow < until)
+            {
+                c.Net.PollEvents();
+                while (c.Inbox.TryDequeue(out var m)) if (m is T t && (ok == null || ok(t))) return t;
+                Thread.Sleep(5);
+            }
+            throw new InvalidOperationException($"não chegou {typeof(T).Name}");
+        }
+        void Send((LiteNetLib.NetManager Net, LiteNetLib.NetPeer Peer, System.Collections.Concurrent.ConcurrentQueue<object> Inbox) c, object m) =>
+            c.Peer.Send(DW4.Net.Codec.Write(m), LiteNetLib.DeliveryMethod.ReliableOrdered);
+
+        var a = Client("dev:Ana", "Vzada");
+        var b = Client("dev:Bia", "feezao");
+        int idA = Wait<DW4.Net.Welcome>(a).PlayerId, idB = Wait<DW4.Net.Welcome>(b).PlayerId;
+        // Os dois na mesma fase (o F só vale entre quem se vê).
+        Send(a, new DW4.Net.PlayerState("stagml11", 0, 0, 0, 0, "", "p_girumon", 1));
+        Send(b, new DW4.Net.PlayerState("stagml11", 1, 0, 0, 0, "", "p_girumon", 1));
+        Wait<DW4.Net.Spawn>(a);
+
+        Send(a, new DW4.Net.ChatSend(DW4.Net.ChatTo.Global, "", "  oi\ngeral  "));
+        True(Wait<DW4.Net.ChatFrom>(b) is { Channel: DW4.Net.ChatTo.Global, Sender: "Vzada", Text: "oi geral" }, "geral chega no outro, limpo");
+        Wait<DW4.Net.ChatFrom>(a, m => m.Text == "oi geral");
+
+        Send(a, new DW4.Net.ChatSend(DW4.Net.ChatTo.Party, "", "grupo?"));
+        Equal("Você não está em um grupo.", Wait<DW4.Net.ChatNotice>(a).Text, "sem party: aviso");
+
+        // Amizade e grupo pelo menu do F (o convite de grupo é só para amigos).
+        Send(a, new DW4.Net.Interact(idB, "friend-request"));
+        Wait<DW4.Net.SocialPrompt>(b, p => p.Kind == "friend");
+        Send(b, new DW4.Net.Interact(idA, "friend-accept"));
+        Wait<DW4.Net.InteractResult>(b, r => r.Action == "friend-accept" && r.Ok);
+        Thread.Sleep(450); // o servidor aceita um F a cada 400 ms por jogador
+        Send(a, new DW4.Net.Interact(idB, "party-invite"));
+        var invite = Wait<DW4.Net.SocialPrompt>(b, p => p.Kind == "party");
+        Send(b, new DW4.Net.Interact(idA, "party-accept", invite.InviteId));
+        Wait<DW4.Net.PartyRoster>(a, r => r.Members.Length == 2);
+
+        Send(b, new DW4.Net.ChatSend(DW4.Net.ChatTo.Party, "", "bora"));
+        True(Wait<DW4.Net.ChatFrom>(a, m => m.Channel == DW4.Net.ChatTo.Party) is { Sender: "feezao", Text: "bora" }, "grupo chega na party");
+
+        Send(b, new DW4.Net.ChatSend(DW4.Net.ChatTo.Whisper, "VZADA", "só pra você"));
+        True(Wait<DW4.Net.ChatFrom>(a, m => m.Channel == DW4.Net.ChatTo.Whisper) is { Sender: "feezao", To: "Vzada", Text: "só pra você" }, "privada chega");
+        Wait<DW4.Net.ChatFrom>(b, m => m.Channel == DW4.Net.ChatTo.Whisper && m.To == "Vzada");
+
+        Send(a, new DW4.Net.ChatSend(DW4.Net.ChatTo.Whisper, "Ninguem", "oi"));
+        Equal("Ninguem não está online.", Wait<DW4.Net.ChatNotice>(a).Text, "privada para quem não está");
+
+        for (int i = 0; i < 6; i++) Send(b, new DW4.Net.ChatSend(DW4.Net.ChatTo.Global, "", $"spam {i}"));
+        Equal("Muitas mensagens seguidas. Espere um pouco.", Wait<DW4.Net.ChatNotice>(b).Text, "anti-spam");
+        foreach (var c in new[] { a.Net, b.Net }) c.Stop();
+    }
+    finally
+    {
+        Volatile.Write(ref stop, true);
+        loop.Join();
+        server.Stop();
+    }
+});
+
 Test("Online: pacotes do combate em grupo (ida e volta, limites)", () =>
 {
     object[] all = [new DW4.Net.EnemySpawn(7, 12, 1, 2, 3, 0.5f, 340, "GENE-03"), new DW4.Net.EnemySeq(7, "SQ_ATCK1", "common"),

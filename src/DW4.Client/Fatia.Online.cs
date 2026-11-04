@@ -45,7 +45,7 @@ public partial class Fatia
         Online.Connect(PlayerName, PlayerModel, _level);
     }
 
-    void OnlineNotice(string text) => Session.Chat.Send("Sistema", text);
+    void OnlineNotice(string text) => Session.SystemMessage(text);
 
     PlayerState MyState()
     {

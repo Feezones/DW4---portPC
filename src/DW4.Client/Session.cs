@@ -57,15 +57,27 @@ public static class Session
     public static string? MenuNotice { get; set; }
     public static IOnlineGate Gate { get; set; } = new LocalGate();
 
-    // Chat (DECISÃO DO PORT): canal local hoje; PONTO DA FASE 6: um IChatChannel de rede. O histórico fica aqui para
-    // sobreviver à troca de fase (a cena é recarregada).
-    static IChatChannel s_chat = Hook(new LocalChatChannel());
+    // Chat (DECISÃO DO PORT): pelo servidor do DW4 (NetChatChannel, 0.6.8). O histórico fica aqui para sobreviver à troca de
+    // fase (a cena é recarregada). ChatReceived junta o que vem do canal e os avisos locais (SystemMessage).
+    static IChatChannel s_chat = Hook(new NetChatChannel());
     static readonly List<ChatMessage> s_history = [];
     public static IReadOnlyList<ChatMessage> ChatHistory => s_history;
+    public static event Action<ChatMessage>? ChatReceived;
     public static IChatChannel Chat { get => s_chat; set => s_chat = Hook(value); }
+
+    /// <summary>Aviso do jogo no chat (amarelo), só para este jogador.</summary>
+    public static void SystemMessage(string text) => AddChat(new ChatMessage("Sistema", text, DateTime.Now, ChatChannel.System));
+
+    static void AddChat(ChatMessage m)
+    {
+        s_history.Add(m);
+        if (s_history.Count > 50) s_history.RemoveAt(0);
+        ChatReceived?.Invoke(m);
+    }
+
     static IChatChannel Hook(IChatChannel c)
     {
-        c.Received += m => { s_history.Add(m); if (s_history.Count > 50) s_history.RemoveAt(0); };
+        c.Received += AddChat;
         return c;
     }
     /// <summary>
