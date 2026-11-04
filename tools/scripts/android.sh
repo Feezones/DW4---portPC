@@ -12,5 +12,5 @@ export MSBUILDDISABLENODEREUSE=1 UseSharedCompilation=false
 export GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$CHAVE" GODOT_ANDROID_KEYSTORE_RELEASE_USER="${USUARIO:-dw4}" GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD="$SENHA"
 [ -f "$client/icone.png" ] || echo "aviso: falta src/DW4.Client/icone.png (ícone do launcher, fora do git)" >&2
 "$GODOT" --headless --path "$client" --export-release "Android" "$out"
-unzip -l "$out" | grep -q "DW4.Client.dll" || { echo "o APK saiu sem o C# (DW4.Client.dll)" >&2; exit 1; }
+unzip -l "$out" | grep "DW4.Client.dll" >/dev/null || { echo "o APK saiu sem o C# (DW4.Client.dll)" >&2; exit 1; }
 echo "APK: $out"

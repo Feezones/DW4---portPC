@@ -55,6 +55,15 @@ public partial class TouchControls : CanvasLayer
 
     public override void _Process(double delta) => _surface.QueueRedraw();
 
+    // Botão "voltar" do Android no jogo: abre a pausa, como o Esc.
+    public override void _Notification(int what)
+    {
+        if (what != NotificationWMGoBackRequest) return;
+        var name = PortInput.Name("pausa");
+        Input.ParseInputEvent(new InputEventAction { Action = name, Pressed = true });
+        Input.ParseInputEvent(new InputEventAction { Action = name, Pressed = false });
+    }
+
     partial class Surface : Control
     {
         readonly Dictionary<int, string> _held = []; // dedo → ação do botão

@@ -159,6 +159,9 @@ public partial class MainMenu : Control
         bool ok = e.IsActionPressed("ui_accept") || e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }
             || e is InputEventJoypadButton { Pressed: true, ButtonIndex: JoyButton.Start };
         bool cancel = e.IsActionPressed("ui_cancel") || e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Right };
+        // Celular: o toque vira clique. No menu do título, a linha tocada (Game Start em cima, Option embaixo) é a escolhida.
+        if (DataPaths.Mobile && _title == TitleState.Menu && e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } tap)
+            _titleLine = tap.Position.Y > GetViewportRect().Size.Y * 0.655f ? 1 : 0;
         switch (_title)
         {
             case TitleState.Press:
@@ -356,6 +359,13 @@ public partial class MainMenu : Control
     }
 
     public override void _Input(InputEvent e) => DeviceIcons.Seen(e);
+
+    // Celular: o botão "voltar" do Android vale como Cancelar (Esc / B).
+    public override void _Notification(int what)
+    {
+        if (what == NotificationWMGoBackRequest && DataPaths.Mobile)
+            Input.ParseInputEvent(new InputEventAction { Action = "ui_cancel", Pressed = true });
+    }
 
     public override void _UnhandledInput(InputEvent e)
     {
