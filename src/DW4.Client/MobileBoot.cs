@@ -40,10 +40,10 @@ public partial class MobileBoot : Control
     // As janelas do DW4: fundo azul-marinho, borda ciano, títulos dourados e botões vinho com borda lilás (como as vagas do
     // menu). O fundo imita o túnel do título. Antes do primeiro download não há nada do jogo no celular; depois, o logotipo
     // original (fases/stagis10/titulo) entra no lugar do título escrito.
-    static readonly Color Navy = new(0.05f, 0.06f, 0.16f, 0.94f), Cyan = new(0.35f, 0.85f, 1f), Gold = new(1f, 0.85f, 0.35f),
+    internal static readonly Color Navy = new(0.05f, 0.06f, 0.16f, 0.94f), Cyan = new(0.35f, 0.85f, 1f), Gold = new(1f, 0.85f, 0.35f),
         Lilac = new(0.55f, 0.5f, 1f), Wine = new(0.32f, 0.07f, 0.16f), Soft = new(0.78f, 0.82f, 0.95f);
 
-    static StyleBoxFlat Box(Color bg, Color border, int width = 3, int radius = 12, int margin = 14)
+    internal static StyleBoxFlat Box(Color bg, Color border, int width = 3, int radius = 12, int margin = 14)
     {
         var b = new StyleBoxFlat { BgColor = bg, BorderColor = border, CornerDetail = 8, AntiAliasing = true };
         b.SetBorderWidthAll(width);
@@ -52,7 +52,7 @@ public partial class MobileBoot : Control
         return b;
     }
 
-    static Theme MakeTheme()
+    internal static Theme MakeTheme()
     {
         var t = new Theme { DefaultFontSize = 30 };
         t.SetColor("font_color", "Label", Colors.White);
@@ -87,7 +87,7 @@ public partial class MobileBoot : Control
     }
 
     /// <summary>Fundo: o túnel azul do título (octógonos que vêm na direção da tela e raios girando devagar).</summary>
-    sealed partial class Tunnel : Control
+    internal sealed partial class Tunnel : Control
     {
         float _t;
         public override void _Process(double delta) { _t += (float)delta; QueueRedraw(); }
