@@ -28,7 +28,7 @@ public partial class MobileBoot : Control
 
     LineEdit _user = null!, _pass = null!;
     CheckBox _remember = null!;
-    Button _enter = null!, _go = null!;
+    Button _enter = null!, _go = null!, _skip = null!;
     Label _status = null!, _detail = null!;
     ProgressBar _bar = null!;
     VBoxContainer _form = null!;
@@ -87,12 +87,17 @@ public partial class MobileBoot : Control
         _go.AddThemeFontSizeOverride("font_size", 34);
         _go.Pressed += () => _goAction?.Invoke();
         col.AddChild(_go);
+        _skip = new Button { Text = "Agora não", CustomMinimumSize = new Vector2(300, 64), SizeFlagsHorizontal = SizeFlags.ShrinkCenter, Visible = false };
+        _skip.AddThemeFontSizeOverride("font_size", 28);
+        _skip.Pressed += SkipApp;
+        col.AddChild(_skip);
         var version = Small($"app {ProjectSettings.GetSetting("application/config/version", "").AsString()}");
         version.HorizontalAlignment = HorizontalAlignment.Right;
         col.AddChild(version);
 
         DisplayServer.ScreenSetKeepOn(true);
         if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_TESTE_ATUALIZAR") == "1") { _form.Visible = false; CheckUpdate(); return; }
+        if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_APP_CDN") is { Length: > 0 }) { _form.Visible = false; CheckApp(); return; }
         TryRemembered();
     }
 
@@ -155,6 +160,91 @@ public partial class MobileBoot : Control
         _account = t.Str("username") is { Length: > 0 } tu ? tu : user;
         Session.UseLogin(_account, t.Str("ticket"));
         _form.Visible = false;
+        CheckApp();
+    }
+
+    // ---- Versão nova do app (APK) ----
+    // O código fica dentro do APK e o Android não deixa o app trocar o próprio código: quando o CDN tem um APK mais novo
+    // (downloads/dw4/android.json), o jogo baixa, confere o SHA-256 e abre o instalador do sistema (o usuário toca em
+    // "Instalar"; o Android só aceita se a assinatura for a mesma). Sem o arquivo ou sem internet, segue com o que tem.
+
+    AppUpdater? _app;
+
+    void CheckApp()
+    {
+        _go.Visible = false;
+        _status.Text = "Procurando versão nova do app…";
+        _detail.Text = "";
+        if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_CDN") is { Length: > 0 }) { CheckUpdate(); return; }
+        _app = new AppUpdater(OS.GetUserDataDir());
+        _app.StartCheck();
+    }
+
+    void ProcessApp(AppUpdater a)
+    {
+        switch (a.Phase)
+        {
+            case AppUpdater.Stage.Checking:
+                break;
+            case AppUpdater.Stage.None:
+                _app = null;
+                CheckUpdate();
+                break;
+            case AppUpdater.Stage.Available when !_go.Visible:
+                _status.Text = $"Versão nova do app: {a.Name}";
+                _detail.Text = $"{Fmt(a.Size)} para baixar. Depois toque em \"Instalar\" na tela do Android (seus dados e saves ficam).";
+                _go.Text = "Atualizar o app";
+                _goAction = () => { _go.Visible = false; _skip.Visible = false; _bar.Visible = true; a.StartDownload(); };
+                _go.Visible = true;
+                _skip.Visible = true;
+                break;
+            case AppUpdater.Stage.Downloading:
+                long got = Interlocked.Read(ref a.GotBytes);
+                _status.Text = $"Baixando o app {a.Name}…";
+                _bar.Value = a.Size > 0 ? (double)got / a.Size : 0;
+                _detail.Text = $"{Fmt(got)} de {Fmt(a.Size)}";
+                break;
+            case AppUpdater.Stage.Downloaded when !_go.Visible:
+                _bar.Visible = false;
+                _goAction = () => InstallApp(a);
+                _go.Text = "Instalar";
+                _go.Visible = true;
+                _skip.Visible = true;
+                InstallApp(a);
+                break;
+            case AppUpdater.Stage.Failed when !_go.Visible:
+                _bar.Visible = false;
+                _status.Text = "Não deu para baixar a versão nova do app.";
+                _detail.Text = a.Error ?? "";
+                _go.Text = "Baixar pelo navegador";
+                _goAction = () => OS.ShellOpen(a.Url);
+                _go.Visible = true;
+                _skip.Visible = true;
+                break;
+        }
+    }
+
+    void InstallApp(AppUpdater a)
+    {
+        // A permissão de instalar (REQUEST_INSTALL_PACKAGES, no export) o próprio instalador do Android pede na primeira vez:
+        // "Configurações" → "Permitir desta fonte" → voltar.
+        _status.Text = "Abrindo o instalador do Android…";
+        _detail.Text = "Toque em \"Instalar\" (ou \"Atualizar\"). Se o Android pedir, permita instalar apps desta fonte e volte. Depois abra o jogo de novo.";
+        var err = OS.ShellOpen(a.FilePath);
+        GD.Print($"[celular] instalador do APK {a.Name}: {err}");
+        if (err != Godot.Error.Ok)
+        {
+            _detail.Text = "O instalador não abriu. Toque em \"Baixar pelo navegador\" e abra o arquivo baixado.";
+            _go.Text = "Baixar pelo navegador";
+            _goAction = () => OS.ShellOpen(a.Url);
+        }
+    }
+
+    void SkipApp()
+    {
+        _app = null;
+        _skip.Visible = false;
+        _bar.Visible = false;
         CheckUpdate();
     }
 
@@ -201,6 +291,7 @@ public partial class MobileBoot : Control
     void CheckUpdate()
     {
         _go.Visible = false;
+        _skip.Visible = false;
         _status.Text = "Procurando atualização…";
         _detail.Text = "";
         // DEPURAÇÃO (só build Debug): DW4_CDN=host:porta usa um CDN de teste sem TLS, assinado pela chave PEM de DW4_CDN_CHAVE.
@@ -219,6 +310,7 @@ public partial class MobileBoot : Control
 
     public override void _Process(double delta)
     {
+        if (_app is { } app) { ProcessApp(app); return; }
         if (_updater is not { } u) return;
         if (u.Error is { } error)
         {
@@ -279,6 +371,96 @@ public partial class MobileBoot : Control
 /// celular em vez de baixados de novo. Um arquivo só conta como pronto depois de inteiro (vai para .part e é renomeado), e a
 /// lista dos prontos (dados/.instalados) deixa continuar de onde parou se a conexão cair ou o jogo fechar.
 /// </summary>
+/// <summary>
+/// Versão nova do APK: lê downloads/dw4/android.json no CDN ({"build":5,"name":"0.6.6-android.5","url":"/downloads/dw4/...apk",
+/// "sha256":"...","size":123}) e, se o build for maior que o deste app (o N de "android.N" no config/version, igual ao
+/// version/code do export), baixa para user://atualizacao/ e confere o SHA-256.
+/// </summary>
+public sealed class AppUpdater(string root)
+{
+    // DEPURAÇÃO (só build Debug): DW4_APP_CDN=host:porta busca o android.json e o APK num servidor de teste sem TLS.
+    static CdnConnection Cdn() => OS.IsDebugBuild() && OS.GetEnvironment("DW4_APP_CDN") is { Length: > 0 } t
+        ? new CdnConnection(t.Split(':')[0], int.Parse(t.Split(':')[1]), tls: false) : new CdnConnection(MobileUpdater.CdnHost);
+    public const string InfoPath = "/downloads/dw4/android.json";
+    public enum Stage { Checking, None, Available, Downloading, Downloaded, Failed }
+
+    public volatile Stage Phase = Stage.Checking;
+    public volatile string? Error;
+    public string Name = "", Url = "", FilePath = "";
+    public long Size, GotBytes;
+    string _path = "", _sha = "";
+
+    public static int CurrentBuild()
+    {
+        var v = ProjectSettings.GetSetting("application/config/version", "").AsString();
+        int i = v.LastIndexOf("android.", StringComparison.Ordinal);
+        return i >= 0 && int.TryParse(v[(i + 8)..], out var n) ? n : 0;
+    }
+
+    public void StartCheck()
+    {
+        int current = CurrentBuild();
+        new Thread(() =>
+        {
+            try
+            {
+                var dir = Path.Combine(root, "atualizacao");
+                if (Directory.Exists(dir)) Directory.Delete(dir, true); // APK de uma atualização que já foi instalada
+                using var doc = JsonDocument.Parse(Cdn().Get(InfoPath));
+                var r = doc.RootElement;
+                int build = r.GetProperty("build").GetInt32();
+                Name = r.GetProperty("name").GetString() ?? "";
+                _path = r.GetProperty("url").GetString() ?? "";
+                _sha = (r.GetProperty("sha256").GetString() ?? "").ToLowerInvariant();
+                Size = r.GetProperty("size").GetInt64();
+                Url = "https://" + MobileUpdater.CdnHost + _path;
+                GD.Print($"[celular] app build {current}, CDN build {build} ({Name})");
+                Phase = build > current && current > 0 && _path.StartsWith('/') && _sha.Length == 64 ? Stage.Available : Stage.None;
+            }
+            catch (Exception e)
+            {
+                GD.Print($"[celular] sem informação de versão do app: {e.Message}");
+                Phase = Stage.None; // sem android.json ou sem internet: segue com este app
+            }
+        }) { IsBackground = true, Name = "dw4-app" }.Start();
+    }
+
+    public void StartDownload()
+    {
+        Phase = Stage.Downloading;
+        new Thread(() =>
+        {
+            try
+            {
+                var dir = Path.Combine(root, "atualizacao");
+                Directory.CreateDirectory(dir);
+                var file = Path.Combine(dir, Path.GetFileName(_path));
+                var part = file + ".part";
+                using (var fs = new FileStream(part, FileMode.Create, System.IO.FileAccess.Write))
+                using (var sha = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256))
+                {
+                    Cdn().GetTo(_path, (buf) =>
+                    {
+                        fs.Write(buf);
+                        sha.AppendData(buf);
+                        Interlocked.Add(ref GotBytes, buf.Length);
+                    });
+                    var got = Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant();
+                    if (got != _sha) throw new IOException("o arquivo baixado veio diferente do esperado (SHA-256). Tente de novo.");
+                }
+                File.Move(part, file, overwrite: true);
+                FilePath = file;
+                Phase = Stage.Downloaded;
+            }
+            catch (Exception e)
+            {
+                Error = e.Message;
+                Phase = Stage.Failed;
+            }
+        }) { IsBackground = true, Name = "dw4-app-download" }.Start();
+    }
+}
+
 public sealed class MobileUpdater
 {
     public const string CdnHost = "redigital-cdn.felipe-brag99.workers.dev";
@@ -612,6 +794,33 @@ public sealed class CdnConnection(string host, int port = 443, bool tls = true)
         }
         if (c.GetStatus() != Godot.HttpClient.Status.Connected) throw new IOException($"sem conexão com o servidor de download ({c.GetStatus()})");
         _c = c;
+    }
+
+    /// <summary>Baixa em partes (sem guardar tudo na memória). Sem novas tentativas: quem chama recomeça.</summary>
+    public void GetTo(string path, Action<byte[]> sink)
+    {
+        Ensure();
+        var c = _c!;
+        if (c.Request(Godot.HttpClient.Method.Get, path, ["User-Agent: DW4-Android/1", "Accept-Encoding: identity"]) != Godot.Error.Ok)
+            throw new IOException("falha ao pedir " + path);
+        var limit = DateTime.UtcNow.AddSeconds(60);
+        while (c.GetStatus() == Godot.HttpClient.Status.Requesting)
+        {
+            c.Poll();
+            if (DateTime.UtcNow > limit) throw new IOException("tempo esgotado");
+            Thread.Sleep(1);
+        }
+        if (!c.HasResponse()) throw new IOException($"sem resposta ({c.GetStatus()})");
+        int code = c.GetResponseCode();
+        if (code != 200) { Close(); throw new IOException($"o servidor respondeu {code}"); }
+        while (c.GetStatus() == Godot.HttpClient.Status.Body)
+        {
+            c.Poll();
+            var part = c.ReadResponseBodyChunk();
+            if (part.Length == 0) { if (DateTime.UtcNow > limit) throw new IOException("tempo esgotado"); Thread.Sleep(1); }
+            else { sink(part); limit = DateTime.UtcNow.AddSeconds(60); }
+        }
+        Close();
     }
 
     byte[] TryGet(string path)
