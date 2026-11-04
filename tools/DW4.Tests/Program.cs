@@ -1499,6 +1499,54 @@ Test("be: DMswtSD/DMcase com padrão (−1) e DMswtEnd", () =>
     }
 });
 
+Test("be: DMsetLua dentro de um DMcase só roda se o caso valer (fim do tutorial: matz00 → stchg01/restart, FLG 503)", () =>
+{
+    // Forma do matz00.lua e do stchg01.lua da stag0001: caso 0 → stchg01.lua (pergunta de novo), caso 1 → restart.lua
+    // (FLGset 503 0 na hora + NEXTSTAGE stag0001). Respostas em ordem: a do matz00, depois a do stchg01.
+    foreach (var (answers, expected, restarts) in new[] { (new[] { 0.0, 0.0 }, "stag0101", 0), (new[] { 1.0 }, "stag0001", 1), (new[] { 0.0, 1.0 }, "stag0001", 1) })
+    {
+        var log = new List<string>();
+        var q = new Queue<double>(answers);
+        DemoManager dm = null!;
+        dm = new DemoManager(new BeMessenger(m => log.Add(m.Command)), _ => q.Dequeue());
+        BeMessage M(string c) => new("X", null, -1, c, [], null);
+        int restart = 0;
+        dm.RunLua = name =>
+        {
+            if (name == "restart.lua") { restart++; dm.Add(new(DemoManager.Kind.Set, M("stag0001"), 0)); dm.Run(); return; }
+            dm.Add(new(DemoManager.Kind.Switch, M("GETSELECT"), 0));
+            dm.Add(new(DemoManager.Kind.Case, null, 0, 0)); dm.Add(new(DemoManager.Kind.Set, M("stag0101"), 0));
+            dm.Add(new(DemoManager.Kind.Case, null, 0, 1));
+            True(dm.BuildingCase, "o stchg01 monta dentro de um caso");
+            dm.Add(new(DemoManager.Kind.Lua, null, 0, Lua: "restart.lua"));
+            dm.Add(new(DemoManager.Kind.SwitchEnd, null, 0));
+            dm.Run();
+        };
+        dm.Add(new(DemoManager.Kind.Switch, M("GETSELECT"), 0));
+        dm.Add(new(DemoManager.Kind.Case, null, 0, 0)); dm.Add(new(DemoManager.Kind.Lua, null, 0, Lua: "stchg01.lua"));
+        dm.Add(new(DemoManager.Kind.Case, null, 0, 1)); dm.Add(new(DemoManager.Kind.Lua, null, 0, Lua: "restart.lua"));
+        dm.Add(new(DemoManager.Kind.SwitchEnd, null, 0));
+        dm.Run();
+        True(!dm.BuildingCase, "DMrun fecha a montagem");
+        Equal(0, restart, "nada roda na montagem");
+        dm.Tick();
+        Equal(expected, string.Join(",", log), $"respostas {string.Join("/", answers)}");
+        Equal(restarts, restart, $"restart.lua (apaga a 503) com respostas {string.Join("/", answers)}");
+        True(dm.Idle, "fila terminou");
+    }
+});
+
+Test("Port: vaga que perdeu a FLG 503 depois do tutorial volta a tê-la (COUNTER 7 da 3ª onda)", () =>
+{
+    var ram = new GameRam();
+    True(!DW4.Script.Save.ResumePoint.RepairTutorialDone(ram), "vaga nova: tutorial não feito");
+    Equal(0, ram.FlagOn(503), "503 continua desligada");
+    ram.Counters[7] = 4;
+    True(DW4.Script.Save.ResumePoint.RepairTutorialDone(ram), "chegou à 3ª onda");
+    Equal(1, ram.FlagOn(503), "503 ligada: o portal do lobby vai direto ao Death Valley");
+    True(!DW4.Script.Save.ResumePoint.RepairTutorialDone(ram), "já estava certa");
+});
+
 Test("be: DMsetSD SETDEMOCAMERA com atraso segura o chk ISDEMOCAMERA até a demo chegar (tutorial, gene00.lua)", () =>
 {
     var log = new List<string>();
