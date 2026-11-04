@@ -31,6 +31,7 @@ public partial class Fatia
     // Blossomon nasce travado e é solto assim depois da janela de apresentação). Sem modelo ("-"), trava todos.
     readonly HashSet<string> _frozenModels = [];
     bool _confirmDown, _confirmArmed, _selectEnded;
+    int _selectPending; // SELECTCTRL GENERATE na pilha de atraso, ainda não entregues
     List<(string? Key, string Text)>? _texts;
     bool _textsTried;
     Label? _message;
@@ -131,7 +132,8 @@ public partial class Fatia
         {
             // HIPÓTESE: ISEND = 1 depois que o jogador confirmou (toque que começou depois do SELECTCTRL GENERATE); volta a 0 no
             // próximo GENERATE. funcOneMessage: espera enquanto "!=0" (fim anterior) e enquanto "==0" (até confirmar).
-            case "ISEND" when m.Class is "TEXTCTL" or "SELECTCTRL": return _selectEnded ? 1 : 0;
+            // Com um GENERATE ainda na pilha de atraso, a janela nova não abriu: o fim que vale é o dela, ainda não confirmado.
+            case "ISEND" when m.Class is "TEXTCTL" or "SELECTCTRL": return _selectEnded && _selectPending == 0 ? 1 : 0;
             // ISSEQNAME = 1 quando o modelo está na sequência pedida (o DM espera enquanto "==0").
             case "ISSEQNAME" when m.Text(0) is { } seq:
                 if (m.Class == "PLAYER" || m.Name == PlayerModel) return (_runner?.Running == true ? _runner.Sequence : "SQ_WAIT") == seq ? 1 : 0;
