@@ -40,15 +40,15 @@ public partial class Fatia
         _player.ApplyFloorSnap();
     }
 
-    // DEPURAÇÃO (só no build Debug): o que segura o jogador. Aparece no texto do F3 ("parede: ...") e no log "[parede]" a cada
-    // segundo parado: peça da colisão da fase (caminho do nó no colisao.gltf), corpo de objeto (nome do modelo) ou outro nó.
+    // Diagnóstico (qualquer build): o que segura o jogador. Aparece no texto do F3 ("parede: ...", fica 10 s depois do último
+    // contato, para dar tempo do print) e no log "[parede]" a cada segundo encostado: peça da colisão da fase (caminho do nó no
+    // colisao.gltf), corpo de objeto (nome do modelo) ou outro nó.
     string _wallInfo = "-";
     int _wallLogTick;
 
     void NoteWall()
     {
-        if (!OS.IsDebugBuild()) return;
-        if (!_player.IsOnWall()) { _wallInfo = "-"; return; }
+        if (!_player.IsOnWall()) { if (_tick - _wallLogTick > 600) _wallInfo = "-"; return; }
         for (int i = 0; i < _player.GetSlideCollisionCount(); i++)
         {
             var c = _player.GetSlideCollision(i);
@@ -58,8 +58,16 @@ public partial class Fatia
             string what = path != null ? $"colisão da fase {path}" : c.GetCollider() is Node n ? $"corpo {n.Name}" : "?";
             var p = c.GetPosition();
             _wallInfo = $"{what} em ({p.X:0.0}, {p.Y:0.0}, {p.Z:0.0}) normal ({c.GetNormal().X:0.00}, {c.GetNormal().Y:0.00}, {c.GetNormal().Z:0.00}), jogador y {_player.GlobalPosition.Y:0.0}";
-            if (_tick - _wallLogTick >= 60) { _wallLogTick = _tick; GD.Print($"[parede] {_stageName}: {_wallInfo}"); }
+            if (_tick - _wallLogTick >= 60) GD.Print($"[parede] {_stageName}: {_wallInfo}");
+            _wallLogTick = _tick;
             return;
         }
     }
+
+    /// <summary>
+    /// Parapeito (CollisionKinds, @10 = 2050) só segura o jogador no chão; num pulo (SQ_JUMP, a queda dele e o golpe carregado no
+    /// ar) ele passa, e é assim que se pula para os pilares da stag0102 (relato do usuário, 2026-11-04). HIPÓTESE do sentido do
+    /// bit 0x800; parede de inimigo (@10 = 8) nunca segura o jogador.
+    /// </summary>
+    void UpdatePlayerMask() => _player.CollisionMask = InAirSequence ? 1u : 1u | CollisionKinds.EdgeLayer;
 }

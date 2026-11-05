@@ -243,7 +243,7 @@ public partial class Fatia
             : kind.Doc?.GenerateScene(kind.State!) as Node3D;
         if (model == null) return null;
         // Caixa de corpo do Numemon (igAABox do HIT): 8 × 14 × 8, FATO; HIPÓTESE: a mesma para os outros até ler o HIT de cada um.
-        var body = new CharacterBody3D { Position = pos, FloorSnapLength = 4f };
+        var body = new CharacterBody3D { Position = pos, FloorSnapLength = 4f, CollisionMask = 1 | CollisionKinds.EdgeLayer | CollisionKinds.EnemyLayer };
         body.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 4f, Height = 14f }, Position = new Vector3(0, 7, 0) });
         body.AddChild(model);
         model.Rotation = new Vector3(0, yaw, 0);
