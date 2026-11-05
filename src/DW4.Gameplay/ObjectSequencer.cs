@@ -38,6 +38,7 @@ public sealed class ObjectSequencer
     {
         _seqs = sequences;
         _actions = actions;
+        HasLiveGate = sequences.Values.Any(l => l.Any(c => c.Kind == "CTRL" && c.S(0) == "isLive"));
     }
 
     public string? Sequence { get; private set; }
@@ -48,6 +49,14 @@ public sealed class ObjectSequencer
     public float ActionTime { get; private set; }
     public float Alpha { get; private set; } = 1;
     public bool Running { get; private set; }
+    /// <summary>
+    /// O bloco atual executou CTRL "isLive" (IA do objeto ligada). FATO (seq dos g_sbutton, g_cannon01, g_dbutton1…): no SQ_WAIT,
+    /// os rótulos DEF (desligado) e ONLOOP/ON de botão travado não têm CTRL "isLive"; OFF e ON (que reagem a quem chega perto) têm.
+    /// HIPÓTESE forte: o mapa de IA só decide enquanto o bloco atual ligou o isLive (botão sem as ID Passes não reage).
+    /// </summary>
+    public bool Live { get; private set; }
+    /// <summary>Alguma sequência do objeto usa CTRL "isLive": a IA dele depende de <see cref="Live"/>.</summary>
+    public bool HasLiveGate { get; }
     /// <summary>Conta os FLASHSET "Damage" executados (pisca de dano; quem desenha compara com o último visto).</summary>
     public int FlashSerial { get; private set; }
     /// <summary>SQ_ERAS: o objeto deve sumir.</summary>
@@ -82,6 +91,29 @@ public sealed class ObjectSequencer
     public int BoxSerial { get; private set; }
 
     public string? Label(string sequence) => _labels.GetValueOrDefault(sequence);
+
+    /// <summary>Alguma sequência faz LUACALL <paramref name="name"/> (ex.: g_sbutton/g_dbutton1 chamam o "hit" ao acender).</summary>
+    public bool CallsLua(string name) => _seqs.Values.Any(l => l.Any(c => c.Kind == "LUACALL" && c.S(0) == name));
+
+    /// <summary>
+    /// O bloco de <paramref name="sequence"/> no rótulo guardado só faz JUMP de volta para a sequência atual (ex.: g_sbutton já
+    /// ligado: SQ_SWON/ON = JUMP "SQ_WAIT"). Recomeçar seria igual a ficar; o port não recomeça para a ação em laço não reiniciar
+    /// a cada quadro (o anel ficava parado no 1º quadro).
+    /// </summary>
+    public bool OnlyJumpsBack(string sequence)
+    {
+        if (Sequence == null || !_seqs.TryGetValue(sequence, out var cmds)) return false;
+        int start = BlockStart(sequence, cmds);
+        return start < cmds.Count && cmds[start].Kind == "JUMP" && cmds[start].S(0) == Sequence;
+    }
+
+    int BlockStart(string sequence, List<SeqCommand> cmds)
+    {
+        if (!cmds.Any(c => c.Kind == "LABEL")) return 0;
+        var label = _labels.GetValueOrDefault(sequence);
+        int at = label == null ? -1 : cmds.FindIndex(c => c.Kind == "LABEL" && c.S(0) == label);
+        return at >= 0 ? at + 1 : cmds.FindIndex(c => c.Kind == "LABEL") + 1;
+    }
     public void SetLabel(string sequence, string label) => _labels[sequence] = label;
 
     /// <summary>Começa a sequência no rótulo guardado (ou do começo, sem rótulos). false se não existe.</summary>
@@ -95,13 +127,7 @@ public sealed class ObjectSequencer
     {
         if (sequence == "SQ_ERAS") { Erased = true; Running = false; return true; }
         if (!_seqs.TryGetValue(sequence, out var cmds)) return false;
-        int start = 0;
-        if (cmds.Any(c => c.Kind == "LABEL"))
-        {
-            var label = _labels.GetValueOrDefault(sequence);
-            int at = label == null ? -1 : cmds.FindIndex(c => c.Kind == "LABEL" && c.S(0) == label);
-            start = at >= 0 ? at + 1 : cmds.FindIndex(c => c.Kind == "LABEL") + 1;
-        }
+        int start = BlockStart(sequence, cmds);
         int end = cmds.FindIndex(start, c => c.Kind == "LABEL");
         Motion.SequenceChanged(); // 0x8030EA38
         _cmds = cmds;
@@ -111,6 +137,7 @@ public sealed class ObjectSequencer
         _waitAction = false;
         Sequence = sequence;
         Running = true;
+        Live = false;
         Advance();
         return true;
     }
@@ -202,6 +229,9 @@ public sealed class ObjectSequencer
                     var next = c.S(0);
                     if (!Begin(next)) Running = false;
                     return;
+                case "CTRL" when c.S(0) == "isLive":
+                    Live = true;
+                    break;
                 case "AIMAP":
                     AiMap = c.S(0);
                     break;

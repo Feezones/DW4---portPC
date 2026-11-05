@@ -213,6 +213,9 @@ public partial class Fatia
         bool owned = o.Name.StartsWith("f_", StringComparison.Ordinal);
         if (!(o.Name.StartsWith("g_", StringComparison.Ordinal) || owned) || o.Name == "g_box" || o.Body != null) return;
         if (_stage?.Has($"hit_{o.Name}.lua") != true) return;
+        // FATO (seq do g_sbutton e do g_dbutton1): o hit_ deles é chamado pela própria sequência (LUACALL "hit" ao pisar), não por golpe.
+        // Com o corpo 14 × 40 o jogador não conseguia subir no interruptor (parava a ~10 do centro, fora do raio 4) e um golpe o acendia.
+        if (o.Seq?.CallsLua("hit") == true) return;
         // f_bit: HIPÓTESE (hit_f_bit.lua tira 50 por golpe e passa a SQ_DDMG abaixo de 50). Os g_* ficam com o HP do Spawn (HPMAX da
         // tabela enemy ou 100; antes 50, e o arbusto, que perde 50 por golpe, quebrava no primeiro).
         if (owned) o.Hp = ScriptedObjectHp;
