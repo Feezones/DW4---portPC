@@ -451,6 +451,7 @@ public partial class Fatia : Node3D
         // DECISÃO DO PORT PC: rede de segurança. Se atravessar o chão (empurrão forte numa borda, ponto inicial dentro de
         // uma parede), volta ao último ponto em que estava no chão em vez de cair para sempre.
         _airTime = _player.IsOnFloor() ? 0 : _airTime + dt;
+        TrackSafeGround(); // plataforma do backup chip (Fatia.BackupChip.cs)
         if (_player.IsOnFloor()) _lastFloor = _player.GlobalPosition;
         else if (_player.GlobalPosition.Y < _lastFloor.Y - 400) { _player.GlobalPosition = _lastFloor; _player.Velocity = Vector3.Zero; }
         if (_model != null) _model.Rotation = new Vector3(0, _move.Facing, 0);

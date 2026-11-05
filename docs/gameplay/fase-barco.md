@@ -129,3 +129,17 @@ reempacotada (`dw4 empacotar`).
 - Perto da fábrica (~104 s): demo das bombas, branco e volta para a stag0102.
 - **Não conferido:** se o barco gira para o lado certo (quatérnio conjugado como nos outros nós; o primeiro giro bate com
   os −90° do GENERATE) e se o jogador é empurrado pelas paredes nas curvas.
+
+## Observação do print
+
+- O F3 mostrava o jogador em (575, **1**, 395): o `MOVETRANS` o pôs em y 15, em cima do barco, mas sem a colisão do barco ele
+  atravessou e ficou no leito do rio. Com o chão de veículo ele fica em y 15. A janela de fala do print (seta amarela) é a
+  primeira fala do `first.lua`, esperando o botão; depois dela vêm a demo `nume1` e a partida do barco.
+
+## Outros relatos do mesmo pedido (2026-11-05)
+
+- **Backup chip lá embaixo depois de cair num buraco.** DECISÃO DO PORT: o chip fica na última plataforma pisada
+  (`SafeGround`, DW4.Gameplay). Pousar mais de 40 abaixo de onde saiu do chão conta como queda e não move o ponto, até o
+  jogador pisar de novo perto daquela altura; descer escada ou rampa sem sair do chão atualiza normalmente.
+- **Preso embaixo de um inimigo morrendo.** DECISÃO DO PORT: com o HP em 0 (ou já derrotado) o corpo do inimigo sai da camada
+  de colisão que o jogador enxerga (`UpdateEnemy`), durante toda a animação de queda; volta se ele renascer.

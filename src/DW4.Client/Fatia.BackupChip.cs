@@ -25,11 +25,25 @@ public partial class Fatia
     {
         var inv = _inventory;
         long loss = PlayerGrowth.DeathExpLoss(_level, _exp);
-        var p = _player.GlobalPosition;
+        var p = _safeGround ?? _player.GlobalPosition;
         (inv.ChipStage, inv.ChipPos, inv.ChipBit, inv.ChipExp) = (_stageName, [p.X, p.Y, p.Z], inv.Bit, loss);
         _exp -= loss;
         inv.Bit = 0;
         ScriptLog($"backup chip em {_stageName} ({p.X:0}, {p.Y:0}, {p.Z:0}): {inv.ChipBit} BIT, {loss} EXP");
+    }
+
+    // Relato do usuário (2026-11-05): caindo num buraco e morrendo lá, o chip ficava lá embaixo. DECISÃO DO PORT: o chip fica na
+    // última plataforma pisada (SafeGround). Pousar mais de PitDrop abaixo de onde saiu do chão é queda; a plataforma guardada só
+    // volta a andar quando o jogador sobe de novo até perto dela (descer escada ou rampa sem sair do chão segue normal).
+    const float PitDrop = 40f;
+    readonly SafeGround _safe = new(PitDrop);
+    Vector3? _safeGround => _safe.Safe is { } s ? new Vector3(s.X, s.Y, s.Z) : null;
+
+    void TrackSafeGround()
+    {
+        if (_hp <= 0) return;
+        var p = _player.GlobalPosition;
+        _safe.Step(new System.Numerics.Vector3(p.X, p.Y, p.Z), _player.IsOnFloor());
     }
 
     // Ao abrir a fase: o chip da vaga aparece onde o Digimon caiu.

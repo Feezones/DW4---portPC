@@ -2541,6 +2541,26 @@ if (args.Length == 1)
         True(seqs.TryGetValue("SQ_GO02", out var go2) && go2.Any(c => c.Kind == "LUACALL" && c.Values.FirstOrDefault() as string == "brk"), "SQ_GO02 chama o brk_r_boatz01.lua");
     });
 
+    Test("Port: backup chip na última plataforma (SafeGround): queda em buraco não move o ponto; escada sim", () =>
+    {
+        var g = new SafeGround(40);
+        g.Step(new(0, 100, 0), true);
+        g.Step(new(5, 100, 0), true);
+        g.Step(new(10, 90, 0), false); // pulou para o buraco
+        g.Step(new(12, 20, 0), false);
+        g.Step(new(12, 0, 0), true);   // pousou 100 abaixo
+        g.Step(new(20, 0, 0), true);   // anda lá embaixo
+        Equal(new System.Numerics.Vector3(5, 100, 0), g.Safe!.Value, "chip fica na borda de onde caiu");
+        g.Step(new(30, 70, 0), true);  // subiu de volta até perto
+        Equal(70f, g.Safe!.Value.Y, "voltou para cima: segue de novo");
+        var s = new SafeGround(40);
+        for (int i = 0; i <= 100; i++) s.Step(new(i, 100 - i, 0), true); // escada/rampa sem sair do chão
+        Equal(0f, s.Safe!.Value.Y, "descer no chão atualiza");
+        s.Step(new(0, 10, 0), false);
+        s.Step(new(0, 0, 0), true);    // pulo comum
+        Equal(0f, s.Safe!.Value.Y, "pulo comum atualiza");
+    });
+
     Test("Port: chão de veículo (RideLand): bit 0x1000 e caixa local com folga", () =>
     {
         True(RideLand.IsVehicle(0x1405) && RideLand.IsVehicle(0x1403), "barco e blindado");

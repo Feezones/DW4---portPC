@@ -541,6 +541,11 @@ public partial class Fatia
     void UpdateEnemy(Enemy e, float dt)
     {
         CheckEnemyFlash(e);
+        // Relato do usuário (2026-11-05): parado embaixo de um inimigo que morria, o jogador ficava preso no corpo dele durante a
+        // animação de queda. DECISÃO DO PORT: com o HP em 0 (ou já derrotado) o corpo sai da camada que o jogador enxerga; o
+        // inimigo continua no chão (a máscara dele não muda). Volta ao renascer.
+        bool down = e.Killed || e.Dead || (e.Kind.Stats?.MaxHp > 0 && e.Hp <= 0);
+        e.Body.CollisionLayer = down ? 0u : 1u;
         if (e.Proxy) { UpdateProxy(e, dt); return; }
         if (e.Dead)
         {
