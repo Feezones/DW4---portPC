@@ -75,7 +75,10 @@ public sealed class EnemyBrain
         _maps = maps;
         _sequences = sequences;
         _roll = roll16;
-        Map = maps[0];
+        // HIPÓTESE: sem AIMAP no SQ_ENTR o motor começa no MAP00. FATO (e_blosso): o arquivo traz MAP01 primeiro, mas o MAP01 (giro
+        // SQ_ATCK2) só entra pela fúria (SQ_SWON) e o próprio SQ_ATCK2 devolve o MAP00; e_skulgrey, e_mecha4 e e_diabolo põem MAP00
+        // no SQ_ENTR. Antes o Blossomon começava no mapa da fúria.
+        Map = maps.FirstOrDefault(m => m.Name == "MAP00") ?? maps[0];
     }
 
     public AiMap Map { get; private set; }

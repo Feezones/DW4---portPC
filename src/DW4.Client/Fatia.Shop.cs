@@ -184,7 +184,7 @@ public partial class Fatia
         for (int r = 0; r < ShopPage; r++)
         {
             int i = _shopPageNo * ShopPage + r;
-            string cur = r == _shopCursor ? "▶" : " ";
+            string cur = r == _shopCursor ? ">" : " ";
             if (i >= list.Count) { sb.AppendLine(cur); continue; }
             if (list[i] is not { } it) { sb.AppendLine($"{cur} ----"); continue; }
             var t = _db[it.Table];

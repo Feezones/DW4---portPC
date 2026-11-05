@@ -1,7 +1,9 @@
 namespace DW4.Net;
 
 /// <summary>Quem é o jogador para o servidor, depois do ticket conferido na DMO.API.</summary>
-public sealed record Identity(long AccountId, string Tamer, string? PartyId);
+/// <summary>Conta autenticada pelo ticket. <paramref name="HasTamer"/> = a conta tem um Tamer do RE:DIGITAL ONLINE; sem ele,
+/// <paramref name="Tamer"/> é o usuário gerado da conta de jogo ("rd" + 10 letras) e amigos/party da API não o acham.</summary>
+public sealed record Identity(long AccountId, string Tamer, string? PartyId, bool HasTamer = true);
 
 /// <summary>Pacote para mandar: destino, mensagem e se precisa chegar (confiável) ou pode perder (estado).</summary>
 public readonly record struct Outgoing(int To, object Message, bool Reliable);
@@ -153,6 +155,9 @@ public sealed class World
     public Identity? Who(int id) => _players.TryGetValue(id, out var p) ? p.Who : null;
 
     // Nome no chat: o personagem da placa; sem personagem (só o ticket gasto), o Tamer.
+    /// <summary>Nome que os outros veem (personagem; sem personagem, o Tamer). Vazio se o jogador não está no mundo.</summary>
+    public string Name(int id) => _players.TryGetValue(id, out var p) ? ChatName(p) : "";
+
     static string ChatName(Player p) => p.Character is { Length: > 0 } c ? c : p.Who.Tamer;
 
     /// <summary>

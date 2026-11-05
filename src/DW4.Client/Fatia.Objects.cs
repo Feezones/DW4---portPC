@@ -337,7 +337,8 @@ public partial class Fatia
             o.AiSequence = null;
         }
         var p = o.Actor.Root.GlobalPosition;
-        var t = _player.GlobalPosition;
+        // Interruptor de portão: reage a qualquer membro da party na fase (Fatia.PartySwitches.cs).
+        var t = o.Name == "g_sbutton" ? NearestMember(p) : _player.GlobalPosition;
         // HIPÓTESE (nome da ação: "homing"): a torreta ligada (SQ_WAIT no rótulo ON, ação HMNG01) vira para o jogador no máximo o
         // giro por quadro do mapa (0,0349 = 2°); FATO: o SQ_WAIT "ON" tem MOVE "Stop" e HMNG01, e o tiro sai para a frente (+z).
         if (o.Name.StartsWith("g_", StringComparison.Ordinal) && seq.Action == "HMNG01")
@@ -349,7 +350,12 @@ public partial class Fatia
             root.RotateY(Math.Clamp(diff, -step, step));
         }
         if (seq.Sequence != "SQ_WAIT") return; // entrada, saída e as sequências pedidas pelos scripts mandam
+        // FATO (seq): DEF/ONLOOP sem CTRL "isLive". Sem isso, os interruptores do portão da Goblin Fortress (stag0101, g_sbutton)
+        // reagiam sem as duas ID Passes e, pisando num já aceso (ONLOOP), o jogador sozinho o apagava (off_g_sbutton.lua) e o
+        // portão nunca abria. O botão de masmorra (g_dbutton1, ON sem isLive) também rodava o hit_ de novo a cada pisada.
+        if (o.Name.StartsWith("g_", StringComparison.Ordinal) && seq.HasLiveGate && !seq.Live) { brain.Release(); return; }
         brain.Tick(dt, new System.Numerics.Vector3(p.X, p.Y, p.Z), new System.Numerics.Vector3(t.X, t.Y, t.Z), o.Actor.Root.GlobalRotation.Y);
+        if (brain.External is { } same && seq.OnlyJumpsBack(same)) { brain.Release(); return; }
         if (brain.External is { } ext)
         {
             if (DiagNpc) GD.Print($"[obj-ia] {o.Name}/{o.Index}: {ext} (estava em {seq.Sequence}, ação {seq.Action})");

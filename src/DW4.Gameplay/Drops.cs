@@ -14,6 +14,25 @@ public static class Drops
 {
     public const float PickupRadius = 64f;
 
+    // FATO (main.dol 0x804DE0A8, pares tabela → modelo do baú).
+    static readonly Dictionary<string, string> ChestOfTable = new()
+    {
+        ["impItem"] = "g_000key", ["weapon"] = "g_000weapon", ["armor1"] = "g_000armor", ["armor2"] = "g_000armor", ["abChip"] = "g_000access",
+    };
+
+    /// <summary>
+    /// Modelo do baú do item no chão. FATO: impItem, weapon, armor1/2 e abChip pela tabela do main.dol em 0x804DE0A8; conItem e
+    /// insItem pela coluna MODEL da linha (g_000item, g_000boost1, g_000penx, g_000bit, g_000xdata1, g_000xdata2). g_000item quando
+    /// não sabe (tabela desconhecida ou sem MODEL).
+    /// </summary>
+    public static string ChestModel(GameTables? db, ItemRef item)
+    {
+        if (ChestOfTable.TryGetValue(item.Table, out var m)) return m;
+        if (db != null && db.Contains(item.Table) && db[item.Table].Raw(item.Row, "MODEL") is { Length: > 0 } col
+            && col.StartsWith("g_000", StringComparison.Ordinal)) return col;
+        return "g_000item";
+    }
+
     /// <summary>
     /// Sorteio de um inimigo morto: rnd = MT % 10000; percorre a lista fazendo rnd −= _rate e fica com a primeira entrada em
     /// que rnd ≤ 0. Null quando a soma não alcança (nada cai). Com <paramref name="reroll"/> (gerador+0x24, significado

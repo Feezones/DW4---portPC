@@ -221,7 +221,7 @@ public partial class Fatia
             AddChild(layer);
         }
         _choicePanel.Visible = _choice >= 0 && !WindowArt("i_zzstchgwn");
-        string options = _choice == 0 ? "▶ Sim      Não" : "  Sim    ▶ Não";
+        string options = _choice == 0 ? "> Sim      Não" : "  Sim    > Não";
         _choiceLabel!.Text = (_choiceText != null ? _choiceText.Replace("\r\n", "\n") + "\n\n" : "") + options;
     }
 

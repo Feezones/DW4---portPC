@@ -79,7 +79,7 @@ public partial class Fatia : Node3D
     // pego, se a regra do jogo deixar; a arma muda só os números (o modelo na mão continua o da w_sword01).
     Equipment? _equip;
     SoundEffects? _sfx;
-    readonly List<(Node3D Node, ItemRef Item)> _ground = [];
+    readonly List<GroundItem> _ground = [];
     // Linha do Numemon na tabela enemy: Int@7 dos geradores da dng1 no modo normal (generatorN #184 = 13; HIPÓTESE forte).
     const int EnemyRow = 13;
     string _lastEvent = "";
@@ -272,7 +272,8 @@ public partial class Fatia : Node3D
         AddChild(_camera);
 
         var layer = new CanvasLayer();
-        // Texto de depuração (posição, câmera, scripts): só no build de depuração e com F3; não aparece para quem joga.
+        // Texto de diagnóstico (posição, câmera, parede, scripts) no F3, em qualquer build (pedido do usuário, 2026-11-04: achar paredes
+        // invisíveis no build normal). Começa escondido.
         _hud = new Label { Position = new Vector2(12, 12), Visible = false };
         layer.AddChild(_hud);
         AddChild(layer);
@@ -291,7 +292,7 @@ public partial class Fatia : Node3D
         {
             if (k.Keycode == Key.F1 && _cameraSets.Length > 1) _cameraSet = (_cameraSet + 1) % _cameraSets.Length;
             if (k.Keycode == Key.F2) _showBoxes = !_showBoxes;
-            if (k.Keycode == Key.F3 && OS.IsDebugBuild()) _hud.Visible = !_hud.Visible;
+            if (k.Keycode == Key.F3) _hud.Visible = !_hud.Visible;
             if (k.Keycode == Key.F6 && OS.IsDebugBuild()) { _player.Position = _spawn; _snapToFloor = !_demo; _player.Velocity = Vector3.Zero; _move.Stop(); _hp = _pf?.MaxHp ?? 0; _mp = _pf?.MaxMp ?? 0; }
             if (k.Keycode == Key.F9 && OS.IsDebugBuild()) DebugWeakenBoss();
             if (k.Keycode == Key.F8 && OS.IsDebugBuild()) DebugNextTarget();
@@ -320,6 +321,9 @@ public partial class Fatia : Node3D
 
     public override void _PhysicsProcess(double delta)
     {
+        // A rede vem antes de qualquer saída do quadro: com _leaving (Esc > Gravar e voltar, trocar de Digimon) o resto do quadro
+        // para, e sem o Poll a resposta da gravação nunca chegava nem o tempo limite corria (ficava "Gravando..." para sempre).
+        Online.Poll(_leaving || _player == null || !IsInsideTree() ? null : MyState());
         TickQuickSaveAndSpeed(delta);
         float dt = (float)delta;
         TickChat(dt);
@@ -342,6 +346,7 @@ public partial class Fatia : Node3D
         TickStageChange(dt);
         if (_leaving) return;
         TickObjects(dt);
+        SyncPartySwitches();
         TickFlashes(dt);
         TickQuickItems();
         var input = Input.GetVector(PortInput.Name("esquerda"), PortInput.Name("direita"), PortInput.Name("cima"), PortInput.Name("baixo"));
@@ -439,6 +444,7 @@ public partial class Fatia : Node3D
         vel.Z = v.Y;
         vel.Y = VerticalVelocity(vel.Y, dt);
         _player.Velocity = vel;
+        UpdatePlayerMask();
         _player.MoveAndSlide();
         StepUp(new Vector3(v.X, 0, v.Y), dt); // degraus baixos (Fatia.Step.cs)
         NoteWall();
@@ -749,25 +755,39 @@ public partial class Fatia : Node3D
         if (d == null) return;
         string name = _db!.Contains(d.Item.Table) ? _db[d.Item.Table].Text(d.Item.Row, "NAME") : "";
         if (name.Length == 0) name = $"{d.Item.Table}:{d.Item.Row}";
-        var node = new Node3D();
-        node.AddChild(new MeshInstance3D { Mesh = new BoxMesh { Size = new Vector3(3, 3, 3) }, Position = new Vector3(0, 1.5f, 0),
-            MaterialOverride = new StandardMaterial3D { AlbedoColor = Colors.Gold, ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded } });
-        node.AddChild(new Label3D { Text = name, FontSize = 48, OutlineSize = 10, Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, NoDepthTest = true, PixelSize = 0.05f, Position = new Vector3(0, 6, 0) });
-        AddChild(node);
-        node.GlobalPosition = at;
-        _ground.Add((node, d.Item));
+        // Baúzinho do jogo pelo tipo do item (Fatia.DropChest); sem o modelo exportado, o cubo dourado de antes.
+        var g = MakeGroundItem(d.Item, name);
+        AddChild(g.Node);
+        g.Node.GlobalPosition = at;
+        _ground.Add(g);
         _lastEvent += $"  caiu {name}";
-        ScriptLog($"caiu {name} ({gen?.Name ?? "sem gerador"})");
+        ScriptLog($"caiu {name} ({gen?.Name ?? "sem gerador"}, {(g.Chest != null ? g.Chest.Name : "cubo")})");
     }
 
     // Coleta a menos de 64 unidades (FATO). insItem tem efeito na hora; o resto vai para o inventário. HIPÓTESE da fatia:
     // tudo é pego por proximidade (no jogo, armas e armaduras só ganham dono; a confirmação não foi lida).
     void UpdateGround()
     {
+        TickDropHereDebug((float)GetProcessDeltaTime());
         for (int i = _ground.Count - 1; i >= 0; i--)
         {
-            var (node, item) = _ground[i];
-            node.RotateY(0.03f);
+            var g = _ground[i];
+            var (node, item) = (g.Node, g.Item);
+            if (g.Chest is { } chest)
+            {
+                // Baú do jogo: a sequência anima, pisca e some sozinha (SQ_BODING → SQ_EXIT → SQ_ERAS, menos o g_000key).
+                chest.Tick((float)GetProcessDeltaTime());
+                if (node.GetChildOrNull<Label3D>(1) is { } label) label.Visible = !g.Taken && chest.Actor.Root.Visible;
+                if (chest.Erased)
+                {
+                    if (!g.Taken) ScriptLog($"sumiu {item.Table}:{item.Row} ({chest.Name}) sem ninguém pegar");
+                    node.QueueFree();
+                    _ground.RemoveAt(i);
+                    continue;
+                }
+                if (g.Taken || chest.Sequence is "SQ_EXIT" or "SQ_DDMG") continue;
+            }
+            else node.RotateY(0.03f);
             if (node.GlobalPosition.DistanceTo(_player.GlobalPosition) >= Drops.PickupRadius || _hp <= 0) continue;
             string text;
             if (item.Table == "insItem")
@@ -789,6 +809,9 @@ public partial class Fatia : Node3D
             else { _lastEvent = "inventário cheio"; continue; }
             Float(_player, text, Colors.Gold);
             _lastEvent = $"pegou {text}";
+            ScriptLog($"pegou {text} ({g.Chest?.Name ?? "cubo"})");
+            // Baú do jogo: SQ_EXIT (some em 10 quadros) e sai da lista no SQ_ERAS; sem SQ_EXIT (g_000key) ou cubo, sai na hora.
+            if (g.Chest is { } c && c.Seq?.Start("SQ_EXIT") == true) { g.Taken = true; continue; }
             node.QueueFree();
             _ground.RemoveAt(i);
         }
@@ -825,8 +848,10 @@ public partial class Fatia : Node3D
         // FATO (P2EEXPUP 0x80373B48): EXP do inimigo × (EXPRITSU + 100)/100, com o EXPRITSU do jogador (equipamento e chips);
         // antes ia 0 e o bônus de EXP dos itens não valia. No grupo (NINZU = membros na fase), quem matou leva a parte maior e
         // quem está caído não leva (PartyRewards).
+        // DECISÃO DO PORT (2026-11-05): no grupo todos levam a parte de quem matou; o EnemyKilled só chega a quem está na party
+        // e na mesma fase, então quem não é do grupo continua sem EXP.
         if (CoopOn && _hp <= 0) return;
-        AddExp(DamageFormula.ExpShare(_db!["enemy"].Int(e.Kind.Row, "EXP"), _pf?.Expritsu ?? 0, players: Math.Clamp(Ram.Ninzu, 1, 4), killer));
+        AddExp(DamageFormula.ExpShare(_db!["enemy"].Int(e.Kind.Row, "EXP"), _pf?.Expritsu ?? 0, players: Math.Clamp(Ram.Ninzu, 1, 4), killer: true));
     }
 
     void AddExp(int gain)
@@ -1055,14 +1080,46 @@ public partial class Fatia : Node3D
     StaticBody3D MakeStaticBody(Node3D collision)
     {
         var body = new StaticBody3D();
+        // Peças por tipo do beHitLandModelInfo @10 (CollisionKinds.cs): parapeito (2050) e parede de inimigo (8) em corpos próprios,
+        // nas camadas que o jogador e os inimigos olham (UpdatePlayerMask, SpawnEnemy).
+        var edge = new StaticBody3D { Name = "parapeito", CollisionLayer = CollisionKinds.EdgeLayer, CollisionMask = 0 };
+        var enemyOnly = new StaticBody3D { Name = "parede_inimigo", CollisionLayer = CollisionKinds.EnemyLayer, CollisionMask = 0 };
+        body.AddChild(edge);
+        body.AddChild(enemyOnly);
+        var kinds = CollisionKinds.For(_stageName);
         foreach (var mi in FindAll<MeshInstance3D>(collision))
         {
             var trimesh = mi.Mesh.CreateTrimeshShape();
             if (OS.GetEnvironment("DW4_DIAG_FACES") == "1") GD.Print($"[faces] backface {trimesh.BackfaceCollision}");
             var shape = new CollisionShape3D { Shape = trimesh, Transform = mi.GlobalTransformIn(collision) };
-            body.AddChild(shape);
             var path = new List<string>();
             for (Node? n = mi; n != null && n != collision; n = n.GetParent()) path.Add(n.Name);
+            var kind = kinds.Of(path);
+            if (kind == CollisionKind.Normal) body.AddChild(shape);
+            else
+            {
+                // Só as faces de parede (|normal.y| < 0,5) mudam de camada; o chão da mesma peça continua segurando todo mundo
+                // (FATO: os grupos 2050 também têm pisos, como hitmvbox/hitflisland da stag0404 e hitmagnetflore da stag0403).
+                var faces = mi.Mesh.GetFaces();
+                var basis = shape.Transform.Basis;
+                var walls = new List<Vector3>();
+                var floors = new List<Vector3>();
+                for (int f = 0; f + 2 < faces.Length; f += 3)
+                {
+                    var nrm = (basis * (faces[f + 1] - faces[f])).Cross(basis * (faces[f + 2] - faces[f]));
+                    var into = nrm.LengthSquared() > 1e-12f && Mathf.Abs(nrm.Normalized().Y) < 0.5f ? walls : floors;
+                    into.Add(faces[f]); into.Add(faces[f + 1]); into.Add(faces[f + 2]);
+                }
+                ConcavePolygonShape3D Faces(List<Vector3> v) { var c = new ConcavePolygonShape3D(); c.SetFaces(v.ToArray()); return c; }
+                shape.Shape = Faces(walls);
+                (kind == CollisionKind.Edge ? edge : enemyOnly).AddChild(shape);
+                if (floors.Count > 0)
+                {
+                    var floorShape = new CollisionShape3D { Shape = Faces(floors), Transform = shape.Transform };
+                    body.AddChild(floorShape);
+                    _collisionShapes.Add((string.Join("/", path), floorShape));
+                }
+            }
             // Parede invisível (relato do usuário, 2026-11-02: ponte da stag0101, parado em (462, 47, 96)). FATO (dw4
             // colisao-auditoria): a peça "limit_Circle" (beHitLandModelInfo com @10 = 4; chão = 1, paredes e portas = 2) é um
             // cilindro de 32 triângulos com a mesma caixa (403..517, 0..250, 93..207) em dng101b1, dng101b2, stag0001, stag0101 e

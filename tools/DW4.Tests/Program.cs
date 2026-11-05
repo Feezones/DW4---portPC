@@ -217,7 +217,7 @@ Test("Online: grupo de até 4 como na DMO.API (só o líder, só amigos, convite
     True(p.IsDisbanded && p.Count == 0, "sobrou 1: o grupo acaba");
 });
 
-Test("Online: XP dividida como no original, BIT dividido no grupo e NINZU pelos membros na fase", () =>
+Test("Online: XP igual para o grupo todo, BIT dividido no grupo e NINZU pelos membros na fase", () =>
 {
     var four = new[]
     {
@@ -227,7 +227,7 @@ Test("Online: XP dividida como no original, BIT dividido no grupo e NINZU pelos 
     Equal(3, DW4.Gameplay.Online.PartyRewards.Ninzu(four), "Caio fora da fase não conta");
     var exp = DW4.Gameplay.Online.PartyRewards.Exp(four, "Gui", 1000);
     Equal(DamageFormula.ExpShare(1000, 0, 3, true), exp["Gui"], "quem matou");
-    Equal(DamageFormula.ExpShare(1000, 0, 3, false), exp["ana"], "quem ajudou");
+    Equal(DamageFormula.ExpShare(1000, 0, 3, true), exp["ana"], "quem ajudou leva o mesmo que quem matou (decisão do port)");
     True(exp["Bia"] == 0 && exp["Caio"] == 0, "caído e ausente não ganham");
     True(DamageFormula.ExpShare(1000, 0, 1, true) == 1000 && DamageFormula.ExpShare(1000, 0, 4, true) == 800 && DamageFormula.ExpShare(1000, 0, 4, false) == 400, "sozinho 100%, em 4: 80% / 40%");
     var bit = DW4.Gameplay.Online.PartyRewards.Bit(four, "Ana", 101);
@@ -627,6 +627,26 @@ Test("MPEG-PS: pacote MPEG-1, PES com PTS, fim e preenchimento de setor", () =>
     True(MpegPs.Demux(ps.ToArray()[..20]).Problems.Count > 0, "PES cortado não foi apontado");
 });
 
+Test("Port: baú do item no chão (tabela do main.dol 0x804DE0A8 e coluna MODEL do conItem/insItem)", () =>
+{
+    var db = GameTables.FromJson("{\"conItem\":{\"rows\":12,\"columns\":[{\"name\":\"MODEL\",\"cells\":[" +
+        string.Join(",", Enumerable.Range(0, 12).Select(r => r == 10 ? "\"g_000boost1\"" : r == 11 ? "\"g_000penx\"" : "\"g_000item\"")) + "]}]}," +
+        "\"insItem\":{\"rows\":5,\"columns\":[{\"name\":\"MODEL\",\"cells\":[\"g_000bit\",\"g_000xdata1\",\"g_000xdata1\",\"g_000xdata1\",\"g_000xdata2\"]}]}}");
+    Equal("g_000item", Drops.ChestModel(db, new ItemRef("conItem", 0)), "disco");
+    Equal("g_000boost1", Drops.ChestModel(db, new ItemRef("conItem", 10)), "Booster Pack");
+    Equal("g_000penx", Drops.ChestModel(db, new ItemRef("conItem", 11)), "Key Chain");
+    Equal("g_000bit", Drops.ChestModel(db, new ItemRef("insItem", 0)), "BIT");
+    Equal("g_000xdata1", Drops.ChestModel(db, new ItemRef("insItem", 2)), "X-Data");
+    Equal("g_000xdata2", Drops.ChestModel(db, new ItemRef("insItem", 4)), "plug");
+    Equal("g_000weapon", Drops.ChestModel(db, new ItemRef("weapon", 7)), "arma");
+    Equal("g_000armor", Drops.ChestModel(db, new ItemRef("armor1", 0)), "armadura 1");
+    Equal("g_000armor", Drops.ChestModel(db, new ItemRef("armor2", 3)), "armadura 2");
+    Equal("g_000access", Drops.ChestModel(db, new ItemRef("abChip", 1)), "chip");
+    Equal("g_000key", Drops.ChestModel(db, new ItemRef("impItem", 2)), "item importante");
+    Equal("g_000item", Drops.ChestModel(null, new ItemRef("conItem", 0)), "sem tabelas");
+    Equal("g_000item", Drops.ChestModel(db, new ItemRef("conItem", 99)), "linha fora");
+});
+
 Test("Port: vaga gravada no meio do tutorial volta ao começo dele (FLG 503 desligada, entrada 0, como o restart.lua)", () =>
 {
     var ram = new GameRam();
@@ -865,6 +885,48 @@ Test("Objeto: caixa do HITBOX vale do quadro inicial até o fim da duração; AI
     Equal(null, s.TakeLuaCall(), "uma vez");
 });
 
+Test("Objeto: interruptor do portão (g_sbutton da stag0101) só tem IA com CTRL isLive; ligado, SQ_SWON só volta ao SQ_WAIT", () =>
+{
+    // FATO: sequências do g_sbutton (ndmw #614, igb-seq), resumidas.
+    SeqCommand C(string k, params object[] v) => new(k, v);
+    var seqs = new Dictionary<string, List<SeqCommand>>
+    {
+        ["SQ_ONLOOP"] = [C("LABELCTRL", "ONLOOP", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
+        ["SQ_POWEROF"] = [C("LABELCTRL", "DEF", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
+        ["SQ_POWERON"] = [C("LABELCTRL", "OFF", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
+        ["SQ_SWOF"] = [C("LABEL", "OFF"), C("JUMP", "SQ_WAIT"), C("LABEL", "ON"), C("LABELCTRL", "OFF", "SQ_WAIT"), C("LABELCTRL", "OFF", "SQ_SWON"),
+            C("LABELCTRL", "OFF", "SQ_SWOF"), C("ACTION", "ON2OFF"), C("WCHECK", "Action"), C("LUACALL", "off", ""), C("JUMP", "SQ_WAIT")],
+        ["SQ_SWON"] = [C("LABEL", "OFF"), C("LABELCTRL", "ON", "SQ_WAIT"), C("LABELCTRL", "ON", "SQ_SWON"), C("LABELCTRL", "ON", "SQ_SWOF"),
+            C("ACTION", "OFF2ON"), C("WCHECK", "Action"), C("LUACALL", "hit", ""), C("JUMP", "SQ_WAIT"), C("LABEL", "ON"), C("JUMP", "SQ_WAIT")],
+        ["SQ_WAIT"] = [C("LABEL", "DEF"), C("ACTION", "WAIT01"), C("LABEL", "OFF"), C("ACTION", "OFSW01"), C("CTRL", "isLive"),
+            C("LABEL", "ON"), C("ACTION", "ONSW01"), C("CTRL", "isLive"), C("LABEL", "ONLOOP"), C("ACTION", "ONSW01")],
+    };
+    var actions = new Dictionary<string, List<SeqCommand>>
+    {
+        ["OFF2ON"] = [C("JOINTSET", "", 90f, 120f, "OS"), C("WAITCHECK", "Joint", 0f)],
+        ["ON2OFF"] = [C("JOINTSET", "", 380f, 410f, "OS"), C("WAITCHECK", "Joint", 0f)],
+        ["ONSW01"] = [C("JOINTSET", "", 130f, 370f, "LP")],
+        ["OFSW01"] = [C("JOINTSET", "", 20f, 80f, "LP")],
+        ["WAIT01"] = [C("JOINTSET", "", 1f, 10f, "LP")],
+    };
+    var s = new ObjectSequencer(seqs, actions);
+    True(s.HasLiveGate, "usa isLive");
+    s.Start("SQ_WAIT");
+    True(!s.Live, "DEF (sem as ID Passes): IA desligada");
+    s.Start("SQ_ONLOOP");
+    True(!s.Live, "ONLOOP (vaga sem jogador, já acesa): IA desligada, ninguém apaga");
+    s.Start("SQ_POWERON");
+    True(s.Live && s.Label("SQ_WAIT") == "OFF", "POWERON: OFF com IA");
+    True(s.OnlyJumpsBack("SQ_SWOF"), "longe e apagado: SQ_SWOF/OFF só volta (não recomeça o OFSW01)");
+    True(!s.OnlyJumpsBack("SQ_SWON"), "perto: SQ_SWON/OFF acende");
+    s.Start("SQ_SWON");
+    for (int i = 0; i < 120 && s.Sequence != "SQ_WAIT"; i++) s.Tick(1 / ObjectSequencer.FramesPerSecond);
+    Equal("hit", s.TakeLuaCall(), "acendeu: hit_g_sbutton.lua");
+    True(s.Sequence == "SQ_WAIT" && s.Live && s.Action == "ONSW01", $"aceso com IA ({s.Sequence}, {s.Action})");
+    True(s.OnlyJumpsBack("SQ_SWON"), "parado em cima: SQ_SWON/ON não recomeça nem chama o hit de novo");
+    True(!s.OnlyJumpsBack("SQ_SWOF"), "saiu de cima: SQ_SWOF/ON apaga");
+});
+
 Test("Sequência: caixas agendadas antes de uma ação curta passam para a ação seguinte (CarryHitBoxes, SQ_MAGIC do f_apocaly)", () =>
 {
     SeqCommand C(string k, params object[] v) => new(k, v);
@@ -996,6 +1058,18 @@ Test("IA: faixa pela distância, sorteio acumulado em 16, troca de mapa e espera
     True(Math.Abs(b.Yaw - 0.1f) < 1e-4f, $"gira no máximo 0,1 rad por quadro ({b.Yaw})");
     for (int i = 0; i < 25; i++) b.Tick(frame, self, new Vector3(30, 0, 0), b.Yaw);
     True(Math.Abs(b.Yaw - MathF.PI / 2) < 1e-3f, "termina virado para o alvo");
+});
+
+Test("IA: sem AIMAP no SQ_ENTR começa no MAP00 mesmo com outro mapa antes no arquivo (e_blosso: MAP01 = fúria)", () =>
+{
+    var fury = new AiMap("MAP01", [32 * 32, 50 * 50, 1000 * 1000], 0.07f, [[new("SQ_ATCK2", 0, 0, 16)], [], [], []]);
+    var calm = new AiMap("MAP00", [30 * 30, 42 * 42, 1000 * 1000], 0.04f, [[new("SQ_ATCK1", 0, 0, 16)], [], [], []]);
+    var b = new EnemyBrain([fury, calm], new Dictionary<string, List<SeqCommand>>(), () => 0);
+    Equal("MAP00", b.Map.Name, "mapa inicial");
+    b.Tick(1 / 30f, Vector3.Zero, new Vector3(0, 0, 10), 0);
+    Equal("SQ_ATCK1", b.External, "de perto, o golpe calmo (SQ_ATCK1), não o giro");
+    var only = new EnemyBrain([fury], new Dictionary<string, List<SeqCommand>>(), () => 0);
+    Equal("MAP01", only.Map.Name, "sem MAP00: o primeiro do arquivo");
 });
 
 Test("Técnicas: WAZALIST pelo nível e pela skill, painel com MP e recarga", () =>
@@ -1497,6 +1571,54 @@ Test("be: DMswtSD/DMcase com padrão (−1) e DMswtEnd", () =>
         dm.Tick();
         Equal(expected, string.Join(",", log), $"GETSELECT = {answer}");
     }
+});
+
+Test("be: DMsetLua dentro de um DMcase só roda se o caso valer (fim do tutorial: matz00 → stchg01/restart, FLG 503)", () =>
+{
+    // Forma do matz00.lua e do stchg01.lua da stag0001: caso 0 → stchg01.lua (pergunta de novo), caso 1 → restart.lua
+    // (FLGset 503 0 na hora + NEXTSTAGE stag0001). Respostas em ordem: a do matz00, depois a do stchg01.
+    foreach (var (answers, expected, restarts) in new[] { (new[] { 0.0, 0.0 }, "stag0101", 0), (new[] { 1.0 }, "stag0001", 1), (new[] { 0.0, 1.0 }, "stag0001", 1) })
+    {
+        var log = new List<string>();
+        var q = new Queue<double>(answers);
+        DemoManager dm = null!;
+        dm = new DemoManager(new BeMessenger(m => log.Add(m.Command)), _ => q.Dequeue());
+        BeMessage M(string c) => new("X", null, -1, c, [], null);
+        int restart = 0;
+        dm.RunLua = name =>
+        {
+            if (name == "restart.lua") { restart++; dm.Add(new(DemoManager.Kind.Set, M("stag0001"), 0)); dm.Run(); return; }
+            dm.Add(new(DemoManager.Kind.Switch, M("GETSELECT"), 0));
+            dm.Add(new(DemoManager.Kind.Case, null, 0, 0)); dm.Add(new(DemoManager.Kind.Set, M("stag0101"), 0));
+            dm.Add(new(DemoManager.Kind.Case, null, 0, 1));
+            True(dm.BuildingCase, "o stchg01 monta dentro de um caso");
+            dm.Add(new(DemoManager.Kind.Lua, null, 0, Lua: "restart.lua"));
+            dm.Add(new(DemoManager.Kind.SwitchEnd, null, 0));
+            dm.Run();
+        };
+        dm.Add(new(DemoManager.Kind.Switch, M("GETSELECT"), 0));
+        dm.Add(new(DemoManager.Kind.Case, null, 0, 0)); dm.Add(new(DemoManager.Kind.Lua, null, 0, Lua: "stchg01.lua"));
+        dm.Add(new(DemoManager.Kind.Case, null, 0, 1)); dm.Add(new(DemoManager.Kind.Lua, null, 0, Lua: "restart.lua"));
+        dm.Add(new(DemoManager.Kind.SwitchEnd, null, 0));
+        dm.Run();
+        True(!dm.BuildingCase, "DMrun fecha a montagem");
+        Equal(0, restart, "nada roda na montagem");
+        dm.Tick();
+        Equal(expected, string.Join(",", log), $"respostas {string.Join("/", answers)}");
+        Equal(restarts, restart, $"restart.lua (apaga a 503) com respostas {string.Join("/", answers)}");
+        True(dm.Idle, "fila terminou");
+    }
+});
+
+Test("Port: vaga que perdeu a FLG 503 depois do tutorial volta a tê-la (COUNTER 7 da 3ª onda)", () =>
+{
+    var ram = new GameRam();
+    True(!DW4.Script.Save.ResumePoint.RepairTutorialDone(ram), "vaga nova: tutorial não feito");
+    Equal(0, ram.FlagOn(503), "503 continua desligada");
+    ram.Counters[7] = 4;
+    True(DW4.Script.Save.ResumePoint.RepairTutorialDone(ram), "chegou à 3ª onda");
+    Equal(1, ram.FlagOn(503), "503 ligada: o portal do lobby vai direto ao Death Valley");
+    True(!DW4.Script.Save.ResumePoint.RepairTutorialDone(ram), "já estava certa");
 });
 
 Test("be: DMsetSD SETDEMOCAMERA com atraso segura o chk ISDEMOCAMERA até a demo chegar (tutorial, gene00.lua)", () =>
@@ -2935,6 +3057,18 @@ Test("Online: menu do F pelo que o servidor conta (InteractView)", () =>
     Equal("Já está no seu grupo.", O(V(party: true, inMine: true, leader: true, occ: 2))[0].Reason, "mesmo grupo");
     Equal("Já está em outro grupo.", O(V(other: true))[0].Reason, "outro grupo");
     Equal("Pedido já enviado.", O(V(friend: false, sent: true))[1].Reason, "pedido enviado");
+});
+
+Test("Online: menu do F avisa quando uma das contas não tem Tamer do DMO", () =>
+{
+    var com = new DW4.Net.Identity(10, "Feezao", null);
+    var sem = new DW4.Net.Identity(20, "rdn26reqm8t9", null, HasTamer: false);
+    True(DW4.Server.GameServer.NoTamerNotice(com, com, "x") == null, "os dois com Tamer: vai para a API");
+    True(DW4.Server.GameServer.NoTamerNotice(com, sem, "xprodexota")!.StartsWith("xprodexota ainda não tem um Tamer"), "alvo sem Tamer, pelo nome do personagem");
+    True(DW4.Server.GameServer.NoTamerNotice(sem, com, "x")!.StartsWith("Sua conta ainda não tem"), "eu sem Tamer");
+    var w = new DW4.Net.World();
+    w.Join(2, sem, "xprodexota");
+    Equal("xprodexota", w.Name(2), "nome do personagem, não o usuário gerado");
 });
 
 Test("Online: servidor só deixa o F entre quem está na mesma instância", () =>

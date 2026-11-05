@@ -56,8 +56,7 @@ public partial class Fatia
 
     void TickOnline(float dt)
     {
-        Online.Poll(MyState());
-        TickCoop(dt);
+        TickCoop(dt); // o Online.Poll é feito no começo do _PhysicsProcess
         TickPartyHud();
         foreach (var id in _avatars.Keys.ToList())
             if (!Online.Remotes.TryGetValue(id, out var r) || !r.State.Stage.Equals(_stageName, StringComparison.OrdinalIgnoreCase))
