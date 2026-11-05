@@ -627,6 +627,26 @@ Test("MPEG-PS: pacote MPEG-1, PES com PTS, fim e preenchimento de setor", () =>
     True(MpegPs.Demux(ps.ToArray()[..20]).Problems.Count > 0, "PES cortado não foi apontado");
 });
 
+Test("Port: baú do item no chão (tabela do main.dol 0x804DE0A8 e coluna MODEL do conItem/insItem)", () =>
+{
+    var db = GameTables.FromJson("{\"conItem\":{\"rows\":12,\"columns\":[{\"name\":\"MODEL\",\"cells\":[" +
+        string.Join(",", Enumerable.Range(0, 12).Select(r => r == 10 ? "\"g_000boost1\"" : r == 11 ? "\"g_000penx\"" : "\"g_000item\"")) + "]}]}," +
+        "\"insItem\":{\"rows\":5,\"columns\":[{\"name\":\"MODEL\",\"cells\":[\"g_000bit\",\"g_000xdata1\",\"g_000xdata1\",\"g_000xdata1\",\"g_000xdata2\"]}]}}");
+    Equal("g_000item", Drops.ChestModel(db, new ItemRef("conItem", 0)), "disco");
+    Equal("g_000boost1", Drops.ChestModel(db, new ItemRef("conItem", 10)), "Booster Pack");
+    Equal("g_000penx", Drops.ChestModel(db, new ItemRef("conItem", 11)), "Key Chain");
+    Equal("g_000bit", Drops.ChestModel(db, new ItemRef("insItem", 0)), "BIT");
+    Equal("g_000xdata1", Drops.ChestModel(db, new ItemRef("insItem", 2)), "X-Data");
+    Equal("g_000xdata2", Drops.ChestModel(db, new ItemRef("insItem", 4)), "plug");
+    Equal("g_000weapon", Drops.ChestModel(db, new ItemRef("weapon", 7)), "arma");
+    Equal("g_000armor", Drops.ChestModel(db, new ItemRef("armor1", 0)), "armadura 1");
+    Equal("g_000armor", Drops.ChestModel(db, new ItemRef("armor2", 3)), "armadura 2");
+    Equal("g_000access", Drops.ChestModel(db, new ItemRef("abChip", 1)), "chip");
+    Equal("g_000key", Drops.ChestModel(db, new ItemRef("impItem", 2)), "item importante");
+    Equal("g_000item", Drops.ChestModel(null, new ItemRef("conItem", 0)), "sem tabelas");
+    Equal("g_000item", Drops.ChestModel(db, new ItemRef("conItem", 99)), "linha fora");
+});
+
 Test("Port: vaga gravada no meio do tutorial volta ao começo dele (FLG 503 desligada, entrada 0, como o restart.lua)", () =>
 {
     var ram = new GameRam();

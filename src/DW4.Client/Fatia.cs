@@ -79,7 +79,7 @@ public partial class Fatia : Node3D
     // pego, se a regra do jogo deixar; a arma muda só os números (o modelo na mão continua o da w_sword01).
     Equipment? _equip;
     SoundEffects? _sfx;
-    readonly List<(Node3D Node, ItemRef Item)> _ground = [];
+    readonly List<GroundItem> _ground = [];
     // Linha do Numemon na tabela enemy: Int@7 dos geradores da dng1 no modo normal (generatorN #184 = 13; HIPÓTESE forte).
     const int EnemyRow = 13;
     string _lastEvent = "";
@@ -749,25 +749,39 @@ public partial class Fatia : Node3D
         if (d == null) return;
         string name = _db!.Contains(d.Item.Table) ? _db[d.Item.Table].Text(d.Item.Row, "NAME") : "";
         if (name.Length == 0) name = $"{d.Item.Table}:{d.Item.Row}";
-        var node = new Node3D();
-        node.AddChild(new MeshInstance3D { Mesh = new BoxMesh { Size = new Vector3(3, 3, 3) }, Position = new Vector3(0, 1.5f, 0),
-            MaterialOverride = new StandardMaterial3D { AlbedoColor = Colors.Gold, ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded } });
-        node.AddChild(new Label3D { Text = name, FontSize = 48, OutlineSize = 10, Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, NoDepthTest = true, PixelSize = 0.05f, Position = new Vector3(0, 6, 0) });
-        AddChild(node);
-        node.GlobalPosition = at;
-        _ground.Add((node, d.Item));
+        // Baúzinho do jogo pelo tipo do item (Fatia.DropChest); sem o modelo exportado, o cubo dourado de antes.
+        var g = MakeGroundItem(d.Item, name);
+        AddChild(g.Node);
+        g.Node.GlobalPosition = at;
+        _ground.Add(g);
         _lastEvent += $"  caiu {name}";
-        ScriptLog($"caiu {name} ({gen?.Name ?? "sem gerador"})");
+        ScriptLog($"caiu {name} ({gen?.Name ?? "sem gerador"}, {(g.Chest != null ? g.Chest.Name : "cubo")})");
     }
 
     // Coleta a menos de 64 unidades (FATO). insItem tem efeito na hora; o resto vai para o inventário. HIPÓTESE da fatia:
     // tudo é pego por proximidade (no jogo, armas e armaduras só ganham dono; a confirmação não foi lida).
     void UpdateGround()
     {
+        TickDropHereDebug((float)GetProcessDeltaTime());
         for (int i = _ground.Count - 1; i >= 0; i--)
         {
-            var (node, item) = _ground[i];
-            node.RotateY(0.03f);
+            var g = _ground[i];
+            var (node, item) = (g.Node, g.Item);
+            if (g.Chest is { } chest)
+            {
+                // Baú do jogo: a sequência anima, pisca e some sozinha (SQ_BODING → SQ_EXIT → SQ_ERAS, menos o g_000key).
+                chest.Tick((float)GetProcessDeltaTime());
+                if (node.GetChildOrNull<Label3D>(1) is { } label) label.Visible = !g.Taken && chest.Actor.Root.Visible;
+                if (chest.Erased)
+                {
+                    if (!g.Taken) ScriptLog($"sumiu {item.Table}:{item.Row} ({chest.Name}) sem ninguém pegar");
+                    node.QueueFree();
+                    _ground.RemoveAt(i);
+                    continue;
+                }
+                if (g.Taken || chest.Sequence is "SQ_EXIT" or "SQ_DDMG") continue;
+            }
+            else node.RotateY(0.03f);
             if (node.GlobalPosition.DistanceTo(_player.GlobalPosition) >= Drops.PickupRadius || _hp <= 0) continue;
             string text;
             if (item.Table == "insItem")
@@ -789,6 +803,9 @@ public partial class Fatia : Node3D
             else { _lastEvent = "inventário cheio"; continue; }
             Float(_player, text, Colors.Gold);
             _lastEvent = $"pegou {text}";
+            ScriptLog($"pegou {text} ({g.Chest?.Name ?? "cubo"})");
+            // Baú do jogo: SQ_EXIT (some em 10 quadros) e sai da lista no SQ_ERAS; sem SQ_EXIT (g_000key) ou cubo, sai na hora.
+            if (g.Chest is { } c && c.Seq?.Start("SQ_EXIT") == true) { g.Taken = true; continue; }
             node.QueueFree();
             _ground.RemoveAt(i);
         }

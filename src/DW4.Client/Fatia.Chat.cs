@@ -42,6 +42,12 @@ public partial class Fatia
         _chatBox.AddChild(_chatLines);
         var row = new HBoxContainer { Visible = false };
         _chatTag = new Label { VerticalAlignment = VerticalAlignment.Center };
+        // Celular: sem Tab no teclado do Android; tocar no canal ([Geral]/[Grupo]/[Privado]) troca.
+        if (Touch)
+        {
+            _chatTag.MouseFilter = Control.MouseFilterEnum.Stop;
+            _chatTag.GuiInput += ev => { if (ev is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) { NextChatChannel(); _chatTag.AcceptEvent(); } };
+        }
         _chatTag.AddThemeColorOverride("font_outline_color", new Color(0, 0, 0));
         _chatTag.AddThemeConstantOverride("outline_size", 6);
         row.AddChild(_chatTag);
@@ -114,7 +120,7 @@ public partial class Fatia
         _chatInput.AddThemeColorOverride("font_color", ChatColor(_chatChannel));
         _chatInput.PlaceholderText = _chatChannel == ChatChannel.Whisper && _chatTo is not { Length: > 0 }
             ? "Digite /w nome mensagem"
-            : "Mensagem (Enter envia, Tab troca o canal, Esc cancela)";
+            : Touch ? "Mensagem (toque no canal para trocar)" : "Mensagem (Enter envia, Tab troca o canal, Esc cancela)";
     }
 
     // Enter abre o chat só quando nenhuma janela usa o Enter (menu de status, loja, janelas do port, lista de escolha).
@@ -128,7 +134,6 @@ public partial class Fatia
         _chatInput.Text = "";
         UpdateChatTag();
         _chatInput.GrabFocus();
-        if (Touch) _chatInput.PlaceholderText = "Mensagem";
         if (DataPaths.Mobile) DisplayServer.VirtualKeyboardShow(""); // celular: abre o teclado do Android
         RefreshChat();
         return true;
