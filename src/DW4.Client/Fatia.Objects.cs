@@ -313,7 +313,7 @@ public partial class Fatia
         o.BulletKind = type;
         var script = $"hit_{o.Name}.lua";
         if (_stage != null && _stage.Has(script)) _stage.RunAs(script, o);
-        if (DiagNpc) GD.Print($"[golpe-obj] {o.Name}/{o.Index}: tipo {type}, HP {o.Hp}, {o.Sequence}");
+        if (DiagNpc || DiagDrop) GD.Print($"[golpe-obj] {o.Name}/{o.Index} ({o.Gen?.Name ?? "sem gerador"}): tipo {type}, HP {o.Hp}, {o.Sequence}");
         if (o.Hp > 0 && o.Sequence != "SQ_DDMG") return;
         o.Dead = true;
         o.Body?.QueueFree();

@@ -745,10 +745,12 @@ public partial class Fatia : Node3D
         string? listName = gen != null && _dropOfGenerator.TryGetValue(gen.Name, out var perPlayers) && perPlayers.Length > 0
             ? perPlayers[Math.Clamp(Ram.Ninzu, 1, perPlayers.Length) - 1].ElementAtOrDefault(Math.Clamp(Ram.Difficulty, 0, 2)) : fallback ? DropList : null;
         var drops = listName != null ? _dropLists.GetValueOrDefault(listName) : null;
+        if (DiagDrop) GD.Print($"[drop] {gen?.Name ?? "sem gerador"} em {at.Round()}: lista {listName ?? "nenhuma"} ({drops?.Count ?? -1} itens), ninzu {Ram.Ninzu}, dificuldade {Ram.Difficulty}");
         if (drops == null && OS.GetEnvironment("DW4_DROP").Length == 0) return;
         // DW4_DROP="tabela:linha" (ex.: insItem:0): força o item, para conferir a coleta sem depender do sorteio.
         DropEntry? d = OS.GetEnvironment("DW4_DROP").Split(':') is [var tb, var rw] && int.TryParse(rw, out int forced)
             ? new DropEntry(new ItemRef(tb, forced), 0, 0) : drops != null ? Drops.Roll(drops, _mt) : null;
+        if (DiagDrop) GD.Print($"[drop]   sorteio: {(d == null ? "nada" : $"{d.Item.Table}:{d.Item.Row}")}");
         if (d == null) return;
         string name = _db!.Contains(d.Item.Table) ? _db[d.Item.Table].Text(d.Item.Row, "NAME") : "";
         if (name.Length == 0) name = $"{d.Item.Table}:{d.Item.Row}";
@@ -761,7 +763,7 @@ public partial class Fatia : Node3D
         ScriptLog($"caiu {name} ({gen?.Name ?? "sem gerador"}, {(g.Chest != null ? g.Chest.Name : "cubo")})");
     }
 
-    // Coleta a menos de 64 unidades (FATO). insItem tem efeito na hora; o resto vai para o inventário. HIPÓTESE da fatia:
+    // Coleta a menos de 8 unidades (FATO: distância ao quadrado < 64, Drops.PickupRadius). insItem tem efeito na hora; o resto vai para o inventário. HIPÓTESE da fatia:
     // tudo é pego por proximidade (no jogo, armas e armaduras só ganham dono; a confirmação não foi lida).
     void UpdateGround()
     {
@@ -782,10 +784,11 @@ public partial class Fatia : Node3D
                     _ground.RemoveAt(i);
                     continue;
                 }
-                if (g.Taken || chest.Sequence is "SQ_EXIT" or "SQ_DDMG") continue;
+                if (g.Taken || !Drops.ChestPickable(chest.Seq)) continue;
             }
             else node.RotateY(0.03f);
-            if (node.GlobalPosition.DistanceTo(_player.GlobalPosition) >= Drops.PickupRadius || _hp <= 0) continue;
+            var gap = node.GlobalPosition - _player.GlobalPosition;
+            if (!Drops.InPickupRange(gap.X, gap.Y, gap.Z) || _hp <= 0) continue;
             string text;
             if (item.Table == "insItem")
             {

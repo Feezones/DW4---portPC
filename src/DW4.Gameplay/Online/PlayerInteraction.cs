@@ -21,7 +21,7 @@ public sealed record InteractContext(PartyGroup? MyParty, string Me, bool Target
 /// Interagir com outro jogador (DECISÃO DO PORT, pedido do responsável em 2026-11-02; não existe no original): perto de alguém,
 /// F abre o menu com convidar para o grupo, adicionar amigo e trocar itens. Convidar segue a party da DMO.API: só o líder, só
 /// amigos mútuos (ver <see cref="PartyGroup"/>). Alcance em unidades do jogo; a coleta de itens do
-/// original é a menos de 64 unidades (Drops), e o menu usa o dobro (HIPÓTESE de conforto, ajustar jogando).
+/// original é a menos de 8 unidades (Drops.PickupRadius); o menu usa 128 (HIPÓTESE de conforto, ajustar jogando).
 /// </summary>
 public static class PlayerInteraction
 {
