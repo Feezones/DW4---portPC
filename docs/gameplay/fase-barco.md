@@ -201,3 +201,35 @@ não quebram e (3) a vida do barco não aparece nem parece baixar.
 - **Correção:** o painel do barco vai 200 para dentro em z. A ordem entre a moldura e o medidor é mantida. Conferido o desenho
   com `dw4 hud-previa`: moldura com o barco e a barra amarela.
 - "golpes no Guilmon" no F3 é um contador antigo da fatia (golpes do jogador no Numemon fixo). Não é a vida do barco.
+
+## 0.6.15: o portão de espinhos tirava HP do Dorumon e não do barco (2026-11-05)
+
+### O que tira vida do barco no original (stag0103)
+
+- **FATO:** entre todos os scripts da fase, só o `hit_p_*.lua` mexe em `g_boathp` (fora o `first.lua`, que põe 100). O barco
+  não tem `hit_g_boatz01.lua` nem outro script de dano próprio. O `g_boatz01` é KIND_OBJECT sem HP, e o `brk_r_boatz01.lua`
+  só derruba a comporta.
+- **FATO:** o `hit_p_*.lua` da fase não chama `MDLaddHp` nem `MDLdspDamageP`: o golpe no jogador **não tira HP dele**. Tira
+  `g_dmgnum` do barco, mexe no medidor e muda o estrago.
+- Então tudo que acerta o jogador tira vida do barco. Caixas de golpe contra o jogador (7xxxx) que existem nesta fase:
+
+  | Origem | Caixa | Fonte |
+  |---|---|---|
+  | Numemon (`e_nume`), corpo | 70000 (9,5 × 14 × 9,5) | seq do e_nume |
+  | Numemon, golpe de perto (NATK) | 70004 | seq do e_nume |
+  | Numemon, bolota (`x_003eblst01a`) | 70005 (4 × 2 × 4) | seq do x_003eblst01a, disparador BLST01 do e_nume |
+  | Míssil dos pods (`x_bltnumemisz01`) | 70108 (4 × 7 × 4, 240 quadros) | seq do x_bltnumemisz01, disparador FIRE do g_numepodz01 |
+  | Portão de espinhos (`g_factgatez06`) | 70125 (150 × 70 × 150) | seq do g_factgatez06 |
+
+- **HIPÓTESE (pelos dados):** um míssil que bate no casco sem pegar no jogador não tira vida. A caixa dele é contra o jogador
+  (BLP), e nenhum script liga o barco a projéteis. Como a caixa do míssil (y −3, altura 7, saindo em y ≈ 27) passa na altura do
+  jogador em pé no barco (15 a 22), na prática o míssil que "pega no barco" pega no jogador.
+
+### O erro no port
+
+- Golpe de inimigo e projétil já passavam pelo `hit_p_*.lua`. Mas a caixa de golpe de **objeto** (portão, pisos de dano:
+  `CheckFloorHit`) ia direto ao cálculo antigo (`EnemyStrikes`), que tira HP do jogador.
+- **Correção:** `CheckFloorHit` chama o `hit_p_<forma>.lua` primeiro, como os outros dois caminhos. Agora todo dano no
+  jogador desta fase segue o script: o barco perde vida e o jogador não.
+- Sem janela (115 s, bot): o medidor desce de 50 até 5 e o barco passa por SQ_ADAM, SQ_BDAM e SQ_CDAM. O HP do jogador fica
+  em 150/150.

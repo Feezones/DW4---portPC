@@ -463,6 +463,10 @@ public partial class Fatia
             if (!HitsPlayer(c, h.Size, root.GlobalRotation.Y)) continue;
             o.HitSerial = o.Seq.BoxSerial;
             _hitsTaken++;
+            // Com o hit_p_<forma>.lua da fase, ele decide (como no golpe de inimigo e no projétil). FATO (stag0103): o hit_p_*.lua do
+            // barco não tira HP do jogador, só do barco (g_boathp); o portão de espinhos g_factgatez06 (eneatk 129) tirava 29 do
+            // Dorumon e nada do barco porque este caminho ia direto ao EnemyStrikes (relato do usuário na 0.6.15).
+            if (PlayerHitScript(h.Type, o.Owner?.Kind.Stats, o.Name, root.GlobalPosition)) return;
             string? reaction = EnemyStrikes(h.Type, o.Owner?.Kind.Stats, o.Name); // f_bit: os atributos do chefe dono
             if (reaction != null && _runner != null && (_runner.Start(reaction, StyleOf(reaction)) || _runner.Start(reaction, "common")))
             {
