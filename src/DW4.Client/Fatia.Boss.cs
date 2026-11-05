@@ -107,8 +107,11 @@ public partial class Fatia
             case "MOVEEX" or "MOVERL":
                 e.Motion.Apply(c);
                 break;
-            // Cópia do inimigo do anfitrião (combate em grupo): os scripts rodam só no anfitrião.
-            case "LUACALL" when e.Proxy:
+            // Cópia do inimigo do anfitrião (combate em grupo): os scripts rodam só no anfitrião (gerar ajudante, bater na parede
+            // e afins mudariam a luta de novo aqui). A exceção é a queda: o "ded_<chefe>.lua" (FATO: ded_e_mammos/ded_e_blosso:
+            // demo "sbossafter", vitória, portas SQ_SWON, doorwall OFFHIT e FLGset) só mexe no que é de cada jogador, e sem ele
+            // a porta ficava fechada para quem não é o anfitrião (relato do usuário, 2026-11-05, Mammothmon em grupo).
+            case "LUACALL" when e.Proxy && !ProxyRunsLua(e, c.S(0)):
                 break;
             case "LUACALL":
                 // FATO: SQ_ATCK2 do f_apocaly faz LUACALL "bit" e a fase tem bit_f_apocaly.lua (gera o f_bit se ele não está vivo,
@@ -120,6 +123,9 @@ public partial class Fatia
         }
     }
     readonly HashSet<string> _warnedLua = [];
+
+    // Numa cópia, só o script da queda roda (ver LUACALL acima): o "ded" ou qualquer chamada com o chefe já sem HP.
+    static bool ProxyRunsLua(Enemy e, string? name) => name == "ded" || e.Hp <= 0 || e.Killed;
 
     // LUACALL "<nome>" de um modelo: FATO "<nome>_<modelo>.lua" (bit_f_apocaly.lua). HIPÓTESE quando esse não existe e há um só
     // "<nome>_*.lua" na fase (FATO: f_devl1f2 chama "bmh" e a fase tem bmh_f_devl1h.lua): roda esse.
