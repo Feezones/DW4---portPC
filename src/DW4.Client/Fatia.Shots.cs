@@ -274,9 +274,8 @@ public partial class Fatia
             // Objetos também levam o tiro (FATO: hit_g_rock01z01.lua pergunta BLTisPlayerBullet).
             foreach (var o in _objects.Where(o => o.Body != null && !o.Dead).ToList())
             {
-                var p = o.Actor.Root.GlobalPosition;
-                if (Math.Abs(c.X - p.X) > h.Size.X / 2 + GboxSize.X / 2 || Math.Abs(c.Z - p.Z) > h.Size.Z / 2 + GboxSize.Z / 2
-                    || c.Y + h.Size.Y / 2 < p.Y || c.Y - h.Size.Y / 2 > p.Y + GboxSize.Y) continue;
+                // Caixas do HIT do objeto quando ele tem (a jaula g_numeprisonz01 tem 20 × 20 × 20; a caixa da g_box só 14 × 10 × 14).
+                if (!ObjectTouched(o, c, new Vector3(h.Size.X, h.Size.Y, h.Size.Z))) continue;
                 s.Hit = true;
                 StrikeObject(o, h.Type);
                 s.Seq.Start("SQ_ERAS");

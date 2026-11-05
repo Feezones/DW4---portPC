@@ -966,6 +966,37 @@ Test("Objeto: interruptor do portão (g_sbutton da stag0101) só tem IA com CTRL
     True(!s.OnlyJumpsBack("SQ_SWOF"), "saiu de cima: SQ_SWOF/ON apaga");
 });
 
+Test("Sequência: pod de Numemon (g_numepodz01) — SQ_SWON com o rótulo ON já valendo não recomeça a espera, e o SQ_FIRE chega", () =>
+{
+    SeqCommand C(string k, params object[] v) => new(k, v);
+    // Mesma forma do pod da stag0103 (FATO, igb-seq): SQ_SWON = LABELCTRL "ON" "SQ_WAIT" + JUMP; SQ_WAIT/ON = WAIT02 (3 s) + JUMP SQ_FIRE.
+    var seqs = new Dictionary<string, List<SeqCommand>>
+    {
+        ["SQ_POWERON"] = [C("LABELCTRL", "RDY", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
+        ["SQ_SWON"] = [C("LABELCTRL", "ON", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
+        ["SQ_SWOF"] = [C("LABELCTRL", "RDY", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
+        ["SQ_FIRE"] = [C("CTRL", "isLive"), C("ACTION", "FIRE"), C("WCHECK", "Action"), C("JUMP", "SQ_WAIT")],
+        ["SQ_WAIT"] = [C("LABEL", "DEF"), C("ACTION", "WAIT01"), C("LABEL", "RDY"), C("CTRL", "isLive"), C("ACTION", "WAIT01"),
+            C("LABEL", "ON"), C("CTRL", "isLive"), C("ACTION", "WAIT02"), C("WCHECK", "Action"), C("JUMP", "SQ_FIRE")],
+    };
+    var actions = new Dictionary<string, List<SeqCommand>>
+    {
+        ["WAIT01"] = [C("JOINTSET", "", 200f, 210f, "LP")],
+        ["WAIT02"] = [C("JOINTSET", "", 10f, 190f, "OS"), C("WAITCHECK", "Joint", 0f)],
+        ["FIRE"] = [C("JOINTSET", "", 200f, 210f, "OS"), C("WAITCHECK", "Joint", 0f)],
+    };
+    var s = new ObjectSequencer(seqs, actions);
+    s.Start("SQ_POWERON");
+    True(!s.OnlyJumpsBack("SQ_SWON"), "ligado (RDY): SQ_SWON muda para ON");
+    s.Start("SQ_SWON");
+    for (int i = 0; i < 5; i++) s.Tick(1 / ObjectSequencer.FramesPerSecond);
+    True(s.Action == "WAIT02" && s.OnlyJumpsBack("SQ_SWON"), "já em ON: SQ_SWON de novo não recomeça o WAIT02");
+    True(!s.OnlyJumpsBack("SQ_SWOF"), "SQ_SWOF (RDY) ainda muda");
+    bool fired = false;
+    for (int i = 0; i < 400 && !fired; i++) { s.Tick(1 / ObjectSequencer.FramesPerSecond); fired = s.Sequence == "SQ_FIRE"; }
+    True(fired, "depois do WAIT02 vem o SQ_FIRE");
+});
+
 Test("Sequência: caixas agendadas antes de uma ação curta passam para a ação seguinte (CarryHitBoxes, SQ_MAGIC do f_apocaly)", () =>
 {
     SeqCommand C(string k, params object[] v) => new(k, v);

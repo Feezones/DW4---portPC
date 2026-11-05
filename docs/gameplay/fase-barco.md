@@ -159,3 +159,45 @@ reempacotada (`dw4 empacotar`).
   trilho), ele vai junto, de (575, 15, 395) até perto de (−335, 15, 269) em ~58 s, sempre no chão do barco. Os Numemon
   acertam o jogador e o barco passa para o SQ_ADAM.
 - Os dados da stag0103 não mudam: o pacote 0.6.14 só precisa do cliente novo.
+
+## 0.6.14: torres, jaulas e vida do barco (2026-11-05)
+
+Relato: o barco já anda e leva o jogador, mas (1) as "torres" azuis das margens não atiram, (2) as jaulas verdes com um NPC
+não quebram e (3) a vida do barco não aparece nem parece baixar.
+
+### Torres = pods de Numemon (g_numepodz01)
+
+- **FATO (igb-seq e disparos):** o pod (KIND_ENEMY, base redonda com canhão) começa no rótulo DEF (parado). O `mate00.lua` e
+  o `mate03.lua` mandam `SQ_POWERON` (rótulo RDY) quando o jogador entra na área e `SQ_POWEROF` quando sai. Em RDY, o mapa de
+  IA MAP00 ("NEAR", faixas de 40, 130 e 140) escolhe `SQ_SWON` (rótulo ON) ou `SQ_SWOF` (volta a RDY). Em ON, o `SQ_WAIT`
+  toca o WAIT02 (3 s) e faz `JUMP "SQ_FIRE"`. A ação FIRE solta dois `x_bltnumemisz01` (deslocamentos ±4,8, 6, 0). O míssil
+  anda reto (`MOVE "Move" 1 1`) com a caixa 70108 por 240 quadros e some ao bater (bht → SQ_HIDE). Quando é destruído, o pod
+  solta o efeito y_cannon02.
+- **Erro no port:** a IA escolhia `SQ_SWON` a cada quadro, e cada escolha recomeçava o `SQ_WAIT` no rótulo ON. O WAIT02 nunca
+  chegava ao fim e o `SQ_FIRE` nunca vinha.
+- **Correção:** `ObjectSequencer.OnlyJumpsBack` também reconhece o bloco que só põe o rótulo que já está valendo e faz o
+  JUMP de volta. A IA não recomeça mais a sequência. Sem janela: os pods passam a soltar os dois mísseis a cada ciclo.
+
+### Jaulas (g_numeprisonz01)
+
+- **FATO (hit_g_numeprisonz01.lua):** o golpe carregado (código 20000) não faz nada. Técnica de 40040 a 40099 quebra a jaula
+  na hora (`SQ_DDMG`). Qualquer outro golpe tira 20 (HP 100, ou seja, 5 golpes). Na quebra, o Digi-Lab preso daquela jaula
+  (`n_digilfm` com o mesmo índice) faz `SQ_THANK` e `SQ_EXIT`, o contador `i_digilfcount` acende (`SQ_OF2ON`) e a flag
+  89 + índice liga. Essas flags valem para a próxima vez: com elas ligadas, o `start.lua` não gera mais aquele Digi-Lab.
+- Do barco, o golpe de perto não alcança as jaulas: elas ficam a ~40 do trilho, e o barco tem paredes. Só técnica ou tiro.
+- **Erro no port:** a esfera da técnica só procurava inimigos, nunca objetos. Os tiros de arma usavam a caixa fixa da g_box
+  (14 × 10 × 14) em vez da caixa do corpo da jaula (20 × 20 × 20).
+- **Correção:** a técnica acerta objetos com hit_*.lua (código 40000 + linha da técnica, a mesma HIPÓTESE do golpe em
+  inimigos), e tiro e técnica usam as caixas do corpo do objeto (`ObjectTouched`).
+
+### Vida do barco
+
+- **FATO:** o barco só perde vida pelos golpes que acertam o jogador (`hit_p_*.lua` da fase). Não há script de dano no próprio
+  barco nem projétil que mire nele.
+- Sem janela, os golpes dos Numemon acertam, o `METERCTRL boathp SETPERCENT` desce (50 → 47,5 → 45…) e o barco passa por
+  `SQ_ADAM` e `SQ_BDAM`. A conta já funcionava.
+- **Erro no port:** o painel. As malhas do `i_stpnlsp04/05` ficam em z 0..60, e as do painel do jogador em z −90..−143. A
+  câmera ortográfica do HUD (em z 0, olhando para −z, near 1) deixava o painel do barco atrás dela, e ele nunca aparecia.
+- **Correção:** o painel do barco vai 200 para dentro em z. A ordem entre a moldura e o medidor é mantida. Conferido o desenho
+  com `dw4 hud-previa`: moldura com o barco e a barra amarela.
+- "golpes no Guilmon" no F3 é um contador antigo da fatia (golpes do jogador no Numemon fixo). Não é a vida do barco.

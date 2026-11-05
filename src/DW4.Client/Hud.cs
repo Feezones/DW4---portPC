@@ -448,7 +448,7 @@ public sealed class HudOverlay
             if (_owner.IsInsideTree())
             {
                 var win = _owner.GetViewport().GetVisibleRect().Size;
-                node.Position = new Vector3(ScreenLayout.Fit(win.X, win.Y).AnchorX(at.X), at.Y, at.Z);
+                node.Position = new Vector3(ScreenLayout.Fit(win.X, win.Y).AnchorX(at.X), at.Y, at.Z + StagePanelDepth);
             }
             a.Update();
         }
@@ -459,12 +459,16 @@ public sealed class HudOverlay
     // DECISÃO DO PORT: aparecem já abertos no GENERATE (as sequências SQ_OPEN deles não foram exportadas), presos à borda
     // esquerda como o painel do jogador.
     readonly List<(Node3D Node, Vector3 At, HudActor Actor)> _stagePanels = [];
+    // FATO (hud da stag0103): as malhas do i_stpnlsp04/05 ficam em z 0..60, e as do painel do jogador em z −90..−143. A câmera
+    // ortográfica do port olha para −z a partir de z 0 (near 1), então o painel do barco ficava atrás dela e não aparecia (relato
+    // do usuário na 0.6.14). DECISÃO DO PORT: o painel vai 200 para dentro; a ordem entre a moldura e o medidor fica a mesma.
+    const float StagePanelDepth = -200;
 
     public bool ShowStagePanel(string name, Vector3 at)
     {
         if (_stagePanels.Any(p => p.Node.Name == name)) return true;
         if (!_h.Actors.TryGetValue(name, out int root)) return false;
-        var node = new Node3D { Name = name, Position = at };
+        var node = new Node3D { Name = name, Position = at + new Vector3(0, 0, StagePanelDepth) };
         var a = new HudActor(_h, root, slot: 0);
         node.AddChild(a.Root);
         _vp.AddChild(node);

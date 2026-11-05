@@ -280,6 +280,8 @@ public partial class Fatia
         q.HitBackFaces = false; // como o SnapToFloor
         var hit = _player.GetWorld3D().DirectSpaceState.IntersectRay(q);
         GD.Print($"[barco] raio: {(hit.Count > 0 ? $"{((Vector3)hit["position"]).Round()} em {((Node)hit["collider"]).Name} normal {((Vector3)hit["normal"]).Round()}" : "nada")}");
+        foreach (var o in _objects.Where(x => x.Brain != null && x.Name.StartsWith("g_", StringComparison.Ordinal) && x.Actor.Root.GlobalPosition.DistanceTo(_player.GlobalPosition) < 200))
+            GD.Print($"[barco] torre {o.Name}/{o.Index} a {o.Actor.Root.GlobalPosition.DistanceTo(_player.GlobalPosition):0}: {o.Sequence} ação {o.Seq?.Action} vivo {o.Seq?.Live} IA {o.AiSequence ?? "-"}");
         foreach (var o in _objects.Where(x => x.Ride != null))
             GD.Print($"[barco] q{_tick} jogador {_player.GlobalPosition.Round()} chão {_player.IsOnFloor()} | {o.Name} {o.Actor.Root.GlobalPosition.Round()} giro {o.Actor.Root.GlobalRotationDegrees.Y:0} seq {o.Sequence} preso {o.Seq?.Motion.Attached != null}");
     }
@@ -376,6 +378,16 @@ public partial class Fatia
                 StrikeObject(o, h.Type);
             }
         }
+    }
+
+    // Caixa centrada em c (tamanho size) contra o corpo do objeto: as caixas do HIT do objeto, ou a caixa da g_box.
+    bool ObjectTouched(WorldObject o, Vector3 c, Vector3 size)
+    {
+        var p = o.Actor.Root.GlobalPosition;
+        return o.BodyBoxes.Count > 0
+            ? HitBody.Hits(N(c), N(size), _move.Facing, N(p), o.Actor.Root.GlobalRotation.Y, o.Actor.Root.GlobalBasis.Scale.X, o.BodyBoxes)
+            : !(Math.Abs(c.X - p.X) > size.X / 2 + GboxSize.X / 2 || Math.Abs(c.Z - p.Z) > size.Z / 2 + GboxSize.Z / 2
+                || c.Y + size.Y / 2 < p.Y || c.Y - size.Y / 2 > p.Y + GboxSize.Y);
     }
 
     // Golpe do jogador num objeto: o hit_<objeto>.lua tira o HP (MDLaddHp) e escolhe SQ_SDMG ou SQ_DDMG. FATO: o golpe carregado

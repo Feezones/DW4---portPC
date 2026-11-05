@@ -104,7 +104,23 @@ public sealed class ObjectSequencer
     {
         if (Sequence == null || !_seqs.TryGetValue(sequence, out var cmds)) return false;
         int start = BlockStart(sequence, cmds);
-        return start < cmds.Count && cmds[start].Kind == "JUMP" && cmds[start].S(0) == Sequence;
+        if (start >= cmds.Count) return false;
+        if (cmds[start].Kind == "JUMP") return cmds[start].S(0) == Sequence;
+        // Também: só LABELCTRL que põem o rótulo que já está valendo e o JUMP de volta (FATO, g_numepodz01 da stag0103: SQ_SWON =
+        // LABELCTRL "ON" "SQ_WAIT" + JUMP "SQ_WAIT", e o SQ_WAIT/ON espera o WAIT02 de 3 s antes do JUMP "SQ_FIRE"). Recomeçando a
+        // cada quadro que a IA escolhe SQ_SWON, o pod nunca chegava ao tiro.
+        for (int i = start; i < cmds.Count; i++)
+        {
+            var c = cmds[i];
+            if (c.Kind == "LABEL") return false;
+            if (c.Kind == "JUMP") return c.S(0) == Sequence;
+            if (c.Kind != "LABELCTRL") return false;
+            var texts = c.Values.OfType<string>().ToList();
+            string target = texts.FirstOrDefault(t => t.StartsWith("SQ_", StringComparison.Ordinal)) ?? "SQ_WAIT";
+            string? label = texts.FirstOrDefault(t => !t.StartsWith("SQ_", StringComparison.Ordinal));
+            if (label == null || _labels.GetValueOrDefault(target) != label) return false;
+        }
+        return false;
     }
 
     int BlockStart(string sequence, List<SeqCommand> cmds)
