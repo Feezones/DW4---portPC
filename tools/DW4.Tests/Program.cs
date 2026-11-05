@@ -647,6 +647,45 @@ Test("Port: baú do item no chão (tabela do main.dol 0x804DE0A8 e coluna MODEL 
     Equal("g_000item", Drops.ChestModel(db, new ItemRef("conItem", 99)), "linha fora");
 });
 
+Test("Port: baú da caixa quebrada sai, cai e só então pode ser pego (distância² < 64 do beNDMWMdlItem, isLive do SQ_ENT2)", () =>
+{
+    Equal(8f, Drops.PickupRadius, "raio 8 (64 é a distância ao quadrado, 0x803AB704)");
+    True(Drops.InPickupRange(5, 0, 6), "a 7,8: pega");
+    True(!Drops.InPickupRange(6, 0, 6), "a 8,5: não pega");
+    True(!Drops.InPickupRange(10, 0, 0), "colado na caixa (corpo de 14 segura o jogador a ~10): não pega mais no quadro em que nasce");
+    True(!Drops.InPickupRange(0, 9, 0), "conta a altura também (dx² + dy² + dz²)");
+    SeqCommand C(string k, params object[] v) => new(k, v);
+    // Sequências do g_000item (ndmw.afs #179).
+    var seqs = new Dictionary<string, List<SeqCommand>>
+    {
+        ["SQ_WAIT"] = [C("LABEL", "DEF"), C("JUMP", "SQ_ENTR"), C("LABEL", "ON"), C("ACTION", "WAIT01"), C("CTRL", "isLive"), C("WCHECK", "Action"), C("JUMP", "SQ_BODING")],
+        ["SQ_ENTR"] = [C("ACTION", "TRAN01"), C("WCHECK", "Action"), C("JUMP", "SQ_ENT2")],
+        ["SQ_ENT2"] = [C("ACTION", "TRAN02"), C("CTRL", "isLive"), C("WCHECK", "Action"), C("LABELCTRL", "ON", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
+        ["SQ_BODING"] = [C("ACTION", "FLASH1"), C("CTRL", "isLive"), C("WCHECK", "Action"), C("JUMP", "SQ_EXIT")],
+        ["SQ_EXIT"] = [C("ACTION", "EXIT01"), C("WCHECK", "Action"), C("JUMP", "SQ_ERAS")],
+    };
+    var actions = new Dictionary<string, List<SeqCommand>>
+    {
+        ["TRAN01"] = [C("JOINTSET", "", 1f, 20f, "OS"), C("WAITCHECK", "Joint", 0f)],
+        ["TRAN02"] = [C("JOINTSET", "", 20f, 60f, "OS"), C("WAITCHECK", "Joint", 0f)],
+        ["WAIT01"] = [C("JOINTSET", "", 70f, 190f, "LP"), C("WAITCHECK", "Frame", 960f)],
+        ["FLASH1"] = [C("JOINTSET", "", 70f, 190f, "OS"), C("WAITCHECK", "Frame", 10f)],
+        ["EXIT01"] = [C("JOINTSET", "", 180f, 190f, "OS"), C("WAITCHECK", "Joint", 0f)],
+    };
+    var s = new ObjectSequencer(seqs, actions);
+    s.Start("SQ_WAIT");
+    Equal("SQ_ENTR", s.Sequence, "DEF → SQ_ENTR");
+    True(!Drops.ChestPickable(s), "saindo da caixa (TRAN01, sem isLive): não pega");
+    for (int i = 0; i < 30 && s.Sequence == "SQ_ENTR"; i++) s.Tick(1 / ObjectSequencer.FramesPerSecond);
+    Equal("SQ_ENT2", s.Sequence, "depois do pulo, a queda");
+    True(Drops.ChestPickable(s), "caindo (TRAN02, isLive): já pega");
+    for (int i = 0; i < 60 && s.Sequence == "SQ_ENT2"; i++) s.Tick(1 / ObjectSequencer.FramesPerSecond);
+    True(s.Sequence == "SQ_WAIT" && Drops.ChestPickable(s), $"no chão (SQ_WAIT/ON): pega ({s.Sequence})");
+    s.Start("SQ_EXIT");
+    True(!Drops.ChestPickable(s), "sumindo: não pega de novo");
+    True(Drops.ChestPickable(null), "cubo de reserva (sem sequência): pega");
+});
+
 Test("Port: vaga gravada no meio do tutorial volta ao começo dele (FLG 503 desligada, entrada 0, como o restart.lua)", () =>
 {
     var ram = new GameRam();

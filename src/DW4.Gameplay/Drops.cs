@@ -7,12 +7,29 @@ public sealed record DropEntry(ItemRef Item, int Rank, int Rate);
 
 /// <summary>
 /// Drops dos inimigos, lidos por desmontagem estática em 2026-10-24 (docs/gameplay/fase4-levantamento-itens.md).
-/// FATO: sorteio em 0x802FCC48 com o MT do combate; quantia de BIT em 0x803B1408; coleta a menos de 64 unidades
-/// (0x8045C4D0). As listas vêm dos geradores da fase (<c>dw4 igb-drops</c>), fora do repositório.
+/// FATO: sorteio em 0x802FCC48 com o MT do combate; quantia de BIT em 0x803B1408; coleta com a distância AO QUADRADO menor que 64
+/// (0x8045C4D0), ou seja, a menos de 8 unidades. As listas vêm dos geradores da fase (<c>dw4 igb-drops</c>), fora do repositório.
 /// </summary>
 public static class Drops
 {
-    public const float PickupRadius = 64f;
+    /// <summary>
+    /// Raio da coleta. FATO (2026-11-05): o "PLAYER NEAR" do beNDMWMdlItem (0x803AB6EC) lê em 0x80535C0C o valor que 0x8031C02C
+    /// grava como dx² + dy² + dz² (0x8031C160..0x8031C190) e compara com 64f (0x803AB704); o nome do dono (0x803ABB64..0x803ABBA8)
+    /// faz a mesma conta à mão. Até a 0.6.9 o port usava 64 como distância: o jogador, colado na caixa que quebrou, pegava o baú
+    /// no mesmo quadro em que ele nascia, e ninguém via o baú sair nem cair.
+    /// </summary>
+    public const float PickupRadius = 8f;
+
+    /// <summary>Distância ao quadrado menor que 64 (como no original).</summary>
+    public static bool InPickupRange(float dx, float dy, float dz) => dx * dx + dy * dy + dz * dz < PickupRadius * PickupRadius;
+
+    /// <summary>
+    /// O baú já pode ser pego? HIPÓTESE (seq do g_000*): o SQ_ENTR (TRAN01, quadros 1..20, o pulo para cima) não tem CTRL "isLive";
+    /// o SQ_ENT2 (TRAN02, a queda e os quiques), o SQ_WAIT/ON e o SQ_BODING têm. O port só deixa pegar depois do isLive, para o baú
+    /// sair da caixa antes de sumir. Saindo (SQ_EXIT) ou apagado (SQ_DDMG) não pega.
+    /// </summary>
+    public static bool ChestPickable(ObjectSequencer? seq) =>
+        seq == null || (seq.Sequence is not ("SQ_EXIT" or "SQ_DDMG" or "SQ_ERAS") && !(seq.HasLiveGate && !seq.Live));
 
     // FATO (main.dol 0x804DE0A8, pares tabela → modelo do baú).
     static readonly Dictionary<string, string> ChestOfTable = new()

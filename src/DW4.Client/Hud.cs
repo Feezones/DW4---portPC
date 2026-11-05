@@ -162,6 +162,7 @@ public sealed class HudActor
     int _drawOrder = -1;
     readonly bool _billboard;
     readonly bool _skipFlat;
+    readonly bool _world;
     readonly float _widen, _widenFull;
     readonly List<(Node3D Node, float Shift)> _shifted = [];
 
@@ -174,8 +175,11 @@ public sealed class HudActor
     /// largas (mais de 400 de largura, como as faixas da caixa de fala e o escurecido i_bgclear) esticam só no meio: os vértices
     /// com |x| > 200 andam ±widen. Peças fora do centro (|x| entre 150 e 480 em repouso, como o rosto e a placa do nome) andam
     /// ±widen inteiras. Cantos, rosto e setas ficam na proporção.</param>
-    public HudActor(HudData h, int root, int slot, bool billboard = false, int drawOrder = -1, bool skipFlat = false, float widen = 0, float widenFull = -1)
+    /// <param name="world">Modelo 3D no mundo (baú do item): transformação com giro 3D ou deslocamento grande debaixo da matriz de
+    /// textura é do desenho, não da UV (ver Build).</param>
+    public HudActor(HudData h, int root, int slot, bool billboard = false, int drawOrder = -1, bool skipFlat = false, float widen = 0, float widenFull = -1, bool world = false)
     {
+        _world = world;
         _widen = widen;
         _widenFull = widenFull < 0 ? widen : widenFull;
         _skipFlat = skipFlat;
@@ -201,6 +205,12 @@ public sealed class HudActor
             static bool Whole(float v) => Math.Abs(v - MathF.Round(v)) < 1e-3f;
             bool positional = texSpace && n.Sequence is { } sq && sq.T.Any(v => Math.Abs(v.X) > 1.5f || Math.Abs(v.Y) > 1.5f)
                 && sq.T.All(v => Whole(v.X) && Whole(v.Y));
+            // Modelo de mundo (baús g_000*): debaixo do igTextureMatrixStateAttr do g_000bit/xdata1/xdata2 ficam tanto o giro e o pulo
+            // do desenho (coin: rotação em Y e y 0 → −3 → −2,32 …; xdataup y 4 → 2,5 → 6; xmark e arrowhead giram em X/Y) quanto a
+            // rolagem do brilho (|t| ≤ 1, sem rotação fora do eixo Z). HIPÓTESE tirada dos dados: com rotação fora do eixo Z (a UV só
+            // gira em Z) ou translação acima de 1,5, é posição. Antes os baús de BIT e de X-Data ficavam parados no chão.
+            if (_world && texSpace && !positional && n.Sequence is { } wq)
+                positional = wq.R.Any(q => Math.Abs(q.X) > 1e-3f || Math.Abs(q.Y) > 1e-3f) || wq.T.Any(v => v.Length() > 1.5f);
             if (texSpace && !positional) texChain = [.. texChain, n];
             else
             {

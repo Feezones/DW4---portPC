@@ -57,6 +57,9 @@ public partial class Fatia
         bool tap = _tick % 30 < 2;
         // DW4_ALVO=npc: visita cada NPC (n_*) da fase, chega perto e aperta o ataque (sonda de conversa); 10 s por NPC.
         if (OS.GetEnvironment("DW4_ALVO") == "npc") { BotTalkToNpcs(ref dir, ref attackDown); return; }
+        // DW4_ALVO=quebrar: vai (pulando direto) à frente de cada objeto com hit_<nome>.lua e gerador (caixa, barril, caixote) e
+        // bate até quebrar, um golpe por segundo; com DW4_DIAG_DROP=1, o log [drop] segue o baú que sai.
+        if (OS.GetEnvironment("DW4_ALVO") == "quebrar") { BotBreakObjects(ref dir, ref attackDown); return; }
         // DW4_ALVO=objetos: bate nos objetos quebráveis mais perto (contar golpes até quebrar), um golpe por segundo.
         if (OS.GetEnvironment("DW4_ALVO") == "objetos"
             && _objects.Where(o => o.Body != null && !o.Dead && o.Hp > 0).OrderBy(o => o.Actor.Root.GlobalPosition.DistanceSquaredTo(_player.GlobalPosition)).FirstOrDefault() is { } obj)
@@ -100,6 +103,46 @@ public partial class Fatia
             dir = Vector3.Zero;
             attackDown = _tick % 15 < 2;
         }
+    }
+
+    WorldObject? _botBox;
+    int _botBoxTicks, _botWaitDrop;
+    readonly System.Collections.Generic.HashSet<WorldObject> _botBoxTried = [];
+
+    void BotBreakObjects(ref Vector3 dir, ref bool attackDown)
+    {
+        if (!_padEnabled || !_playerCtrl || TalkWindowOpen || _choice >= 0 || _listChoice >= 0 || _menuOpen) { attackDown = _tick % 30 < 2; return; }
+        // Baú no chão perto: espera ele cair (2 s) e anda até ele (confere que dá para pegar).
+        if (_ground.FirstOrDefault(g => !g.Taken && g.Node.GlobalPosition.DistanceTo(_player.GlobalPosition) < 60) is { } drop)
+        {
+            if (++_botWaitDrop < 120) return;
+            var toDrop = drop.Node.GlobalPosition - _player.GlobalPosition;
+            toDrop.Y = 0;
+            dir = toDrop.Length() > 1 ? toDrop.Normalized() : Vector3.Zero;
+            return;
+        }
+        _botWaitDrop = 0;
+        if (_botBox == null || _botBox.Dead || _botBox.Body == null || ++_botBoxTicks > 900)
+        {
+            if (_botBox is { Dead: false }) GD.Print($"[quebrar] desisti de {_botBox.Name}/{_botBox.Index}: HP {_botBox.Hp} {_botBox.Sequence}");
+            _botBox = _objects.Where(o => o.Body != null && !o.Dead && !_botBoxTried.Contains(o) && o.Gen != null && _stage?.Has($"hit_{o.Name}.lua") == true)
+                .OrderBy(o => o.Actor.Root.GlobalPosition.DistanceSquaredTo(_player.GlobalPosition)).FirstOrDefault();
+            _botBoxTicks = 0;
+            if (_botBox == null) return;
+            _botBoxTried.Add(_botBox);
+            var bp = _botBox.Actor.Root.GlobalPosition;
+            var away = _player.GlobalPosition - bp;
+            away.Y = 0;
+            away = away.Length() > 0.1f ? away.Normalized() : Vector3.Back;
+            _player.GlobalPosition = bp + away * 14 + Vector3.Up * 3;
+            _player.Velocity = Vector3.Zero;
+            GD.Print($"[quebrar] -> {_botBox.Name}/{_botBox.Index} ({_botBox.Gen?.Name}) em {bp.Round()} HP {_botBox.Hp}");
+        }
+        var to = _botBox.Actor.Root.GlobalPosition - _player.GlobalPosition;
+        to.Y = 0;
+        if (to.Length() > 12 && _botBoxTicks < 240) { dir = to.Normalized(); return; }
+        if (_runner?.Running != true) _move.Face(Mathf.Atan2(to.X, to.Z));
+        attackDown = _tick % 60 < 2;
     }
 
     int _botNpc = -1;
