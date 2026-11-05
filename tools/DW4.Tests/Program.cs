@@ -217,7 +217,7 @@ Test("Online: grupo de até 4 como na DMO.API (só o líder, só amigos, convite
     True(p.IsDisbanded && p.Count == 0, "sobrou 1: o grupo acaba");
 });
 
-Test("Online: XP dividida como no original, BIT dividido no grupo e NINZU pelos membros na fase", () =>
+Test("Online: XP igual para o grupo todo, BIT dividido no grupo e NINZU pelos membros na fase", () =>
 {
     var four = new[]
     {
@@ -227,7 +227,7 @@ Test("Online: XP dividida como no original, BIT dividido no grupo e NINZU pelos 
     Equal(3, DW4.Gameplay.Online.PartyRewards.Ninzu(four), "Caio fora da fase não conta");
     var exp = DW4.Gameplay.Online.PartyRewards.Exp(four, "Gui", 1000);
     Equal(DamageFormula.ExpShare(1000, 0, 3, true), exp["Gui"], "quem matou");
-    Equal(DamageFormula.ExpShare(1000, 0, 3, false), exp["ana"], "quem ajudou");
+    Equal(DamageFormula.ExpShare(1000, 0, 3, true), exp["ana"], "quem ajudou leva o mesmo que quem matou (decisão do port)");
     True(exp["Bia"] == 0 && exp["Caio"] == 0, "caído e ausente não ganham");
     True(DamageFormula.ExpShare(1000, 0, 1, true) == 1000 && DamageFormula.ExpShare(1000, 0, 4, true) == 800 && DamageFormula.ExpShare(1000, 0, 4, false) == 400, "sozinho 100%, em 4: 80% / 40%");
     var bit = DW4.Gameplay.Online.PartyRewards.Bit(four, "Ana", 101);

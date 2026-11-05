@@ -845,8 +845,10 @@ public partial class Fatia : Node3D
         // FATO (P2EEXPUP 0x80373B48): EXP do inimigo × (EXPRITSU + 100)/100, com o EXPRITSU do jogador (equipamento e chips);
         // antes ia 0 e o bônus de EXP dos itens não valia. No grupo (NINZU = membros na fase), quem matou leva a parte maior e
         // quem está caído não leva (PartyRewards).
+        // DECISÃO DO PORT (2026-11-05): no grupo todos levam a parte de quem matou; o EnemyKilled só chega a quem está na party
+        // e na mesma fase, então quem não é do grupo continua sem EXP.
         if (CoopOn && _hp <= 0) return;
-        AddExp(DamageFormula.ExpShare(_db!["enemy"].Int(e.Kind.Row, "EXP"), _pf?.Expritsu ?? 0, players: Math.Clamp(Ram.Ninzu, 1, 4), killer));
+        AddExp(DamageFormula.ExpShare(_db!["enemy"].Int(e.Kind.Row, "EXP"), _pf?.Expritsu ?? 0, players: Math.Clamp(Ram.Ninzu, 1, 4), killer: true));
     }
 
     void AddExp(int gain)
