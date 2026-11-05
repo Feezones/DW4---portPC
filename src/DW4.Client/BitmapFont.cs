@@ -31,14 +31,14 @@ public sealed class BitmapFont
     public static BitmapFont? Load(string dir)
     {
         var json = Path.Combine(dir, "fonte.json");
-        if (!File.Exists(json)) return null;
-        using var doc = JsonDocument.Parse(File.ReadAllText(json));
+        if (!GameFiles.Exists(json)) return null;
+        using var doc = JsonDocument.Parse(GameFiles.ReadAllText(json));
         BitmapFont? font = null;
         foreach (var f in doc.RootElement.GetProperty("fontes").EnumerateArray())
         {
             if (font == null)
             {
-                var img = Image.LoadFromFile(Path.Combine(dir, f.GetProperty("textura").GetString()!));
+                var img = Image.LoadFromFile(GameFiles.GodotPath(Path.Combine(dir, f.GetProperty("textura").GetString()!)));
                 if (img == null) return null;
                 font = new BitmapFont(ImageTexture.CreateFromImage(img));
             }

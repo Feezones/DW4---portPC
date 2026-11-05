@@ -28,11 +28,11 @@ public partial class Fatia
         _stageName = OS.GetEnvironment("DW4_FASE") is { Length: > 0 } f ? f : "dng101b1";
         var stages = DataPaths.Fases;
         var dir = Path.Combine(stages, _stageName);
-        _dir = Directory.Exists(dir) ? dir : _common;
+        _dir = GameFiles.DirExists(dir) ? dir : _common;
         if (_dir == _common && _stageName != "dng101b1") _problems.Add($"falta {dir} (dw4 fase-exportar … {_stageName} {stages}): usando a dng1 da fatia");
         var manifest = Path.Combine(_dir, "fase.json");
-        if (!File.Exists(manifest)) return;
-        using var doc = JsonDocument.Parse(File.ReadAllText(manifest));
+        if (!GameFiles.Exists(manifest)) return;
+        using var doc = JsonDocument.Parse(GameFiles.ReadAllText(manifest));
         var r = doc.RootElement;
         if (r.TryGetProperty("arquivos_camera", out var cams) && cams.ValueKind == JsonValueKind.Object)
         {
@@ -71,6 +71,6 @@ public partial class Fatia
     string StagePath(string sub)
     {
         var here = Path.Combine(_dir, sub);
-        return Directory.Exists(here) || File.Exists(here) ? here : Path.Combine(_common, sub);
+        return GameFiles.DirExists(here) || GameFiles.Exists(here) ? here : Path.Combine(_common, sub);
     }
 }

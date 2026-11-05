@@ -52,7 +52,7 @@ public partial class OpeningMovie : Control
         return Path.Combine(DataPaths.Arquivos, "area.afs");
     }
 
-    public static bool CanPlay() => OS.GetEnvironment("DW4_SEM_FILME") != "1" && File.Exists(AreaAfs());
+    public static bool CanPlay() => OS.GetEnvironment("DW4_SEM_FILME") != "1" && GameFiles.Exists(AreaAfs());
 
     public override void _Ready()
     {

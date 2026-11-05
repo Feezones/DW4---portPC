@@ -66,7 +66,7 @@ public partial class ModelViewer : Node3D
     {
         var doc = new GltfDocument();
         var state = new GltfState();
-        if (!File.Exists(file) || doc.AppendFromFile(file, state) != Error.Ok || doc.GenerateScene(state) is not Node3D m) { GD.Print($"[modelo] {file}: não abriu"); return false; }
+        if (!GameFiles.Exists(file) || doc.AppendFromFile(GameFiles.GodotPath(file), state) != Error.Ok || doc.GenerateScene(state) is not Node3D m) { GD.Print($"[modelo] {file}: não abriu"); return false; }
         _model = m;
         AddChild(m);
         var player = m.FindChildren("*", nameof(AnimationPlayer), true, false).OfType<AnimationPlayer>().FirstOrDefault();

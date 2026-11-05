@@ -126,7 +126,7 @@ public sealed class BeHost
         Ram = ram;
         Sys = system;
         Messenger = new BeMessenger(engine.Deliver);
-        Demo = new DemoManager(Messenger, engine.Query);
+        Demo = new DemoManager(Messenger, engine.Query) { RunLua = RunLuaNow };
         Table.Missing = (_, key) => key is string name ? Method(name) : null;
     }
 
@@ -137,6 +137,11 @@ public sealed class BeHost
     /// script vai para a fila e roda quando o diretor fica livre.
     /// </summary>
     public Func<string, bool>? RunNow { get; set; }
+
+    void RunLuaNow(string lua)
+    {
+        if (RunNow?.Invoke(lua) != true) _luaQueue.Enqueue(lua);
+    }
 
     /// <summary>Próximo script agendado por be:DMsetLua, liberado quando o diretor de demo fica livre (HIPÓTESE).</summary>
     public string? NextLua() => Demo.Idle && _luaQueue.Count > 0 ? _luaQueue.Dequeue() : null;
@@ -223,7 +228,12 @@ public sealed class BeHost
             case "DMgetCount":
                 return N(Demo.Count);
             case "DMsetLua":
-                if (S(a, 1) is { } lua && RunNow?.Invoke(lua) != true) _luaQueue.Enqueue(lua);
+                // Dentro de um DMcase só roda se o caso valer (DemoManager.BuildingCase); fora dele, na hora.
+                if (S(a, 1) is { } lua)
+                {
+                    if (Demo.BuildingCase) Demo.Add(new DemoManager.Entry(DemoManager.Kind.Lua, null, 0, Lua: lua));
+                    else RunLuaNow(lua);
+                }
                 return Nothing;
 
             // Estado comum

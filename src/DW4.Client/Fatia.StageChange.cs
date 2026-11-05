@@ -99,6 +99,7 @@ public partial class Fatia
             case ("MODELCTRL", null, "ONCTRL"):
                 _playerCtrl = true;
                 _enemiesFrozen = false;
+                _frozenModels.Clear();
                 return true;
         }
         return false;
@@ -220,7 +221,7 @@ public partial class Fatia
             AddChild(layer);
         }
         _choicePanel.Visible = _choice >= 0 && !WindowArt("i_zzstchgwn");
-        string options = _choice == 0 ? "▶ Sim      Não" : "  Sim    ▶ Não";
+        string options = _choice == 0 ? "> Sim      Não" : "  Sim    > Não";
         _choiceLabel!.Text = (_choiceText != null ? _choiceText.Replace("\r\n", "\n") + "\n\n" : "") + options;
     }
 
@@ -232,7 +233,7 @@ public partial class Fatia
         _choice = -1;
         if (_choicePanel != null) _choicePanel.Visible = false;
         var stages = DataPaths.Fases;
-        if (stage == _stageName || System.IO.Directory.Exists(System.IO.Path.Combine(stages, stage)))
+        if (stage == _stageName || GameFiles.DirExists(System.IO.Path.Combine(stages, stage)))
         {
             // Recarrega a cena com a fase e a entrada pedidas (o first.lua decide a demo pela entrada). A GAMERAM continua.
             SaveProgress(stage, _nextEntry);

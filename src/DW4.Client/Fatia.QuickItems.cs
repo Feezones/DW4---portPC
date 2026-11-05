@@ -20,6 +20,7 @@ public partial class Fatia
     CanvasLayer? _quickLayer;
     Control? _quickHud, _quickWindow;
     readonly List<Label> _quickHudLabels = [];
+    readonly List<Control> _quickBoxes = [];
     VBoxContainer? _quickRows;
     int _quickCursor;
     bool _quickOpen;
@@ -60,7 +61,19 @@ public partial class Fatia
         _quickHud = bar;
         for (int i = 0; i < 5; i++)
         {
-            var box = new PanelContainer { CustomMinimumSize = new Vector2(92, 40), MouseFilter = Control.MouseFilterEnum.Ignore };
+            // Tocar/clicar no atalho usa o disco; soltar ali um disco arrastado da janela de itens põe nele (pedido do usuário,
+            // versão do celular, 2026-11-04).
+            var box = new PanelContainer { CustomMinimumSize = new Vector2(92, 40), MouseFilter = Control.MouseFilterEnum.Stop };
+            int slot = i;
+            box.GuiInput += ev =>
+            {
+                if (ev is not InputEventMouseButton { Pressed: false, ButtonIndex: MouseButton.Left }) return;
+                box.AcceptEvent();
+                if (!_quickOpen) UseQuickSlot(slot);
+            };
+            box.SetDragForwarding(new Callable(), Callable.From((Vector2 _, Variant d) => d.VariantType == Variant.Type.Int),
+                Callable.From((Vector2 _, Variant d) => PutInSlot(slot, d.AsInt32())));
+            _quickBoxes.Add(box);
             box.AddThemeStyleboxOverride("panel", QuickBox(QuickBorder));
             var label = new Label { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
             label.AddThemeFontSizeOverride("font_size", 15);
@@ -154,9 +167,18 @@ public partial class Fatia
             l.MouseFilter = Control.MouseFilterEnum.Stop;
             int index = i;
             l.MouseEntered += () => { if (_quickCursor != index) { _quickCursor = index; CallDeferred(MethodName.RefreshQuickWindow); } };
+            // Arrastar a linha até um atalho da barra de baixo põe o disco nele.
+            l.SetDragForwarding(Callable.From((Vector2 _) =>
+            {
+                var preview = new Label { Text = DiskShort(row), Modulate = QuickGold };
+                preview.AddThemeFontSizeOverride("font_size", 26);
+                l.SetDragPreview(preview);
+                return Variant.From(row);
+            }), new Callable(), new Callable());
             l.GuiInput += ev =>
             {
-                if (ev is not InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) return;
+                // Usa ao soltar (não ao apertar): apertar e arrastar é pôr no atalho.
+                if (ev is not InputEventMouseButton { Pressed: false, ButtonIndex: MouseButton.Left }) return;
                 l.AcceptEvent();
                 _quickCursor = index;
                 UseDisk(row);
@@ -165,7 +187,8 @@ public partial class Fatia
             _quickRows.AddChild(l);
         }
         if (_quickWindow.FindChild("ajuda", true, false) is Label help)
-            help.Text = $"Clique ou {DeviceIcons.Of("confirmar")}: usar   1–5 com o mouse em cima: pôr no atalho   {DeviceIcons.Of("cancelar")}: fechar";
+            help.Text = Touch ? "Toque: usar   Arraste até um atalho lá embaixo: pôr nele"
+                : $"Clique ou {DeviceIcons.Of("confirmar")}: usar   1–5 com o mouse em cima ou arraste até a barra: pôr no atalho   {DeviceIcons.Of("cancelar")}: fechar";
         // Sem UseGameFont aqui: ele multiplica por 1,3 os tamanhos já pedidos a cada chamada, e a janela crescia a cada seta
         // (relato de 2026-11-02). O tema com a fonte do jogo vem da janela (posto uma vez no SetupQuickItems).
     }
@@ -187,12 +210,7 @@ public partial class Fatia
         for (int i = 0; i < 5; i++)
             if (PortInput.Pressed(e, $"item{i + 1}") && _quickCursor < disks.Count)
             {
-                // Um disco fica num atalho só: sai do outro e entra neste.
-                int row = disks[_quickCursor];
-                for (int k = 0; k < 5; k++) if (_inventory.QuickItems[k] == row) _inventory.QuickItems[k] = -1;
-                _inventory.QuickItems[i] = row;
-                Toast($"{DiskName(row)} no atalho {i + 1}");
-                RefreshQuickWindow();
+                PutInSlot(i, disks[_quickCursor]);
                 return true;
             }
         if (e.IsActionPressed("ui_accept") && _quickCursor < disks.Count)
@@ -203,6 +221,18 @@ public partial class Fatia
         }
         return e is InputEventKey or InputEventJoypadButton; // nada mais chega ao jogo com a janela aberta
     }
+
+    // Um disco fica num atalho só: sai do outro e entra neste.
+    void PutInSlot(int slot, int row)
+    {
+        for (int k = 0; k < 5; k++) if (_inventory.QuickItems[k] == row) _inventory.QuickItems[k] = -1;
+        _inventory.QuickItems[slot] = row;
+        Toast($"{DiskName(row)} no atalho {slot + 1}");
+        RefreshQuickWindow();
+    }
+
+    // Toque em cima de um atalho (celular): é para a barra, não para o analógico.
+    bool QuickSlotAt(Vector2 p) => _quickHud is { Visible: true } && _quickBoxes.Any(b => (b.GetGlobalTransform() * new Rect2(Vector2.Zero, b.Size)).HasPoint(p));
 
     void UseQuickSlot(int slot)
     {
@@ -222,9 +252,10 @@ public partial class Fatia
         if (_db == null || _pf == null || !_padEnabled || !_playerCtrl || InCutscene || _hp <= 0) return;
         if (_runner?.Running == true && _runner.Sequence != "SQ_WAIT" && _runner.Sequence != "SQ_WALK") { Toast("Agora não dá para usar item."); return; }
         if (row == GateDiskRow) { UseGateDisk(row); return; }
+        if (UseRaiseDisk(row)) return; // Raise Disk: só no backup chip (Fatia.BackupChip.cs)
         // Sem efeito no port ainda: não gasta (antes sumia sem fazer nada).
         if (row is BoosterPackRow or KeyChainRow) { Toast($"{DiskName(row)} não é de usar."); return; }
-        if (row is CureDiskRow or RaiseDiskRow) { Toast($"{DiskName(row)} ainda não funciona no port; o disco não foi gasto."); return; }
+        if (row is CureDiskRow) { Toast($"{DiskName(row)} ainda não funciona no port; o disco não foi gasto."); return; }
         if (_inventory.UseDisk(_db, row) is not { } heal) return;
         int hp = _hp, mp = _mp;
         _hp = Math.Min(_pf.MaxHp, _hp + heal.Hp);

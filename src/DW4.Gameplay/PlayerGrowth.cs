@@ -42,4 +42,16 @@ public static class PlayerGrowth
 
     /// <summary>EXP total acumulado para passar do nível <paramref name="level"/>: L²·(L + 140) + 200·L; 0 no 999.</summary>
     public static long NextExp(int level) => level >= MaxLevel ? 0 : (long)level * level * (level + 140) + 200L * level;
+
+    /// <summary>
+    /// EXP perdida ao cair (FATO, BKCHIPBITEXP 0x8037804C..0x803780D4): nos níveis 1 e 999, nada; nos outros, 20% da faixa do nível
+    /// anterior, (NEXTEXP(L−1) − NEXTEXP(L−2))/5, sem descer abaixo do começo do nível atual (o nível não cai).
+    /// </summary>
+    public static long DeathExpLoss(int level, long exp)
+    {
+        if (level <= 1 || level >= MaxLevel) return 0;
+        long floor = NextExp(level - 1);
+        long loss = (floor - (level >= 3 ? NextExp(level - 2) : 0)) * 2 / 10;
+        return Math.Max(0, exp - Math.Max(exp - loss, floor));
+    }
 }

@@ -56,6 +56,7 @@ public partial class Fatia : Node3D
     Fighter? _pf;
     int _shinkaRow = -1, _weaponRow = -1, _level = 1, _hp;
     long _exp;
+    static bool s_debugExpSet;
     readonly int[] _skill = new int[9];
     // Técnicas (Techniques, TechniquePanel). DECISÃO DA FATIA: sem o painel do jogo, as teclas 1..6 usam a técnica n da
     // WAZALIST direto (K, botão direito ou Y usam a primeira).
@@ -78,7 +79,7 @@ public partial class Fatia : Node3D
     // pego, se a regra do jogo deixar; a arma muda só os números (o modelo na mão continua o da w_sword01).
     Equipment? _equip;
     SoundEffects? _sfx;
-    readonly List<(Node3D Node, ItemRef Item)> _ground = [];
+    readonly List<GroundItem> _ground = [];
     // Linha do Numemon na tabela enemy: Int@7 dos geradores da dng1 no modo normal (generatorN #184 = 13; HIPÓTESE forte).
     const int EnemyRow = 13;
     string _lastEvent = "";
@@ -108,8 +109,10 @@ public partial class Fatia : Node3D
 
     public override void _Notification(int what)
     {
-        if (what == NotificationWMCloseRequest && !_leaving) SaveProgress();
-        if (what == NotificationApplicationFocusOut) _hasFocus = false;
+        if (what == NotificationWMCloseRequest && Session.Active && !_leaving) CloseRequested();
+        // Celular indo para o fundo (pode ser fechado de lá): grava sem esperar.
+        if (what == NotificationApplicationPaused && Session.Active && !_leaving && !_closing) _ = SaveProgress();
+        if (what == NotificationApplicationFocusOut) _hasFocus = OS.IsDebugBuild() && OS.GetEnvironment("DW4_TECLAS").Length > 0; // teclas de depuração: janela sem foco
         else if (what == NotificationApplicationFocusIn) _hasFocus = true;
     }
     // Troca de fase pedida: a cena vai ser recarregada, a física para de rodar (evita !is_inside_tree).
@@ -132,8 +135,8 @@ public partial class Fatia : Node3D
     (Vector3 Position, float RotYDeg)? EntryPoint(int group, int slotIndex = 0)
     {
         var file = System.IO.Path.Combine(_dir, "pontos_entrada.json");
-        if (!System.IO.File.Exists(file)) { _problems.Add($"falta {file} (dw4 igb-entradas ndmw.afs 179 <fatia>): início no ponto fixo"); return null; }
-        using var doc = System.Text.Json.JsonDocument.Parse(System.IO.File.ReadAllText(file));
+        if (!GameFiles.Exists(file)) { _problems.Add($"falta {file} (dw4 igb-entradas ndmw.afs 179 <fatia>): início no ponto fixo"); return null; }
+        using var doc = System.Text.Json.JsonDocument.Parse(GameFiles.ReadAllText(file));
         foreach (var pt in doc.RootElement.GetProperty("points").EnumerateArray())
         {
             if (pt.GetProperty("index").GetInt32() != group) continue;
@@ -149,6 +152,7 @@ public partial class Fatia : Node3D
     public override void _Ready()
     {
         PortSettings.ApplyLanguage(PortSettings.Current); // a fase pode abrir direto (DW4_FASE), sem passar pelo menu inicial
+        if (Touch) AddChild(new TouchControls { Blocked = () => _menuOpen || ShopOpen || SubWindowOpen || ChatOpen, UiAt = QuickSlotAt }); // celular: botões na tela (some com o controle Bluetooth)
         ChooseStage();
         var env = new Godot.Environment { AmbientLightSource = Godot.Environment.AmbientSource.Color, AmbientLightColor = new Color(0.6f, 0.6f, 0.65f), BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black };
         // FATO (stag0102 #621): igFogAttr 60..300 com cor (0,8 0,7 0,8). Fundo na cor da neblina e neblina por profundidade.
@@ -168,8 +172,8 @@ public partial class Fatia : Node3D
 
         // Luz (FATO, boot.lua): SYSgetLightMode() == 0 ("Suave") carrega o LS_pack, senão o LH_pack; o fase-exportar grava o LS como
         // cena_ls.gltf (texturas em cenario/<cena>/ls). Sem ele, fica o LH.
-        bool soft = Ram.LightMode == 0 && System.IO.Directory.Exists(StagePath("cenario"))
-            && System.IO.Directory.EnumerateFiles(StagePath("cenario"), "cena_ls.gltf", System.IO.SearchOption.AllDirectories).Any();
+        bool soft = Ram.LightMode == 0 && GameFiles.DirExists(StagePath("cenario"))
+            && GameFiles.EnumerateFiles(StagePath("cenario"), "cena_ls.gltf", System.IO.SearchOption.AllDirectories).Any();
         // O LS (texturas em ls/) ainda não foi visto na tela e o mapa do tutorial (stag0001) apareceu preto: se ele não carrega, não
         // tem malha ou perde as texturas que o LH tem, fica o cena.gltf.
         var scenery = soft ? Load("cenario", "cena_ls.gltf") : null;
@@ -215,7 +219,7 @@ public partial class Fatia : Node3D
             if (seqFile == null) _problems.Add($"falta o *_seq.json de {PlayerModel} em {PlayerFolder} (dw4 igb-seq)");
             else
             {
-                var json = System.IO.File.ReadAllText(seqFile);
+                var json = GameFiles.ReadAllText(seqFile);
                 _actions = SeqCommand.LoadActions(json);
                 if (_actions.Count == 0) _problems.Add("o *_seq.json não tem ações: regere com o igb-seq atual");
                 var sequences = SeqCommand.LoadAll(json);
@@ -252,7 +256,7 @@ public partial class Fatia : Node3D
             foreach (var idx in new[] { 6, 35 })
             {
                 var wav = System.IO.Path.Combine(_dir, "audio", $"ndmw_{idx:D4}.wav");
-                if (!System.IO.File.Exists(wav)) { _problems.Add($"falta {wav} (dw4 adx-wav ndmw.afs <fatia>\\audio 6 35)"); continue; }
+                if (!GameFiles.Exists(wav)) { _problems.Add($"falta {wav} (dw4 adx-wav ndmw.afs <fatia>\\audio 6 35)"); continue; }
                 if (LoadWav(wav) is { } stream) { var p = new AudioStreamPlayer { Stream = stream, Bus = PortSettings.EffectsBus }; AddChild(p); p.Play(); }
             }
         }
@@ -260,15 +264,16 @@ public partial class Fatia : Node3D
         // Câmeras por volume da fase (fase.json); campos sem aaacamera ficam com a câmera de seguir (HIPÓTESE da fatia).
         _cameraSets = _cameraFiles
             .Select(f => System.IO.Path.Combine(_dir, f))
-            .Where(p => { bool ok = System.IO.File.Exists(p); if (!ok) _problems.Add($"falta {p}"); return ok; })
-            .Select(p => CameraZones.FromJson(System.IO.File.ReadAllText(p))).ToArray();
+            .Where(p => { bool ok = GameFiles.Exists(p); if (!ok) _problems.Add($"falta {p}"); return ok; })
+            .Select(p => CameraZones.FromJson(GameFiles.ReadAllText(p))).ToArray();
         // FATO (boot.lua): SYSgetCameraMode() == 0 carrega o aaaCamera.igb, senão o aaaCameraL.igb (a "camera_afastada" da fase.json).
         if (Ram.CameraMode != 0 && _cameraSets.Length > 1) _cameraSet = 1;
         _camera = new Camera3D { Fov = PortSettings.Current.Fov, Far = 4000, Current = true };
         AddChild(_camera);
 
         var layer = new CanvasLayer();
-        // Texto de depuração (posição, câmera, scripts): só no build de depuração e com F3; não aparece para quem joga.
+        // Texto de diagnóstico (posição, câmera, parede, scripts) no F3, em qualquer build (pedido do usuário, 2026-11-04: achar paredes
+        // invisíveis no build normal). Começa escondido.
         _hud = new Label { Position = new Vector2(12, 12), Visible = false };
         layer.AddChild(_hud);
         AddChild(layer);
@@ -278,6 +283,7 @@ public partial class Fatia : Node3D
     {
         if (_ending != null) { GetViewport().SetInputAsHandled(); return; } // créditos: Fatia.Ending.cs lê as teclas
         if (ChatInput(e)) { GetViewport().SetInputAsHandled(); return; } // chat aberto: nada chega ao jogo
+        if (SaveWindowInput(e)) { if (IsInsideTree()) GetViewport().SetInputAsHandled(); return; } // a escolha pode trocar de fase
         if (TechBarInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (MenuInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (QuickItemInput(e)) { GetViewport().SetInputAsHandled(); return; }
@@ -286,7 +292,7 @@ public partial class Fatia : Node3D
         {
             if (k.Keycode == Key.F1 && _cameraSets.Length > 1) _cameraSet = (_cameraSet + 1) % _cameraSets.Length;
             if (k.Keycode == Key.F2) _showBoxes = !_showBoxes;
-            if (k.Keycode == Key.F3 && OS.IsDebugBuild()) _hud.Visible = !_hud.Visible;
+            if (k.Keycode == Key.F3) _hud.Visible = !_hud.Visible;
             if (k.Keycode == Key.F6 && OS.IsDebugBuild()) { _player.Position = _spawn; _snapToFloor = !_demo; _player.Velocity = Vector3.Zero; _move.Stop(); _hp = _pf?.MaxHp ?? 0; _mp = _pf?.MaxMp ?? 0; }
             if (k.Keycode == Key.F9 && OS.IsDebugBuild()) DebugWeakenBoss();
             if (k.Keycode == Key.F8 && OS.IsDebugBuild()) DebugNextTarget();
@@ -302,11 +308,13 @@ public partial class Fatia : Node3D
     }
 
     bool _guardPressed, _usingPad;
+    static readonly bool Touch = DataPaths.Mobile || OS.IsDebugBuild() && OS.GetEnvironment("DW4_TOQUE") == "1";
 
     // Último aparelho usado: com o controle, o golpe não vira para o cursor do mouse.
     public override void _Input(InputEvent e)
     {
         DeviceIcons.Seen(e);
+        if (e is InputEventMouse mouse) _mousePos = mouse.Position; // janelas com arte (Fatia.ShopArt.cs)
         if (e is InputEventJoypadButton { Pressed: true } || e is InputEventJoypadMotion { AxisValue: > 0.5f or < -0.5f }) _usingPad = true;
         else if (e is InputEventKey { Pressed: true } || e is InputEventMouseButton { Pressed: true }) _usingPad = false;
     }
@@ -319,6 +327,7 @@ public partial class Fatia : Node3D
         TickDeath(dt);
         TickEnding(dt);
         TickPrints(dt);
+        if (!IsInsideTree()) return; // a queda ou o fim trocou de fase neste quadro
         UpdateTechBar();
         TickQuestTimer(dt);
         TickWindows(dt);
@@ -334,6 +343,7 @@ public partial class Fatia : Node3D
         TickStageChange(dt);
         if (_leaving) return;
         TickObjects(dt);
+        SyncPartySwitches();
         TickFlashes(dt);
         TickQuickItems();
         var input = Input.GetVector(PortInput.Name("esquerda"), PortInput.Name("direita"), PortInput.Name("cima"), PortInput.Name("baixo"));
@@ -389,7 +399,14 @@ public partial class Fatia : Node3D
         {
             attacking = _techKey >= 0 ? StartTechnique(_techKey) && _runner.Running : _runner.Start("SQ_ATCK1", StyleOf("SQ_ATCK1"));
             _techKey = -1;
-            if (attacking && !_demo && !_usingPad && MouseGround() is { } aim)
+            // Perto de quem fala, o golpe vira para ele: a sonda de conversa (Fatia.Recorder.cs) sai 7 à frente e, virada para o
+            // cursor, errava o NPC (Digi-Lab, banco e os outros do lobby só respondiam com o cursor em cima deles).
+            if (attacking && !_demo && TalkTarget() is { } npc)
+            {
+                var to = npc.Actor.Root.GlobalPosition - _player.GlobalPosition;
+                if (to.X * to.X + to.Z * to.Z > 0.01f) _move.Face(MathF.Atan2(to.X, to.Z));
+            }
+            else if (attacking && !_demo && !_bot && !_usingPad && !DataPaths.Mobile && MouseGround() is { } aim) // o bot mira sozinho
             {
                 // DECISÃO DO PORT PARA PC (não é do original): o golpe sai na direção do cursor do mouse.
                 var to = aim - _player.GlobalPosition;
@@ -424,6 +441,7 @@ public partial class Fatia : Node3D
         vel.Z = v.Y;
         vel.Y = VerticalVelocity(vel.Y, dt);
         _player.Velocity = vel;
+        UpdatePlayerMask();
         _player.MoveAndSlide();
         StepUp(new Vector3(v.X, 0, v.Y), dt); // degraus baixos (Fatia.Step.cs)
         NoteWall();
@@ -530,8 +548,8 @@ public partial class Fatia : Node3D
     string? SeqFile(string sub)
     {
         var root = StagePath(sub);
-        return System.IO.Directory.Exists(root)
-            ? System.IO.Directory.EnumerateFiles(root, "*_seq.json", System.IO.SearchOption.AllDirectories).FirstOrDefault() : null;
+        return GameFiles.DirExists(root)
+            ? GameFiles.EnumerateFiles(root, "*_seq.json", System.IO.SearchOption.AllDirectories).FirstOrDefault() : null;
     }
 
     float? AnimFrames(string action) => ActionAnimations.Length(_actions, action, motion =>
@@ -543,11 +561,11 @@ public partial class Fatia : Node3D
     void LoadCombat()
     {
         var dbDir = System.IO.Path.Combine(_dir, "db");
-        var dbFile = System.IO.Directory.Exists(dbDir) ? System.IO.Directory.EnumerateFiles(dbDir, "*_db.json").FirstOrDefault() : null;
+        var dbFile = GameFiles.DirExists(dbDir) ? GameFiles.EnumerateFiles(dbDir, "*_db.json").FirstOrDefault() : null;
         if (dbFile == null) { _problems.Add("falta o *_db.json (dw4 igb-db area.afs 3 <fatia>\\db): combate desligado"); return; }
-        _db = GameTables.FromJson(System.IO.File.ReadAllText(dbFile));
+        _db = GameTables.FromJson(GameFiles.ReadAllText(dbFile));
         var skillFile = StagePath("skillup.json");
-        if (System.IO.File.Exists(skillFile)) _skillGrowth = SkillGrowth.FromJson(System.IO.File.ReadAllText(skillFile));
+        if (GameFiles.Exists(skillFile)) _skillGrowth = SkillGrowth.FromJson(GameFiles.ReadAllText(skillFile));
         else _problems.Add("falta skillup.json (dw4 dol-skilltab <main.dol> <fatia>): skill não sobe");
         _shinkaRow = _db["shinka"].RowsWhere("MODEL_NAME", PlayerModel).DefaultIfEmpty(-1).First();
         // DECISÃO DA FATIA: Guilmon com a w_sword01 α (linha 25, SKILLPOINT 1: equipável com as skills iniciais). No jogo
@@ -561,6 +579,7 @@ public partial class Fatia : Node3D
         if (OS.IsDebugBuild() && int.TryParse(OS.GetEnvironment("DW4_NIVEL"), out int debugLevel) && debugLevel > 1)
         {
             _level = Math.Min(debugLevel, PlayerGrowth.MaxLevel);
+            if (!s_debugExpSet) { s_debugExpSet = true; _exp = Math.Max(_exp, PlayerGrowth.NextExp(_level) - 1); } // uma vez: perto do próximo nível
             Array.Fill(_skill, Math.Min(9999, debugLevel * 10));
         }
         _equip = Ram.Players[0].Equipment; // equipamento da vaga (sem vaga: a w_sword01 da fatia, no Recalc)
@@ -573,11 +592,11 @@ public partial class Fatia : Node3D
         _mp = _pf.MaxMp;
         if (!_db.Contains("pcTech")) _problems.Add("a pcTech não está no *_db.json: técnicas desligadas");
         var dropsDir = System.IO.Path.Combine(_dir, "drops");
-        var dropsFile = System.IO.Directory.Exists(dropsDir) ? System.IO.Directory.EnumerateFiles(dropsDir, "*_drops.json").FirstOrDefault() : null;
+        var dropsFile = GameFiles.DirExists(dropsDir) ? GameFiles.EnumerateFiles(dropsDir, "*_drops.json").FirstOrDefault() : null;
         if (dropsFile == null) { if (_dir == _common) _problems.Add("falta o *_drops.json (dw4 igb-drops ndmw.afs 183 <fatia>\\drops): sem drops"); }
         else
         {
-            var dropsJson = System.IO.File.ReadAllText(dropsFile);
+            var dropsJson = GameFiles.ReadAllText(dropsFile);
             _dropLists = Drops.FromJson(dropsJson);
             using var dd = System.Text.Json.JsonDocument.Parse(dropsJson);
             if (dd.RootElement.TryGetProperty("generators", out var gens))
@@ -655,7 +674,7 @@ public partial class Fatia : Node3D
     void TechniqueStrikes(Enemy e, Technique t)
     {
         if (_pf == null || e.Kind.Stats is not { } ef) return;
-        int code = 40000 + t.Row;
+        int code = 40000 + t.Row, hpBefore = e.Hp;
         bool crit = DamageFormula.TechniqueCritical(t.Stats, ef, _mt);
         var r = DamageFormula.Technique(Pf!, ef, t.Stats, crit, _mt);
         RaiseSkill(t.Stats.SkillIndex, technique: true);
@@ -664,10 +683,12 @@ public partial class Fatia : Node3D
         _lastEnemy = e;
         Damage(e.Body, r.Damage, onPlayer: false, crit ? $"{r.Damage}!" : r.Damage.ToString(), crit ? Colors.Orange : Colors.Gold);
         _lastEvent = $"{t.Name}: {r.Damage}{(crit ? " crítico" : "")} (código {code})";
-        if (e.Hp <= 0 && !e.Killed) { e.Killed = true; GainExp(e); DropItem(e); }
+        if (e.Hp <= 0) EnemyDefeated(e, Online.MyId);
+        string reaction = DamageSequences[DamageFormula.Rank(r.Damage, e.Hp, ef.MaxHp)];
+        if (ProxyStruck(e, hpBefore, reaction)) return;
         if (e.Brain != null && e.Runner != null)
         {
-            e.Brain.Force(DamageSequences[DamageFormula.Rank(r.Damage, e.Hp, ef.MaxHp)]);
+            e.Brain.Force(reaction);
             e.Started = false;
         }
     }
@@ -690,7 +711,7 @@ public partial class Fatia : Node3D
         int rank = DamageFormula.Rank(r.Damage, e.Hp, ef.MaxHp);
         Damage(e.Body, r.Damage, onPlayer: false, crit ? $"{r.Damage}!" : r.Damage.ToString(), crit ? Colors.Orange : Colors.White);
         _lastEvent = $"Guilmon: {r.Damage}{(crit ? " crítico" : "")}{(r.Strong ? " forte" : "")} (código {code})";
-        if (e.Hp <= 0 && !e.Killed) { e.Killed = true; GainExp(e); DropItem(e); }
+        if (e.Hp <= 0) EnemyDefeated(e, Online.MyId);
         return DamageSequences[rank];
     }
 
@@ -731,25 +752,39 @@ public partial class Fatia : Node3D
         if (d == null) return;
         string name = _db!.Contains(d.Item.Table) ? _db[d.Item.Table].Text(d.Item.Row, "NAME") : "";
         if (name.Length == 0) name = $"{d.Item.Table}:{d.Item.Row}";
-        var node = new Node3D();
-        node.AddChild(new MeshInstance3D { Mesh = new BoxMesh { Size = new Vector3(3, 3, 3) }, Position = new Vector3(0, 1.5f, 0),
-            MaterialOverride = new StandardMaterial3D { AlbedoColor = Colors.Gold, ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded } });
-        node.AddChild(new Label3D { Text = name, FontSize = 48, OutlineSize = 10, Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, NoDepthTest = true, PixelSize = 0.05f, Position = new Vector3(0, 6, 0) });
-        AddChild(node);
-        node.GlobalPosition = at;
-        _ground.Add((node, d.Item));
+        // Baúzinho do jogo pelo tipo do item (Fatia.DropChest); sem o modelo exportado, o cubo dourado de antes.
+        var g = MakeGroundItem(d.Item, name);
+        AddChild(g.Node);
+        g.Node.GlobalPosition = at;
+        _ground.Add(g);
         _lastEvent += $"  caiu {name}";
-        ScriptLog($"caiu {name} ({gen?.Name ?? "sem gerador"})");
+        ScriptLog($"caiu {name} ({gen?.Name ?? "sem gerador"}, {(g.Chest != null ? g.Chest.Name : "cubo")})");
     }
 
     // Coleta a menos de 64 unidades (FATO). insItem tem efeito na hora; o resto vai para o inventário. HIPÓTESE da fatia:
     // tudo é pego por proximidade (no jogo, armas e armaduras só ganham dono; a confirmação não foi lida).
     void UpdateGround()
     {
+        TickDropHereDebug((float)GetProcessDeltaTime());
         for (int i = _ground.Count - 1; i >= 0; i--)
         {
-            var (node, item) = _ground[i];
-            node.RotateY(0.03f);
+            var g = _ground[i];
+            var (node, item) = (g.Node, g.Item);
+            if (g.Chest is { } chest)
+            {
+                // Baú do jogo: a sequência anima, pisca e some sozinha (SQ_BODING → SQ_EXIT → SQ_ERAS, menos o g_000key).
+                chest.Tick((float)GetProcessDeltaTime());
+                if (node.GetChildOrNull<Label3D>(1) is { } label) label.Visible = !g.Taken && chest.Actor.Root.Visible;
+                if (chest.Erased)
+                {
+                    if (!g.Taken) ScriptLog($"sumiu {item.Table}:{item.Row} ({chest.Name}) sem ninguém pegar");
+                    node.QueueFree();
+                    _ground.RemoveAt(i);
+                    continue;
+                }
+                if (g.Taken || chest.Sequence is "SQ_EXIT" or "SQ_DDMG") continue;
+            }
+            else node.RotateY(0.03f);
             if (node.GlobalPosition.DistanceTo(_player.GlobalPosition) >= Drops.PickupRadius || _hp <= 0) continue;
             string text;
             if (item.Table == "insItem")
@@ -771,6 +806,9 @@ public partial class Fatia : Node3D
             else { _lastEvent = "inventário cheio"; continue; }
             Float(_player, text, Colors.Gold);
             _lastEvent = $"pegou {text}";
+            ScriptLog($"pegou {text} ({g.Chest?.Name ?? "cubo"})");
+            // Baú do jogo: SQ_EXIT (some em 10 quadros) e sai da lista no SQ_ERAS; sem SQ_EXIT (g_000key) ou cubo, sai na hora.
+            if (g.Chest is { } c && c.Seq?.Start("SQ_EXIT") == true) { g.Taken = true; continue; }
             node.QueueFree();
             _ground.RemoveAt(i);
         }
@@ -802,11 +840,15 @@ public partial class Fatia : Node3D
         _lastEvent = $"equipou {name}";
     }
 
-    void GainExp(Enemy e)
+    void GainExp(Enemy e, bool killer = true)
     {
         // FATO (P2EEXPUP 0x80373B48): EXP do inimigo × (EXPRITSU + 100)/100, com o EXPRITSU do jogador (equipamento e chips);
-        // antes ia 0 e o bônus de EXP dos itens não valia.
-        AddExp(DamageFormula.ExpShare(_db!["enemy"].Int(e.Kind.Row, "EXP"), _pf?.Expritsu ?? 0, players: 1, killer: true));
+        // antes ia 0 e o bônus de EXP dos itens não valia. No grupo (NINZU = membros na fase), quem matou leva a parte maior e
+        // quem está caído não leva (PartyRewards).
+        // DECISÃO DO PORT (2026-11-05): no grupo todos levam a parte de quem matou; o EnemyKilled só chega a quem está na party
+        // e na mesma fase, então quem não é do grupo continua sem EXP.
+        if (CoopOn && _hp <= 0) return;
+        AddExp(DamageFormula.ExpShare(_db!["enemy"].Int(e.Kind.Row, "EXP"), _pf?.Expritsu ?? 0, players: Math.Clamp(Ram.Ninzu, 1, 4), killer: true));
     }
 
     void AddExp(int gain)
@@ -905,7 +947,7 @@ public partial class Fatia : Node3D
     /// <summary>WAV PCM 16 bits com o chunk "smpl" do adx-wav (início e fim inclusivo do loop).</summary>
     public static AudioStreamWav? ReadWav(string file, List<string> problems)
     {
-        var b = System.IO.File.ReadAllBytes(file);
+        var b = GameFiles.ReadAllBytes(file);
         if (b.Length < 12 || System.Text.Encoding.ASCII.GetString(b, 0, 4) != "RIFF") { problems.Add($"{file}: não é WAV"); return null; }
         int channels = 0, rate = 0, loopStart = -1, loopEnd = -1;
         byte[]? data = null;
@@ -928,12 +970,12 @@ public partial class Fatia : Node3D
     Node3D? Load(string sub, string fileName)
     {
         var root = StagePath(sub);
-        var file = System.IO.Directory.Exists(root)
-            ? System.IO.Directory.EnumerateFiles(root, fileName, System.IO.SearchOption.AllDirectories).FirstOrDefault() : null;
+        var file = GameFiles.DirExists(root)
+            ? GameFiles.EnumerateFiles(root, fileName, System.IO.SearchOption.AllDirectories).FirstOrDefault() : null;
         if (file == null) { _problems.Add($"falta {fileName} em {root}"); return null; }
         var doc = new GltfDocument();
         var state = new GltfState();
-        var err = doc.AppendFromFile(file, state);
+        var err = doc.AppendFromFile(GameFiles.GodotPath(file), state);
         if (err != Error.Ok) { _problems.Add($"{file}: {err}"); return null; }
         return doc.GenerateScene(state) as Node3D;
     }
@@ -1035,14 +1077,46 @@ public partial class Fatia : Node3D
     StaticBody3D MakeStaticBody(Node3D collision)
     {
         var body = new StaticBody3D();
+        // Peças por tipo do beHitLandModelInfo @10 (CollisionKinds.cs): parapeito (2050) e parede de inimigo (8) em corpos próprios,
+        // nas camadas que o jogador e os inimigos olham (UpdatePlayerMask, SpawnEnemy).
+        var edge = new StaticBody3D { Name = "parapeito", CollisionLayer = CollisionKinds.EdgeLayer, CollisionMask = 0 };
+        var enemyOnly = new StaticBody3D { Name = "parede_inimigo", CollisionLayer = CollisionKinds.EnemyLayer, CollisionMask = 0 };
+        body.AddChild(edge);
+        body.AddChild(enemyOnly);
+        var kinds = CollisionKinds.For(_stageName);
         foreach (var mi in FindAll<MeshInstance3D>(collision))
         {
             var trimesh = mi.Mesh.CreateTrimeshShape();
             if (OS.GetEnvironment("DW4_DIAG_FACES") == "1") GD.Print($"[faces] backface {trimesh.BackfaceCollision}");
             var shape = new CollisionShape3D { Shape = trimesh, Transform = mi.GlobalTransformIn(collision) };
-            body.AddChild(shape);
             var path = new List<string>();
             for (Node? n = mi; n != null && n != collision; n = n.GetParent()) path.Add(n.Name);
+            var kind = kinds.Of(path);
+            if (kind == CollisionKind.Normal) body.AddChild(shape);
+            else
+            {
+                // Só as faces de parede (|normal.y| < 0,5) mudam de camada; o chão da mesma peça continua segurando todo mundo
+                // (FATO: os grupos 2050 também têm pisos, como hitmvbox/hitflisland da stag0404 e hitmagnetflore da stag0403).
+                var faces = mi.Mesh.GetFaces();
+                var basis = shape.Transform.Basis;
+                var walls = new List<Vector3>();
+                var floors = new List<Vector3>();
+                for (int f = 0; f + 2 < faces.Length; f += 3)
+                {
+                    var nrm = (basis * (faces[f + 1] - faces[f])).Cross(basis * (faces[f + 2] - faces[f]));
+                    var into = nrm.LengthSquared() > 1e-12f && Mathf.Abs(nrm.Normalized().Y) < 0.5f ? walls : floors;
+                    into.Add(faces[f]); into.Add(faces[f + 1]); into.Add(faces[f + 2]);
+                }
+                ConcavePolygonShape3D Faces(List<Vector3> v) { var c = new ConcavePolygonShape3D(); c.SetFaces(v.ToArray()); return c; }
+                shape.Shape = Faces(walls);
+                (kind == CollisionKind.Edge ? edge : enemyOnly).AddChild(shape);
+                if (floors.Count > 0)
+                {
+                    var floorShape = new CollisionShape3D { Shape = Faces(floors), Transform = shape.Transform };
+                    body.AddChild(floorShape);
+                    _collisionShapes.Add((string.Join("/", path), floorShape));
+                }
+            }
             // Parede invisível (relato do usuário, 2026-11-02: ponte da stag0101, parado em (462, 47, 96)). FATO (dw4
             // colisao-auditoria): a peça "limit_Circle" (beHitLandModelInfo com @10 = 4; chão = 1, paredes e portas = 2) é um
             // cilindro de 32 triângulos com a mesma caixa (403..517, 0..250, 93..207) em dng101b1, dng101b2, stag0001, stag0101 e

@@ -1,7 +1,10 @@
 namespace DW4.Gameplay;
 
-/// <summary>Canal da mensagem (DECISÃO DO PORT, online): todos, só o grupo ou privada para um jogador.</summary>
-public enum ChatChannel { Global, Party, Whisper }
+/// <summary>
+/// Canal da mensagem (DECISÃO DO PORT, online): todos, só o grupo ou privada para um jogador. <see cref="System"/> são os avisos
+/// do próprio jogo ("Online como X", "Ana não está online."): só locais, nunca vão para o servidor.
+/// </summary>
+public enum ChatChannel { Global, Party, Whisper, System }
 
 /// <summary>
 /// Chat do port (DECISÃO DO PORT, pedido do responsável; docs/decisoes-port-pc.md). Não existe no original. Cada linha é
@@ -115,7 +118,9 @@ public sealed class ChatLog
     public bool Visible => Typing || (_lines.Count > 0 && Idle < FadeAfter);
     public IReadOnlyList<ChatMessage> All => _lines;
     /// <summary>As últimas <see cref="Shown"/> linhas, da mais antiga para a mais nova.</summary>
-    public IEnumerable<string> Recent => _lines.Skip(Math.Max(0, _lines.Count - Shown)).Select(m => m.Format());
+    public IEnumerable<string> Recent => RecentMessages.Select(m => m.Format());
+    /// <summary>As mesmas mensagens de <see cref="Recent"/>, com o canal (a caixa pinta cada linha pela cor do canal).</summary>
+    public IEnumerable<ChatMessage> RecentMessages => _lines.Skip(Math.Max(0, _lines.Count - Shown));
 
     public void Add(ChatMessage message)
     {

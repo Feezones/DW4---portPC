@@ -173,3 +173,20 @@ Lido no main.dol (leitura estática). Código em `MotionChannels` (DW4.Gameplay)
       DamageFormula.PlayerHits (já lido antes).
     - O cliente já respondia por esse caminho. "Sem resposta" no teste é só do motor de teste.
   - 0 = não acertou: o hit_*.lua põe SQ_GUARD se o chefe está no chão.
+
+## Revisão de 2026-11-03 (pedido: Apocalymon, animações e mecânicas como no original)
+
+Bot sem janela: `DW4_FASE=stagbs01 DW4_BOT=1 DW4_ALVO=objetos DW4_NIVEL=60` (quebra as 5 colunas e depois vai ao chefe).
+
+- **FATO** conferido de novo: SQ_ENTR (trnsIN → actn05 → wait01), fase 1 com SQ_ATCK1 (blst01), SQ_ATCK2 (LUACALL "bit" →
+  f_bit), SQ_FIRE; colunas com 100 de HP (HPMAX da tabela, −10 por golpe) caem e piscam os pisos; a 5ª leva ao SQ_PHASE2
+  (actn03) e ao f_bit com SQ_PHASE2; na fase 2 só SQ_MAGIC (actn04 + blst03, 6 anéis 70070), espera e passeio (MAP01).
+- **FATO** as ações ACTN05 e WAIT03 são mesmo "wait01" no original (MOTIONSET), não falta animação.
+- **Corrigido:** o SQ_PHASE2 põe o rótulo FLOAT no SQ_WAIT e no SQ_WALK (WAIT02 = "wait02", RUNN03 = "run03", MOVE "Move" 0,6),
+  mas a espera e o passeio da IA do port sempre usavam o wait01/run e a velocidade do 1º bloco. Agora usam o bloco do rótulo
+  guardado (`IdleBlock`). No bot, a fase 2 passa a mostrar wait02 entre as magias.
+- A barra do chefe agora também move o medidor da arte do jogo (i_bosshp01) pelo SETPERCENT do hit_f_apocaly.lua.
+- Derrota: sem mudança no caminho que o usuário já venceu (hit_f_apocaly.lua: BT_WIN02, portal g_dreturngate, FLGset 67,
+  COUNTERset(2, 0)).
+- **DESCONHECIDO:** o bot não sobe no pedestal (fica no chão da arena), então a derrota não foi refeita por ele nesta revisão;
+  o passeio da fase 2 (run03) não apareceu nas amostras do log.

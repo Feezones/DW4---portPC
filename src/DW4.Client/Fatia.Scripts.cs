@@ -29,27 +29,39 @@ public partial class Fatia : IBeEngine
     bool StartScripts()
     {
         var dir = Path.Combine(_dir, "lua");
-        if (!File.Exists(Path.Combine(dir, "boot.lua")))
+        if (!GameFiles.Exists(Path.Combine(dir, "boot.lua")))
         {
             _problems.Add($"sem scripts em {dir} (dw4 lua-extrair ndmw.afs 179 <fatia>\\lua): músicas fixas");
             return false;
         }
-        var chunks = Directory.GetFiles(dir).ToDictionary(f => Path.GetFileName(f), File.ReadAllBytes);
+        var chunks = GameFiles.GetFiles(dir).ToDictionary(f => Path.GetFileName(f), GameFiles.ReadAllBytes);
         // HIPÓTESE: nome da pasta da dng1; o boot.lua só o usa para montar a lista de arquivos, que a fatia não usa.
         var sys = new BeSystem { FolderName = _stageName };
         sys.Players[0] = (PlayerModel, new[] { "w_sword01", "w_sword01", "w_sword01" });
         // A GAMERAM sobrevive à troca de fase (recarga da cena): flags e contadores são do jogo, não da cena.
         // LEVEL e as formas do registro do jogador 0 (SYSgetPlayerLevel, SYSisGetShinkaDigimon, SYSctlShinka).
         // DEPURAÇÃO (só no build Debug, não é do jogo): DW4_FLG=4,409 liga essas flags da GAMERAM ao abrir a fase (estado do enredo).
-        if (OS.IsDebugBuild() && OS.GetEnvironment("DW4_FLG") is { Length: > 0 } flags)
+        // Só na primeira fase aberta pelo processo: depois a GAMERAM segue sozinha (assim dá para conferir o que a morte ou a troca
+        // de fase fazem com as flags).
+        if (OS.IsDebugBuild() && !s_debugFlagsApplied && OS.GetEnvironment("DW4_FLG") is { Length: > 0 } flags)
+        {
+            s_debugFlagsApplied = true;
             foreach (var f in flags.Split(',', StringSplitOptions.RemoveEmptyEntries)) if (int.TryParse(f, out int n)) Ram.SetFlag(n, true);
+        }
+        if (DiagNpc) GD.Print($"[flags] {_stageName}: 2 (1º destino) = {Ram.FlagOn(2)}, 409 (missão do quadro) = {Ram.FlagOn(409)}, 501 = {Ram.FlagOn(501)}");
         Ram.Players[0].Level = () => _level;
         if (Ram.Players[0].Forms.Current < 0 && _shinkaRow is >= 0 and < Evolution.Forms) Ram.Players[0].Forms.Start(_shinkaRow);
         var host = new BeHost(this, Ram, sys) { Unimplemented = (n, _) => ScriptLog($"be:{n} ainda não implementado") };
+        // O SELECTCTRL GENERATE costuma vir com atraso (10 quadros) e o script consulta ISEND logo depois: enquanto ele não chega,
+        // o ISEND não pode ver o fim da janela ANTERIOR (Fatia.Recorder.cs). Na pergunta do portal do treino isso pulava a
+        // mensagem seguinte e o matz00 voltava a abrir a pergunta, com os textos apagados pelo fim da anterior (só "?").
+        _selectPending = 0;
+        host.Messenger.Queued = q => { if (q.Class == "SELECTCTRL" && q.Command == "GENERATE") _selectPending++; };
         _stage = new StageScripts(chunks, host) { Error = (n, m) => ScriptLog($"ERRO {n}: {m}") };
         if (Session.PendingGameStart) RunGameStart(host);
         _stage.Boot();
         _stage.Start();
+        SpawnBackupChip();
         return true;
     }
 
@@ -59,8 +71,8 @@ public partial class Fatia : IBeEngine
         Session.PendingGameStart = false;
         var stages = DataPaths.Fases;
         var file = Path.Combine(stages, "stagis10", "lua", "gameStart.lua");
-        if (!File.Exists(file)) { _problems.Add($"falta {file} (dw4 fase-exportar … stagIS10): flags do começo de jogo não refeitas"); return; }
-        var gs = new StageScripts(new Dictionary<string, byte[]> { ["gameStart.lua"] = File.ReadAllBytes(file) }, host) { Error = (n, m) => ScriptLog($"ERRO {n}: {m}") };
+        if (!GameFiles.Exists(file)) { _problems.Add($"falta {file} (dw4 fase-exportar … stagIS10): flags do começo de jogo não refeitas"); return; }
+        var gs = new StageScripts(new Dictionary<string, byte[]> { ["gameStart.lua"] = GameFiles.ReadAllBytes(file) }, host) { Error = (n, m) => ScriptLog($"ERRO {n}: {m}") };
         ScriptLog(gs.Run("gameStart.lua") ? "gameStart.lua da stagIS10 rodou" : "gameStart.lua não rodou");
     }
 
@@ -85,8 +97,8 @@ public partial class Fatia : IBeEngine
     {
         ScriptLog(m.ToString());
         // A trava do ISEND zera em todo SELECTCTRL GENERATE, antes de quem trata a janela (troca de área, mensagem) consumir a mensagem.
-        if (m.Class == "SELECTCTRL" && m.Command == "GENERATE") { _confirmArmed = false; _selectEnded = false; }
-        if (DeliverToPlayerStatus(m) || DeliverToQuickItems(m) || DeliverToSavePoint(m) || DeliverToQuestTimer(m) || DeliverToEvolve(m) || DeliverToBank(m) || DeliverToXData(m) || DeliverToShop(m) || DeliverToListMenu(m) || DeliverToStageChange(m) || DeliverToWindows(m) || DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToBossBar(m) || DeliverToEnemies(m) || DeliverToObjects(m)) return;
+        if (m.Class == "SELECTCTRL" && m.Command == "GENERATE") { _confirmArmed = false; _selectEnded = false; if (_selectPending > 0) _selectPending--; }
+        if (DeliverToPlayerStatus(m) || DeliverToQuickItems(m) || DeliverToSavePoint(m) || DeliverToQuestTimer(m) || DeliverToEvolve(m) || DeliverToBank(m) || DeliverToXData(m) || DeliverToAppraisal(m) || DeliverToShop(m) || DeliverToListMenu(m) || DeliverToStageChange(m) || DeliverToWindows(m) || DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToBossBar(m) || DeliverToEnemies(m) || DeliverToObjects(m)) return;
         switch (m.Class, m.Command)
         {
             // FATO: "HITLANDMODEL doorwallNN OFFHIT" desliga a parede de colisão da porta (filho do igSwitch da colisão #1862).
@@ -125,6 +137,8 @@ public partial class Fatia : IBeEngine
     public (double X, double Y, double Z, double Yaw)? PlayerPose(int player) =>
         player == 0 ? (_player.GlobalPosition.X, _player.GlobalPosition.Y, _player.GlobalPosition.Z, _move.Facing) : null;
 
+    static bool s_debugFlagsApplied;
+
     public double? Query(BeMessage m) => QueryShop(m) ?? QueryListMenu(m) ?? QueryStageChange(m) ?? QueryWindows(m) ?? QueryRecorder(m) ?? m.Command switch
     {
         "GETGENERATEPOS" => int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var e) ? e : 0,
@@ -146,9 +160,9 @@ public partial class Fatia : IBeEngine
     void StartCameraDemo(string name)
     {
         var files = _demoPatterns.Select(p => Path.Combine(_dir, p.Replace("<nome>", name))).ToList();
-        var file = files.FirstOrDefault(File.Exists) ?? files.FirstOrDefault() ?? Path.Combine(_dir, "camera-demo", name);
-        if (!File.Exists(file)) { _problems.Add($"falta {file} (dw4 igb-camera-demo ndmw.afs 182 <fatia>\\camera-demo): sem a demo {name}"); return; }
-        _cameraDemo = CameraDemo.FromJson(File.ReadAllText(file));
+        var file = files.FirstOrDefault(GameFiles.Exists) ?? files.FirstOrDefault() ?? Path.Combine(_dir, "camera-demo", name);
+        if (!GameFiles.Exists(file)) { _problems.Add($"falta {file} (dw4 igb-camera-demo ndmw.afs 182 <fatia>\\camera-demo): sem a demo {name}"); return; }
+        _cameraDemo = CameraDemo.FromJson(GameFiles.ReadAllText(file));
         _cameraDemoT = 0;
     }
 

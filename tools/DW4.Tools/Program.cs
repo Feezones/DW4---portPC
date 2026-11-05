@@ -24,6 +24,7 @@ try
 {
     return args[0] switch
     {
+        "empacotar" when args.Length == 4 => Empacotar.Run(args[1], args[2], args[3]),
         "afs-info" when args.Length == 2 => AfsInfo(args[1]),
         "afs-csv" when args.Length == 3 => AfsCsv(args[1], args[2]),
         "afs-verify" when args.Length == 3 => AfsVerify(args[1], args[2]),

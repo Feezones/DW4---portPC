@@ -16,7 +16,15 @@ public static class DataPaths
     /// <summary>Pasta do DW4.exe exportado (ou a do executável da Godot, no editor).</summary>
     public static string ExeDir => Path.GetDirectoryName(OS.GetExecutablePath()) ?? ".";
 
-    static string Root => Editor ? @"D:\dw4-work" : Path.Combine(ExeDir, "dados");
+    /// <summary>Celular (Android): os dados ficam na pasta interna do app, baixados pela tela de login (MobileBoot).</summary>
+    public static readonly bool Mobile = OS.HasFeature("android");
+
+    public static string MobileRoot => Path.Combine(OS.GetUserDataDir(), "dados");
+
+    /// <summary>Pasta "dados" (fatia, fases, arquivos e, no pacote novo, pacotes\*.zip).</summary>
+    public static string DataRoot => Root;
+
+    static string Root => Env("DW4_DADOS") ?? (Editor ? @"D:\dw4-work" : Mobile ? MobileRoot : Path.Combine(ExeDir, "dados"));
 
     static string? Env(string name) => OS.GetEnvironment(name) is { Length: > 0 } v ? v : null;
 
@@ -29,6 +37,9 @@ public static class DataPaths
         ?? (Editor || Env("DW4_FASES") != null
             ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(Fases)) ?? "", "extracted", "files")
             : Path.Combine(Root, "arquivos"));
+
+    /// <summary>Versão dos dados baixados no celular (gravada pelo MobileBoot); vazio fora do Android.</summary>
+    public static string MobileVersion { get; set; } = "";
 
     /// <summary>
     /// O projeto se chamava "DW4 - fatia vertical" até a 0.5.0, e a Godot guarda user:// numa pasta com o nome do projeto

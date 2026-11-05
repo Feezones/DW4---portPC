@@ -43,6 +43,13 @@ public partial class MainMenu : Control
 
     public override void _Ready()
     {
+        // Celular: login e atualização dos dados antes de tudo (MobileBoot.cs); depois volta para cá.
+        if (DataPaths.Mobile && !MobileBoot.Done)
+        {
+            Visible = false;
+            GetTree().CallDeferred(SceneTree.MethodName.ChangeSceneToFile, MobileBoot.Scene);
+            return;
+        }
         DataPaths.MigrateOldUserData();
         PortSettings.Apply(GetTree().Root);
         Online.Claim(); // gasta o ticket do launcher antes que ele vença (2 min)
@@ -69,7 +76,7 @@ public partial class MainMenu : Control
         // Música do título (FATO, first.lua da stagIS10: SYSgetArea 0 → AM_TITLE, senão AM_TITLE2; no beSoundInfo #806, AM_TITLE2 =
         // [0.20] = ndmw #20). DECISÃO DO PORT: toca em laço no título e nas telas de vagas, criação e configurações.
         var music = System.IO.Path.Combine(stages, "stagis10", "audio", "ndmw_0020.wav");
-        if (System.IO.File.Exists(music) && Fatia.ReadWav(music, problems) is { } wav)
+        if (GameFiles.Exists(music) && Fatia.ReadWav(music, problems) is { } wav)
         {
             if (wav.LoopMode == AudioStreamWav.LoopModeEnum.Disabled) { wav.LoopMode = AudioStreamWav.LoopModeEnum.Forward; wav.LoopBegin = 0; wav.LoopEnd = wav.Data.Length / (wav.Stereo ? 4 : 2); }
             _music = new AudioStreamPlayer { Stream = wav, Bus = PortSettings.MusicBus };
@@ -85,10 +92,12 @@ public partial class MainMenu : Control
         if (_art != null)
         {
             // Sobre o fundo animado: painel escuro com a fonte do jogo (a NORMAL, a das falas).
-            _panel = new PanelContainer { SelfModulate = new Color(1, 1, 1, 0.92f) };
+            _panel = new PanelContainer();
+            _panel.AddThemeStyleboxOverride("panel", MenuPanel());
             _panel.AddChild(_root);
             center.AddChild(_panel);
-            if (BitmapFont.Load(System.IO.Path.Combine(stages, "fonte"))?.ToFontFile("NORMAL") is { } gf) center.Theme = _gameTheme = new Theme { DefaultFont = gf, DefaultFontSize = 26 };
+            if (BitmapFont.Load(System.IO.Path.Combine(stages, "fonte"))?.ToFontFile("NORMAL") is { } gf) { _gameTheme = new Theme { DefaultFont = gf, DefaultFontSize = 26 }; _gameFont = gf; }
+            center.Theme = MenuTheme();
         }
         else center.AddChild(_root);
         ShowTitle();
@@ -144,6 +153,8 @@ public partial class MainMenu : Control
     }
 
     // Título do jogo: "Press START" → menu de duas linhas. Teclado, controle e mouse (clique confirma, roda troca a linha).
+    static readonly bool Touch = DataPaths.Mobile || OS.IsDebugBuild() && OS.GetEnvironment("DW4_TOQUE") == "1";
+
     bool TitleInput(InputEvent e)
     {
         if (_art == null || _title == TitleState.None || _movieOn) return false;
@@ -152,6 +163,9 @@ public partial class MainMenu : Control
         bool ok = e.IsActionPressed("ui_accept") || e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }
             || e is InputEventJoypadButton { Pressed: true, ButtonIndex: JoyButton.Start };
         bool cancel = e.IsActionPressed("ui_cancel") || e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Right };
+        // Celular: o toque vira clique. No menu do título, a linha tocada (Game Start em cima, Option embaixo) é a escolhida.
+        if (Touch && _title == TitleState.Menu && e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } tap)
+            _titleLine = tap.Position.Y > GetViewportRect().Size.Y * 0.655f ? 1 : 0;
         switch (_title)
         {
             case TitleState.Press:
@@ -179,8 +193,8 @@ public partial class MainMenu : Control
     {
         var stages = DataPaths.Fases;
         var csv = Path.Combine(stages, Session.NewGameStage, "db", "db_shinka.csv");
-        if (!File.Exists(csv)) return [];
-        var lines = File.ReadAllLines(csv);
+        if (!GameFiles.Exists(csv)) return [];
+        var lines = GameFiles.ReadAllLines(csv);
         var head = lines[0].TrimStart('\uFEFF').Split(';');
         int name = Array.IndexOf(head, "NAME"), model = Array.IndexOf(head, "MODEL_NAME");
         if (name < 0 || model < 0) return [];
@@ -198,6 +212,8 @@ public partial class MainMenu : Control
     void Clear()
     {
         foreach (var c in _root.GetChildren()) { _root.RemoveChild(c); c.QueueFree(); }
+        _titleMenu?.QueueFree();
+        _titleMenu = null;
         // Fora do título: some o logotipo e os menus do jogo; o fundo animado fica.
         if (_art != null)
         {
@@ -206,6 +222,7 @@ public partial class MainMenu : Control
             _art.Remove("j_startmenu02");
         }
         _title = TitleState.None;
+        _loadToken++;
         if (_panel != null) _panel.Visible = true;
         // Telas de vagas e criação (MainMenu.Slots.cs).
         _screen?.QueueFree();
@@ -232,25 +249,102 @@ public partial class MainMenu : Control
         return b;
     }
 
+    // Entrada do jogo (pedido do usuário, 2026-11-04: "substitui o menu de entrar no game por uma versão nova baseada na tela de
+    // login"): o fundo e o logotipo do título original ficam; o "Press Start" e o "Game Start / Option" deram lugar a um painel
+    // no estilo do login do celular (MobileBoot), com botões grandes que funcionam no toque, no mouse, no teclado e no controle.
+    Control? _titleMenu;
+    Font? _gameFont;
+
+    static StyleBoxFlat MenuPanel()
+    {
+        var s = MobileBoot.Box(MobileBoot.Navy, MobileBoot.Cyan, 3, 16, 24);
+        s.ShadowColor = new Color(0, 0, 0, 0.5f);
+        s.ShadowSize = 14;
+        return s;
+    }
+
+    Theme MenuTheme()
+    {
+        var t = MobileBoot.MakeTheme();
+        if (_gameFont != null) { t.DefaultFont = _gameFont; t.DefaultFontSize = 30; }
+        return t;
+    }
+
     void ShowTitle()
     {
         Clear();
+        _title = TitleState.None;
+        _panel?.Set(CanvasItem.PropertyName.Visible, false);
+        var holder = new Control { MouseFilter = MouseFilterEnum.Ignore, Theme = MenuTheme() };
+        holder.SetAnchorsPreset(LayoutPreset.FullRect);
+        AddChild(holder);
+        _titleMenu = holder;
+        var box = new VBoxContainer { MouseFilter = MouseFilterEnum.Ignore };
+        box.AddThemeConstantOverride("separation", 0);
         if (_art != null)
         {
-            _panel!.Visible = false;
             _art.Visible = true;
             if (!_art.Has("j_startback")) _art.Play("j_startback", "SQ_OPEN");
             _art.Play("j_startlogo", "SQ_OPEN");
-            _art.Play("j_startmenu01", "SQ_OPEN");
-            _title = TitleState.Press;
-            return;
+            // o logotipo ocupa a metade de cima; o painel vem logo abaixo dele
+            box.AnchorLeft = 0; box.AnchorRight = 1; box.AnchorTop = 0.57f; box.AnchorBottom = 1;
         }
-        Title("Digimon World 4", 52);
-        Title("port para PC", 20);
-        var first = Btn(_root, "Jogar online", ShowSlots);
-        Btn(_root, "Configurações", ShowSettings);
-        Btn(_root, "Sair", () => GetTree().Quit());
-        first.CallDeferred(Control.MethodName.GrabFocus);
+        else
+        {
+            holder.AddChild(new MobileBoot.Tunnel { AnchorRight = 1, AnchorBottom = 1, MouseFilter = MouseFilterEnum.Ignore });
+            box.AnchorLeft = 0; box.AnchorRight = 1; box.AnchorTop = 0.12f; box.AnchorBottom = 1;
+            var name = new Label { Text = "DIGIMON WORLD 4", HorizontalAlignment = HorizontalAlignment.Center };
+            name.AddThemeFontSizeOverride("font_size", 84);
+            name.AddThemeColorOverride("font_color", MobileBoot.Gold);
+            name.AddThemeColorOverride("font_outline_color", new Color(0.55f, 0.12f, 0.05f));
+            name.AddThemeConstantOverride("outline_size", 16);
+            box.AddChild(name);
+        }
+        holder.AddChild(box);
+        // escala pela altura da janela (base 900, a tela lógica do celular)
+        var scaler = new CenterContainer { SizeFlagsVertical = SizeFlags.ShrinkBegin, MouseFilter = MouseFilterEnum.Ignore };
+        box.AddChild(scaler);
+        var panel = new PanelContainer { CustomMinimumSize = new Vector2(640, 0) };
+        panel.AddThemeStyleboxOverride("panel", MenuPanel());
+        scaler.AddChild(panel);
+        var col = new VBoxContainer();
+        col.AddThemeConstantOverride("separation", 12);
+        panel.AddChild(col);
+        var hello = new Label { Text = Session.Account is { Length: > 0 } acc ? $"Olá, {acc}!" : "Bem-vindo, Tamer!", HorizontalAlignment = HorizontalAlignment.Center };
+        hello.AddThemeFontSizeOverride("font_size", 32);
+        hello.AddThemeColorOverride("font_color", MobileBoot.Gold);
+        col.AddChild(hello);
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", 12);
+        Button Big(string text, Action click, bool primary = false)
+        {
+            var b = new Button { Text = text, CustomMinimumSize = new Vector2(0, primary ? 64 : 56), SizeFlagsHorizontal = SizeFlags.ExpandFill };
+            b.AddThemeFontSizeOverride("font_size", primary ? 34 : 26);
+            if (primary) b.AddThemeStyleboxOverride("normal", MobileBoot.Box(MobileBoot.Wine, MobileBoot.Gold, 3, 12, 10));
+            b.Pressed += click;
+            b.MouseEntered += () => b.GrabFocus();
+            ((Container)(primary ? col : row)).AddChild(b);
+            return b;
+        }
+        var play = Big("Jogar", ShowSlots, primary: true);
+        col.AddChild(row);
+        Big("Configurações", ShowSettings);
+        if (!DataPaths.Mobile) Big("Sair", () => GetTree().Quit());
+        var version = new Label { Text = DataPaths.Mobile ? $"versão {ProjectSettings.GetSetting("application/config/version", "").AsString()}" : DataPaths.Version is { Length: > 0 } v ? $"versão {v}" : "", HorizontalAlignment = HorizontalAlignment.Right };
+        version.AddThemeFontSizeOverride("font_size", 18);
+        version.AddThemeColorOverride("font_color", MobileBoot.Soft);
+        col.AddChild(version);
+        void Fit()
+        {
+            if (!IsInstanceValid(scaler) || !IsInsideTree()) return;
+            float k = GetViewportRect().Size.Y / 900f;
+            panel.PivotOffset = new Vector2(panel.Size.X / 2, 0);
+            panel.Scale = new Vector2(k, k) * (_art != null ? 1f : 1f);
+        }
+        holder.Resized += Fit;
+        panel.Resized += Fit;
+        Callable.From(Fit).CallDeferred();
+        play.CallDeferred(Control.MethodName.GrabFocus);
     }
 
     // ---------- vagas ----------
@@ -267,9 +361,9 @@ public partial class MainMenu : Control
             if (_slotDb == null)
             {
                 var dir = System.IO.Path.Combine(_stages, Session.NewGameStage, "db");
-                var file = System.IO.Directory.Exists(dir) ? System.IO.Directory.EnumerateFiles(dir, "*_db.json").FirstOrDefault() : null;
+                var file = GameFiles.DirExists(dir) ? GameFiles.EnumerateFiles(dir, "*_db.json").FirstOrDefault() : null;
                 if (file == null) return (0, 0);
-                _slotDb = GameTables.FromJson(System.IO.File.ReadAllText(file));
+                _slotDb = GameTables.FromJson(GameFiles.ReadAllText(file));
             }
             var ram = new DW4.Script.Be.GameRam();
             c.Apply(ram, 0);
@@ -284,17 +378,93 @@ public partial class MainMenu : Control
         catch (Exception e) when (e is KeyNotFoundException or IndexOutOfRangeException or ArgumentException or InvalidOperationException) { return (0, 0); }
     }
 
-    void ShowSlots()
+    // Cada abertura da tela de vagas (e cada troca de tela) ganha um número: a resposta do servidor que chega depois que o jogador
+    // já saiu da tela é ignorada.
+    int _loadToken;
+
+    async void ShowSlots()
     {
         // As vagas são da conta do launcher: sem ela (exe aberto direto), nenhuma vaga aparece.
         if (Session.Account == null) { Message("Abra o Digimon World 4 pelo launcher RE:DIGITAL, com a sua conta conectada, para ver e criar os seus Digimon.", ShowTitle); return; }
-        ShowSlotsUi();
+        if (Session.MenuNotice is { } notice) { Session.MenuNotice = null; Message(notice, ShowSlots); return; }
+        var account = Session.Account;
+        Clear();
+        int token = ++_loadToken;
+        Title(Session.UsesServer ? "Carregando os seus Digimon do servidor..." : "Carregando os seus Digimon...", 24);
+        Btn(_root, "Voltar", ShowTitle).CallDeferred(Control.MethodName.GrabFocus);
+        IReadOnlyList<CharacterSave?> slots;
+        string? migrated = null;
+        try
+        {
+            slots = await Session.Store.ListAsync(account);
+            if (Session.UsesServer) (slots, migrated) = await MigrateLocalSlots(account, slots);
+        }
+        catch (Exception e) when (e is OnlineCharacterStore.StoreException or IOException or ArgumentException)
+        {
+            if (token != _loadToken || !IsInsideTree()) return;
+            GD.PrintErr($"[menu] vagas: {e.Message}");
+            Clear();
+            Title("Não deu para carregar os seus Digimon.", 28);
+            Title(e.Message, 20);
+            Title("Os personagens ficam na sua conta, no servidor: é preciso estar conectado para jogar.", 18);
+            Btn(_root, "Tentar de novo", () => { if (Online.Kicked) Online.ResetKick(); ShowSlots(); }).CallDeferred(Control.MethodName.GrabFocus);
+            Btn(_root, "Voltar", ShowTitle);
+            return;
+        }
+        if (token != _loadToken || !IsInsideTree()) return;
+        if (migrated != null) { _slots = slots; Message(migrated, () => ShowSlotsUi(_slots)); return; }
+        ShowSlotsUi(slots);
+    }
+
+    /// <summary>
+    /// Migração (2026-11-04): as vagas antigas deste aparelho (user://accounts/&lt;conta&gt;) sobem para a conta no servidor, cada
+    /// uma na mesma vaga se ela está livre, senão na primeira livre (SlotMigration). O arquivo enviado vira slotN.json.enviado
+    /// (cópia; o jogo não lê mais). Devolve as vagas atualizadas e o aviso para o jogador (null = não havia nada para enviar).
+    /// </summary>
+    static async System.Threading.Tasks.Task<(IReadOnlyList<CharacterSave?>, string?)> MigrateLocalSlots(string account, IReadOnlyList<CharacterSave?> server)
+    {
+        var local = new LocalCharacterStore(ProjectSettings.GlobalizePath("user://"));
+        IReadOnlyList<CharacterSave?> mine;
+        try { mine = local.List(account); }
+        catch (Exception e) when (e is IOException or ArgumentException) { GD.PrintErr($"[migração] vagas locais: {e.Message}"); return (server, null); }
+        if (mine.All(c => c == null)) return (server, null);
+        // DECISÃO DO RESPONSÁVEL (2026-11-04): os saves do PC vão para a conta; os do celular são descartados (ficam só como
+        // slotN.json.enviado, sem subir), e o celular passa a usar os do PC que estão na conta.
+        if (DataPaths.Mobile)
+        {
+            for (int i = 0; i < mine.Count; i++)
+                if (mine[i] != null)
+                    try { local.MarkMigrated(account, i); GD.Print($"[migração] celular: vaga local {i + 1} ({mine[i]!.Name}) descartada"); }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException) { GD.PrintErr($"[migração] {e.Message}"); }
+            return (server, null);
+        }
+        var slots = server.ToArray();
+        var sent = new List<string>();
+        var left = new List<string>();
+        foreach (var (from, to) in SlotMigration.Plan(server, mine))
+        {
+            var c = mine[from]!;
+            if (to < 0) { left.Add(c.Name); continue; }
+            await Session.Store.SaveAsync(account, to, c); // falha: a exceção sobe e o menu mostra "não deu para carregar"
+            try { local.MarkMigrated(account, from); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { GD.PrintErr($"[migração] não renomeou a vaga {from + 1}: {e.Message}"); }
+            slots[to] = c;
+            sent.Add(c.Name);
+            GD.Print($"[migração] vaga local {from + 1} ({c.Name}) → vaga {to + 1} da conta");
+        }
+        var text = sent.Count == 0 ? "" : $"Personagens deste aparelho enviados para a sua conta: {string.Join(", ", sent)}.\nAgora eles ficam no servidor (PC e celular usam os mesmos).";
+        if (left.Count > 0)
+            text += (text.Length > 0 ? "\n\n" : "") + $"Não couberam nas 4 vagas da conta e continuam só neste aparelho: {string.Join(", ", left)}. Apague uma vaga e abra esta tela de novo para trazer.";
+        return (slots, text);
     }
 
     void Play(int slot, CharacterSave c)
     {
         if (!Playable(c.Model)) { Message($"{FormName(c.CurrentForm)} ainda não tem modelo no cliente.", ShowSlots); return; }
         // FATO (hostLoad.lua): a dificuldade é escolhida a cada começo, até o máximo liberado pelas flags da vaga.
+        // Vagas gravadas antes da PermanentFlags (até a 0.6.3): o enredo só nas flags de trabalho; passa para as permanentes
+        // antes da dificuldade (FLG 711/77) e da gameStart.lua lerem.
+        DW4.Script.Save.PermanentFlags.Repair(c);
         var ram = new DW4.Script.Be.GameRam();
         c.Apply(ram, 0);
         if (ram.DifficultyMax == 0) { c.Difficulty = 0; Enter(slot, c); return; }
@@ -322,7 +492,18 @@ public partial class MainMenu : Control
         Title($"Apagar {c.Name} ({FormName(c.CurrentForm)} nv {c.Level})?", 26);
         Title("Isso não pode ser desfeito.", 18);
         var no = Btn(_root, "Não, manter", ShowSlots);
-        Btn(_root, "Sim, apagar", () => { Session.Store.Delete(Session.Account!, slot); ShowSlots(); });
+        Btn(_root, "Sim, apagar", async () =>
+        {
+            Clear();
+            Title("Apagando...", 24);
+            try { await Session.Store.DeleteAsync(Session.Account!, slot); }
+            catch (Exception e) when (e is OnlineCharacterStore.StoreException or IOException)
+            {
+                if (IsInsideTree()) Message($"Não deu para apagar: {e.Message}", ShowSlots);
+                return;
+            }
+            if (IsInsideTree()) ShowSlots();
+        });
         no.CallDeferred(Control.MethodName.GrabFocus);
     }
 
@@ -345,7 +526,20 @@ public partial class MainMenu : Control
         _root.AddChild(new SettingsPanel(ShowTitle));
     }
 
-    public override void _Input(InputEvent e) => DeviceIcons.Seen(e);
+    public override void _Input(InputEvent e)
+    {
+        DeviceIcons.Seen(e);
+        // Clique/toque no título vem aqui, antes da interface: o MainMenu (Control de tela cheia) segurava o clique e ele
+        // nunca chegava ao _UnhandledInput (no celular o título não respondia ao toque).
+        if (e is InputEventMouseButton && TitleInput(e) && IsInsideTree()) GetViewport().SetInputAsHandled();
+    }
+
+    // Celular: o botão "voltar" do Android vale como Cancelar (Esc / B).
+    public override void _Notification(int what)
+    {
+        if (what == NotificationWMGoBackRequest && DataPaths.Mobile)
+            Input.ParseInputEvent(new InputEventAction { Action = "ui_cancel", Pressed = true });
+    }
 
     public override void _UnhandledInput(InputEvent e)
     {

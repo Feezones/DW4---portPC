@@ -18,7 +18,7 @@ public partial class Fatia
 
     bool InCutscene => _cameraDemo != null || (!_padEnabled && !SubWindowOpen && !_menuOpen && !ShopOpen) || !_playerCtrl;
 
-    void QuickSave()
+    async void QuickSave()
     {
         string? why = _demo || InCutscene ? "Não dá para salvar durante uma cena."
             : _menuOpen || ShopOpen || SubWindowOpen || ChatOpen ? "Feche a janela para salvar."
@@ -28,8 +28,17 @@ public partial class Fatia
             : Session.Character == null ? "Sem vaga: abra pelo menu inicial para salvar."
             : _leaving ? "" : null;
         if (why != null) { if (why.Length > 0) Toast(why); return; }
-        SaveProgress();
-        Toast($"Jogo salvo ({Session.Character!.Name}).");
+        string name = Session.Character!.Name;
+        Toast("Gravando no servidor...", 20);
+        bool ok = await SaveProgress();
+        if (!IsInsideTree()) return;
+        Toast(ok ? $"Jogo salvo ({name})." : $"Não gravou no servidor: {Session.LastError}", ok ? 2.5 : 4);
+    }
+
+    void HideToast()
+    {
+        _toastLeft = 0;
+        if (_toast != null) _toast.Visible = false;
     }
 
     void Toast(string text, double seconds = 2.5)

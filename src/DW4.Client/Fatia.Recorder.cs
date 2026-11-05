@@ -27,7 +27,11 @@ public partial class Fatia
     public static string PlayerModel { get; set; } = OS.IsDebugBuild() && OS.GetEnvironment("DW4_FORMA") is { Length: > 0 } f ? f : "p_girumon";
 
     bool _playerCtrl = true, _enemiesFrozen, _generatorsFrozen;
+    // ENEMY <modelo> OFCTRL trava só esse modelo; volta com MODELCTRL <modelo> <n> ONCTRL (FATO, matg08.lua da dng101b2: o
+    // Blossomon nasce travado e é solto assim depois da janela de apresentação). Sem modelo ("-"), trava todos.
+    readonly HashSet<string> _frozenModels = [];
     bool _confirmDown, _confirmArmed, _selectEnded;
+    int _selectPending; // SELECTCTRL GENERATE na pilha de atraso, ainda não entregues
     List<(string? Key, string Text)>? _texts;
     bool _textsTried;
     Label? _message;
@@ -37,6 +41,20 @@ public partial class Fatia
 
     // Na troca de ação do jogador: a caixa 60000 dura 1 quadro (Set 60000 1 1) numa ação de 1 quadro, então a sonda é
     // conferida uma vez por ação, sem depender do quadro exato.
+    // Alcance para virar o golpe para quem fala: a sonda (7 à frente, caixa 3) mais o volume do NPC (10) dá ~13,5; 16 cobre o balcão.
+    const float TalkReach = 16f;
+
+    /// <summary>NPC com conversa (hit_&lt;nome&gt;.lua) mais perto, no alcance da sonda e na mesma altura; null se não houver.</summary>
+    WorldObject? TalkTarget()
+    {
+        if (_stage == null) return null;
+        var pp = _player.GlobalPosition;
+        return _objects.Where(o => o.Name.StartsWith("n_", StringComparison.Ordinal) && !o.Dead && o.Actor.Root.IsInsideTree())
+            .Select(o => (o, d: new Vector2(o.Actor.Root.GlobalPosition.X - pp.X, o.Actor.Root.GlobalPosition.Z - pp.Z).Length()))
+            .Where(x => x.d <= TalkReach && Math.Abs(x.o.Actor.Root.GlobalPosition.Y - pp.Y) < 15 && _stage.Has($"hit_{x.o.Name}.lua"))
+            .OrderBy(x => x.d).Select(x => x.o).FirstOrDefault();
+    }
+
     void CheckTalkProbe()
     {
         if (_runner == null || _stage == null) return;
@@ -49,9 +67,11 @@ public partial class Fatia
             foreach (var o in _objects.Where(o => o.Name.StartsWith("n_", StringComparison.Ordinal) && !o.Dead).ToList())
             {
                 var p = o.Actor.Root.GlobalPosition;
+                if (DiagNpc && c.DistanceTo(p) < 40) GD.Print($"[sonda] {o.Name}/{o.Index} em {p.Round()}: sonda {c.Round()} tamanho {h.Size}, jogador {_player.GlobalPosition.Round()}");
                 if (Math.Abs(c.X - p.X) > h.Size.X / 2 + TalkVolume.X / 2 || Math.Abs(c.Z - p.Z) > h.Size.Z / 2 + TalkVolume.Z / 2
                     || c.Y + h.Size.Y / 2 < p.Y || c.Y - h.Size.Y / 2 > p.Y + TalkVolume.Y) continue;
                 var script = $"hit_{o.Name}.lua";
+                if (DiagNpc) GD.Print($"[conversa] {o.Name}/{o.Index}: {script} {(_stage.Has(script) ? "roda" : "NÃO EXISTE")}");
                 if (!_stage.Has(script)) continue;
                 o.BulletKind = TalkProbe;
                 _stage.RunAs(script, o);
@@ -87,8 +107,12 @@ public partial class Fatia
                 if (m.Arg(1) is { Kind: 'V', Numbers.Length: 3 } mr) _move.Face(Mathf.DegToRad((float)mr.Numbers[1]));
                 _snapToFloor = true;
                 return true;
+            case ("ENEMY", "OFCTRL") when m.Name is { Length: > 0 } frozen: _frozenModels.Add(frozen); return true;
+            case ("ENEMY", "ONCTRL") when m.Name is { Length: > 0 } freed: _frozenModels.Remove(freed); return true;
             case ("ENEMY", "OFCTRL"): _enemiesFrozen = true; return true;
-            case ("ENEMY", "ONCTRL"): _enemiesFrozen = false; return true;
+            case ("ENEMY", "ONCTRL"): _enemiesFrozen = false; _frozenModels.Clear(); return true;
+            case ("MODELCTRL", "OFCTRL") when m.Name is { Length: > 0 } model && _enemies.Any(e => e.Kind.Model == model): _frozenModels.Add(model); return true;
+            case ("MODELCTRL", "ONCTRL") when m.Name is { Length: > 0 } model && _frozenModels.Remove(model): return true;
             case ("GENERATER", "ONFREEZE"): _generatorsFrozen = true; return true;
             case ("GENERATER", "OFFREEZE"): _generatorsFrozen = false; return true;
             // FATO: "TALKFONT01/font00/I<k>": k = posição na beUnicodeObjList do pacote (113 de 136 conferidos).
@@ -108,7 +132,8 @@ public partial class Fatia
         {
             // HIPÓTESE: ISEND = 1 depois que o jogador confirmou (toque que começou depois do SELECTCTRL GENERATE); volta a 0 no
             // próximo GENERATE. funcOneMessage: espera enquanto "!=0" (fim anterior) e enquanto "==0" (até confirmar).
-            case "ISEND" when m.Class is "TEXTCTL" or "SELECTCTRL": return _selectEnded ? 1 : 0;
+            // Com um GENERATE ainda na pilha de atraso, a janela nova não abriu: o fim que vale é o dela, ainda não confirmado.
+            case "ISEND" when m.Class is "TEXTCTL" or "SELECTCTRL": return _selectEnded && _selectPending == 0 ? 1 : 0;
             // ISSEQNAME = 1 quando o modelo está na sequência pedida (o DM espera enquanto "==0").
             case "ISSEQNAME" when m.Text(0) is { } seq:
                 if (m.Class == "PLAYER" || m.Name == PlayerModel) return (_runner?.Running == true ? _runner.Sequence : "SQ_WAIT") == seq ? 1 : 0;
@@ -124,10 +149,10 @@ public partial class Fatia
         {
             _textsTried = true;
             var file = Path.Combine(_dir, "textos", "textos.json");
-            if (!File.Exists(file)) _problems.Add($"falta {file} (dw4 igb-textos area.afs 9 <fatia>\\textos): mensagens sem texto");
+            if (!GameFiles.Exists(file)) _problems.Add($"falta {file} (dw4 igb-textos area.afs 9 <fatia>\\textos): mensagens sem texto");
             else
             {
-                using var doc = JsonDocument.Parse(File.ReadAllText(file));
+                using var doc = JsonDocument.Parse(GameFiles.ReadAllText(file));
                 _texts = doc.RootElement.GetProperty("texts").EnumerateArray()
                     .OrderBy(t => t.GetProperty("index").GetInt32())
                     .Select(t => (t.TryGetProperty("key", out var k) ? k.GetString() : null, t.GetProperty("text").GetString() ?? "")).ToList();
@@ -140,6 +165,8 @@ public partial class Fatia
     // DECISÃO DA FATIA: a janela i_messwn e a fonte do jogo ainda não foram exportadas; o texto sai numa caixa da Godot embaixo.
     void ShowMessage(string? text)
     {
+        // A caixa da Godot não tem o ícone ¶ (X-Data) da fonte do jogo: "Guardião dos ¶ Dados" saía com o ¶ solto.
+        text = text?.Replace("¶ ", "X-").Replace("¶", "X");
         if (_messagePanel == null)
         {
             var layer = new CanvasLayer { Layer = 4 }; // acima do fade (i_fadewn01, camada 3): o aviso da troca de fase aparece com a tela preta
@@ -203,11 +230,11 @@ sealed class Minimap
         if (_actors.Any(a => a.Key == key)) return;
         var actor = new HudActor(_data, root, slot: cursor ? player : 0);
         var seqDir = Path.Combine(_dir, name);
-        var seqFile = Directory.Exists(seqDir) ? Directory.EnumerateFiles(seqDir, "*_seq.json").FirstOrDefault() : null;
+        var seqFile = GameFiles.DirExists(seqDir) ? GameFiles.EnumerateFiles(seqDir, "*_seq.json").FirstOrDefault() : null;
         ObjectSequencer? seq = null;
         if (seqFile != null)
         {
-            var json = File.ReadAllText(seqFile);
+            var json = GameFiles.ReadAllText(seqFile);
             seq = new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json));
             // j_map101b1: GENERATE "SQ_OPEN"; j_mapcur: um SQ_OPEN0n por jogador (HIPÓTESE: n = jogador).
             if (!(sequence != null && sequence.StartsWith("SQ_", StringComparison.Ordinal) && seq.Start(sequence))) seq.Start($"SQ_OPEN0{player}");

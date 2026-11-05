@@ -27,8 +27,8 @@ public partial class Fatia
         _facesTried = true;
         foreach (var dir in new[] { Path.Combine(_dir, "menu"), Path.Combine(_common, "menu"), Path.Combine(_common, "hud") })
         {
-            var file = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "*charaicon.png").FirstOrDefault() : null;
-            if (file != null && Image.LoadFromFile(file) is { } img) return _faces = ImageTexture.CreateFromImage(img);
+            var file = GameFiles.DirExists(dir) ? GameFiles.EnumerateFiles(dir, "*charaicon.png").FirstOrDefault() : null;
+            if (file != null && Image.LoadFromFile(GameFiles.GodotPath(file)) is { } img) return _faces = ImageTexture.CreateFromImage(img);
         }
         return null;
     }

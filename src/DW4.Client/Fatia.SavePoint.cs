@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using Godot;
 using DW4.Script.Be;
@@ -37,9 +38,9 @@ public partial class Fatia
         {
             _textByKey = [];
             var file = Path.Combine(_dir, "textos", "textos.json");
-            if (File.Exists(file))
+            if (GameFiles.Exists(file))
             {
-                using var doc = JsonDocument.Parse(File.ReadAllText(file));
+                using var doc = JsonDocument.Parse(GameFiles.ReadAllText(file));
                 foreach (var t in doc.RootElement.GetProperty("texts").EnumerateArray())
                     if (t.TryGetProperty("key", out var k) && k.GetString() is { } ks) _textByKey[ks] = t.GetProperty("text").GetString() ?? "";
             }
@@ -68,7 +69,15 @@ public partial class Fatia
         else
             SaveWindow(TextKey("mswkMem0200", "Do you want to save?") + "\n(o port também grava sozinho ao trocar de fase)",
             [
-                (TextKey("mswkMem0201", "Save."), () => { SaveProgress(_stageName, int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var e) ? e : 0); SaveWindow(TextKey("mswkMem0216", "Digimon was saved."), [("OK", CloseSaveWindow)]); }),
+                (TextKey("mswkMem0201", "Save."), async () =>
+                {
+                    CloseSaveWindow();
+                    Toast("Gravando no servidor...", 20);
+                    bool ok = await SaveProgress(_stageName, CurrentEntry);
+                    if (!IsInsideTree()) return;
+                    HideToast();
+                    SaveWindow(ok ? TextKey("mswkMem0216", "Digimon was saved.") : $"Não gravou no servidor:\n{Session.LastError}", [("OK", CloseSaveWindow)]);
+                }),
                 ("Trocar de Digimon (voltar ao menu)", () => { CloseSaveWindow(); LeaveGame(); }),
                 ("Continuar", CloseSaveWindow),
             ]);
@@ -76,10 +85,15 @@ public partial class Fatia
 
     void AskSave() => SaveWindow(TextKey("mswkMem0200", "Do you want to save?"),
     [
-        (TextKey("mswkMem0201", "Save."), () =>
+        (TextKey("mswkMem0201", "Save."), async () =>
         {
-            SaveProgress(LobbyStage, LobbyEntry);
-            SaveWindow(Session.Active ? TextKey("mswkMem0216", "Digimon was saved.") : "Sem vaga escolhida no menu: nada foi gravado.",
+            CloseSaveWindow();
+            Toast("Gravando no servidor...", 20);
+            bool ok = await SaveProgress(LobbyStage, LobbyEntry);
+            if (!IsInsideTree()) return;
+            HideToast();
+            SaveWindow(!Session.Active ? "Sem vaga escolhida no menu: nada foi gravado."
+                : ok ? TextKey("mswkMem0216", "Digimon was saved.") : $"Não gravou no servidor:\n{Session.LastError}",
                 [("OK", AskLeave)]);
         }),
         (TextKey("mswkMem0202", "Do not save."), AskLeave),
@@ -97,10 +111,35 @@ public partial class Fatia
         }),
     ]);
 
+    // Teclas do jogo na janela de botões (salvar, loja de cartas, fases de menu): a Godot só entende setas/Enter/mouse; aqui
+    // cima/baixo (W/S, direcional) trocam o botão, confirmar/ataque (J, Enter, A) aperta e cancelar (K, Backspace, B) aperta o último.
+    bool SaveWindowInput(InputEvent e)
+    {
+        if (_saveLayer == null) return false;
+        var buttons = _saveLayer.FindChildren("*", nameof(Button), true, false).OfType<Button>().Where(b => !b.Disabled && b.IsVisibleInTree()).ToList();
+        if (buttons.Count == 0) return false;
+        var focus = GetViewport().GuiGetFocusOwner() as Button;
+        int at = focus != null ? buttons.IndexOf(focus) : -1;
+        if (PortInput.Pressed(e, "cima") || PortInput.Pressed(e, "baixo"))
+        {
+            int step = PortInput.Pressed(e, "cima") ? -1 : 1;
+            buttons[((at < 0 ? 0 : at + step) % buttons.Count + buttons.Count) % buttons.Count].GrabFocus();
+            return true;
+        }
+        if ((PortInput.Pressed(e, "confirmar") || PortInput.Pressed(e, "ataque")) && e is not InputEventMouseButton && !e.IsActionPressed("ui_accept"))
+        {
+            (at >= 0 ? buttons[at] : buttons[0]).EmitSignal(BaseButton.SignalName.Pressed);
+            return true;
+        }
+        if (PortInput.Pressed(e, "cancelar")) { buttons[^1].EmitSignal(BaseButton.SignalName.Pressed); return true; }
+        return false;
+    }
+
     // Janela com as escolhas; trava o controle do jogador enquanto está aberta.
     void SaveWindow(string text, (string Label, Action Pick)[] options)
     {
         CloseSaveWindow();
+        if (DiagNpc) GD.Print($"[janela] {text.Replace('\n', ' ')} → {string.Join(" / ", options.Select(o => o.Label))}");
         _padEnabled = false;
         _saveLayer = new CanvasLayer { Layer = 20 };
         var center = new CenterContainer { AnchorRight = 1, AnchorBottom = 1 };

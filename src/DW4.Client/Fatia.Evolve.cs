@@ -20,7 +20,7 @@ namespace DW4.Client;
 /// </summary>
 public partial class Fatia
 {
-    string PlayerFolder => PlayerModel == "p_girumon" && System.IO.Directory.Exists(System.IO.Path.Combine(_common, "guilmon"))
+    string PlayerFolder => PlayerModel == "p_girumon" && GameFiles.DirExists(System.IO.Path.Combine(_common, "guilmon"))
         ? "guilmon" : System.IO.Path.Combine("formas", PlayerModel);
 
     string FormName => _db != null && _shinkaRow >= 0 ? _db["shinka"].Text(_shinkaRow, "NAME") : PlayerModel;
@@ -29,8 +29,8 @@ public partial class Fatia
 
     /// <summary>A pasta do modelo da forma existe na pasta comum? (o menu inicial só deixa criar o que o cliente desenha).</summary>
     public static bool HasPlayerModel(string commonDir, string model) =>
-        System.IO.Directory.Exists(System.IO.Path.Combine(commonDir, "formas", model))
-        || model == "p_girumon" && System.IO.Directory.Exists(System.IO.Path.Combine(commonDir, "guilmon"));
+        GameFiles.DirExists(System.IO.Path.Combine(commonDir, "formas", model))
+        || model == "p_girumon" && GameFiles.DirExists(System.IO.Path.Combine(commonDir, "guilmon"));
 
     bool DeliverToEvolve(BeMessage m)
     {
@@ -70,8 +70,7 @@ public partial class Fatia
         ScriptLog($"digievolução: {model} (DIGIMONNO {digimonNo})");
         var p = _player.GlobalPosition;
         int entry = int.TryParse(OS.GetEnvironment("DW4_ENTRADA"), out var e) ? e : 0;
-        try { Session.SaveProgress(Ram, _stageName, entry); }
-        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException) { GD.PrintErr($"[save] não gravou: {ex.Message}"); }
+        _ = Session.SaveProgress(Ram, _stageName, entry); // vai ao servidor; a conexão continua na recarga da cena
         OS.SetEnvironment("DW4_INICIO", string.Create(CultureInfo.InvariantCulture, $"{p.X},{p.Y + 1},{p.Z}"));
         _leaving = true;
         GetTree().ReloadCurrentScene();

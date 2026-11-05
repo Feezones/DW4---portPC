@@ -82,8 +82,18 @@ public sealed class GameServer
                     _main.Enqueue(() => Admit(p, h, who, error));
                 });
                 break;
+            case CoopRelay x when _world.IsOnline(p.Id):
+                if (!AllowCoop(p.Id)) return;
+                Send(_world.Relay(p.Id, x.Payload, x.Reliable));
+                break;
             case Interact x when _world.IsOnline(p.Id):
                 OnInteract(p, x);
+                break;
+            case SaveList or SaveWrite or SaveDelete when _world.IsOnline(p.Id):
+                OnSave(p, msg);
+                break;
+            case ChatSend x when _world.IsOnline(p.Id):
+                OnChat(p, x);
                 break;
             case PlayerState s when _world.IsOnline(p.Id):
                 if (!Allow(p.Id)) return;
@@ -110,7 +120,7 @@ public sealed class GameServer
         {
             Log($"[{old}] mesma conta entrou de novo; sessão antiga derrubada");
             Send(_world.Leave(old));
-            Reject(oldPeer, "Sua conta entrou em outro lugar.");
+            Reject(oldPeer, Protocol.KickedReason);
         }
         Log($"[{p.Id}] entrou: {who.Tamer} (conta {who.AccountId}) com {h.Character}");
         Send(p, new Welcome(p.Id, who.Tamer), true);
@@ -120,6 +130,26 @@ public sealed class GameServer
     static readonly HashSet<string> Actions =
         ["relation", "friend-request", "party-invite", "friend-accept", "friend-decline", "party-accept", "party-decline"];
     readonly Dictionary<int, DateTime> _lastInteract = [];
+    // Contra spam no chat: 5 mensagens a cada 5 s por conta (a mesma regra do jogo, ChatFlood).
+    readonly DW4.Gameplay.ChatFlood _chatFlood = new();
+
+    /// <summary>
+    /// Chat (0.6.8): limpa o texto (uma linha, até 120 letras), segura o spam por conta e entrega pela <see cref="World"/>. O texto
+    /// não vai para o log.
+    /// </summary>
+    void OnChat(NetPeer p, ChatSend x)
+    {
+        var who = _world.Who(p.Id)!;
+        var text = DW4.Gameplay.ChatLog.Clean(x.Text);
+        if (text.Length == 0) return;
+        if (!_chatFlood.Allow(who.AccountId.ToString(), DateTime.UtcNow))
+        {
+            Send(p, new ChatNotice("Muitas mensagens seguidas. Espere um pouco."), true);
+            return;
+        }
+        Send(_world.Chat(p.Id, x.Channel, x.To.Trim(), text, out var notice));
+        if (notice != null) Send(p, new ChatNotice(notice), true);
+    }
 
     /// <summary>
     /// Menu do F: a ação vai para a DMO.API em nome da conta deste jogador (as regras de amigos e party são as do launcher).
@@ -139,6 +169,13 @@ public sealed class GameServer
             Send(p, new InteractResult(x.TargetId, x.Action, false, "Esse jogador não está mais perto."), true);
             return;
         }
+        // Amigos e party da API são do Tamer do DMO: conta sem Tamer não é achada pelo nome (a API diria "Jogador rd… não
+        // encontrado", com o usuário gerado no lugar do nome). Avisa antes, com o motivo de verdade.
+        if (x.Action is not ("party-accept" or "party-decline") && NoTamerNotice(me, target, _world.Name(x.TargetId)) is { } why)
+        {
+            Send(p, new InteractResult(x.TargetId, x.Action, false, why), true);
+            return;
+        }
         _ = Task.Run(async () =>
         {
             SocialReply r;
@@ -147,6 +184,11 @@ public sealed class GameServer
             _main.Enqueue(() => AfterInteract(p, x, me, target, r));
         });
     }
+
+    public static string? NoTamerNotice(Identity me, Identity target, string targetName) =>
+        !me.HasTamer ? "Sua conta ainda não tem um Tamer no RE:DIGITAL ONLINE, por isso amigos e grupo não estão disponíveis."
+        : !target.HasTamer ? $"{targetName} ainda não tem um Tamer no RE:DIGITAL ONLINE, por isso não dá para adicionar nem chamar para o grupo."
+        : null;
 
     void AfterInteract(NetPeer p, Interact x, Identity me, Identity target, SocialReply r)
     {
@@ -163,12 +205,88 @@ public sealed class GameServer
                 _ = SafeAsync(async () => { var party = await _api.PresenceAsync(acc, true); _main.Enqueue(() => Send(_world.SetParty(id, party))); });
     }
 
+    // ---------- vagas de personagem (saves no servidor) ----------
+
+    // Pedidos de save por conta, um depois do outro: duas gravações seguidas (troca de fase e F5) chegam à API na ordem em que o
+    // jogo mandou, então a mais nova nunca é sobrescrita pela mais velha.
+    readonly Dictionary<long, Task> _saveChain = [];
+    readonly Dictionary<int, (long Window, int Count)> _saveRate = [];
+    const int MaxSavesPer10s = 20;
+
+    /// <summary>
+    /// Lista, grava ou apaga uma vaga da conta deste jogador (a conta é a do ticket; o cliente nunca escolhe a conta). O save é
+    /// conferido (JSON de objeto, até <see cref="Protocol.MaxSaveJson"/>) antes de ir para a DMO.API.
+    /// </summary>
+    void OnSave(NetPeer p, object msg)
+    {
+        long window = Stopwatch.GetTimestamp() / Stopwatch.Frequency / 10;
+        var (w, n) = _saveRate.TryGetValue(p.Id, out var v) && v.Window == window ? v : (window, 0);
+        _saveRate[p.Id] = (w, n + 1);
+        int reqId = msg switch { SaveList x => x.ReqId, SaveWrite x => x.ReqId, SaveDelete x => x.ReqId, _ => 0 };
+        if (n >= MaxSavesPer10s) { Send(p, new SaveReply(reqId, false, "Muitas gravações seguidas. Tente de novo em instantes.", []), true); return; }
+        var who = _world.Who(p.Id)!;
+        Func<Task<SaveReply>> work;
+        switch (msg)
+        {
+            case SaveList:
+                work = async () =>
+                {
+                    var list = await _api.ListCharactersAsync(who.AccountId);
+                    return new SaveReply(reqId, true, "", list.Where(c => c.Slot is >= 0 and < Protocol.Slots)
+                        .Select(c => new SaveEntry(c.Slot, SaveData.Pack(c.Json))).ToArray());
+                };
+                break;
+            case SaveWrite x:
+                string json, name;
+                try { (json, name) = CheckSave(x.Data); }
+                catch (FormatException ex)
+                {
+                    Log($"[{p.Id}] save recusado ({ex.Message})");
+                    Send(p, new SaveReply(reqId, false, "Save inválido.", []), true);
+                    return;
+                }
+                work = async () => { await _api.SaveCharacterAsync(who.AccountId, x.Slot, name, json); return new SaveReply(reqId, true, "", []); };
+                break;
+            case SaveDelete x:
+                work = async () => { await _api.DeleteCharacterAsync(who.AccountId, x.Slot); return new SaveReply(reqId, true, "", []); };
+                break;
+            default: return;
+        }
+        var prev = _saveChain.TryGetValue(who.AccountId, out var t) ? t : Task.CompletedTask;
+        var next = prev.ContinueWith(async _ =>
+        {
+            SaveReply reply;
+            try { reply = await work(); }
+            catch (Exception ex) { Log($"API (save {who.Tamer}): {ex.Message}"); reply = new SaveReply(reqId, false, "Servidor da conta fora do ar. Tente de novo em instantes.", []); }
+            // A resposta vai para quem pediu, se ainda está conectado (a gravação vale mesmo se ele já saiu).
+            _main.Enqueue(() => { if (_peers.TryGetValue(p.Id, out var peer)) Send(peer, reply, true); });
+        }, TaskScheduler.Default).Unwrap();
+        _saveChain[who.AccountId] = next;
+        _ = next.ContinueWith(_ => _main.Enqueue(() => { if (_saveChain.TryGetValue(who.AccountId, out var cur) && cur == next) _saveChain.Remove(who.AccountId); }));
+    }
+
+    /// <summary>Descomprime e confere o save; devolve o JSON e o nome do Digimon (para a API).</summary>
+    public static (string Json, string Name) CheckSave(byte[] data)
+    {
+        var json = SaveData.Unpack(data);
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object) throw new FormatException("save não é um objeto");
+            var name = doc.RootElement.TryGetProperty("Name", out var n) && n.ValueKind == System.Text.Json.JsonValueKind.String ? n.GetString() ?? "" : "";
+            return (json, name.Length > 32 ? name[..32] : name);
+        }
+        catch (System.Text.Json.JsonException) { throw new FormatException("save não é JSON"); }
+    }
+
     void Drop(int id)
     {
         _peers.Remove(id);
         _connectedAt.Remove(id);
         _rate.Remove(id);
         _lastInteract.Remove(id);
+        _coopRate.Remove(id);
+        _saveRate.Remove(id);
         if (_world.Who(id) is { } who)
         {
             Log($"[{id}] saiu: {who.Tamer}");
@@ -181,6 +299,19 @@ public sealed class GameServer
     {
         foreach (var (id, acc) in _world.Accounts.ToList())
             _ = SafeAsync(async () => { var party = await _api.PresenceAsync(acc, true); _main.Enqueue(() => Send(_world.SetParty(id, party))); });
+    }
+
+    // Combate em grupo: até 120 pacotes por segundo por jogador (sincronia a 10 Hz + golpes e sequências de vários inimigos).
+    readonly Dictionary<int, (long Second, int Count)> _coopRate = [];
+    const int MaxCoopPerSecond = 120;
+
+    bool AllowCoop(int id)
+    {
+        long sec = Stopwatch.GetTimestamp() / Stopwatch.Frequency;
+        var (s, n) = _coopRate.TryGetValue(id, out var v) ? v : (sec, 0);
+        if (s != sec) (s, n) = (sec, 0);
+        _coopRate[id] = (s, n + 1);
+        return n < MaxCoopPerSecond;
     }
 
     bool Allow(int id)
@@ -197,8 +328,10 @@ public sealed class GameServer
         foreach (var o in list) if (_peers.TryGetValue(o.To, out var p)) Send(p, o.Message, o.Reliable);
     }
 
+    // Sem garantia: o estado do jogador vai em sequência (o mais novo vale); a sincronia do grupo vai solta, para não brigar com
+    // o estado no mesmo canal (Sequenced descarta o que chega depois de um pacote mais novo do canal, de qualquer tipo).
     static void Send(NetPeer p, object msg, bool reliable) =>
-        p.Send(Codec.Write(msg), reliable ? DeliveryMethod.ReliableOrdered : DeliveryMethod.Sequenced);
+        p.Send(Codec.Write(msg), reliable ? DeliveryMethod.ReliableOrdered : msg is CoopFrom ? DeliveryMethod.Unreliable : DeliveryMethod.Sequenced);
 
     /// <summary>Recusa: o motivo vai junto do pedido de desconexão (um pacote mandado logo antes se perderia).</summary>
     void Reject(NetPeer p, string reason) => _net.DisconnectPeer(p, Codec.Write(new Reject(reason)));

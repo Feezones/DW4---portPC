@@ -26,8 +26,10 @@ public partial class MainMenu
     LineEdit? _nameEdit;
     Label? _formLabel, _createStatus;
     readonly List<Button> _cards = [];
+    Button? _playBtn, _delBtn;
+    int _tapSlot = -1;
 
-    static readonly Color CardBg = new(0.22f, 0.05f, 0.08f, 0.92f), CardBorder = new(0.45f, 0.42f, 0.95f), Gold = new(1f, 0.85f, 0.35f);
+    static readonly Color CardBg = new(0.32f, 0.07f, 0.16f, 0.95f), CardBorder = new(0.55f, 0.5f, 1f), Gold = new(1f, 0.85f, 0.35f);
 
     static StyleBoxFlat Box(Color bg, Color border, int width, int radius)
     {
@@ -50,15 +52,16 @@ public partial class MainMenu
     VBoxContainer NewScreen(string title)
     {
         Clear();
+        (_playBtn, _delBtn, _tapSlot) = (null, null, -1);
         _center.Visible = false;
         _screen = new Control { MouseFilter = MouseFilterEnum.Ignore };
         _screen.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(_screen);
-        var dim = new ColorRect { Color = new Color(0, 0, 0, 0.7f), MouseFilter = MouseFilterEnum.Ignore };
+        var dim = new ColorRect { Color = new Color(0, 0, 0.05f, 0.35f), MouseFilter = MouseFilterEnum.Ignore };
         dim.SetAnchorsPreset(LayoutPreset.FullRect);
         _screen.AddChild(dim);
         // O fim do túnel é um clarão branco: um escuro radial por cima dele, sumindo para as bordas.
-        var glow = new Gradient { Offsets = [0f, 0.55f, 1f], Colors = [new Color(0, 0, 0, 0.9f), new Color(0, 0, 0, 0.35f), new Color(0, 0, 0, 0)] };
+        var glow = new Gradient { Offsets = [0f, 0.55f, 1f], Colors = [new Color(0, 0, 0.05f, 0.6f), new Color(0, 0, 0.05f, 0.2f), new Color(0, 0, 0, 0)] };
         var hole = new TextureRect
         {
             Texture = new GradientTexture2D { Gradient = glow, Fill = GradientTexture2D.FillEnum.Radial, FillFrom = new Vector2(0.5f, 0.5f), FillTo = new Vector2(0.5f, 0f), Width = 256, Height = 256 },
@@ -74,9 +77,16 @@ public partial class MainMenu
         margin.AddThemeConstantOverride("margin_top", 28);
         margin.AddThemeConstantOverride("margin_bottom", 18);
         _screenContent.AddChild(margin);
+        // Estilo da tela de login (pedido do usuário, 2026-11-04): tudo num painel azul-marinho com borda ciano.
+        var frame = new PanelContainer();
+        var frameStyle = MobileBoot.Box(MobileBoot.Navy, MobileBoot.Cyan, 3, 18, 20);
+        frameStyle.ShadowColor = new Color(0, 0, 0, 0.5f);
+        frameStyle.ShadowSize = 14;
+        frame.AddThemeStyleboxOverride("panel", frameStyle);
+        margin.AddChild(frame);
         var column = new VBoxContainer();
         column.AddThemeConstantOverride("separation", 14);
-        margin.AddChild(column);
+        frame.AddChild(column);
         column.AddChild(Text(title, 40, Gold, HorizontalAlignment.Center));
         FitScreen();
         return column;
@@ -85,14 +95,8 @@ public partial class MainMenu
     // Fonte do jogo e botões/campos no estilo dos cartões.
     Theme ScreenTheme()
     {
-        var theme = _gameTheme?.Duplicate() as Theme ?? new Theme();
-        theme.SetStylebox("normal", "Button", Box(new Color(0.35f, 0.08f, 0.12f, 0.95f), CardBorder, 2, 12));
-        theme.SetStylebox("hover", "Button", Box(new Color(0.45f, 0.12f, 0.16f, 0.95f), CardBorder.Lightened(0.2f), 2, 12));
-        theme.SetStylebox("focus", "Button", Box(new Color(0.5f, 0.14f, 0.18f, 0.95f), Gold, 3, 12));
-        theme.SetStylebox("pressed", "Button", Box(new Color(0.55f, 0.16f, 0.2f, 0.95f), Gold, 3, 12));
-        theme.SetColor("font_focus_color", "Button", Gold);
-        theme.SetStylebox("normal", "LineEdit", Box(new Color(0.04f, 0.04f, 0.12f, 0.95f), CardBorder, 2, 10));
-        theme.SetStylebox("focus", "LineEdit", Box(new Color(0, 0, 0, 0), Gold, 3, 10));
+        var theme = MenuTheme();
+        theme.DefaultFontSize = 26;
         return theme;
     }
 
@@ -132,11 +136,8 @@ public partial class MainMenu
 
     // ---------- vagas ----------
 
-    bool ShowSlotsUi()
+    bool ShowSlotsUi(IReadOnlyList<CharacterSave?> slots)
     {
-        IReadOnlyList<CharacterSave?> slots;
-        try { slots = Session.Store.List(Session.Account!); }
-        catch (Exception e) when (e is IOException or ArgumentException) { GD.PrintErr($"[menu] vagas: {e.Message}"); slots = new CharacterSave?[ICharacterStore.Slots]; }
         _slots = slots;
         var column = NewScreen("Seus Digimon");
         var body = new HBoxContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
@@ -154,11 +155,29 @@ public partial class MainMenu
         _cards.Clear();
         for (int i = 0; i < ICharacterStore.Slots; i++) grid.AddChild(SlotCard(i, i < slots.Count ? slots[i] : null));
         var detailPanel = new PanelContainer { CustomMinimumSize = new Vector2(0, 150) };
-        detailPanel.AddThemeStyleboxOverride("panel", Box(new Color(0.06f, 0.06f, 0.16f, 0.92f), CardBorder, 2, 14));
+        detailPanel.AddThemeStyleboxOverride("panel", Box(new Color(0.02f, 0.03f, 0.1f, 0.9f), CardBorder, 2, 14));
+        var detailBox = new VBoxContainer();
+        detailBox.AddThemeConstantOverride("separation", 10);
+        detailPanel.AddChild(detailBox);
         _detail = Text("", 20);
-        detailPanel.AddChild(_detail);
+        detailBox.AddChild(_detail);
+        // Celular: tocar na vaga só escolhe; jogar e apagar ficam nestes botões (no PC continuam o clique/Enter e o Delete).
+        if (DataPaths.Mobile || OS.IsDebugBuild() && OS.GetEnvironment("DW4_TOQUE") == "1")
+        {
+            var actions = new HBoxContainer();
+            actions.AddThemeConstantOverride("separation", 12);
+            _playBtn = new Button { Text = "Jogar", CustomMinimumSize = new Vector2(0, 54), SizeFlagsHorizontal = SizeFlags.ExpandFill, FocusMode = FocusModeEnum.None };
+            _playBtn.AddThemeStyleboxOverride("normal", MobileBoot.Box(MobileBoot.Wine, Gold, 3, 12, 10));
+            _playBtn.Pressed += () => { var c = _slotCursor < _slots.Count ? _slots[_slotCursor] : null; if (c != null) Play(_slotCursor, c); else ShowCreate(_slotCursor); };
+            _delBtn = new Button { Text = "Apagar", CustomMinimumSize = new Vector2(180, 54), FocusMode = FocusModeEnum.None };
+            _delBtn.Pressed += () => { if (_slotCursor < _slots.Count && _slots[_slotCursor] is { } c) ConfirmDelete(_slotCursor, c); };
+            actions.AddChild(_playBtn);
+            actions.AddChild(_delBtn);
+            detailBox.AddChild(actions);
+        }
         right.AddChild(detailPanel);
-        column.AddChild(HelpBar(("setas", "Escolher"), ("confirmar", "Entrar / criar"), ("apagar", "Apagar"), ("cancelar", "Voltar")));
+        if (!DataPaths.Mobile) column.AddChild(HelpBar(("setas", "Escolher"), ("confirmar", "Entrar / criar"), ("apagar", "Apagar"), ("cancelar", "Voltar")));
+        else column.AddChild(Text("Toque numa vaga para escolher. Voltar do Android: título.", 18, MobileBoot.Soft, HorizontalAlignment.Center));
         _slotCursor = Math.Clamp(_slotCursor, 0, _cards.Count - 1);
         SelectSlot(_slotCursor);
         _cards[_slotCursor].CallDeferred(Control.MethodName.GrabFocus);
@@ -196,7 +215,13 @@ public partial class MainMenu
         row.AddChild(info);
         card.FocusEntered += () => SelectSlot(index);
         card.MouseEntered += () => card.GrabFocus();
-        card.Pressed += () => { _slotCursor = index; if (c != null) Play(index, c); else ShowCreate(index); };
+        card.Pressed += () =>
+        {
+            // Celular: o primeiro toque escolhe a vaga (mostra o Digimon e os detalhes); o segundo, ou o "Jogar", entra.
+            if (_playBtn != null && _tapSlot != index) { _tapSlot = index; SelectSlot(index); return; }
+            _slotCursor = index;
+            if (c != null) Play(index, c); else ShowCreate(index);
+        };
         card.GuiInput += e =>
         {
             if (c != null && (e is InputEventKey { Pressed: true, Keycode: Key.Delete } || e is InputEventJoypadButton { Pressed: true, ButtonIndex: JoyButton.X }))
@@ -216,6 +241,8 @@ public partial class MainMenu
         var c = index < _slots.Count ? _slots[index] : null;
         _bigModel?.Show(c?.Model ?? "");
         if (_detail == null) return;
+        if (_playBtn != null) { _playBtn.Text = c == null ? "Criar Digimon" : $"Jogar com {c.Name}"; _delBtn!.Visible = c != null; }
+        for (int i = 0; i < _cards.Count; i++) if (IsInstanceValid(_cards[i])) _cards[i].SelfModulate = i == index || _playBtn == null ? Colors.White : new Color(0.8f, 0.8f, 0.85f);
         if (c == null) { _detail.Text = $"Vaga {index + 1}\n\nVazia: crie um Digimon para começar."; return; }
         var (hp, mp) = SlotStats(c);
         _detail.Text = $"{c.Name}   ·   {FormName(c.CurrentForm)}   ·   Lv {c.Level}\n" +
@@ -263,7 +290,7 @@ public partial class MainMenu
         _bigModel = new ModelView(Common, new Vector2(420, 460), spin: true) { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         body.AddChild(_bigModel);
         var panel = new PanelContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
-        panel.AddThemeStyleboxOverride("panel", Box(CardBg, CardBorder, 2, 16));
+        panel.AddThemeStyleboxOverride("panel", Box(new Color(0.02f, 0.03f, 0.1f, 0.9f), CardBorder, 2, 16));
         body.AddChild(panel);
         var form = new VBoxContainer();
         form.AddThemeConstantOverride("separation", 16);
@@ -291,11 +318,12 @@ public partial class MainMenu
         buttons.AddThemeConstantOverride("separation", 14);
         var create = new Button { Text = "Criar", CustomMinimumSize = new Vector2(0, 52), SizeFlagsHorizontal = SizeFlags.ExpandFill };
         var back = new Button { Text = "Voltar", CustomMinimumSize = new Vector2(0, 52), SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        create.AddThemeStyleboxOverride("normal", MobileBoot.Box(MobileBoot.Wine, Gold, 3, 12, 10));
         create.Pressed += CreateFromUi;
         back.Pressed += ShowSlots;
         buttons.AddChild(create); buttons.AddChild(back);
         form.AddChild(buttons);
-        column.AddChild(HelpBar(("setas", "Digimon (fora do campo do nome)"), ("confirmar", "Criar"), ("cancelar", "Voltar")));
+        if (!DataPaths.Mobile) column.AddChild(HelpBar(("setas", "Digimon (fora do campo do nome)"), ("confirmar", "Criar"), ("cancelar", "Voltar")));
         StepForm(0);
         _nameEdit.CallDeferred(Control.MethodName.GrabFocus);
         return true;
@@ -309,15 +337,28 @@ public partial class MainMenu
         _bigModel?.Show(ok ? FormModel(_createFormUi) : "");
     }
 
-    void CreateFromUi()
+    bool _savingNew;
+
+    async void CreateFromUi()
     {
+        if (_savingNew) return;
         var n = _nameEdit?.Text.Trim() ?? "";
         if (n.Length == 0) { _createStatus!.Text = "Dê um nome ao Digimon."; _nameEdit?.GrabFocus(); return; }
         if (!Playable(FormModel(_createFormUi))) { _createStatus!.Text = "Esse Digimon ainda não tem modelo no cliente."; return; }
         var save = CharacterSave.New(n, _createFormUi, FormModel(_createFormUi), 0, Session.NewGameStage, Session.NewGameEntry,
             _createFormUi < _shinka.Count ? _shinka[_createFormUi].Weapons : null);
-        Session.Store.Save(Session.Account!, _createSlotUi, save);
-        _slotCursor = _createSlotUi;
+        int slot = _createSlotUi;
+        _savingNew = true;
+        _createStatus!.Text = "Criando na sua conta...";
+        try { await Session.Store.SaveAsync(Session.Account!, slot, save); }
+        catch (Exception e) when (e is OnlineCharacterStore.StoreException or IOException or ArgumentException)
+        {
+            if (_createStatus != null && IsInstanceValid(_createStatus)) _createStatus.Text = $"Não deu para criar: {e.Message}";
+            return;
+        }
+        finally { _savingNew = false; }
+        if (!IsInsideTree()) return;
+        _slotCursor = slot;
         ShowSlots();
     }
 

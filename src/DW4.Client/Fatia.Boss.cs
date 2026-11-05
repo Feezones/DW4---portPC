@@ -20,7 +20,13 @@ public partial class Fatia
     bool _fightCrit;
     int _fightDamage;
 
-    bool UsesHitScript(Enemy e) => e.Kind.Model.StartsWith("f_", StringComparison.Ordinal) && _stage?.Has($"hit_{e.Kind.Model}.lua") == true;
+    // FATO (hit_e_blosso.lua): o chefe e_* também decide a reação no próprio script (contador g_blossoHitCount: do 3º golpe em
+    // diante, o golpe que passa uma marca de 10% do HP manda SQ_AGRDMG, a fúria). Os e_* chefes têm LABELCTRL "BOSS" no SQ_ENTR
+    // (e_blosso, e_mammos, e_mecha4/5, e_skulgrey, e_anomalo, e_ldknight, e_diabolo); os inimigos comuns seguem pelo PlayerStrikes.
+    bool UsesHitScript(Enemy e) => (e.Kind.Model.StartsWith("f_", StringComparison.Ordinal) || IsBossEnemy(e)) && _stage?.Has($"hit_{e.Kind.Model}.lua") == true;
+
+    static bool IsBossEnemy(Enemy e) => e.Kind.Model.StartsWith("e_", StringComparison.Ordinal)
+        && e.Kind.Sequences.TryGetValue("SQ_ENTR", out var entr) && entr.Any(c => c.Kind == "LABELCTRL" && c.S(0) == "BOSS");
 
     // Golpe do Guilmon num chefe: o próprio hit_<modelo>.lua decide (FATO: hit_f_apocaly.lua faz BLTisHitCheck, BLTisCritical,
     // BLTgetDamageValue, MDLaddHp(−dano), BLTgetDamageRank → SETLABEL + MDLsetSeq, e na morte a cena com BT_WIN02 e o portal).
@@ -63,7 +69,8 @@ public partial class Fatia
                 if (args.ElementAtOrDefault(0) != 0) SkillUp();
                 return 0;
             case "BLTcalcEXPUp" when e != null:
-                if (!e.Killed) { e.Killed = true; GainExp(e); }
+                // Chefe e_* de gerador (FATO: GENE-08 do Blossomon tem a lista comonIMPT02): o drop dele continua saindo.
+                EnemyDefeated(e, Online.MyId, drop: IsBossEnemy(e) && e.Gen != null);
                 return 0;
             case "MDLdspDamage" when e != null:
                 int dmg = (int)args.ElementAtOrDefault(0);
@@ -91,11 +98,20 @@ public partial class Fatia
             case "LABELCTRL" when c.S(0) is { } label:
                 e.Labels[c.S(1) is { Length: > 0 } seq ? seq : "SQ_WAIT"] = label;
                 break;
+            case "CTRL" when c.S(0) == "toWait":
+                e.AiCanCut = true;
+                break;
             case "AIMAP" when c.S(0) is { } map:
                 e.Brain?.SetMap(map);
                 break;
             case "MOVEEX" or "MOVERL":
                 e.Motion.Apply(c);
+                break;
+            // Cópia do inimigo do anfitrião (combate em grupo): os scripts rodam só no anfitrião (gerar ajudante, bater na parede
+            // e afins mudariam a luta de novo aqui). A exceção é a queda: o "ded_<chefe>.lua" (FATO: ded_e_mammos/ded_e_blosso:
+            // demo "sbossafter", vitória, portas SQ_SWON, doorwall OFFHIT e FLGset) só mexe no que é de cada jogador, e sem ele
+            // a porta ficava fechada para quem não é o anfitrião (relato do usuário, 2026-11-05, Mammothmon em grupo).
+            case "LUACALL" when e.Proxy && !ProxyRunsLua(e, c.S(0)):
                 break;
             case "LUACALL":
                 // FATO: SQ_ATCK2 do f_apocaly faz LUACALL "bit" e a fase tem bit_f_apocaly.lua (gera o f_bit se ele não está vivo,
@@ -108,6 +124,9 @@ public partial class Fatia
     }
     readonly HashSet<string> _warnedLua = [];
 
+    // Numa cópia, só o script da queda roda (ver LUACALL acima): o "ded" ou qualquer chamada com o chefe já sem HP.
+    static bool ProxyRunsLua(Enemy e, string? name) => name == "ded" || e.Hp <= 0 || e.Killed;
+
     // LUACALL "<nome>" de um modelo: FATO "<nome>_<modelo>.lua" (bit_f_apocaly.lua). HIPÓTESE quando esse não existe e há um só
     // "<nome>_*.lua" na fase (FATO: f_devl1f2 chama "bmh" e a fase tem bmh_f_devl1h.lua): roda esse.
     // FATO (gr2_f_luce.lua): o 2º valor do LUACALL ("gr2" "GROUND"/"FLY"/"FLYSET") é o nome de chamada que o script testa com
@@ -119,9 +138,10 @@ public partial class Fatia
         if (!_stage.Has(script))
         {
             var dir = Path.Combine(_dir, "lua");
-            var only = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, $"{name}_*.lua").Select(Path.GetFileName).ToList() : [];
+            var only = GameFiles.DirExists(dir) ? GameFiles.EnumerateFiles(dir, $"{name}_*.lua").Select(Path.GetFileName).ToList() : [];
             script = only.Count == 1 ? only[0] : null;
         }
+        if (DiagNpc) GD.Print($"[luacall] {model}: {name} → {script ?? "sem script"}");
         if (script != null)
         {
             var host = _stage.Host;
@@ -155,16 +175,27 @@ public partial class Fatia
         if (DiagNpc) GD.Print($"[ini] {Engine.GetPhysicsFrames()} {e.Kind.Model}: {seq} (mapa {e.Brain?.Map.Name ?? "-"}) anim {e.Anim?.CurrentAnimation ?? "-"}");
         e.Motion.SequenceChanged(); // 0x8030EA38: troca de sequência
         e.HitLua = null;
-        if (e.Labels.TryGetValue(seq, out var l) && e.Runner.Start(seq, l)) return true;
-        if (e.Runner.Start(seq, "common") || e.Runner.Start(seq, "NORM")) return true;
-        var first = e.Kind.Sequences.TryGetValue(seq, out var cmds) ? cmds.FirstOrDefault(c => c.Kind == "LABEL")?.S(0) : null;
-        return first != null ? e.Runner.Start(seq, first) : e.Runner.Start(seq, null);
+        e.AiCanCut = false;
+        string? label = null;
+        if (e.Labels.TryGetValue(seq, out var l) && e.Runner.Start(seq, l)) label = l;
+        else if (e.Runner.Start(seq, "common")) label = "common";
+        else if (e.Runner.Start(seq, "NORM")) label = "NORM";
+        else
+        {
+            var first = e.Kind.Sequences.TryGetValue(seq, out var cmds) ? cmds.FirstOrDefault(c => c.Kind == "LABEL")?.S(0) : null;
+            if (!(first != null ? e.Runner.Start(seq, first) : e.Runner.Start(seq, null))) return false;
+            label = first ?? "";
+        }
+        CoopSequence(e, seq, label); // combate em grupo: as cópias tocam a mesma sequência
+        return true;
     }
 
     // MODELCTRL para inimigos pelo nome do modelo (f_apocaly SQ_WAIT, SETLABEL "SQ_SDMG/common", MOVETRANS da derrota…).
     bool DeliverToEnemies(BeMessage m)
     {
-        if (m.Class != "MODELCTRL" || m.Name == null) return false;
+        // FATO (matg11.lua da dng102b3): "ENEMY e_mammos 0 SQ_WALKIN" manda o chefe começar pela investida; ENEMY com nome vale como
+        // MODELCTRL para aquele inimigo.
+        if (m.Class is not ("MODELCTRL" or "ENEMY") || m.Name == null) return false;
         var targets = _enemies.Where(e => e.Kind.Model == m.Name && !e.Dead).ToList();
         if (targets.Count == 0) return false;
         foreach (var e in targets)
@@ -195,6 +226,9 @@ public partial class Fatia
         bool owned = o.Name.StartsWith("f_", StringComparison.Ordinal);
         if (!(o.Name.StartsWith("g_", StringComparison.Ordinal) || owned) || o.Name == "g_box" || o.Body != null) return;
         if (_stage?.Has($"hit_{o.Name}.lua") != true) return;
+        // FATO (seq do g_sbutton e do g_dbutton1): o hit_ deles é chamado pela própria sequência (LUACALL "hit" ao pisar), não por golpe.
+        // Com o corpo 14 × 40 o jogador não conseguia subir no interruptor (parava a ~10 do centro, fora do raio 4) e um golpe o acendia.
+        if (o.Seq?.CallsLua("hit") == true) return;
         // f_bit: HIPÓTESE (hit_f_bit.lua tira 50 por golpe e passa a SQ_DDMG abaixo de 50). Os g_* ficam com o HP do Spawn (HPMAX da
         // tabela enemy ou 100; antes 50, e o arbusto, que perde 50 por golpe, quebrava no primeiro).
         if (owned) o.Hp = ScriptedObjectHp;
@@ -247,6 +281,8 @@ public partial class Fatia
 
     ProgressBar? _bossBar;
     bool _bossBarOpen;
+    string? _bossBarModel; // SETMODELHP "<modelo>/I<n>"
+    string? _bossMeter; // bshp01..10: medidor da arte i_bosshp<n> quando a camada de janelas desenha o ator do jogo
 
     bool DeliverToBossBar(BeMessage m)
     {
@@ -264,12 +300,45 @@ public partial class Fatia
             case ("METERCTRL", "bshp01", "SETMODELHP"):
                 // "f_apocaly/I<0>": a barra segue o HP desse modelo (o hit_*.lua também manda SETPERCENT a cada golpe).
                 if (_bossBar != null) _bossBar.Value = 100;
+                _bossMeter = m.Name;
+                SetBossMeter(100);
+                _bossBarModel = m.RawArgs?.Split('/')[0];
                 return true;
             case ("METERCTRL", "bshp01", "SETPERCENT") when m.Arg(0) is { Numbers.Length: > 0 } pc:
                 if (_bossBar != null) _bossBar.Value = Math.Clamp(pc.Numbers[0], 0, 100);
+                _bossMeter = m.Name;
+                SetBossMeter((float)Math.Clamp(pc.Numbers[0], 0, 100));
                 return true;
         }
         return false;
+    }
+
+    // Chefe e_* (golpe pelo PlayerStrikes, sem o hit_<modelo>.lua): a barra faz o que o hit_e_blosso.lua faria (FATO: SETPERCENT
+    // ceil(HP / MHP × 100) a cada golpe e MODELCTRL i_bosshp10 SQ_CLOSE quando MDLisLive é falso).
+    void TickBossBarModel()
+    {
+        if (_bossBarModel is not { Length: > 0 } model || model.StartsWith("f_", StringComparison.Ordinal)) return;
+        var boss = _enemies.FirstOrDefault(e => e.Kind.Model == model && !e.Dead);
+        int max = boss?.Kind.Stats?.MaxHp ?? 0;
+        if (boss == null || boss.Hp <= 0 || max <= 0)
+        {
+            _bossBarModel = null;
+            ShowBossBar(false);
+            SetBossMeter(0);
+            if (_bossMeter is { } meter) Deliver(new BeMessage("MODELCTRL", "i_bosshp" + meter[4..], 0, "SQ_CLOSE", [], null));
+            return;
+        }
+        float pct = (float)Math.Ceiling(boss.Hp * 100.0 / max);
+        if (_bossBar != null) _bossBar.Value = pct;
+        SetBossMeter(pct);
+    }
+
+    // Medidor da arte do jogo (i_bosshp<n>, desenhada pela camada de janelas): a mesma conta do HUD do jogador (Hud.MeterTime).
+    void SetBossMeter(float pct)
+    {
+        if (_bossMeter == null || _winData?.Meters.GetValueOrDefault(_bossMeter) is not { } meters) return;
+        foreach (var w in _windows.Values)
+            foreach (var md in meters) w.Actor.SetMeterTime(md.Node, HudOverlay.MeterTime(md, pct, 100));
     }
 
     // DECISÃO DA FATIA: o ator i_bosshp01 ainda não foi exportado; a barra é uma ProgressBar no topo (V<0,205,0> = alto da tela).

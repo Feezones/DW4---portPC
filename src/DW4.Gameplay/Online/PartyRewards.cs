@@ -12,6 +12,9 @@ public sealed record PartyMemberState(string Name, bool InStage, int Hp, int Lev
 ///  · EXP (P2EEXPUP): cada jogador com HP ≠ 0 e nível ≠ 999 recebe <see cref="DamageFormula.ExpShare"/>; quem matou recebe a
 ///    parte maior. Com 4 jogadores quem mata leva 80% do que levaria sozinho e os outros 40%.
 ///
+/// DECISÃO DO PORT (pedido do responsável, 2026-11-05): no grupo todos levam a parte de quem matou (sem a metade para quem não
+/// deu o último golpe). Só ganha quem está na party e na mesma fase; caído ou fora do grupo não ganha.
+///
 /// DECISÃO DO PORT (pedido do responsável, 2026-11-02): no original o BIT vai inteiro para quem pega. Aqui a quantia (calculada
 /// como no original, pelo nível e BITRITSU de quem pegou) é dividida em partes iguais entre os membros vivos na mesma fase; o
 /// resto da divisão fica com quem pegou.
@@ -31,7 +34,7 @@ public static class PartyRewards
         var res = new Dictionary<string, int>(PartyGroup.Names);
         foreach (var m in members)
             res[m.Name] = Active(m) && m.Level != PlayerGrowth.MaxLevel
-                ? DamageFormula.ExpShare(enemyExp, expRitsu, ninzu, PartyGroup.Names.Equals(m.Name, killer))
+                ? DamageFormula.ExpShare(enemyExp, expRitsu, ninzu, killer: true)
                 : 0;
         return res;
     }

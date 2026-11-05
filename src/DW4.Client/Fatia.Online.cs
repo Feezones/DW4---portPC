@@ -8,7 +8,7 @@ namespace DW4.Client;
 
 /// <summary>
 /// Outros jogadores na fase (online, ADR 0003): o modelo da forma de cada um, com a placa "Personagem  Lv N", andando para a
-/// posição recebida (interpolação curta) e tocando a animação que ele toca. Sem colisão e sem combate por enquanto (etapa 6d).
+/// posição recebida (interpolação curta) e tocando a animação que ele toca. Sem colisão; o combate em grupo está em Fatia.Coop.cs.
 /// </summary>
 public partial class Fatia
 {
@@ -30,22 +30,35 @@ public partial class Fatia
         Online.Notice += OnlineNotice;
         Online.Result += OnInteractResult;
         Online.Prompt += OnSocialPrompt;
-        TreeExiting += () => { Online.Notice -= OnlineNotice; Online.Result -= OnInteractResult; Online.Prompt -= OnSocialPrompt; };
+        Online.Coop += OnCoop;
+        Online.KickedOut += OnKicked;
+        Session.SaveFailed += OnSaveFailed;
+        // Com vaga, fechar a janela espera a gravação no servidor (CloseRequested).
+        GetTree().AutoAcceptQuit = !Session.Active;
+        TreeExiting += () =>
+        {
+            Online.Notice -= OnlineNotice; Online.Result -= OnInteractResult; Online.Prompt -= OnSocialPrompt; Online.Coop -= OnCoop;
+            Online.KickedOut -= OnKicked; Session.SaveFailed -= OnSaveFailed;
+            GetTree().AutoAcceptQuit = true;
+            Ram.Ninzu = 1;
+        };
         Online.Connect(PlayerName, PlayerModel, _level);
     }
 
-    void OnlineNotice(string text) => Session.Chat.Send("Sistema", text);
+    void OnlineNotice(string text) => Session.SystemMessage(text);
 
     PlayerState MyState()
     {
         var p = _player.GlobalPosition;
         return new PlayerState(_stageName, MathF.Round(p.X, 2), MathF.Round(p.Y, 2), MathF.Round(p.Z, 2), MathF.Round(_move.Facing, 3),
-            _anim?.CurrentAnimation ?? "", PlayerModel, _level, WeaponModel ?? "");
+            _anim?.CurrentAnimation ?? "", PlayerModel, _level, WeaponModel ?? "", Math.Max(0, _hp), _pf?.MaxHp ?? 0, Math.Max(0, _mp), _pf?.MaxMp ?? 0);
     }
 
     void TickOnline(float dt)
     {
         Online.Poll(MyState());
+        TickCoop(dt);
+        TickPartyHud();
         foreach (var id in _avatars.Keys.ToList())
             if (!Online.Remotes.TryGetValue(id, out var r) || !r.State.Stage.Equals(_stageName, StringComparison.OrdinalIgnoreCase))
             {
@@ -81,7 +94,7 @@ public partial class Fatia
         a.WeaponName = null; // o modelo novo vem sem arma; o próximo quadro põe a arma de novo
         // Só formas que o cliente tem (o nome vem do outro jogador: nada de caminho).
         if (model.Length == 0 || model.IndexOfAny(['/', '\\', '.']) >= 0) return;
-        string folder = model == "p_girumon" && System.IO.Directory.Exists(System.IO.Path.Combine(_common, "guilmon"))
+        string folder = model == "p_girumon" && GameFiles.DirExists(System.IO.Path.Combine(_common, "guilmon"))
             ? "guilmon" : System.IO.Path.Combine("formas", model);
         if (Load(folder, "personagem.gltf") is not { } m) return;
         a.Root.AddChild(m);

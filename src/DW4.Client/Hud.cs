@@ -37,10 +37,10 @@ public sealed class HudData
 
     public static HudData? Load(string dir, List<string> problems, string pattern = "*_hud.json", string? missing = null)
     {
-        var file = System.IO.Directory.Exists(dir) ? System.IO.Directory.EnumerateFiles(dir, pattern).FirstOrDefault() : null;
+        var file = GameFiles.DirExists(dir) ? GameFiles.EnumerateFiles(dir, pattern).FirstOrDefault() : null;
         if (file == null) { problems.Add(missing ?? $"falta o *_hud.json (dw4 igb-hud ndmw.afs 179 area.afs 9 <fatia>\\hud): HUD em texto"); return null; }
         var h = new HudData(dir);
-        using var doc = JsonDocument.Parse(System.IO.File.ReadAllText(file));
+        using var doc = JsonDocument.Parse(GameFiles.ReadAllText(file));
         var root = doc.RootElement;
         foreach (var a in root.GetProperty("actors").EnumerateArray()) h.Actors[a.GetProperty("name").GetString()!] = a.GetProperty("root").GetInt32();
         foreach (var p in root.GetProperty("nodes").EnumerateObject()) h.Nodes[int.Parse(p.Name)] = ReadNode(int.Parse(p.Name), p.Value);
@@ -128,7 +128,7 @@ public sealed class HudData
         if (_textures.TryGetValue(file, out var t)) return t;
         var path = System.IO.Path.Combine(Dir, file);
         Texture2D? tex = null;
-        if (System.IO.File.Exists(path)) { var img = Image.LoadFromFile(path); tex = ImageTexture.CreateFromImage(img); }
+        if (GameFiles.Exists(path)) { var img = Image.LoadFromFile(GameFiles.GodotPath(path)); tex = ImageTexture.CreateFromImage(img); }
         return _textures[file] = tex;
     }
 }

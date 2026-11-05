@@ -39,8 +39,8 @@ public partial class Fatia
     {
         if (_shopDb != null) return _shopDb;
         var dir = Path.Combine(_dir, "db");
-        var file = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "ndmw_*_db.json").FirstOrDefault() : null;
-        return _shopDb = file != null ? GameTables.FromJson(File.ReadAllText(file)) : null;
+        var file = GameFiles.DirExists(dir) ? GameFiles.EnumerateFiles(dir, "ndmw_*_db.json").FirstOrDefault() : null;
+        return _shopDb = file != null ? GameTables.FromJson(GameFiles.ReadAllText(file)) : null;
     }
 
     bool DeliverToShop(BeMessage m)
@@ -61,6 +61,7 @@ public partial class Fatia
         _shopSelling = false;
         _shopMessage = row < 0 ? "Nada à venda ainda." : "";
         _shopHeld.Clear();
+        (_shopLeftHeld, _shopRightHeld, _shopMouseLast) = (true, true, _mousePos);
         foreach (var k in ShopKeys()) _shopHeld.Add(k); // o botão que abriu a loja ainda pode estar apertado
         ScriptLog($"loja {type}: {table} linha {row}, {_shopItems.Count(i => i != null)} itens");
         UpdateShop();
@@ -88,15 +89,21 @@ public partial class Fatia
         if (!ShopOpen) return false;
         var now = ShopKeys().ToHashSet();
         bool Pressed(string k) => now.Contains(k) && !_shopHeld.Contains(k);
+        if (DiagNpc && now.Any(k => !_shopHeld.Contains(k))) GD.Print($"[loja] {string.Join(",", now.Where(k => !_shopHeld.Contains(k)))} (seguradas {string.Join(",", _shopHeld)})");
         var list = ShopList();
         int pages = Math.Max(1, (list.Count + ShopPage - 1) / ShopPage);
-        if (Pressed("close")) { _shopKind = -1; UpdateShop(); _shopHeld.Clear(); return true; }
+        // Mouse (como nos menus do banco/X-data/LABO): passar por cima escolhe, clique esquerdo compra/vende ali, direito sai.
+        var (hover, click, back) = ShopMouse(_shopArtVariant, ShopPage);
+        if (hover >= 0) _shopCursor = hover;
+        bool mouseLeft = Input.IsMouseButtonPressed(MouseButton.Left);
+        if (back || Pressed("close")) { ScriptLog("loja fechada"); _shopKind = -1; UpdateShop(); _shopHeld.Clear(); return true; }
+        if (click) ShopAct(list);
         if (Pressed("mode")) { _shopSelling = !_shopSelling; _shopCursor = _shopPageNo = 0; _shopMessage = ""; }
         if (Pressed("up")) _shopCursor = (_shopCursor + ShopPage - 1) % ShopPage;
         if (Pressed("down")) _shopCursor = (_shopCursor + 1) % ShopPage;
         if (Pressed("left")) _shopPageNo = (_shopPageNo + pages - 1) % pages;
         if (Pressed("right")) _shopPageNo = (_shopPageNo + 1) % pages;
-        if (Pressed("ok")) ShopAct(list);
+        if (Pressed("ok") && !mouseLeft) ShopAct(list);
         _shopHeld.Clear();
         foreach (var k in now) _shopHeld.Add(k);
         UpdateShop();
@@ -130,6 +137,7 @@ public partial class Fatia
             _shopMessage = ShopTrade.Sell(_inventory, item, price, Equipped(item)) ? $"Vendeu {name} por {price} BIT."
                 : Equipped(item) ? "Está equipado." : "Não dá para vender.";
         }
+        ScriptLog($"loja: {_shopMessage} (BIT {_inventory.Bit})");
     }
 
     void UpdateShop()
@@ -176,7 +184,7 @@ public partial class Fatia
         for (int r = 0; r < ShopPage; r++)
         {
             int i = _shopPageNo * ShopPage + r;
-            string cur = r == _shopCursor ? "▶" : " ";
+            string cur = r == _shopCursor ? ">" : " ";
             if (i >= list.Count) { sb.AppendLine(cur); continue; }
             if (list[i] is not { } it) { sb.AppendLine($"{cur} ----"); continue; }
             var t = _db[it.Table];

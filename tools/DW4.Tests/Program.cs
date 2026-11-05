@@ -88,7 +88,7 @@ Test("Port: vagas da conta (ICharacterStore local): 4 vagas, vazia = null, grava
     var root = Path.Combine(Path.GetTempPath(), "dw4-teste-vagas-" + Guid.NewGuid().ToString("N"));
     try
     {
-        DW4.Script.Save.ICharacterStore store = new DW4.Script.Save.LocalCharacterStore(root);
+        var store = new DW4.Script.Save.LocalCharacterStore(root);
         True(store.List("local") is { Count: 4 } l && l.All(x => x == null), "conta nova: 4 vagas vazias");
         store.Save("local", 2, DW4.Script.Save.CharacterSave.New("Gui", 2, "p_girumon", 0, "stagml11", 3));
         var list = store.List("local");
@@ -217,7 +217,7 @@ Test("Online: grupo de até 4 como na DMO.API (só o líder, só amigos, convite
     True(p.IsDisbanded && p.Count == 0, "sobrou 1: o grupo acaba");
 });
 
-Test("Online: XP dividida como no original, BIT dividido no grupo e NINZU pelos membros na fase", () =>
+Test("Online: XP igual para o grupo todo, BIT dividido no grupo e NINZU pelos membros na fase", () =>
 {
     var four = new[]
     {
@@ -227,7 +227,7 @@ Test("Online: XP dividida como no original, BIT dividido no grupo e NINZU pelos 
     Equal(3, DW4.Gameplay.Online.PartyRewards.Ninzu(four), "Caio fora da fase não conta");
     var exp = DW4.Gameplay.Online.PartyRewards.Exp(four, "Gui", 1000);
     Equal(DamageFormula.ExpShare(1000, 0, 3, true), exp["Gui"], "quem matou");
-    Equal(DamageFormula.ExpShare(1000, 0, 3, false), exp["ana"], "quem ajudou");
+    Equal(DamageFormula.ExpShare(1000, 0, 3, true), exp["ana"], "quem ajudou leva o mesmo que quem matou (decisão do port)");
     True(exp["Bia"] == 0 && exp["Caio"] == 0, "caído e ausente não ganham");
     True(DamageFormula.ExpShare(1000, 0, 1, true) == 1000 && DamageFormula.ExpShare(1000, 0, 4, true) == 800 && DamageFormula.ExpShare(1000, 0, 4, false) == 400, "sozinho 100%, em 4: 80% / 40%");
     var bit = DW4.Gameplay.Online.PartyRewards.Bit(four, "Ana", 101);
@@ -300,23 +300,24 @@ Test("Online: protocolo de rede (ida e volta de cada pacote, pacote quebrado rec
 Test("Online: servidor (todos na fase se veem, combate por grupo, aparecer e sumir, conta repetida)", () =>
 {
     var w = new DW4.Net.World();
+    List<DW4.Net.Outgoing> NG(List<DW4.Net.Outgoing> l) => l.Where(x => x.Message is not (DW4.Net.CoopGroup or DW4.Net.PartyRoster)).ToList(); // grupo de combate e quadro da party têm testes próprios
     DW4.Net.PlayerState S(string stage) => new(stage, 0, 0, 0, 0, "wait01", "p_girumon", 5);
     w.Join(1, new(10, "Alfa", null), "Gui");
     w.Join(2, new(20, "Bravo", null), "Ana");
-    True(w.Update(1, S("stagml11")).Count == 0, "sozinho na cidade");
-    var o = w.Update(2, S("stagml11"));
+    True(NG(w.Update(1, S("stagml11"))).Count == 0, "sozinho na cidade");
+    var o = NG(w.Update(2, S("stagml11")));
     True(o.Any(x => x.To == 1 && x.Message is DW4.Net.Spawn { PlayerId: 2 }) && o.Any(x => x.To == 2 && x.Message is DW4.Net.Spawn { PlayerId: 1 }), "cidade: os dois se veem");
-    o = w.Update(2, S("stagml11"));
+    o = NG(w.Update(2, S("stagml11")));
     True(o.Count == 1 && o[0] is { To: 1, Reliable: false, Message: DW4.Net.RemoteState }, "estado repassado sem garantia");
-    o = w.Update(1, S("dng101b1"));
+    o = NG(w.Update(1, S("dng101b1")));
     True(o.Any(x => x.To == 2 && x.Message is DW4.Net.Despawn { PlayerId: 1 }), "foi para a dungeon: some da cidade");
-    o = w.Update(2, S("dng101b1"));
+    o = NG(w.Update(2, S("dng101b1")));
     True(o.Any(x => x.To == 1 && x.Message is DW4.Net.Spawn { PlayerId: 2 }), "dungeon sem grupo: os dois se veem (pedido do responsável)");
-    True(w.SetParty(1, "p1").Count == 0 && w.SetParty(2, "p1").Count == 0, "entrar no grupo não muda quem se vê");
+    True(NG(w.SetParty(1, "p1")).Count == 0 && NG(w.SetParty(2, "p1")).Count == 0, "entrar no grupo não muda quem se vê");
     Equal("dng101b1", DW4.Net.World.InstanceOf("DNG101B1", new(1, "x", "p1")), "visão: a fase");
     Equal("dng101b1#p:p1", DW4.Net.World.CombatGroup("DNG101B1", new(1, "x", "p1")), "combate: o grupo");
     Equal("dng101b1#a:7", DW4.Net.World.CombatGroup("DNG101B1", new(7, "x", null)), "combate sem grupo: a conta");
-    o = w.Leave(2);
+    o = NG(w.Leave(2));
     True(o.Count == 1 && o[0].Message is DW4.Net.Despawn { PlayerId: 2 }, "saiu: some para o outro");
     Equal<int?>(1, w.Join(5, new(10, "Alfa", null), "Gui"), "mesma conta de novo: derruba a antiga");
 });
@@ -626,6 +627,26 @@ Test("MPEG-PS: pacote MPEG-1, PES com PTS, fim e preenchimento de setor", () =>
     True(MpegPs.Demux(ps.ToArray()[..20]).Problems.Count > 0, "PES cortado não foi apontado");
 });
 
+Test("Port: baú do item no chão (tabela do main.dol 0x804DE0A8 e coluna MODEL do conItem/insItem)", () =>
+{
+    var db = GameTables.FromJson("{\"conItem\":{\"rows\":12,\"columns\":[{\"name\":\"MODEL\",\"cells\":[" +
+        string.Join(",", Enumerable.Range(0, 12).Select(r => r == 10 ? "\"g_000boost1\"" : r == 11 ? "\"g_000penx\"" : "\"g_000item\"")) + "]}]}," +
+        "\"insItem\":{\"rows\":5,\"columns\":[{\"name\":\"MODEL\",\"cells\":[\"g_000bit\",\"g_000xdata1\",\"g_000xdata1\",\"g_000xdata1\",\"g_000xdata2\"]}]}}");
+    Equal("g_000item", Drops.ChestModel(db, new ItemRef("conItem", 0)), "disco");
+    Equal("g_000boost1", Drops.ChestModel(db, new ItemRef("conItem", 10)), "Booster Pack");
+    Equal("g_000penx", Drops.ChestModel(db, new ItemRef("conItem", 11)), "Key Chain");
+    Equal("g_000bit", Drops.ChestModel(db, new ItemRef("insItem", 0)), "BIT");
+    Equal("g_000xdata1", Drops.ChestModel(db, new ItemRef("insItem", 2)), "X-Data");
+    Equal("g_000xdata2", Drops.ChestModel(db, new ItemRef("insItem", 4)), "plug");
+    Equal("g_000weapon", Drops.ChestModel(db, new ItemRef("weapon", 7)), "arma");
+    Equal("g_000armor", Drops.ChestModel(db, new ItemRef("armor1", 0)), "armadura 1");
+    Equal("g_000armor", Drops.ChestModel(db, new ItemRef("armor2", 3)), "armadura 2");
+    Equal("g_000access", Drops.ChestModel(db, new ItemRef("abChip", 1)), "chip");
+    Equal("g_000key", Drops.ChestModel(db, new ItemRef("impItem", 2)), "item importante");
+    Equal("g_000item", Drops.ChestModel(null, new ItemRef("conItem", 0)), "sem tabelas");
+    Equal("g_000item", Drops.ChestModel(db, new ItemRef("conItem", 99)), "linha fora");
+});
+
 Test("Port: vaga gravada no meio do tutorial volta ao começo dele (FLG 503 desligada, entrada 0, como o restart.lua)", () =>
 {
     var ram = new GameRam();
@@ -864,6 +885,48 @@ Test("Objeto: caixa do HITBOX vale do quadro inicial até o fim da duração; AI
     Equal(null, s.TakeLuaCall(), "uma vez");
 });
 
+Test("Objeto: interruptor do portão (g_sbutton da stag0101) só tem IA com CTRL isLive; ligado, SQ_SWON só volta ao SQ_WAIT", () =>
+{
+    // FATO: sequências do g_sbutton (ndmw #614, igb-seq), resumidas.
+    SeqCommand C(string k, params object[] v) => new(k, v);
+    var seqs = new Dictionary<string, List<SeqCommand>>
+    {
+        ["SQ_ONLOOP"] = [C("LABELCTRL", "ONLOOP", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
+        ["SQ_POWEROF"] = [C("LABELCTRL", "DEF", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
+        ["SQ_POWERON"] = [C("LABELCTRL", "OFF", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
+        ["SQ_SWOF"] = [C("LABEL", "OFF"), C("JUMP", "SQ_WAIT"), C("LABEL", "ON"), C("LABELCTRL", "OFF", "SQ_WAIT"), C("LABELCTRL", "OFF", "SQ_SWON"),
+            C("LABELCTRL", "OFF", "SQ_SWOF"), C("ACTION", "ON2OFF"), C("WCHECK", "Action"), C("LUACALL", "off", ""), C("JUMP", "SQ_WAIT")],
+        ["SQ_SWON"] = [C("LABEL", "OFF"), C("LABELCTRL", "ON", "SQ_WAIT"), C("LABELCTRL", "ON", "SQ_SWON"), C("LABELCTRL", "ON", "SQ_SWOF"),
+            C("ACTION", "OFF2ON"), C("WCHECK", "Action"), C("LUACALL", "hit", ""), C("JUMP", "SQ_WAIT"), C("LABEL", "ON"), C("JUMP", "SQ_WAIT")],
+        ["SQ_WAIT"] = [C("LABEL", "DEF"), C("ACTION", "WAIT01"), C("LABEL", "OFF"), C("ACTION", "OFSW01"), C("CTRL", "isLive"),
+            C("LABEL", "ON"), C("ACTION", "ONSW01"), C("CTRL", "isLive"), C("LABEL", "ONLOOP"), C("ACTION", "ONSW01")],
+    };
+    var actions = new Dictionary<string, List<SeqCommand>>
+    {
+        ["OFF2ON"] = [C("JOINTSET", "", 90f, 120f, "OS"), C("WAITCHECK", "Joint", 0f)],
+        ["ON2OFF"] = [C("JOINTSET", "", 380f, 410f, "OS"), C("WAITCHECK", "Joint", 0f)],
+        ["ONSW01"] = [C("JOINTSET", "", 130f, 370f, "LP")],
+        ["OFSW01"] = [C("JOINTSET", "", 20f, 80f, "LP")],
+        ["WAIT01"] = [C("JOINTSET", "", 1f, 10f, "LP")],
+    };
+    var s = new ObjectSequencer(seqs, actions);
+    True(s.HasLiveGate, "usa isLive");
+    s.Start("SQ_WAIT");
+    True(!s.Live, "DEF (sem as ID Passes): IA desligada");
+    s.Start("SQ_ONLOOP");
+    True(!s.Live, "ONLOOP (vaga sem jogador, já acesa): IA desligada, ninguém apaga");
+    s.Start("SQ_POWERON");
+    True(s.Live && s.Label("SQ_WAIT") == "OFF", "POWERON: OFF com IA");
+    True(s.OnlyJumpsBack("SQ_SWOF"), "longe e apagado: SQ_SWOF/OFF só volta (não recomeça o OFSW01)");
+    True(!s.OnlyJumpsBack("SQ_SWON"), "perto: SQ_SWON/OFF acende");
+    s.Start("SQ_SWON");
+    for (int i = 0; i < 120 && s.Sequence != "SQ_WAIT"; i++) s.Tick(1 / ObjectSequencer.FramesPerSecond);
+    Equal("hit", s.TakeLuaCall(), "acendeu: hit_g_sbutton.lua");
+    True(s.Sequence == "SQ_WAIT" && s.Live && s.Action == "ONSW01", $"aceso com IA ({s.Sequence}, {s.Action})");
+    True(s.OnlyJumpsBack("SQ_SWON"), "parado em cima: SQ_SWON/ON não recomeça nem chama o hit de novo");
+    True(!s.OnlyJumpsBack("SQ_SWOF"), "saiu de cima: SQ_SWOF/ON apaga");
+});
+
 Test("Sequência: caixas agendadas antes de uma ação curta passam para a ação seguinte (CarryHitBoxes, SQ_MAGIC do f_apocaly)", () =>
 {
     SeqCommand C(string k, params object[] v) => new(k, v);
@@ -995,6 +1058,18 @@ Test("IA: faixa pela distância, sorteio acumulado em 16, troca de mapa e espera
     True(Math.Abs(b.Yaw - 0.1f) < 1e-4f, $"gira no máximo 0,1 rad por quadro ({b.Yaw})");
     for (int i = 0; i < 25; i++) b.Tick(frame, self, new Vector3(30, 0, 0), b.Yaw);
     True(Math.Abs(b.Yaw - MathF.PI / 2) < 1e-3f, "termina virado para o alvo");
+});
+
+Test("IA: sem AIMAP no SQ_ENTR começa no MAP00 mesmo com outro mapa antes no arquivo (e_blosso: MAP01 = fúria)", () =>
+{
+    var fury = new AiMap("MAP01", [32 * 32, 50 * 50, 1000 * 1000], 0.07f, [[new("SQ_ATCK2", 0, 0, 16)], [], [], []]);
+    var calm = new AiMap("MAP00", [30 * 30, 42 * 42, 1000 * 1000], 0.04f, [[new("SQ_ATCK1", 0, 0, 16)], [], [], []]);
+    var b = new EnemyBrain([fury, calm], new Dictionary<string, List<SeqCommand>>(), () => 0);
+    Equal("MAP00", b.Map.Name, "mapa inicial");
+    b.Tick(1 / 30f, Vector3.Zero, new Vector3(0, 0, 10), 0);
+    Equal("SQ_ATCK1", b.External, "de perto, o golpe calmo (SQ_ATCK1), não o giro");
+    var only = new EnemyBrain([fury], new Dictionary<string, List<SeqCommand>>(), () => 0);
+    Equal("MAP01", only.Map.Name, "sem MAP00: o primeiro do arquivo");
 });
 
 Test("Técnicas: WAZALIST pelo nível e pela skill, painel com MP e recarga", () =>
@@ -1175,6 +1250,11 @@ Test("Combate (FIGHTCALC): dano do jogador e do inimigo, acerto, crítico, exper
     Equal(968L, PlayerGrowth.NextExp(2), "NEXTEXP 2");
     Equal(17000L, PlayerGrowth.NextExp(10), "NEXTEXP 10");
     Equal(0L, PlayerGrowth.NextExp(999), "NEXTEXP 999");
+    // Queda (BKCHIPBITEXP 0x80377F70): perde 2/10 do degrau anterior, sem cair abaixo do início do nível
+    Equal(0L, PlayerGrowth.DeathExpLoss(1, 200), "queda no nível 1 não perde EXP");
+    Equal(68L, PlayerGrowth.DeathExpLoss(2, 900), "nível 2: 341·2/10");
+    Equal(125L, PlayerGrowth.DeathExpLoss(3, 2000), "nível 3: (968−341)·2/10");
+    Equal(32L, PlayerGrowth.DeathExpLoss(3, 1000), "nível 3: não desce abaixo de NEXTEXP 2");
 
     // Skill: limite por nível e +1 com taxa sintética
     Equal(1080, SkillGrowth.Limit(36), "limite 36");
@@ -1200,6 +1280,29 @@ Test("Combate (FIGHTCALC): dano do jogador e do inimigo, acerto, crítico, exper
     mt.SeedReference(5489);
     Equal(3499211612u, mt.Next(), "MT19937: primeiro valor de referência");
     True(new MersenneTwister().Next() == new MersenneTwister(MersenneTwister.GameSeed).Next(), "semente do jogo 5150");
+});
+
+Test("Port: PermanentFlags passa o enredo para o bloco da dificuldade (tabela do start.lua da stagIS12)", () =>
+{
+    var ram = new GameRam { Difficulty = 0 };
+    ram.SetFlag(2, true); ram.SetFlag(70, true); ram.SetFlag(49, true); ram.SetFlag(99, true);
+    ram.Players[0].Items.Add(new ItemRef("impItem", 11));
+    DW4.Script.Save.PermanentFlags.Commit(ram);
+    Equal(1, ram.FlagOn(701), "Normal: FLG 701 ← 2");
+    Equal(1, ram.FlagOn(711), "Normal: FLG 711 ← 70 (libera o Hard)");
+    Equal(1, ram.FlagOn(801), "Normal: FLG 801 ← 49");
+    Equal(1, ram.FlagOn(724), "Normal: FLG 724 ← 99");
+    Equal(1, ram.FlagOn(529), "Normal: FLG 529 ← FLAGFOLDER 11");
+    Equal(1, ram.DifficultyMax, "Hard liberado");
+    ram.SetFlag(2, false);
+    DW4.Script.Save.PermanentFlags.Commit(ram);
+    Equal(0, ram.FlagOn(701), "desligar também passa");
+    var hard = new GameRam { Difficulty = 1 };
+    hard.SetFlag(70, true); hard.SetFlag(1, true);
+    DW4.Script.Save.PermanentFlags.Commit(hard);
+    Equal(1, hard.FlagOn(77), "Hard: FLG 77 ← 70 (libera o Very Hard)");
+    Equal(1, hard.FlagOn(7), "Hard: FLG 7 ← 1");
+    Equal(0, hard.FlagOn(700), "Hard não mexe no bloco do Normal");
 });
 
 Test("PowerPC: desmontagem de instruções conhecidas e DOL sintético (seções, r13, string e ponteiro)", () =>
@@ -1470,6 +1573,54 @@ Test("be: DMswtSD/DMcase com padrão (−1) e DMswtEnd", () =>
     }
 });
 
+Test("be: DMsetLua dentro de um DMcase só roda se o caso valer (fim do tutorial: matz00 → stchg01/restart, FLG 503)", () =>
+{
+    // Forma do matz00.lua e do stchg01.lua da stag0001: caso 0 → stchg01.lua (pergunta de novo), caso 1 → restart.lua
+    // (FLGset 503 0 na hora + NEXTSTAGE stag0001). Respostas em ordem: a do matz00, depois a do stchg01.
+    foreach (var (answers, expected, restarts) in new[] { (new[] { 0.0, 0.0 }, "stag0101", 0), (new[] { 1.0 }, "stag0001", 1), (new[] { 0.0, 1.0 }, "stag0001", 1) })
+    {
+        var log = new List<string>();
+        var q = new Queue<double>(answers);
+        DemoManager dm = null!;
+        dm = new DemoManager(new BeMessenger(m => log.Add(m.Command)), _ => q.Dequeue());
+        BeMessage M(string c) => new("X", null, -1, c, [], null);
+        int restart = 0;
+        dm.RunLua = name =>
+        {
+            if (name == "restart.lua") { restart++; dm.Add(new(DemoManager.Kind.Set, M("stag0001"), 0)); dm.Run(); return; }
+            dm.Add(new(DemoManager.Kind.Switch, M("GETSELECT"), 0));
+            dm.Add(new(DemoManager.Kind.Case, null, 0, 0)); dm.Add(new(DemoManager.Kind.Set, M("stag0101"), 0));
+            dm.Add(new(DemoManager.Kind.Case, null, 0, 1));
+            True(dm.BuildingCase, "o stchg01 monta dentro de um caso");
+            dm.Add(new(DemoManager.Kind.Lua, null, 0, Lua: "restart.lua"));
+            dm.Add(new(DemoManager.Kind.SwitchEnd, null, 0));
+            dm.Run();
+        };
+        dm.Add(new(DemoManager.Kind.Switch, M("GETSELECT"), 0));
+        dm.Add(new(DemoManager.Kind.Case, null, 0, 0)); dm.Add(new(DemoManager.Kind.Lua, null, 0, Lua: "stchg01.lua"));
+        dm.Add(new(DemoManager.Kind.Case, null, 0, 1)); dm.Add(new(DemoManager.Kind.Lua, null, 0, Lua: "restart.lua"));
+        dm.Add(new(DemoManager.Kind.SwitchEnd, null, 0));
+        dm.Run();
+        True(!dm.BuildingCase, "DMrun fecha a montagem");
+        Equal(0, restart, "nada roda na montagem");
+        dm.Tick();
+        Equal(expected, string.Join(",", log), $"respostas {string.Join("/", answers)}");
+        Equal(restarts, restart, $"restart.lua (apaga a 503) com respostas {string.Join("/", answers)}");
+        True(dm.Idle, "fila terminou");
+    }
+});
+
+Test("Port: vaga que perdeu a FLG 503 depois do tutorial volta a tê-la (COUNTER 7 da 3ª onda)", () =>
+{
+    var ram = new GameRam();
+    True(!DW4.Script.Save.ResumePoint.RepairTutorialDone(ram), "vaga nova: tutorial não feito");
+    Equal(0, ram.FlagOn(503), "503 continua desligada");
+    ram.Counters[7] = 4;
+    True(DW4.Script.Save.ResumePoint.RepairTutorialDone(ram), "chegou à 3ª onda");
+    Equal(1, ram.FlagOn(503), "503 ligada: o portal do lobby vai direto ao Death Valley");
+    True(!DW4.Script.Save.ResumePoint.RepairTutorialDone(ram), "já estava certa");
+});
+
 Test("be: DMsetSD SETDEMOCAMERA com atraso segura o chk ISDEMOCAMERA até a demo chegar (tutorial, gene00.lua)", () =>
 {
     var log = new List<string>();
@@ -1484,6 +1635,166 @@ Test("be: DMsetSD SETDEMOCAMERA com atraso segura o chk ISDEMOCAMERA até a demo
     True(!log.Contains("SETBOXCAMERA"), "a fila espera a demo: " + string.Join(",", log));
     for (int i = 0; i < 200; i++) { dm.Tick(); messenger.Tick(); }
     Equal("SETDEMOCAMERA,SETBOXCAMERA", string.Join(",", log), "a demo chega antes do SETBOXCAMERA");
+});
+
+Test("Inimigos: a amostra que volta à pose inicial no fim da trnsIN é um salto e sai", () =>
+{
+    // Goburimon (e_goburi trnsIN, main_Trans_Rotate1 Y): −3 no início, 5,7 na penúltima (1,000 s), −3 na última (1,017 s).
+    True(AnimationWrap.IsWrapJump(new Vector3(0, -3, 0), new Vector3(0, 5.7f, -2), new Vector3(0, -3, 0)), "Goburimon: salto de volta");
+    True(AnimationWrap.IsClosingGap(1.0, 1.0 + 1 / 60.0), "meio quadro fecha o ciclo");
+    True(AnimationWrap.IsClosingGap(0.967, 1.0), "um quadro fecha o ciclo");
+    True(!AnimationWrap.IsClosingGap(0.9, 1.0), "três quadros não");
+    // Ciclo que fecha sem salto (wait01 em laço): fica.
+    True(!AnimationWrap.IsWrapJump(new Vector3(0, 5.7f, -2), new Vector3(0, 5.75f, -2), new Vector3(0, 5.7f, -2)), "laço contínuo fica");
+    // Última diferente da primeira: não é o fecho do ciclo.
+    True(!AnimationWrap.IsWrapJump(new Vector3(0, -3, 0), new Vector3(0, 5.7f, 0), new Vector3(0, 5.6f, 0)), "fim natural fica");
+    var q0 = Quaternion.Identity;
+    var q90 = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2);
+    True(AnimationWrap.IsWrapJump(q0, q90, q0), "giro de 90° de volta");
+    True(!AnimationWrap.IsWrapJump(q0, Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.05f), q0), "giro pequeno fica");
+});
+
+Test("Saves no servidor: vaga local enviada vira .enviado e não aparece mais", () =>
+{
+    var root = Path.Combine(Path.GetTempPath(), "dw4-teste-migra-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        var store = new DW4.Script.Save.LocalCharacterStore(root);
+        store.Save("conta", 0, DW4.Script.Save.CharacterSave.New("Gui", 2, "p_girumon", 0, "stagml11", 0));
+        store.MarkMigrated("conta", 0);
+        True(store.Load("conta", 0) == null, "vaga local some depois de enviada");
+        True(File.Exists(store.PathOf("conta", 0) + ".enviado"), "fica a cópia slot1.json.enviado");
+        store.Save("conta", 0, DW4.Script.Save.CharacterSave.New("Gui2", 2, "p_girumon", 0, "stagml11", 0));
+        store.MarkMigrated("conta", 0);
+        True(File.Exists(store.PathOf("conta", 0) + ".enviado2"), "segunda cópia não apaga a primeira");
+    }
+    finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+});
+
+Test("Saves no servidor: migração das vagas locais (mesma vaga se livre, senão a primeira livre, sem vaga fica)", () =>
+{
+    DW4.Script.Save.CharacterSave C(string n) => DW4.Script.Save.CharacterSave.New(n, 0, "p_agumon", 0, "stagml11", 0);
+    var plan = DW4.Script.Save.SlotMigration.Plan([null, null, null, null], [C("a"), null, C("c"), null]);
+    Equal("0>0 2>2", string.Join(" ", plan.Select(p => $"{p.Local}>{p.Target}")), "conta vazia: cada um na sua vaga");
+    plan = DW4.Script.Save.SlotMigration.Plan([C("x"), null, C("y"), null], [C("a"), C("b"), null, null]);
+    Equal("0>3 1>1", string.Join(" ", plan.Select(p => $"{p.Local}>{p.Target}")), "vaga 1 ocupada no servidor: vai para a livre");
+    plan = DW4.Script.Save.SlotMigration.Plan([C("x"), C("y"), C("z"), null], [C("a"), C("b"), null, null]);
+    Equal("0>3 1>-1", string.Join(" ", plan.Select(p => $"{p.Local}>{p.Target}")), "só uma livre: o outro fica no aparelho");
+});
+
+Test("Saves no servidor: pacotes das vagas (ida e volta, gzip, limites)", () =>
+{
+    var save = DW4.Script.Save.CharacterSave.New("Gui", 2, "p_girumon", 0, "stagml11", 0);
+    var json = save.ToJson();
+    var packed = DW4.Net.SaveData.Pack(json);
+    True(packed.Length < json.Length / 2, $"comprime ({json.Length} → {packed.Length} bytes)");
+    Equal(json, DW4.Net.SaveData.Unpack(packed), "descomprime igual");
+    var w = (DW4.Net.SaveWrite)DW4.Net.Codec.Read(DW4.Net.Codec.Write(new DW4.Net.SaveWrite(7, 3, packed)));
+    True(w.ReqId == 7 && w.Slot == 3 && w.Data.SequenceEqual(packed), "SaveWrite");
+    Equal(new DW4.Net.SaveList(9), DW4.Net.Codec.Read(DW4.Net.Codec.Write(new DW4.Net.SaveList(9))), "SaveList");
+    Equal(new DW4.Net.SaveDelete(2, 1), DW4.Net.Codec.Read(DW4.Net.Codec.Write(new DW4.Net.SaveDelete(2, 1))), "SaveDelete");
+    var r = (DW4.Net.SaveReply)DW4.Net.Codec.Read(DW4.Net.Codec.Write(new DW4.Net.SaveReply(5, true, "", [new(0, packed), new(2, packed)])));
+    True(r.ReqId == 5 && r.Ok && r.Slots.Length == 2 && r.Slots[1].Slot == 2 && r.Slots[1].Data.SequenceEqual(packed), "SaveReply com vagas");
+    bool threw = false;
+    try { DW4.Net.Codec.Read(DW4.Net.Codec.Write(new DW4.Net.SaveDelete(1, 0)).Select((b, i) => i == 5 ? (byte)4 : b).ToArray()); } catch (FormatException) { threw = true; }
+    True(threw, "vaga 5 recusada");
+    threw = false;
+    try { DW4.Net.SaveData.Unpack([1, 2, 3]); } catch (FormatException) { threw = true; }
+    True(threw, "lixo no lugar do gzip recusado");
+    threw = false;
+    try { DW4.Net.SaveData.Unpack(DW4.Net.SaveData.Pack(new string('x', DW4.Net.Protocol.MaxSaveJson + 1))); } catch (FormatException) { threw = true; }
+    True(threw, "save gigante recusado");
+    Equal(("{\"Name\":\"Gui\"}", "Gui"), DW4.Server.GameServer.CheckSave(DW4.Net.SaveData.Pack("{\"Name\":\"Gui\"}")), "servidor lê o nome");
+    threw = false;
+    try { DW4.Server.GameServer.CheckSave(DW4.Net.SaveData.Pack("[1,2]")); } catch (FormatException) { threw = true; }
+    True(threw, "servidor recusa save que não é objeto");
+});
+
+Test("Saves no servidor: servidor de verdade (UDP local, DevApi) lista, grava, apaga e derruba a conta repetida", () =>
+{
+    var dir = Path.Combine(Path.GetTempPath(), "dw4-teste-servidor-" + Guid.NewGuid().ToString("N"));
+    Environment.SetEnvironmentVariable("DW4_DEV_SAVES", dir);
+    var server = new DW4.Server.GameServer(new DW4.Server.DevApi());
+    True(server.Start(0), "servidor abriu");
+    var stop = false;
+    var loop = new Thread(() => { while (!Volatile.Read(ref stop)) { server.Tick(); Thread.Sleep(5); } }) { IsBackground = true };
+    loop.Start();
+    try
+    {
+        // Cliente mínimo: conecta, manda Hello e guarda o que chegar.
+        (LiteNetLib.NetManager Net, LiteNetLib.NetPeer Peer, System.Collections.Concurrent.ConcurrentQueue<object> Inbox, Func<string?> Rejected) Client(string ticket)
+        {
+            var inbox = new System.Collections.Concurrent.ConcurrentQueue<object>();
+            string? rejected = null;
+            var l = new LiteNetLib.EventBasedNetListener();
+            l.NetworkReceiveEvent += (_, reader, _, _) => inbox.Enqueue(DW4.Net.Codec.Read(reader.GetRemainingBytes()));
+            l.PeerDisconnectedEvent += (_, info) =>
+            {
+                if (info.AdditionalData is { AvailableBytes: > 0 } d && DW4.Net.Codec.Read(d.GetRemainingBytes()) is DW4.Net.Reject r) rejected = r.Reason;
+            };
+            var net = new LiteNetLib.NetManager(l) { AutoRecycle = true };
+            net.Start();
+            var peer = net.Connect("127.0.0.1", server.Port, DW4.Net.Protocol.ConnectionKey);
+            l.PeerConnectedEvent += p => p.Send(DW4.Net.Codec.Write(new DW4.Net.Hello(DW4.Net.Protocol.Version, ticket, "", "", 0)), LiteNetLib.DeliveryMethod.ReliableOrdered);
+            return (net, peer, inbox, () => rejected);
+        }
+        T Wait<T>(LiteNetLib.NetManager net, System.Collections.Concurrent.ConcurrentQueue<object> inbox, Func<T, bool>? ok = null) where T : class
+        {
+            var until = DateTime.UtcNow.AddSeconds(5);
+            while (DateTime.UtcNow < until)
+            {
+                net.PollEvents();
+                while (inbox.TryDequeue(out var m)) if (m is T t && (ok == null || ok(t))) return t;
+                Thread.Sleep(5);
+            }
+            throw new InvalidOperationException($"não chegou {typeof(T).Name}");
+        }
+        void Send(LiteNetLib.NetPeer p, object m) => p.Send(DW4.Net.Codec.Write(m), LiteNetLib.DeliveryMethod.ReliableOrdered);
+
+        var a = Client("dev:Gui");
+        Wait<DW4.Net.Welcome>(a.Net, a.Inbox);
+        Send(a.Peer, new DW4.Net.SaveList(1));
+        True(Wait<DW4.Net.SaveReply>(a.Net, a.Inbox, r => r.ReqId == 1) is { Ok: true, Slots.Length: 0 }, "conta nova: sem vagas");
+        var save = DW4.Script.Save.CharacterSave.New("Guilmon", 2, "p_girumon", 0, "stagml11", 0);
+        save.Bit = 4321;
+        Send(a.Peer, new DW4.Net.SaveWrite(2, 1, DW4.Net.SaveData.Pack(save.ToJson())));
+        save.Bit = 9999; // gravação seguinte: tem que valer a mais nova
+        Send(a.Peer, new DW4.Net.SaveWrite(3, 1, DW4.Net.SaveData.Pack(save.ToJson())));
+        True(Wait<DW4.Net.SaveReply>(a.Net, a.Inbox, r => r.ReqId == 3).Ok, "gravou");
+        Send(a.Peer, new DW4.Net.SaveWrite(4, 2, DW4.Net.SaveData.Pack("não é json")));
+        True(!Wait<DW4.Net.SaveReply>(a.Net, a.Inbox, r => r.ReqId == 4).Ok, "save inválido recusado");
+        Send(a.Peer, new DW4.Net.SaveList(5));
+        var list = Wait<DW4.Net.SaveReply>(a.Net, a.Inbox, r => r.ReqId == 5);
+        True(list.Slots.Length == 1 && list.Slots[0].Slot == 1, "uma vaga, a 2");
+        var back = DW4.Script.Save.CharacterSave.FromJson(DW4.Net.SaveData.Unpack(list.Slots[0].Data))!;
+        True(back.Name == "Guilmon" && back.Bit == 9999, "volta o save mais novo (ordem garantida)");
+
+        // Outra conta não vê.
+        var b = Client("dev:Ana");
+        Wait<DW4.Net.Welcome>(b.Net, b.Inbox);
+        Send(b.Peer, new DW4.Net.SaveList(1));
+        True(Wait<DW4.Net.SaveReply>(b.Net, b.Inbox, r => r.ReqId == 1).Slots.Length == 0, "outra conta não vê as vagas");
+
+        // Mesma conta em outro aparelho: o antigo é derrubado com o motivo combinado.
+        var a2 = Client("dev:Gui");
+        Wait<DW4.Net.Welcome>(a2.Net, a2.Inbox);
+        var until = DateTime.UtcNow.AddSeconds(5);
+        while (a.Rejected() == null && DateTime.UtcNow < until) { a.Net.PollEvents(); Thread.Sleep(5); }
+        Equal(DW4.Net.Protocol.KickedReason, a.Rejected(), "aparelho antigo derrubado");
+        Send(a2.Peer, new DW4.Net.SaveDelete(1, 1));
+        True(Wait<DW4.Net.SaveReply>(a2.Net, a2.Inbox, r => r.ReqId == 1).Ok, "apagou");
+        Send(a2.Peer, new DW4.Net.SaveList(2));
+        True(Wait<DW4.Net.SaveReply>(a2.Net, a2.Inbox, r => r.ReqId == 2).Slots.Length == 0, "apagada some");
+        foreach (var c in new[] { a.Net, b.Net, a2.Net }) c.Stop();
+    }
+    finally
+    {
+        Volatile.Write(ref stop, true);
+        loop.Join();
+        server.Stop();
+        Environment.SetEnvironmentVariable("DW4_DEV_SAVES", null);
+        if (Directory.Exists(dir)) Directory.Delete(dir, true);
+    }
 });
 
 // ---------- dados do jogo (opcional) ----------
@@ -2318,6 +2629,33 @@ if (args.Length == 1)
         fresh.SetFlag(77, true); Equal(2, fresh.DifficultyMax, "FLG 77: até Very Hard");
     });
 
+    Test("Jogo: o enredo gravado volta depois da gameStart.lua (PermanentFlags = start.lua da stagIS12), nas três dificuldades", () =>
+    {
+        var file = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fases", "stagis10", "lua", "gameStart.lua");
+        True(File.Exists(file), $"exportada: {file}");
+        // Trabalho que a gameStart.lua refaz: 1..6, 19..20, 67..70, 83, 86, 89..99, 320..327, 329..333, 334, 335, 49, 82, 383.
+        int[] story = [1, 2, 3, 4, 5, 6, 19, 20, 67, 70, 83, 86, 89, 99, 320, 327, 329, 333, 334, 335, 49, 82, 383];
+        for (int d = 0; d < 3; d++)
+        {
+            var ram = new GameRam { Difficulty = d };
+            foreach (var f in story) ram.SetFlag(f, true);
+            ram.Players[0].Items.Add(new ItemRef("impItem", 4));
+            var save = DW4.Script.Save.CharacterSave.Capture(ram, 0, "Gui", "stagml11", 0);
+            DW4.Script.Save.PermanentFlags.Repair(save); // vaga antiga (só trabalho) consertada ao entrar
+            var back = new GameRam();
+            save.Apply(back, 0);
+            var gs = new StageScripts(new Dictionary<string, byte[]> { ["gameStart.lua"] = File.ReadAllBytes(file) }, new BeHost(new RecordingEngine(), back, new BeSystem { FolderName = "stagis10" }));
+            True(gs.Run("gameStart.lua"), $"dificuldade {d}: roda");
+            foreach (var f in story) Equal(1, back.FlagOn(f), $"dificuldade {d}: FLG {f} depois da gameStart.lua");
+            True(back.Players[0].Items.Has(new ItemRef("impItem", 4)), $"dificuldade {d}: item da FLAGFOLDER");
+            // Sem o Commit (como até a 0.6.3), a FLG 2 (base da Ofanimon) some e o jogo recomeça do tutorial.
+            var old = new GameRam();
+            DW4.Script.Save.CharacterSave.Capture(ram, 0, "Gui", "stagml11", 0).Apply(old, 0);
+            new StageScripts(new Dictionary<string, byte[]> { ["gameStart.lua"] = File.ReadAllBytes(file) }, new BeHost(new RecordingEngine(), old, new BeSystem { FolderName = "stagis10" })).Run("gameStart.lua");
+            Equal(0, old.FlagOn(2), $"dificuldade {d}: sem o Commit a FLG 2 se perde");
+        }
+    });
+
     Test("Jogo: NPC da stagML02 (n_digilfm): SQ_SHOK espera o movimento (WAITCHECK \"Motion\"); o andar continua no DELAY01", () =>
     {
         var file = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fases", "stagml02", "objetos", "n_digilfm", "ndmw_0817_n_digilfm_seq.json");
@@ -2721,6 +3059,18 @@ Test("Online: menu do F pelo que o servidor conta (InteractView)", () =>
     Equal("Pedido já enviado.", O(V(friend: false, sent: true))[1].Reason, "pedido enviado");
 });
 
+Test("Online: menu do F avisa quando uma das contas não tem Tamer do DMO", () =>
+{
+    var com = new DW4.Net.Identity(10, "Feezao", null);
+    var sem = new DW4.Net.Identity(20, "rdn26reqm8t9", null, HasTamer: false);
+    True(DW4.Server.GameServer.NoTamerNotice(com, com, "x") == null, "os dois com Tamer: vai para a API");
+    True(DW4.Server.GameServer.NoTamerNotice(com, sem, "xprodexota")!.StartsWith("xprodexota ainda não tem um Tamer"), "alvo sem Tamer, pelo nome do personagem");
+    True(DW4.Server.GameServer.NoTamerNotice(sem, com, "x")!.StartsWith("Sua conta ainda não tem"), "eu sem Tamer");
+    var w = new DW4.Net.World();
+    w.Join(2, sem, "xprodexota");
+    Equal("xprodexota", w.Name(2), "nome do personagem, não o usuário gerado");
+});
+
 Test("Online: servidor só deixa o F entre quem está na mesma instância", () =>
 {
     var w = new DW4.Net.World();
@@ -2734,6 +3084,207 @@ Test("Online: servidor só deixa o F entre quem está na mesma instância", () =
     True(!w.SameInstance(1, 2), "um na dungeon");
     w.Update(1, S("dng101b1"));
     True(w.SameInstance(1, 2), "os dois na mesma dungeon: F vale (mesmo sem grupo)");
+});
+
+Test("Online: grupo de combate (só a party na mesma fase; o primeiro a chegar roda os inimigos)", () =>
+{
+    var w = new DW4.Net.World();
+    DW4.Net.PlayerState S(string stage) => new(stage, 0, 0, 0, 0, "", "p_girumon", 1);
+    w.Join(1, new(10, "A", null), "a");
+    w.Join(2, new(20, "B", null), "b");
+    w.Join(3, new(30, "C", null), "c");
+    var o = w.Update(1, S("dng101b1"));
+    True(o.Any(x => x.To == 1 && x.Message is DW4.Net.CoopGroup { HostId: 1, Members.Length: 1 }), "sozinho: anfitrião de si mesmo");
+    w.Update(2, S("dng101b1"));
+    Equal(1, w.GroupOf(2).Count, "sem party: cada um no seu grupo (mesmo se vendo)");
+    True(w.Relay(1, [1, 2], true).Count == 0, "sem party: nada é repassado");
+    w.SetParty(1, "p"); o = w.SetParty(2, "p");
+    True(o.Any(x => x.To == 1 && x.Message is DW4.Net.CoopGroup { HostId: 1, Members.Length: 2 }), "party na mesma fase: grupo de 2, anfitrião o primeiro");
+    var r = w.Relay(2, [9], false);
+    True(r.Count == 1 && r[0] is { To: 1, Reliable: false, Message: DW4.Net.CoopFrom { FromId: 2 } }, "repassa para o outro membro");
+    w.SetParty(3, "p");
+    Equal(0, w.GroupOf(3).Count, "da party mas ainda sem fase: fora do grupo");
+    w.Update(3, S("stagml11"));
+    Equal(2, w.GroupOf(1).Count, "da party em outra fase: grupo separado");
+    o = w.Leave(1);
+    True(o.Any(x => x.To == 2 && x.Message is DW4.Net.CoopGroup { HostId: 2, Members.Length: 1 }), "anfitrião saiu: o próximo assume");
+    Equal("dng101b1#p:p", DW4.Net.World.CombatGroup("dng101b1", new(20, "B", "p")), "chave do grupo");
+});
+
+Test("Online: quadro da party (HP e MP dos membros, só quando muda)", () =>
+{
+    var w = new DW4.Net.World();
+    DW4.Net.PlayerState S(string stage, int hp) => new(stage, 0, 0, 0, 0, "", "p_girumon", 3, "", hp, 100, 20, 40);
+    w.Join(1, new(10, "A", "p"), "Ana");
+    w.Join(2, new(20, "B", "p"), "Bia");
+    w.Join(3, new(30, "C", null), "Caio");
+    w.Update(1, S("dng101b1", 100));
+    var o = w.Update(2, S("stagml11", 90));
+    var r = o.Where(x => x.Message is DW4.Net.PartyRoster).ToList();
+    True(r.Count == 2 && r.All(x => x.Reliable), "os dois membros recebem");
+    var roster = (DW4.Net.PartyRoster)r[0].Message;
+    True(roster.Members.Length == 2 && roster.Members[1] is { Character: "Bia", Hp: 90, MaxHp: 100, Mp: 20, MaxMp: 40, Stage: "stagml11" }, "nome, HP, MP e fase");
+    True(!w.Update(2, S("stagml11", 90) with { X = 5 }).Any(x => x.Message is DW4.Net.PartyRoster), "andar não manda de novo");
+    True(w.Update(2, S("stagml11", 50)).Count(x => x.Message is DW4.Net.PartyRoster) == 2, "HP mudou: manda");
+    True(!w.Update(3, S("stagml11", 10)).Any(x => x.Message is DW4.Net.PartyRoster), "sem party: nada");
+    o = w.SetParty(2, null);
+    True(o.Any(x => x.To == 2 && x.Message is DW4.Net.PartyRoster { Members.Length: 0 }), "saiu da party: quadro vazio");
+    True(o.Any(x => x.To == 1 && x.Message is DW4.Net.PartyRoster { Members.Length: 1 }), "quem ficou vê só a si");
+    var back = (DW4.Net.PartyRoster)DW4.Net.Codec.Read(DW4.Net.Codec.Write(roster));
+    True(back.Members.SequenceEqual(roster.Members), "ida e volta do pacote");
+    var st = (DW4.Net.PlayerState)DW4.Net.Codec.Read(DW4.Net.Codec.Write(S("x", 7)));
+    True(st is { Hp: 7, MaxHp: 100, Mp: 20, MaxMp: 40 }, "estado leva HP e MP");
+});
+
+Test("Online: pacotes do chat (ida e volta, canal inválido recusado)", () =>
+{
+    foreach (object m in new object[]
+    {
+        new DW4.Net.ChatSend(DW4.Net.ChatTo.Whisper, "Ana", "tudo bem?"),
+        new DW4.Net.ChatSend(DW4.Net.ChatTo.Global, "", "olá, ação"),
+        new DW4.Net.ChatFrom(DW4.Net.ChatTo.Party, 7, "Guilmon", "", "bora"),
+        new DW4.Net.ChatNotice("Ana não está online."),
+    })
+        Equal(m, DW4.Net.Codec.Read(DW4.Net.Codec.Write(m)), m.GetType().Name);
+    var bad = DW4.Net.Codec.Write(new DW4.Net.ChatSend(DW4.Net.ChatTo.Global, "", "x"));
+    bad[1] = 9;
+    bool refused = false;
+    try { DW4.Net.Codec.Read(bad); } catch (FormatException) { refused = true; }
+    True(refused, "canal 9 recusado");
+    Equal((int)ChatChannel.Whisper, (int)DW4.Net.ChatTo.Whisper, "mesma ordem do ChatChannel do jogo");
+});
+
+Test("Online: chat no servidor (geral para todos, grupo pela party em qualquer fase, privada pelo personagem ou Tamer)", () =>
+{
+    var w = new DW4.Net.World();
+    w.Join(1, new(10, "TamerA", "p"), "Ana");
+    w.Join(2, new(20, "TamerB", "p"), "Bia");
+    w.Join(3, new(30, "TamerC", null), "Caio");
+    w.Join(4, new(40, "TamerD", null), "");
+    w.Update(1, new("dng101b1", 0, 0, 0, 0, "", "p_girumon", 1));
+    w.Update(2, new("stagml11", 0, 0, 0, 0, "", "p_girumon", 1));
+    var o = w.Chat(1, DW4.Net.ChatTo.Global, "", "oi", out var n);
+    True(n == null && o.Count == 4 && o.All(x => x is { Reliable: true, Message: DW4.Net.ChatFrom { Sender: "Ana", Text: "oi" } }), "geral: todos, até quem mandou");
+    o = w.Chat(1, DW4.Net.ChatTo.Party, "", "bora", out n);
+    True(n == null && o.Select(x => x.To).OrderBy(x => x).SequenceEqual([1, 2]), "grupo: a party, mesmo em fases diferentes");
+    o = w.Chat(3, DW4.Net.ChatTo.Party, "", "eu", out n);
+    True(o.Count == 0 && n == "Você não está em um grupo.", "sem party: aviso");
+    o = w.Chat(3, DW4.Net.ChatTo.Whisper, "bia", "psiu", out n);
+    True(n == null && o.Select(x => x.To).OrderBy(x => x).SequenceEqual([2, 3])
+        && o.All(x => x.Message is DW4.Net.ChatFrom { Channel: DW4.Net.ChatTo.Whisper, Sender: "Caio", To: "Bia" }), "privada pelo personagem: ele e a cópia");
+    o = w.Chat(3, DW4.Net.ChatTo.Whisper, "TamerA", "oi", out n);
+    True(n == null && o.Any(x => x.To == 1), "privada pelo Tamer");
+    o = w.Chat(1, DW4.Net.ChatTo.Whisper, "Zé", "oi", out n);
+    True(o.Count == 0 && n == "Zé não está online.", "destinatário fora: aviso");
+    w.Chat(1, DW4.Net.ChatTo.Whisper, "ana", "eu", out n);
+    Equal("Essa mensagem é para você mesmo.", n, "para si mesmo");
+    o = w.Chat(4, DW4.Net.ChatTo.Global, "", "sem vaga", out _);
+    True(o.All(x => x.Message is DW4.Net.ChatFrom { Sender: "TamerD" }), "sem personagem: aparece o Tamer");
+    w.Leave(2);
+    w.Chat(1, DW4.Net.ChatTo.Whisper, "Bia", "oi", out n);
+    Equal("Bia não está online.", n, "saiu do jogo: fora");
+});
+
+Test("Online: chat de verdade (UDP local, DevApi: geral, amizade e grupo pelo F, grupo, privada, aviso e anti-spam)", () =>
+{
+    var server = new DW4.Server.GameServer(new DW4.Server.DevApi());
+    True(server.Start(0), "servidor abriu");
+    var stop = false;
+    var loop = new Thread(() => { while (!Volatile.Read(ref stop)) { server.Tick(); Thread.Sleep(5); } }) { IsBackground = true };
+    loop.Start();
+    try
+    {
+        (LiteNetLib.NetManager Net, LiteNetLib.NetPeer Peer, System.Collections.Concurrent.ConcurrentQueue<object> Inbox) Client(string ticket, string character)
+        {
+            var inbox = new System.Collections.Concurrent.ConcurrentQueue<object>();
+            var l = new LiteNetLib.EventBasedNetListener();
+            l.NetworkReceiveEvent += (_, reader, _, _) => inbox.Enqueue(DW4.Net.Codec.Read(reader.GetRemainingBytes()));
+            var net = new LiteNetLib.NetManager(l) { AutoRecycle = true };
+            net.Start();
+            l.PeerConnectedEvent += p => p.Send(DW4.Net.Codec.Write(new DW4.Net.Hello(DW4.Net.Protocol.Version, ticket, character, "p_girumon", 1)), LiteNetLib.DeliveryMethod.ReliableOrdered);
+            var peer = net.Connect("127.0.0.1", server.Port, DW4.Net.Protocol.ConnectionKey);
+            return (net, peer, inbox);
+        }
+        T Wait<T>((LiteNetLib.NetManager Net, LiteNetLib.NetPeer Peer, System.Collections.Concurrent.ConcurrentQueue<object> Inbox) c, Func<T, bool>? ok = null) where T : class
+        {
+            var until = DateTime.UtcNow.AddSeconds(5);
+            while (DateTime.UtcNow < until)
+            {
+                c.Net.PollEvents();
+                while (c.Inbox.TryDequeue(out var m)) if (m is T t && (ok == null || ok(t))) return t;
+                Thread.Sleep(5);
+            }
+            throw new InvalidOperationException($"não chegou {typeof(T).Name}");
+        }
+        void Send((LiteNetLib.NetManager Net, LiteNetLib.NetPeer Peer, System.Collections.Concurrent.ConcurrentQueue<object> Inbox) c, object m) =>
+            c.Peer.Send(DW4.Net.Codec.Write(m), LiteNetLib.DeliveryMethod.ReliableOrdered);
+
+        var a = Client("dev:Ana", "Vzada");
+        var b = Client("dev:Bia", "feezao");
+        int idA = Wait<DW4.Net.Welcome>(a).PlayerId, idB = Wait<DW4.Net.Welcome>(b).PlayerId;
+        // Os dois na mesma fase (o F só vale entre quem se vê).
+        Send(a, new DW4.Net.PlayerState("stagml11", 0, 0, 0, 0, "", "p_girumon", 1));
+        Send(b, new DW4.Net.PlayerState("stagml11", 1, 0, 0, 0, "", "p_girumon", 1));
+        Wait<DW4.Net.Spawn>(a);
+
+        Send(a, new DW4.Net.ChatSend(DW4.Net.ChatTo.Global, "", "  oi\ngeral  "));
+        True(Wait<DW4.Net.ChatFrom>(b) is { Channel: DW4.Net.ChatTo.Global, Sender: "Vzada", Text: "oi geral" }, "geral chega no outro, limpo");
+        Wait<DW4.Net.ChatFrom>(a, m => m.Text == "oi geral");
+
+        Send(a, new DW4.Net.ChatSend(DW4.Net.ChatTo.Party, "", "grupo?"));
+        Equal("Você não está em um grupo.", Wait<DW4.Net.ChatNotice>(a).Text, "sem party: aviso");
+
+        // Amizade e grupo pelo menu do F (o convite de grupo é só para amigos).
+        Send(a, new DW4.Net.Interact(idB, "friend-request"));
+        Wait<DW4.Net.SocialPrompt>(b, p => p.Kind == "friend");
+        Send(b, new DW4.Net.Interact(idA, "friend-accept"));
+        Wait<DW4.Net.InteractResult>(b, r => r.Action == "friend-accept" && r.Ok);
+        Thread.Sleep(450); // o servidor aceita um F a cada 400 ms por jogador
+        Send(a, new DW4.Net.Interact(idB, "party-invite"));
+        var invite = Wait<DW4.Net.SocialPrompt>(b, p => p.Kind == "party");
+        Send(b, new DW4.Net.Interact(idA, "party-accept", invite.InviteId));
+        Wait<DW4.Net.PartyRoster>(a, r => r.Members.Length == 2);
+
+        Send(b, new DW4.Net.ChatSend(DW4.Net.ChatTo.Party, "", "bora"));
+        True(Wait<DW4.Net.ChatFrom>(a, m => m.Channel == DW4.Net.ChatTo.Party) is { Sender: "feezao", Text: "bora" }, "grupo chega na party");
+
+        Send(b, new DW4.Net.ChatSend(DW4.Net.ChatTo.Whisper, "VZADA", "só pra você"));
+        True(Wait<DW4.Net.ChatFrom>(a, m => m.Channel == DW4.Net.ChatTo.Whisper) is { Sender: "feezao", To: "Vzada", Text: "só pra você" }, "privada chega");
+        Wait<DW4.Net.ChatFrom>(b, m => m.Channel == DW4.Net.ChatTo.Whisper && m.To == "Vzada");
+
+        Send(a, new DW4.Net.ChatSend(DW4.Net.ChatTo.Whisper, "Ninguem", "oi"));
+        Equal("Ninguem não está online.", Wait<DW4.Net.ChatNotice>(a).Text, "privada para quem não está");
+
+        for (int i = 0; i < 6; i++) Send(b, new DW4.Net.ChatSend(DW4.Net.ChatTo.Global, "", $"spam {i}"));
+        Equal("Muitas mensagens seguidas. Espere um pouco.", Wait<DW4.Net.ChatNotice>(b).Text, "anti-spam");
+        foreach (var c in new[] { a.Net, b.Net }) c.Stop();
+    }
+    finally
+    {
+        Volatile.Write(ref stop, true);
+        loop.Join();
+        server.Stop();
+    }
+});
+
+Test("Online: pacotes do combate em grupo (ida e volta, limites)", () =>
+{
+    object[] all = [new DW4.Net.EnemySpawn(7, 12, 1, 2, 3, 0.5f, 340, "GENE-03"), new DW4.Net.EnemySeq(7, "SQ_ATCK1", "common"),
+        new DW4.Net.EnemyHit(7, 55, "SQ_SDMG"), new DW4.Net.EnemyKilled(7, 2, false), new DW4.Net.EnemyRemoved(7), new DW4.Net.Wipeout("GENE-03")];
+    foreach (var m in all) Equal(m, DW4.Net.CoopCodec.Read(DW4.Net.CoopCodec.Write(m)), m.GetType().Name);
+    var poses = Enumerable.Range(0, 45).Select(i => new DW4.Net.EnemyPose(i, i, 0, 0, 0, 100, 12)).ToArray();
+    var sync = (DW4.Net.EnemySync)DW4.Net.CoopCodec.Read(DW4.Net.CoopCodec.Write(new DW4.Net.EnemySync(poses)));
+    Equal(DW4.Net.CoopCodec.MaxPoses, sync.Poses.Length, "sincronia cortada no máximo");
+    Equal(12, sync.Poses[3].Row, "a pose leva a linha do inimigo");
+    True(DW4.Net.CoopCodec.Write(new DW4.Net.EnemySync(poses)).Length <= DW4.Net.Protocol.MaxPayload, "cabe num pacote");
+    var g = new DW4.Net.CoopGroup(3, [3, 4]);
+    var back = (DW4.Net.CoopGroup)DW4.Net.Codec.Read(DW4.Net.Codec.Write(g));
+    True(back.HostId == 3 && back.Members.SequenceEqual(new[] { 3, 4 }), "CoopGroup");
+    var rel = (DW4.Net.CoopRelay)DW4.Net.Codec.Read(DW4.Net.Codec.Write(new DW4.Net.CoopRelay(true, [1, 2, 3])));
+    True(rel.Reliable && rel.Payload.SequenceEqual(new byte[] { 1, 2, 3 }), "CoopRelay");
+    bool threw = false;
+    try { DW4.Net.CoopCodec.Read([2, 200]); } catch (FormatException) { threw = true; }
+    True(threw, "sincronia com contagem falsa");
 });
 
 Console.WriteLine($"{passed} ok, {failed} falharam");

@@ -6,7 +6,10 @@ config_version=5
 
 [application]
 
+config/quit_on_go_back=false
+
 config/name="Digimon World 4"
+config/version="0.6.8-android.9"
 run/main_scene="res://MainMenu.tscn"
 config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 boot_splash/show_image=false
@@ -14,12 +17,32 @@ boot_splash/bg_color=Color(0, 0, 0, 1)
 config/icon="res://icone.png"
 config/windows_native_icon="res://icone.ico"
 
+[display]
+
+; Android (DECISÃO DO PORT, versão do celular): tela deitada, e a interface feita para 1080p encolhe junto com a tela.
+window/handheld/orientation=4
+window/stretch/mode.mobile="canvas_items"
+window/stretch/aspect.mobile="expand"
+window/size/viewport_width.mobile=1600
+window/size/viewport_height.mobile=900
+
 [dotnet]
 
 project/assembly_name="DW4.Client"
+
+[input_devices]
+
+; Toque vira clique nos menus; o voltar do Android não fecha o jogo.
+pointing/emulate_mouse_from_touch=true
 
 [physics]
 
 common/physics_ticks_per_second=60
 3d/physics_engine="Jolt Physics"
 
+
+[rendering]
+
+; Forward+ não roda em celular: no Android o port usa o renderizador de compatibilidade (OpenGL ES 3). O PC não muda.
+renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true

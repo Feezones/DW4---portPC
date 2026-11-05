@@ -14,6 +14,7 @@
     <ProjectReference Include="..\..\src\DW4.Gameplay\DW4.Gameplay.csproj" />
     <ProjectReference Include="..\..\src\DW4.Script\DW4.Script.csproj" />
     <ProjectReference Include="..\..\src\DW4.Net\DW4.Net.csproj" />
+    <ProjectReference Include="..\..\src\DW4.Server\DW4.Server.csproj" />
   </ItemGroup>
 
 </Project>

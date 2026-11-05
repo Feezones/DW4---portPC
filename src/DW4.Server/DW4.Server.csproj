@@ -17,6 +17,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DW4.Net\DW4.Net.csproj" />
+    <!-- Regras do chat que o jogo também usa (ChatLog.Clean, ChatFlood); só .NET, sem Godot. -->
+    <ProjectReference Include="..\DW4.Gameplay\DW4.Gameplay.csproj" />
   </ItemGroup>
 
 </Project>

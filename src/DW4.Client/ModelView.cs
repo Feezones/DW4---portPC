@@ -49,11 +49,11 @@ public partial class ModelView : SubViewportContainer
         _model = null;
         if (playerModel.Length == 0) return;
         var dir = Path.Combine(_common, "formas", playerModel);
-        if (!Directory.Exists(dir) && playerModel == "p_girumon") dir = Path.Combine(_common, "guilmon");
-        var file = Directory.Exists(dir) ? Directory.EnumerateFiles(dir, "personagem.gltf", SearchOption.AllDirectories).FirstOrDefault() : null;
+        if (!GameFiles.DirExists(dir) && playerModel == "p_girumon") dir = Path.Combine(_common, "guilmon");
+        var file = GameFiles.DirExists(dir) ? GameFiles.EnumerateFiles(dir, "personagem.gltf", SearchOption.AllDirectories).FirstOrDefault() : null;
         var doc = new GltfDocument();
         var state = new GltfState();
-        if (file == null || doc.AppendFromFile(file, state) != Error.Ok || doc.GenerateScene(state) is not Node3D m) return;
+        if (file == null || doc.AppendFromFile(GameFiles.GodotPath(file), state) != Error.Ok || doc.GenerateScene(state) is not Node3D m) return;
         _model = m;
         _pivot.AddChild(m);
         _pivot.Rotation = new Vector3(0, Mathf.DegToRad(20), 0);

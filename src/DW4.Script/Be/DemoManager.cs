@@ -12,9 +12,10 @@ namespace DW4.Script.Be;
 /// </summary>
 public sealed class DemoManager(BeMessenger messenger, Func<BeMessage, double?> query)
 {
-    public enum Kind { Set = 0, CheckNonZero = 2, CheckZero = 3, Switch = 4, Case = 5, SwitchEnd = 6 }
+    public enum Kind { Set = 0, CheckNonZero = 2, CheckZero = 3, Switch = 4, Case = 5, SwitchEnd = 6, Lua = 7, RestoreSwitch = 8 }
 
-    public sealed record Entry(Kind Kind, BeMessage? Message, long Delay, int CaseValue = 0);
+    /// <param name="Lua">Kind.Lua: o script do be:DMsetLua. Kind.RestoreSwitch: <paramref name="CaseValue"/> = valor do DMswtSD de fora.</param>
+    public sealed record Entry(Kind Kind, BeMessage? Message, long Delay, int CaseValue = 0, string? Lua = null, double Switch = 0, bool Matched = false);
 
     readonly List<Entry> _building = [];
     readonly Queue<Entry> _running = new();
@@ -26,11 +27,39 @@ public sealed class DemoManager(BeMessenger messenger, Func<BeMessage, double?> 
     /// <summary>Chamado quando uma condição não pôde ser avaliada (consulta sem resposta) e foi considerada satisfeita.</summary>
     public Action<BeMessage>? Unanswered { get; set; }
 
-    public void Add(Entry e) => _building.Add(e);
+    /// <summary>Roda um script agendado na fila (Kind.Lua), quando a execução chega nele.</summary>
+    public Action<string>? RunLua { get; set; }
+
+    bool _buildingCase, _splicing;
+
+    /// <summary>
+    /// A montagem está dentro de um DMcase (entre DMcase e DMswtEnd). FATO (matz00.lua e stchg01.lua da stag0001, fim do tutorial):
+    /// "DMcase 0 … DMsetLua stchg01.lua / DMcase 1 DMsetLua restart.lua / DMswtEnd"; o restart.lua faz FLGset(503, 0) na hora.
+    /// Rodar o DMsetLua já na montagem rodava os dois casos e apagava a 503 (tutorial feito), então o portal do lobby (mate00.lua)
+    /// mandava de novo ao tutorial. Dentro de um caso o script vira uma entrada da fila e só roda se o caso valer.
+    /// </summary>
+    public bool BuildingCase => _buildingCase;
+
+    public void Add(Entry e)
+    {
+        if (e.Kind == Kind.Case) _buildingCase = true;
+        else if (e.Kind == Kind.SwitchEnd) _buildingCase = false;
+        _building.Add(e);
+    }
 
     public void Run()
     {
-        foreach (var e in _building) _running.Enqueue(e);
+        _buildingCase = false;
+        if (_splicing)
+        {
+            // Script de um DMsetLua rodando pela fila: os passos dele entram já, antes do resto da fila (no mesmo lugar em que
+            // entravam quando o DMsetLua rodava na montagem).
+            var rest = _running.ToArray();
+            _running.Clear();
+            foreach (var e in _building) _running.Enqueue(e);
+            foreach (var e in rest) _running.Enqueue(e);
+        }
+        else foreach (var e in _building) _running.Enqueue(e);
         _building.Clear();
     }
 
@@ -63,7 +92,27 @@ public sealed class DemoManager(BeMessenger messenger, Func<BeMessage, double?> 
                 _running.Dequeue();
                 continue;
             }
+            if (e.Kind == Kind.RestoreSwitch)
+            {
+                (_switch, _matched, _skipping) = (e.Switch, e.Matched, false);
+                _running.Dequeue();
+                continue;
+            }
             if (_skipping) { _running.Dequeue(); continue; }
+            if (e.Kind == Kind.Lua)
+            {
+                _running.Dequeue();
+                // O DMswtSD/DMcase do script de dentro não pode mexer no bloco de fora: o estado volta depois dos passos dele.
+                var rest = _running.ToArray();
+                _running.Clear();
+                _running.Enqueue(new Entry(Kind.RestoreSwitch, null, 0, Switch: _switch, Matched: _matched));
+                foreach (var r in rest) _running.Enqueue(r);
+                _splicing = true;
+                try { RunLua?.Invoke(e.Lua!); }
+                finally { _splicing = false; }
+                if (_building.Count > 0) { _splicing = true; try { Run(); } finally { _splicing = false; } }
+                continue;
+            }
             switch (e.Kind)
             {
                 case Kind.Set:

@@ -95,8 +95,8 @@ public static class PortSettings
         var file = Path.Combine(fatia, "idioma", "pt-br.json");
         try
         {
-            if (!System.IO.File.Exists(file)) GD.PushWarning($"falta {file}: o português mostra o inglês");
-            else if (!GameText.Load(System.IO.File.ReadAllText(file))) GD.PushWarning($"{file} não é um JSON válido");
+            if (!GameFiles.Exists(file)) GD.PushWarning($"falta {file}: o português mostra o inglês");
+            else if (!GameText.Load(GameFiles.ReadAllText(file))) GD.PushWarning($"{file} não é um JSON válido");
         }
         catch (IOException e) { GD.PushWarning($"{file}: {e.Message}"); }
     }
