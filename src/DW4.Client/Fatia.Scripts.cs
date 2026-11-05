@@ -52,6 +52,11 @@ public partial class Fatia : IBeEngine
         Ram.Players[0].Level = () => _level;
         if (Ram.Players[0].Forms.Current < 0 && _shinkaRow is >= 0 and < Evolution.Forms) Ram.Players[0].Forms.Start(_shinkaRow);
         var host = new BeHost(this, Ram, sys) { Unimplemented = (n, _) => ScriptLog($"be:{n} ainda não implementado") };
+        // O SELECTCTRL GENERATE costuma vir com atraso (10 quadros) e o script consulta ISEND logo depois: enquanto ele não chega,
+        // o ISEND não pode ver o fim da janela ANTERIOR (Fatia.Recorder.cs). Na pergunta do portal do treino isso pulava a
+        // mensagem seguinte e o matz00 voltava a abrir a pergunta, com os textos apagados pelo fim da anterior (só "?").
+        _selectPending = 0;
+        host.Messenger.Queued = q => { if (q.Class == "SELECTCTRL" && q.Command == "GENERATE") _selectPending++; };
         _stage = new StageScripts(chunks, host) { Error = (n, m) => ScriptLog($"ERRO {n}: {m}") };
         if (Session.PendingGameStart) RunGameStart(host);
         _stage.Boot();
@@ -92,7 +97,7 @@ public partial class Fatia : IBeEngine
     {
         ScriptLog(m.ToString());
         // A trava do ISEND zera em todo SELECTCTRL GENERATE, antes de quem trata a janela (troca de área, mensagem) consumir a mensagem.
-        if (m.Class == "SELECTCTRL" && m.Command == "GENERATE") { _confirmArmed = false; _selectEnded = false; }
+        if (m.Class == "SELECTCTRL" && m.Command == "GENERATE") { _confirmArmed = false; _selectEnded = false; if (_selectPending > 0) _selectPending--; }
         if (DeliverToPlayerStatus(m) || DeliverToQuickItems(m) || DeliverToSavePoint(m) || DeliverToQuestTimer(m) || DeliverToEvolve(m) || DeliverToBank(m) || DeliverToXData(m) || DeliverToAppraisal(m) || DeliverToShop(m) || DeliverToListMenu(m) || DeliverToStageChange(m) || DeliverToWindows(m) || DeliverToRecorder(m) || DeliverToGenerators(m) || DeliverToBossBar(m) || DeliverToEnemies(m) || DeliverToObjects(m)) return;
         switch (m.Class, m.Command)
         {

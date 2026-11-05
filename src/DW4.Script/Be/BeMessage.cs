@@ -56,10 +56,17 @@ public sealed class BeMessenger(Action<BeMessage> deliver)
     public void Send(BeMessage m, long delayFrames = 0)
     {
         if (delayFrames <= 0) deliver(m);
-        else _delayed.Add((Frame + delayFrames, _order++, m));
+        else
+        {
+            _delayed.Add((Frame + delayFrames, _order++, m));
+            Queued?.Invoke(m);
+        }
     }
 
     public int Pending => _delayed.Count;
+
+    /// <summary>Avisado quando uma mensagem entra na pilha de atraso (ainda não entregue).</summary>
+    public Action<BeMessage>? Queued { get; set; }
 
     /// <summary>Avança um quadro de 60 Hz e entrega o que venceu, na ordem de vencimento e de envio.</summary>
     public void Tick()

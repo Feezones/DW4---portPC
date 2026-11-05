@@ -33,8 +33,8 @@ public partial class Fatia
             // SELECTCTRL i_messcr GENERATE "NOCANCEL/I<n>/V<x,y,z>"; o script lê GETSELECT (0..n−1). Os textos também vão para a
             // janela de conversa (não consumidos aqui).
             case ("TEXTCTL", _, "TEXTSET") when m.RawArgs?.StartsWith("TALKFONT02/font0", StringComparison.Ordinal) == true:
-                if (m.RawArgs.Length > 16 && m.RawArgs[16] - (int)'0' is var o && o >= 1 && o < _listTexts.Length)
-                    _listTexts[o] = m.Args.Count > 2 && m.Args[2] is { Kind: 'I', Numbers.Length: > 0 } ot ? Text((int)ot.Numbers[0]) : null;
+                if (m.RawArgs.Length > 16 && m.RawArgs[16] - (int)'0' is var o && o >= 1 && o < _listTexts.Length && m.Args.Count > 2 && m.Args[2] is { Kind: 'I', Numbers.Length: > 0 } ot)
+                    _listTexts[o] = Text((int)ot.Numbers[0]);
                 return false;
             case ("SELECTCTRL", "i_messcr", "GENERATE"):
                 _listOwner = "i_messcr";
@@ -68,7 +68,9 @@ public partial class Fatia
     double? QueryListMenu(BeMessage m) => (m.Class, m.Name, m.Command) switch
     {
         ("SELECTCTRL", "i_zzstchgcur" or "i_messcr", "ISSELECTNOW") => _listChoice >= 0 && !_selectEnded ? 1 : 0,
-        ("SELECTCTRL", "i_zzstchgcur" or "i_messcr", "GETSELECT") => _listResult,
+        // O script lê a escolha no quadro seguinte ao toque, antes do TickListMenu fechar o menu: sem isto lia o 0 do GENERATE
+        // ("Treinar de novo" virava "Ir para o Death Valley").
+        ("SELECTCTRL", "i_zzstchgcur" or "i_messcr", "GETSELECT") => _listChoice >= 0 && _selectEnded && _listResult != ListCancel ? _listChoice : _listResult,
         _ => null,
     };
 
@@ -137,7 +139,7 @@ public partial class Fatia
         if (_listChoice < 0 || art) return;
         var lines = new System.Text.StringBuilder();
         for (int i = 0; i < _listCount; i++)
-            lines.AppendLine($"{(i == _listChoice ? "▶ " : "   ")}{(_listTexts[i + 1] ?? "?").Replace("\r\n", " ")}");
+            lines.AppendLine($"{(i == _listChoice ? "> " : "   ")}{(_listTexts[i + 1] ?? "?").Replace("\r\n", " ")}");
         _listLabel!.Text = lines.ToString().TrimEnd();
     }
 }
