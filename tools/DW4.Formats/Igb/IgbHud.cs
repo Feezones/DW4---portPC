@@ -82,6 +82,7 @@ public sealed class IgbHud
                 : f.Slots.OfType<IgbObject>().FirstOrDefault(o => f.Is(o, "igAttrSet") && Text(o, 2) == name);
             if (root == null) { h.Notes.Add($"ator {name}: raiz não encontrada"); continue; }
             h.Visit(root);
+            if (spec.Contains('=')) h.InheritAncestorAttrs(root);
             list.Add(new JsonObject { ["name"] = name, ["root"] = root.Index });
         }
         var json = new JsonObject
@@ -95,6 +96,43 @@ public sealed class IgbHud
             ["notes"] = new JsonArray(h.Notes.Select(n => (JsonNode?)n).ToArray()),
         };
         return (json, h);
+    }
+
+    // FATO (stag0102, g_brossgatez01, o portão do Blossomon): a raiz do beAction2Info é o igSwitch #39165, e a textura (img813),
+    // o material e a luz estão no igAttrSet "GM03" #25563, PAI do switch (o otimizador do Alchemy sobe os atributos comuns). Só com
+    // o switch, o ator saía sem textura e o cliente o pintava de branco translúcido (relato de 2026-11-05). A raiz explícita herda
+    // a textura do igAttrSet mais perto acima dela. Só a textura: a mistura (igBlendFunctionAttr) de uma camada acima mudaria
+    // atores que já saíam certos, e a luz e o material o cliente não usa. Geometria com textura própria fica com a dela.
+    void InheritAncestorAttrs(IgbObject root)
+    {
+        _parents ??= BuildParents();
+        var inherited = new JsonArray();
+        string? named = null;
+        var seen = new HashSet<int>();
+        for (int at = root.Index; _parents.TryGetValue(at, out int p) && seen.Add(p); at = p)
+        {
+            if (Obj(p) is not { } node || !_f.Is(node, "igAttrSet")) continue;
+            if (_textureOf.TryGetValue(node.Index, out var tex)) { named = PackTexture(tex); break; }
+            if (_scene.AttrList(node).FirstOrDefault(a => a.TypeName == "igTextureBindAttr") is { } bind) { inherited.Add(Attr(bind)); break; }
+        }
+        if (inherited.Count == 0 && named == null) return;
+        var j = _nodes[root.Index];
+        var own = j["attrs"] as JsonArray ?? [];
+        j["attrs"] = new JsonArray([.. own.Select(a => a?.DeepClone()), .. inherited.Select(a => a?.DeepClone())]);
+        if (named != null && j["texture"] == null) j["texture"] = named;
+        j["inheritedTexture"] = true;
+    }
+
+    Dictionary<int, int>? _parents;
+
+    // Primeiro pai de cada nó (pela lista de filhos @7). Um nó com vários pais fica com o primeiro achado.
+    Dictionary<int, int> BuildParents()
+    {
+        var parents = new Dictionary<int, int>();
+        foreach (var o in _f.Slots.OfType<IgbObject>().Where(o => _f.Is(o, "igNode")))
+            if (Obj(Ref(o, 7)) is { } list && _f.Is(list, "igObjectList"))
+                foreach (var c in _scene.ObjectList(list)) parents.TryAdd(c.Index, o.Index);
+        return parents;
     }
 
     void Visit(IgbObject node)
