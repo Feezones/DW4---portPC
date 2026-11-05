@@ -96,7 +96,7 @@ public partial class Fatia
         if (!Starters().TryGetValue(model, out var list)) { lastAction = action; lastFrame = frame; return; }
         float from = action == lastAction ? lastFrame : -1;
         foreach (var s in list)
-            if (s.Action == action && s.Frame > from && s.Frame <= frame && (!fromPlayer || PlayerBullet(s.Effect)))
+            if (s.Action == action && s.Frame > from && s.Frame <= frame && (!fromPlayer || PlayerBullet(s.Effect) || ChargeEffect(s.Effect)))
                 SpawnShot(s, at, owner, ownerName, source, sourceSequence, fromPlayer);
         lastAction = action;
         lastFrame = frame;
@@ -106,6 +106,13 @@ public partial class Fatia
     // rastros de golpe, e as técnicas x_200* já saem pelo ReleaseTechnique).
     bool PlayerBullet(string effect) =>
         ShotSeqs(effect) is { } seqs && seqs.Seqs.Values.Any(cmds => cmds.Any(c => c.Kind == "HITBOX" && c.I(1) == 10000));
+
+    // Efeitos do golpe carregado (FATO, disparos.json, beActionStarterInfo de todos os p_*): x_100charge01 nas poses de carregar
+    // (KATC?1 → SQ_S01/SQ_D01… nos quadros 6 e 18; KATC?2 → SQ_KIRIKAE, o clarão de "carregado", e SQ_OWARI em laço nos quadros 0
+    // e 12) e o x_100<estilo>k01 na soltura (KATC?3, quadro 0). Todos com b6 (somem quando a sequência do jogador muda) e b7 (presos
+    // ao jogador). Sem caixa de golpe: só visual. Antes o filtro acima deixava sair só o tiro da pistola e a carga não aparecia.
+    static bool ChargeEffect(string effect) =>
+        effect == "x_100charge01" || effect.StartsWith("x_100", StringComparison.Ordinal) && effect.EndsWith("k01", StringComparison.Ordinal);
 
     void SpawnShot(Starter s, Transform3D at, Fighter? owner, string ownerName, Func<Transform3D?> source, Func<string?> sourceSequence, bool fromPlayer = false)
     {
@@ -215,6 +222,8 @@ public partial class Fatia
             if (!s.Hit) { if (s.FromPlayer) CheckPlayerShotHit(s); else CheckShotHit(s); }
             if (s.Lock && s.Source?.Invoke() is { } t) s.Root.GlobalTransform = new Transform3D(t.Basis, t * s.Offset);
             bool orphan = s.SeqDead && s.SourceSequence?.Invoke() != s.SourceSequenceAtSpawn;
+            // A carga solta antes da hora (o SQ_ATCK1 para sem trocar de nome) ou parada (Stop): o brilho (b6) não fica no jogador.
+            if (s.FromPlayer && s.Name == "x_100charge01" && _runner?.Running != true) orphan = true;
             if (s.Seq.Erased || !s.Seq.Running || orphan)
             {
                 s.Root.QueueFree();
