@@ -36,8 +36,9 @@ public sealed class DmoApi(Uri baseUri, string serviceKey) : IAccountApi
         var r = doc.RootElement;
         if (!r.TryGetProperty("active", out var a) || !a.GetBoolean()) return null;
         string tamer = r.TryGetProperty("tamer", out var t) && t.ValueKind == JsonValueKind.Object ? t.GetProperty("name").GetString() ?? "" : "";
-        if (tamer.Length == 0) tamer = r.GetProperty("username").GetString() ?? "?";
-        return new Identity(r.GetProperty("accountId").GetInt64(), tamer, PartyId(r));
+        bool hasTamer = tamer.Length > 0;
+        if (!hasTamer) tamer = r.GetProperty("username").GetString() ?? "?";
+        return new Identity(r.GetProperty("accountId").GetInt64(), tamer, PartyId(r), hasTamer);
     }
 
     public async Task<string?> PresenceAsync(long accountId, bool online)

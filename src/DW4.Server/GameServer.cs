@@ -169,6 +169,13 @@ public sealed class GameServer
             Send(p, new InteractResult(x.TargetId, x.Action, false, "Esse jogador não está mais perto."), true);
             return;
         }
+        // Amigos e party da API são do Tamer do DMO: conta sem Tamer não é achada pelo nome (a API diria "Jogador rd… não
+        // encontrado", com o usuário gerado no lugar do nome). Avisa antes, com o motivo de verdade.
+        if (x.Action is not ("party-accept" or "party-decline") && NoTamerNotice(me, target, _world.Name(x.TargetId)) is { } why)
+        {
+            Send(p, new InteractResult(x.TargetId, x.Action, false, why), true);
+            return;
+        }
         _ = Task.Run(async () =>
         {
             SocialReply r;
@@ -177,6 +184,11 @@ public sealed class GameServer
             _main.Enqueue(() => AfterInteract(p, x, me, target, r));
         });
     }
+
+    public static string? NoTamerNotice(Identity me, Identity target, string targetName) =>
+        !me.HasTamer ? "Sua conta ainda não tem um Tamer no RE:DIGITAL ONLINE, por isso amigos e grupo não estão disponíveis."
+        : !target.HasTamer ? $"{targetName} ainda não tem um Tamer no RE:DIGITAL ONLINE, por isso não dá para adicionar nem chamar para o grupo."
+        : null;
 
     void AfterInteract(NetPeer p, Interact x, Identity me, Identity target, SocialReply r)
     {

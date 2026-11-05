@@ -3059,6 +3059,18 @@ Test("Online: menu do F pelo que o servidor conta (InteractView)", () =>
     Equal("Pedido já enviado.", O(V(friend: false, sent: true))[1].Reason, "pedido enviado");
 });
 
+Test("Online: menu do F avisa quando uma das contas não tem Tamer do DMO", () =>
+{
+    var com = new DW4.Net.Identity(10, "Feezao", null);
+    var sem = new DW4.Net.Identity(20, "rdn26reqm8t9", null, HasTamer: false);
+    True(DW4.Server.GameServer.NoTamerNotice(com, com, "x") == null, "os dois com Tamer: vai para a API");
+    True(DW4.Server.GameServer.NoTamerNotice(com, sem, "xprodexota")!.StartsWith("xprodexota ainda não tem um Tamer"), "alvo sem Tamer, pelo nome do personagem");
+    True(DW4.Server.GameServer.NoTamerNotice(sem, com, "x")!.StartsWith("Sua conta ainda não tem"), "eu sem Tamer");
+    var w = new DW4.Net.World();
+    w.Join(2, sem, "xprodexota");
+    Equal("xprodexota", w.Name(2), "nome do personagem, não o usuário gerado");
+});
+
 Test("Online: servidor só deixa o F entre quem está na mesma instância", () =>
 {
     var w = new DW4.Net.World();
