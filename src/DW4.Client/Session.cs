@@ -144,6 +144,8 @@ public static class Session
         Character = character;
         var ram = new GameRam();
         character.Apply(ram, 0);
+        // Vaga que perdeu a 503 (tutorial feito) pelo restart.lua rodado junto no fim do tutorial (até a 0.6.8).
+        if (DW4.Script.Save.ResumePoint.RepairTutorialDone(ram)) GD.Print("[save] tutorial já feito (COUNTER 7): FLG 503 ligada de novo");
         // As opções de jogo (câmera e luz da dungeon) são da configuração do port, não da vaga.
         ram.CameraMode = PortSettings.Current.CameraMode;
         ram.LightMode = PortSettings.Current.LightMode;
