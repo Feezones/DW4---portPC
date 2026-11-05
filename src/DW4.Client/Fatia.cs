@@ -152,7 +152,7 @@ public partial class Fatia : Node3D
     public override void _Ready()
     {
         PortSettings.ApplyLanguage(PortSettings.Current); // a fase pode abrir direto (DW4_FASE), sem passar pelo menu inicial
-        if (Touch) AddChild(new TouchControls { Blocked = () => _menuOpen || ShopOpen || SubWindowOpen || ChatOpen, UiAt = QuickSlotAt }); // celular: botões na tela (some com o controle Bluetooth)
+        if (Touch) AddChild(new TouchControls { Blocked = () => _menuOpen || ShopOpen || SubWindowOpen || ChatOpen, Shop = () => ShopOpen && !ChatOpen, UiAt = QuickSlotAt }); // celular: botões na tela (some com o controle Bluetooth)
         ChooseStage();
         var env = new Godot.Environment { AmbientLightSource = Godot.Environment.AmbientSource.Color, AmbientLightColor = new Color(0.6f, 0.6f, 0.65f), BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black };
         // FATO (stag0102 #621): igFogAttr 60..300 com cor (0,8 0,7 0,8). Fundo na cor da neblina e neblina por profundidade.

@@ -79,7 +79,7 @@ public partial class Fatia
         if (PortInput.Down("esquerda") || Input.IsJoyButtonPressed(0, JoyButton.DpadLeft)) yield return "left";
         if (PortInput.Down("direita") || Input.IsJoyButtonPressed(0, JoyButton.DpadRight)) yield return "right";
         if (PortInput.Down("confirmar") || PortInput.Down("ataque")) yield return "ok";
-        if (Input.IsKeyPressed(Key.V) || Input.IsJoyButtonPressed(0, JoyButton.Y)) yield return "mode";
+        if (Input.IsKeyPressed(Key.V) || Input.IsJoyButtonPressed(0, JoyButton.Y) || TouchControls.Held(TouchControls.ShopToggle)) yield return "mode";
         if (PortInput.Down("cancelar")) yield return "close";
     }
 
@@ -175,7 +175,7 @@ public partial class Fatia
             }
             string variant = _shopKind == Array.IndexOf(SubWndNames, "JUNK") ? "SQ_JUNKOPEN" : _shopSelling ? "SQ_BWINOPEN" : "SQ_AWINOPEN";
             UpdateShopArt(variant, rows, $"{(_shopSelling ? "Vender" : "Comprar")}   BIT {_inventory.Bit}   {_shopPageNo + 1}/{pages}",
-                _shopMessage.Length > 0 ? _shopMessage : $"cima/baixo escolhe, esq./dir. página, {DeviceIcons.Of("confirmar")} confirma, {(DeviceIcons.Current == ButtonNames.Kind.Keyboard ? "V" : DeviceIcons.Name("botao:3", DeviceIcons.Current))} troca, {DeviceIcons.Of("cancelar")} sai", _shopCursor);
+                _shopMessage.Length > 0 ? _shopMessage : Touch ? "analógico: cima/baixo escolhe, esq./dir. página; OK confirma, TROCAR compra/vende, FECHAR sai" : $"cima/baixo escolhe, esq./dir. página, {DeviceIcons.Of("confirmar")} confirma, {(DeviceIcons.Current == ButtonNames.Kind.Keyboard ? "V" : DeviceIcons.Name("botao:3", DeviceIcons.Current))} troca, {DeviceIcons.Of("cancelar")} sai", _shopCursor);
             return;
         }
         var sb = new System.Text.StringBuilder();

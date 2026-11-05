@@ -34,10 +34,24 @@ public partial class TouchControls : CanvasLayer
     const string Gear = "⚙";
     // Com uma janela aberta (menu, itens, chat, loja, pausa) só fica este: manda o Esc, que fecha a janela como no PC.
     static readonly Pad Close = new(Esc, "FECHAR", -90, 95, 46);
+    // Loja (lê os botões segurados a cada quadro, não os eventos): analógico escolhe e troca a página, OK compra/vende,
+    // TROCAR alterna comprar/vender (o V do PC) e FECHAR é o Cancelar segurado (pedido do usuário, 2026-11-05).
+    static readonly Pad[] ShopPads =
+    [
+        new("cancelar", "FECHAR", -90, 95, 46),
+        new("confirmar", "OK", -175, -175, 100),
+        new(ShopToggle, "TROCAR", -390, -115, 68),
+    ];
+    public const string ShopToggle = "toque:trocar";
+    static readonly HashSet<string> s_touchHeld = [];
+    /// <summary>Botão da tela que não é ação do mapa de controles (ex.: TROCAR da loja), segurado agora.</summary>
+    public static bool Held(string pseudo) => s_touchHeld.Contains(pseudo);
     const string Esc = "esc";
 
     /// <summary>Janela aberta: some com os botões de luta e deixa o toque para a interface (Fatia liga).</summary>
     public Func<bool>? Blocked;
+    /// <summary>Loja aberta: troca os botões pelos da loja (Fatia liga).</summary>
+    public Func<bool>? Shop;
     /// <summary>Ponto da tela em cima de algo da interface que se toca (atalhos de itens): o analógico não começa ali.</summary>
     public Func<Vector2, bool>? UiAt;
 
@@ -70,8 +84,9 @@ public partial class TouchControls : CanvasLayer
 
     public override void _Process(double delta)
     {
-        bool blocked = Blocked?.Invoke() == true;
-        if (blocked != _surface.BlockedMode) { _surface.ReleaseAll(); _surface.BlockedMode = blocked; }
+        bool shop = Shop?.Invoke() == true;
+        bool blocked = !shop && Blocked?.Invoke() == true;
+        if (blocked != _surface.BlockedMode || shop != _surface.ShopMode) { _surface.ReleaseAll(); _surface.BlockedMode = blocked; _surface.ShopMode = shop; }
         _surface.UiAt = UiAt;
         _surface.QueueRedraw();
     }
@@ -85,14 +100,19 @@ public partial class TouchControls : CanvasLayer
     partial class Surface : Control
     {
         readonly Dictionary<int, string> _held = []; // dedo → ação do botão
-        public bool BlockedMode;
+        public bool BlockedMode, ShopMode;
         public Func<Vector2, bool>? UiAt;
-        Pad[] Current => BlockedMode ? [Close] : Pads;
+        Pad[] Current => ShopMode ? ShopPads : BlockedMode ? [Close] : Pads;
 
         // Aperta/solta como um evento de verdade (InputEventAction): o jogo pergunta tanto "está apertado" (Input) quanto
         // "acabou de apertar" (o evento, ex.: MENU, DEF, CHAT, ITENS); o Input.ActionPress só fazia o primeiro.
         public static void Send(string action, bool pressed, bool tap = false)
         {
+            if (action.StartsWith("toque:", StringComparison.Ordinal))
+            {
+                if (pressed && !tap) s_touchHeld.Add(action); else s_touchHeld.Remove(action);
+                return;
+            }
             if (action == Esc)
             {
                 if (!pressed) return;
