@@ -31,6 +31,8 @@ public sealed class HudData
     public Dictionary<string, int> Actors { get; } = [];
     public Dictionary<string, List<MeterData>> Meters { get; } = [];
     public Dictionary<string, List<NumberRam>> Numbers { get; } = [];
+    /// <summary>Colisão própria do ator (beHitLandModelInfo: nó do igSwitch @8 e o tipo @10), quando o exportador achou.</summary>
+    public Dictionary<string, (int Node, int Kind)> Lands { get; } = [];
     readonly Dictionary<string, Texture2D?> _textures = [];
 
     HudData(string dir) => Dir = dir;
@@ -42,7 +44,12 @@ public sealed class HudData
         var h = new HudData(dir);
         using var doc = JsonDocument.Parse(GameFiles.ReadAllText(file));
         var root = doc.RootElement;
-        foreach (var a in root.GetProperty("actors").EnumerateArray()) h.Actors[a.GetProperty("name").GetString()!] = a.GetProperty("root").GetInt32();
+        foreach (var a in root.GetProperty("actors").EnumerateArray())
+        {
+            var name = a.GetProperty("name").GetString()!;
+            h.Actors[name] = a.GetProperty("root").GetInt32();
+            if (a.TryGetProperty("land", out var land)) h.Lands[name] = (land.GetProperty("node").GetInt32(), land.GetProperty("kind").GetInt32());
+        }
         foreach (var p in root.GetProperty("nodes").EnumerateObject()) h.Nodes[int.Parse(p.Name)] = ReadNode(int.Parse(p.Name), p.Value);
         foreach (var m in root.GetProperty("meters").EnumerateArray())
             h.Meters[m.GetProperty("name").GetString()!] = m.GetProperty("data").EnumerateArray().Select(d => new MeterData(
@@ -143,6 +150,8 @@ public sealed class HudActor
     sealed record TexMapped(StandardMaterial3D Material, HudData.NodeData[] Chain, int Meter);
 
     public Node3D Root { get; } = new();
+    /// <summary>Nó do igTransformRecorder do ator (trilhos r_*), se houver.</summary>
+    public Node3D? Recorder { get; private set; }
     public float Time { get; set; }
     readonly HudData _h;
     readonly List<Animated> _animated = [];
@@ -208,6 +217,13 @@ public sealed class HudActor
                     if (n.Sequence == null) node.Position += new Vector3(shift, 0, 0);
                 }
             }
+        }
+        // igTransformRecorder (folha sem malha): guarda a matriz acumulada do pai. FATO (r_boatz01 da stag0103): o trilho é só
+        // "route00" (igTransform animado) com um gravador embaixo; o MOVERL "JOINT" pede GETTRCDATA à peça (Fatia.Boss AttachTarget).
+        if (n.Type == "igTransformRecorder" && Recorder == null)
+        {
+            Recorder = new Node3D { Name = "igTransformRecorder" };
+            here.AddChild(Recorder);
         }
         foreach (var m in n.Meshes)
         {
@@ -417,6 +433,49 @@ public sealed class HudOverlay
             if (_lvNum != null) _numbers.SetNumber(_lvNum, level);
         }
         foreach (var p in _panels) p.Update();
+        foreach (var (node, at, a) in _stagePanels)
+        {
+            if (_owner.IsInsideTree())
+            {
+                var win = _owner.GetViewport().GetVisibleRect().Size;
+                node.Position = new Vector3(ScreenLayout.Fit(win.X, win.Y).AnchorX(at.X), at.Y, at.Z);
+            }
+            a.Update();
+        }
+    }
+
+    // Painéis especiais da fase (FATO, stag0103: start.lua gera i_stpnlsp04 e i_stpnlsp05 em V<-296,225,0>, o first.lua manda
+    // SQ_OPEN, e o 05 tem o medidor "boathp" que o hit_p_*.lua acerta com METERCTRL boathp SETPERCENT a cada golpe no jogador).
+    // DECISÃO DO PORT: aparecem já abertos no GENERATE (as sequências SQ_OPEN deles não foram exportadas), presos à borda
+    // esquerda como o painel do jogador.
+    readonly List<(Node3D Node, Vector3 At, HudActor Actor)> _stagePanels = [];
+
+    public bool ShowStagePanel(string name, Vector3 at)
+    {
+        if (_stagePanels.Any(p => p.Node.Name == name)) return true;
+        if (!_h.Actors.TryGetValue(name, out int root)) return false;
+        var node = new Node3D { Name = name, Position = at };
+        var a = new HudActor(_h, root, slot: 0);
+        node.AddChild(a.Root);
+        _vp.AddChild(node);
+        _stagePanels.Add((node, at, a));
+        foreach (var (meterNode, t) in _stageMeterTimes) a.SetMeterTime(meterNode, t);
+        a.Update();
+        return true;
+    }
+
+    readonly Dictionary<int, float> _stageMeterTimes = [];
+
+    public bool HasMeter(string meter) => _h.Meters.ContainsKey(meter);
+
+    public bool HasStagePanel(string name) => _stagePanels.Any(p => p.Node.Name == name);
+
+    /// <summary>METERCTRL &lt;medidor&gt; SETPERCENT: o tempo do medidor pela mesma regra do HP (máximo 100).</summary>
+    public void SetStageMeter(string meter, float percent)
+    {
+        if (_h.Meters.GetValueOrDefault(meter)?.FirstOrDefault() is not { } m) return;
+        _stageMeterTimes[m.Node] = MeterTime(m, percent, 100);
+        foreach (var (_, _, a) in _stagePanels) a.SetMeterTime(m.Node, _stageMeterTimes[m.Node]);
     }
 }
 

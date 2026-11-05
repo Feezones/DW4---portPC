@@ -29,6 +29,10 @@ public partial class Fatia
         /// <summary>Caixas do corpo (beModelCtrlInfoDataHit); vazio = a caixa da g_box (GboxSize).</summary>
         public List<(NVector3 Min, NVector3 Max)> BodyBoxes { get; init; } = [];
         public StaticBody3D? Body { get; set; }
+        /// <summary>Chão de veículo (RideLand: beHitLandModelInfo com 0x1000, o g_boatz01) preso ao ator, com a caixa local dele.</summary>
+        public StaticBody3D? Ride { get; set; }
+        public Vector3 RideMin { get; set; }
+        public Vector3 RideMax { get; set; }
         public Generator? Gen { get; init; }
         public int Hp { get; set; }
         (double X, double Y, double Z) IBeModel.Position => (Actor.Root.GlobalPosition.X, Actor.Root.GlobalPosition.Y, Actor.Root.GlobalPosition.Z);
@@ -155,6 +159,7 @@ public partial class Fatia
         actor.Root.Position = pos;
         actor.Root.RotationDegrees = rotDeg;
         AttachCharacter(o);
+        MakeRideLand(o, data);
         o.SetSequence("SQ_WAIT");
         // FATO (tabela enemy: g_box, g_boxfield, g_bbarrelsz01, g_woodencasez0x… com HPMAX 100; lua-trace dos hit_g_*.lua: golpe comum
         // tira 34 da pedra, 50 do arbusto, 100 da caixa, e o script manda SQ_SDMG enquanto sobra HP). Antes só a caixa de gerador
@@ -233,8 +238,51 @@ public partial class Fatia
         return false;
     }
 
+    // Veículo (RideLand): a colisão do beHitLandModelInfo vira um corpo preso ao ator, e quem está dentro anda junto (CarryRiders).
+    // FATO (g_boatz01): a peça é um igSwitch → beCopyTransform (matriz identidade) → caixa aberta com o chão em y 0 do barco.
+    void MakeRideLand(WorldObject o, HudData data)
+    {
+        if (!data.Lands.TryGetValue(o.Name, out var land) || !RideLand.IsVehicle(land.Kind)) return;
+        var shapes = new HudActor(data, land.Node, slot: 0);
+        var body = new StaticBody3D { Name = $"chao_{o.Name}" };
+        Vector3 min = new(float.MaxValue, float.MaxValue, float.MaxValue), max = -min;
+        foreach (var mi in FindAll<MeshInstance3D>(shapes.Root))
+        {
+            if (mi.Mesh.CreateTrimeshShape() is not { } trimesh) continue;
+            trimesh.BackfaceCollision = true; // as paredes da caixa olham para dentro; os dois lados seguram
+            var t = mi.GlobalTransformIn(shapes.Root);
+            body.AddChild(new CollisionShape3D { Shape = trimesh, Transform = t });
+            foreach (var v in mi.Mesh.GetFaces()) { var w = t * v; min = min.Min(w); max = max.Max(w); }
+        }
+        shapes.Root.Free();
+        if (body.GetChildCount() == 0) { body.Free(); return; }
+        o.Actor.Root.AddChild(body);
+        o.Ride = body;
+        o.RideMin = min;
+        o.RideMax = max;
+    }
+
+    // Jogador dentro da caixa do veículo: vai com ele (posição e giro), antes do MoveAndSlide do quadro (TickObjects roda antes).
+    void CarryRiders(Dictionary<WorldObject, Transform3D> before)
+    {
+        foreach (var (o, old) in before)
+        {
+            if (!IsInstanceValid(o.Actor.Root) || !o.Actor.Root.IsInsideTree()) continue;
+            var now = o.Actor.Root.GlobalTransform;
+            if (now.IsEqualApprox(old)) continue;
+            var local = old.AffineInverse() * _player.GlobalPosition;
+            if (!RideLand.Inside(new NVector3(local.X, local.Y, local.Z), new NVector3(o.RideMin.X, o.RideMin.Y, o.RideMin.Z), new NVector3(o.RideMax.X, o.RideMax.Y, o.RideMax.Z))) continue;
+            _player.GlobalPosition = now * local;
+            float yaw = now.Basis.GetEuler().Y - old.Basis.GetEuler().Y;
+            if (Math.Abs(yaw) is > 1e-5f and < 1f) _move.Face(_move.Facing + yaw);
+        }
+    }
+
     void TickObjects(float dt)
     {
+        var riding = new Dictionary<WorldObject, Transform3D>();
+        foreach (var o in _objects)
+            if (o.Ride != null && o.Actor.Root.IsInsideTree()) riding[o] = o.Actor.Root.GlobalTransform;
         for (int i = _objects.Count - 1; i >= 0; i--)
         {
             var o = _objects[i];
@@ -250,6 +298,7 @@ public partial class Fatia
             o.Body?.QueueFree();
             _objects.RemoveAt(i);
         }
+        if (riding.Count > 0) CarryRiders(riding);
     }
 
     // NPCs do lobby (n_agumon, n_leomon…): o nó do ator no IGB é um igActor, então o desenho vem do personagem exportado

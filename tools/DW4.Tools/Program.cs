@@ -1625,7 +1625,13 @@ int IgbHudCmd(string[] a, string[]? only)
     byte[]? packData = packPath != null && packWhich != null ? Entry(packPath, packWhich) : null;
     // Painéis de status: i_stpnl01..05 gerados juntos em V<x,-160,0> pelos Lua (ded_g_tcounter00 e outros); i_stbase = menu de status.
     string[] actors = only ?? ["i_dmgnum", "i_pcdmgnum", "i_stpnl01", "i_stpnl02", "i_stpnl03", "i_stpnl04", "i_stpnl05", "i_stbase"];
-    var (json, hud) = IgbHud.Export(IgbFile.Read(data), data, packData != null ? IgbFile.Read(packData) : null, packData, actors);
+    var igb = IgbFile.Read(data);
+    // Painel especial da fase (FATO, stag0103: start.lua gera i_stpnlsp04 e i_stpnlsp05 em V<-296,225,0>; o 05 tem o medidor
+    // "boathp" da vida do barco). Só entra onde existe, para não encher as outras fases de avisos.
+    if (only == null)
+        actors = [.. actors, .. new[] { "i_stpnlsp04", "i_stpnlsp05" }.Where(n => igb.Slots.OfType<IgbObject>().Any(o => o.TypeName == "igAttrSet"
+            && o.Fields.FirstOrDefault(v => v.Desc.Slot == 2 && v.Desc.ShortName == "String")?.Text == n))];
+    var (json, hud) = IgbHud.Export(igb, data, packData != null ? IgbFile.Read(packData) : null, packData, actors);
     Directory.CreateDirectory(full);
     foreach (var img in hud.Images)
     {
@@ -2083,7 +2089,9 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
                       Kind: o.Fields.FirstOrDefault(v => v.Desc.Slot == 7 && v.Desc.ShortName == "String")?.Text ?? ""))
         .Distinct().ToList();
     // KIND_OBJECT g_/n_ e também os g_ de KIND_ENEMY (rígidos com hit_*.lua, FATO: g_b01cpole, as colunas do stagbs01).
-    var objectNames = actors.Where(a => (a.Kind == "KIND_OBJECT" && (a.Name.StartsWith("g_") || a.Name.StartsWith("n_"))) || (a.Kind == "KIND_ENEMY" && a.Name.StartsWith("g_")) || (a.Kind == "KIND_OBJECT" && a.Name.StartsWith("f_"))
+    // r_* (KIND_OBJECT) = trilhos: sem malha, um igTransform animado com um igTransformRecorder (FATO: r_boatz01 da stag0103,
+    // "route00", 46 chaves em 180 s). O g_boatz01 anda preso a ele (MOVERL "JOINT" "r_boatz01"); sem exportar, o barco não saía.
+    var objectNames = actors.Where(a => (a.Kind == "KIND_OBJECT" && (a.Name.StartsWith("g_") || a.Name.StartsWith("n_") || a.Name.StartsWith("r_"))) || (a.Kind == "KIND_ENEMY" && a.Name.StartsWith("g_")) || (a.Kind == "KIND_OBJECT" && a.Name.StartsWith("f_"))
         // Inimigos sem esqueleto (FATO: f_luce2 do stagbs03, "sem esqueleto"): vão como objeto rígido, e o cliente usa o ator como modelo.
         || (a.Kind == "KIND_ENEMY" && (a.Name.StartsWith("e_") || a.Name.StartsWith("f_")) && IgbCharacter.Read(mainFile, mainData, a.Name).Bones.Count == 0)).Select(a => a.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
     var mapNames = actors.Where(a => a.Kind is "KIND_MAPBASE" or "KIND_MAPCURSOR").Select(a => a.Name).ToArray();

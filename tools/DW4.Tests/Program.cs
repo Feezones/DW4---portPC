@@ -2508,6 +2508,51 @@ if (args.Length == 1)
         True(geom[0] >= 0 && geom[3 * 6] < 0, "dígito 0 à direita do dígito 1");
     });
 
+    Test("Jogo: fase do barco (stag0103, #628): trilho r_boatz01 com gravador, chão de veículo do g_boatz01 e medidor boathp", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[628], ms);
+        var stage = ms.ToArray();
+        var igb = IgbFile.Read(stage);
+        static double D(System.Text.Json.Nodes.JsonNode? n) => Convert.ToDouble(n!.GetValue<object>(), System.Globalization.CultureInfo.InvariantCulture);
+        var (json, hud) = IgbHud.Export(igb, stage, null, null, ["r_boatz01=5201", "g_boatz01", "i_stpnlsp05"]);
+        Equal(0, hud.Notes.Count, $"notas: {string.Join("; ", hud.Notes)}");
+        var nodes = json["nodes"]!.AsObject();
+        // Trilho: "route00" animado (46 chaves em 180 s, do cais em (585, 15, 395) até (537, 15, −154)) com o igTransformRecorder.
+        var route = nodes["6947"]!;
+        Equal("route00", (string?)route["name"], "nó do trilho");
+        Equal("189", string.Join(",", route["children"]!.AsArray().Select(c => (int)c!)), "filho = gravador");
+        Equal("igTransformRecorder", (string?)nodes["189"]!["type"], "gravador exportado");
+        var seq = route["sequence"]!;
+        Equal(46, seq["times"]!.AsArray().Count, "46 chaves");
+        Equal(180.0, Math.Round(D(seq["times"]!.AsArray()[^1]), 1), "180 s");
+        var t = seq["translation"]!.AsArray().Select(D).ToArray();
+        Equal((585.0, 15.0, 395.0), (Math.Round(t[0]), Math.Round(t[1]), Math.Round(t[2])), "começa no cais, onde o start.lua gera o barco");
+        // Barco: beHitLandModelInfo 0x1405 → caixa aberta (chão em y 0, paredes até 100).
+        var boat = json["actors"]!.AsArray().First(a => (string?)a!["name"] == "g_boatz01")!;
+        Equal(0x1405, (int)boat["land"]!["kind"]!, "tipo do chão do barco");
+        True(RideLand.IsVehicle((int)boat["land"]!["kind"]!), "bit de veículo");
+        True(json["actors"]!.AsArray().First(a => (string?)a!["name"] == "r_boatz01")!["land"] == null, "trilho sem colisão");
+        var boathp = json["meters"]!.AsArray().Single(m => (string?)m!["name"] == "boathp")!["data"]!.AsArray().Single()!;
+        True(nodes.ContainsKey(((int)boathp["node"]!).ToString()), "medidor da vida do barco dentro do i_stpnlsp05");
+        // As sequências do trilho: SQ_GO = WAIT01 (0..4500) e SQ_GO02 = LUACALL "brk" + WAIT02 (4501..11040), quadros de 60 Hz.
+        var seqs = IgbSequences.Read(igb, stage, "r_boatz01", []);
+        True(seqs.TryGetValue("SQ_GO02", out var go2) && go2.Any(c => c.Kind == "LUACALL" && c.Values.FirstOrDefault() as string == "brk"), "SQ_GO02 chama o brk_r_boatz01.lua");
+    });
+
+    Test("Port: chão de veículo (RideLand): bit 0x1000 e caixa local com folga", () =>
+    {
+        True(RideLand.IsVehicle(0x1405) && RideLand.IsVehicle(0x1403), "barco e blindado");
+        True(!RideLand.IsVehicle(0x402) && !RideLand.IsVehicle(0x401), "g_box e andaime não");
+        var min = new System.Numerics.Vector3(-17, 0, -23);
+        var max = new System.Numerics.Vector3(17, 100, 23);
+        True(RideLand.Inside(new(0, 0, 0), min, max), "no meio do chão");
+        True(RideLand.Inside(new(18, 3, -24), min, max), "encostado na parede (folga 2)");
+        True(!RideLand.Inside(new(30, 0, 0), min, max), "fora pela lateral");
+        True(!RideLand.Inside(new(0, -20, 0), min, max), "muito abaixo do chão");
+    });
+
     Test("Jogo: 12 tabelas beDataBase na dng1 (area #3); w_sword01 com TSUYOSA 60..199; Guilmon e Numemon nas tabelas", () =>
     {
         using var afs = AfsArchive.Open(areaPath);

@@ -159,9 +159,12 @@ public partial class Fatia
     {
         string model = rl.S(1), joint = rl.S(2);
         if (model.Length == 0 || model == self) return null;
-        Node3D? root = _enemies.FirstOrDefault(x => x.Kind.Model == model && !x.Dead)?.Model
-            ?? _objects.FirstOrDefault(o => o.Name == model && !o.Erased)?.Actor.Root;
+        var targetObject = _objects.FirstOrDefault(o => o.Name == model && !o.Erased);
+        Node3D? root = _enemies.FirstOrDefault(x => x.Kind.Model == model && !x.Dead)?.Model ?? targetObject?.Actor.Root;
         if (root == null) return null; // sem resposta ao GETTRCDATA/GETMATRIX: não prende
+        // GETTRCDATA = dados do igTransformRecorder da peça (HIPÓTESE pelo nome e pelos dados: o r_boatz01 não tem malha, só o
+        // "route00" animado com o gravador embaixo, e o g_boatz01 precisa andar por ele). Sem gravador, a raiz.
+        if (rl.S(0) == "JOINT" && targetObject?.Actor.Recorder is { } trc) return trc.GlobalTransform;
         if (rl.S(0) == "JOINT" || joint.Length == 0) return root.GlobalTransform;
         foreach (var sk in FindAll<Skeleton3D>(root))
             if (sk.FindBone(joint) is var b and >= 0) return sk.GlobalTransform * sk.GetBoneGlobalPose(b);
