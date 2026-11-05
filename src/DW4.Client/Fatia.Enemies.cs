@@ -50,6 +50,8 @@ public partial class Fatia
         public int Hp { get; set; }
         public bool Dead { get; set; }
         public bool Killed { get; set; }
+        /// <summary>Corpo sólido para o jogador; desliga quando começa a queda (Fatia.Enemies.cs, UpdateEnemySolid).</summary>
+        public bool Solid { get; set; } = true;
         /// <summary>Fatia sem geradores: renasce no ponto depois de 5 s (DECISÃO DA FATIA).</summary>
         public bool Respawns { get; init; }
         public float RespawnTimer { get; set; }
@@ -534,8 +536,26 @@ public partial class Fatia
     void UpdateEnemies(float dt)
     {
         foreach (var e in _enemies.ToList())
+        {
+            UpdateEnemySolid(e);
             if (!_frozenModels.Contains(e.Kind.Model)) UpdateEnemy(e, dt);
+        }
         TickBossBarModel();
+    }
+
+    // DECISÃO DO PORT PC (pedido do usuário, 2026-11-05): assim que o inimigo é derrotado (começa a animação de queda), o corpo dele
+    // deixa de segurar o jogador. Antes, quem estava embaixo de um inimigo que caía ficava preso dentro da cápsula dele até ela
+    // sumir. O corpo continua no chão (máscara igual), só sai da camada que o jogador enxerga e ignora o jogador.
+    static bool Defeated(Enemy e) => e.Dead || e.Killed || (e.Hp <= 0 && e.Kind.Stats != null);
+
+    void UpdateEnemySolid(Enemy e)
+    {
+        bool solid = !Defeated(e);
+        if (solid == e.Solid) return;
+        e.Solid = solid;
+        e.Body.CollisionLayer = solid ? 1u : 0u;
+        if (solid) e.Body.RemoveCollisionExceptionWith(_player);
+        else e.Body.AddCollisionExceptionWith(_player);
     }
 
     void UpdateEnemy(Enemy e, float dt)

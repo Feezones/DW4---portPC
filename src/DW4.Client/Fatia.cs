@@ -203,7 +203,7 @@ public partial class Fatia : Node3D
             && xyz.Select(t => float.TryParse(t, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var f) ? f : float.NaN).ToArray() is var v3
             && v3.All(float.IsFinite))
             start = new Vector3(v3[0], v3[1], v3[2]);
-        _spawn = _lastFloor = start;
+        _spawn = _lastFloor = _safeFloor = start;
         _player = new CharacterBody3D { Position = start, FloorSnapLength = 4f };
         _player.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 2.5f, Height = 7f }, Position = new Vector3(0, 3.5f, 0) });
         AddChild(_player);
@@ -451,6 +451,7 @@ public partial class Fatia : Node3D
         // DECISÃO DO PORT PC: rede de segurança. Se atravessar o chão (empurrão forte numa borda, ponto inicial dentro de
         // uma parede), volta ao último ponto em que estava no chão em vez de cair para sempre.
         _airTime = _player.IsOnFloor() ? 0 : _airTime + dt;
+        TrackSafeFloor(dt); // plataforma do backup chip (Fatia.BackupChip.cs), antes de o _lastFloor mudar
         if (_player.IsOnFloor()) _lastFloor = _player.GlobalPosition;
         else if (_player.GlobalPosition.Y < _lastFloor.Y - 400) { _player.GlobalPosition = _lastFloor; _player.Velocity = Vector3.Zero; }
         if (_model != null) _model.Rotation = new Vector3(0, _move.Facing, 0);

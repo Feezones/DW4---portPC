@@ -25,7 +25,7 @@ public partial class Fatia
     {
         var inv = _inventory;
         long loss = PlayerGrowth.DeathExpLoss(_level, _exp);
-        var p = _player.GlobalPosition;
+        var p = _hp <= 0 ? _safeFloor : _player.GlobalPosition;
         (inv.ChipStage, inv.ChipPos, inv.ChipBit, inv.ChipExp) = (_stageName, [p.X, p.Y, p.Z], inv.Bit, loss);
         _exp -= loss;
         inv.Bit = 0;
@@ -52,6 +52,33 @@ public partial class Fatia
         actor.Root.Position = new Vector3(inv.ChipPos[0], inv.ChipPos[1], inv.ChipPos[2]);
         _chip.SetSequence("SQ_ENTR1P");
         _objects.Add(_chip);
+    }
+
+    // DECISÃO DO PORT PC (pedido do usuário, 2026-11-05): o chip fica na última plataforma em que o Digimon pisou, não lá embaixo
+    // quando ele cai num buraco e morre no fundo (piso de dano, inimigos). Plataforma segura = chão em que ficou sem tomar dano; depois
+    // de uma queda grande (mais de FallDrop abaixo do chão de onde saiu), o chão novo só vira seguro depois de SafeAfterFall segundos
+    // nele sem dano. Qualquer dano no chão em observação recomeça a contagem; dano num chão já seguro não muda nada.
+    const float FallDrop = 60f, SafeAfterFall = 4f;
+    Vector3 _safeFloor;
+    float _safeWait;
+    bool _wasOnFloor;
+    int _safeHp = -1;
+
+    void TrackSafeFloor(float dt)
+    {
+        bool onFloor = _player.IsOnFloor();
+        bool hurt = _safeHp >= 0 && _hp < _safeHp;
+        _safeHp = _hp;
+        if (_hp <= 0) { _wasOnFloor = onFloor; return; } // caído: o chip vai para o _safeFloor (DropBackupChip)
+        if (onFloor && !_wasOnFloor && _player.GlobalPosition.Y < _lastFloor.Y - FallDrop) _safeWait = SafeAfterFall;
+        _wasOnFloor = onFloor;
+        if (!onFloor) return;
+        if (_safeWait > 0)
+        {
+            _safeWait = hurt ? SafeAfterFall : _safeWait - dt;
+            if (_safeWait > 0) return;
+        }
+        _safeFloor = _player.GlobalPosition;
     }
 
     bool NearChip => _chip is { Erased: false } c && c.Actor.Root.GlobalPosition.DistanceTo(_player.GlobalPosition) <= ChipReach;
