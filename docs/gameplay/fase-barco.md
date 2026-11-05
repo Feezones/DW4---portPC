@@ -143,3 +143,19 @@ reempacotada (`dw4 empacotar`).
   jogador pisar de novo perto daquela altura; descer escada ou rampa sem sair do chão atualiza normalmente.
 - **Preso embaixo de um inimigo morrendo.** DECISÃO DO PORT: com o HP em 0 (ou já derrotado) o corpo do inimigo sai da camada
   de colisão que o jogador enxerga (`UpdateEnemy`), durante toda a animação de queda; volta se ele renascer.
+
+## 0.6.13: o jogador ainda atravessava o barco (2026-11-05)
+
+- Relato: na 0.6.13 (que já tinha os dados novos: `r_boatz01`, `land` 0x1405 do g_boatz01 e o painel, conferidos no
+  `fases-stag0103.pcz` instalado) o Dorumon continuava no fundo do rio e o barco parecia parado no cais.
+- **Causa (conferida sem janela, `DW4_DIAG_BARCO=1`):** o chão do barco existia e o barco andava pelo trilho, mas o jogador
+  ficava em y 1. A malha de colisão do IGB tem o chão em ordem anti-horária vista de cima, e a Godot toma o sentido horário
+  como frente. O `SnapToFloor`, que roda depois do `PLAYER MOVETRANS` e na entrada da fase, só aceita faces de frente
+  (`HitBackFaces = false`): o raio passava pelo chão do barco e punha o jogador no leito do rio. Dali o barco saía sem ele.
+- **Correção:** o chão do veículo é montado com a ordem dos vértices invertida (`MakeRideLand`). A colisão continua com os
+  dois lados ativos (as paredes da caixa seguram de dentro).
+- **Conferido sem janela** (Godot `--headless`, `DW4_FASE=stag0103 DW4_BOT=1 DW4_DIAG_BARCO=1`, dados de
+  `D:\dw4-work\fases`, iguais aos do pacote): o jogador fica em y 15 desde o começo. Quando o barco parte (SQ_START, preso ao
+  trilho), ele vai junto, de (575, 15, 395) até perto de (−335, 15, 269) em ~58 s, sempre no chão do barco. Os Numemon
+  acertam o jogador e o barco passa para o SQ_ADAM.
+- Os dados da stag0103 não mudam: o pacote 0.6.14 só precisa do cliente novo.

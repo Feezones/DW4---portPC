@@ -248,11 +248,17 @@ public partial class Fatia
         Vector3 min = new(float.MaxValue, float.MaxValue, float.MaxValue), max = -min;
         foreach (var mi in FindAll<MeshInstance3D>(shapes.Root))
         {
-            if (mi.Mesh.CreateTrimeshShape() is not { } trimesh) continue;
-            trimesh.BackfaceCollision = true; // as paredes da caixa olham para dentro; os dois lados seguram
+            var faces = mi.Mesh.GetFaces();
+            if (faces.Length < 3) continue;
+            // Ordem dos vértices invertida: no IGB o chão do barco é anti-horário visto de cima, e a Godot toma o horário como
+            // frente. Sem inverter, o chão olhava para baixo e o raio do SnapToFloor (só faces de frente) passava pelo barco e
+            // punha o jogador no leito do rio, em y 1 (relato do usuário na 0.6.13, conferido sem janela com DW4_DIAG_BARCO).
+            for (int i = 0; i + 2 < faces.Length; i += 3) (faces[i + 1], faces[i + 2]) = (faces[i + 2], faces[i + 1]);
+            var trimesh = new ConcavePolygonShape3D { BackfaceCollision = true }; // paredes da caixa: os dois lados seguram
+            trimesh.SetFaces(faces);
             var t = mi.GlobalTransformIn(shapes.Root);
             body.AddChild(new CollisionShape3D { Shape = trimesh, Transform = t });
-            foreach (var v in mi.Mesh.GetFaces()) { var w = t * v; min = min.Min(w); max = max.Max(w); }
+            foreach (var v in faces) { var w = t * v; min = min.Min(w); max = max.Max(w); }
         }
         shapes.Root.Free();
         if (body.GetChildCount() == 0) { body.Free(); return; }
@@ -260,6 +266,22 @@ public partial class Fatia
         o.Ride = body;
         o.RideMin = min;
         o.RideMax = max;
+        if (DiagRide) GD.Print($"[barco] {o.Name}: chão de veículo com {body.GetChildCount()} peça(s), caixa {min.Round()}..{max.Round()}");
+    }
+
+    // DEPURAÇÃO: DW4_DIAG_BARCO=1 mostra o chão do veículo e, a cada 30 quadros, o jogador e o veículo.
+    static readonly bool DiagRide = OS.GetEnvironment("DW4_DIAG_BARCO") == "1";
+    void DiagRideTick()
+    {
+        if (!DiagRide || _tick % 30 != 0) return;
+        var p0 = _player.GlobalPosition;
+        var q = PhysicsRayQueryParameters3D.Create(new Vector3(p0.X, 60, p0.Z), new Vector3(p0.X, -20, p0.Z));
+        q.Exclude = [_player.GetRid()];
+        q.HitBackFaces = false; // como o SnapToFloor
+        var hit = _player.GetWorld3D().DirectSpaceState.IntersectRay(q);
+        GD.Print($"[barco] raio: {(hit.Count > 0 ? $"{((Vector3)hit["position"]).Round()} em {((Node)hit["collider"]).Name} normal {((Vector3)hit["normal"]).Round()}" : "nada")}");
+        foreach (var o in _objects.Where(x => x.Ride != null))
+            GD.Print($"[barco] q{_tick} jogador {_player.GlobalPosition.Round()} chão {_player.IsOnFloor()} | {o.Name} {o.Actor.Root.GlobalPosition.Round()} giro {o.Actor.Root.GlobalRotationDegrees.Y:0} seq {o.Sequence} preso {o.Seq?.Motion.Attached != null}");
     }
 
     // Jogador dentro da caixa do veículo: vai com ele (posição e giro), antes do MoveAndSlide do quadro (TickObjects roda antes).
@@ -299,6 +321,7 @@ public partial class Fatia
             _objects.RemoveAt(i);
         }
         if (riding.Count > 0) CarryRiders(riding);
+        DiagRideTick();
     }
 
     // NPCs do lobby (n_agumon, n_leomon…): o nó do ator no IGB é um igActor, então o desenho vem do personagem exportado
