@@ -998,6 +998,18 @@ Test("IA: faixa pela distância, sorteio acumulado em 16, troca de mapa e espera
     True(Math.Abs(b.Yaw - MathF.PI / 2) < 1e-3f, "termina virado para o alvo");
 });
 
+Test("IA: sem AIMAP no SQ_ENTR começa no MAP00 mesmo com outro mapa antes no arquivo (e_blosso: MAP01 = fúria)", () =>
+{
+    var fury = new AiMap("MAP01", [32 * 32, 50 * 50, 1000 * 1000], 0.07f, [[new("SQ_ATCK2", 0, 0, 16)], [], [], []]);
+    var calm = new AiMap("MAP00", [30 * 30, 42 * 42, 1000 * 1000], 0.04f, [[new("SQ_ATCK1", 0, 0, 16)], [], [], []]);
+    var b = new EnemyBrain([fury, calm], new Dictionary<string, List<SeqCommand>>(), () => 0);
+    Equal("MAP00", b.Map.Name, "mapa inicial");
+    b.Tick(1 / 30f, Vector3.Zero, new Vector3(0, 0, 10), 0);
+    Equal("SQ_ATCK1", b.External, "de perto, o golpe calmo (SQ_ATCK1), não o giro");
+    var only = new EnemyBrain([fury], new Dictionary<string, List<SeqCommand>>(), () => 0);
+    Equal("MAP01", only.Map.Name, "sem MAP00: o primeiro do arquivo");
+});
+
 Test("Técnicas: WAZALIST pelo nível e pela skill, painel com MP e recarga", () =>
 {
     // Tabelas sintéticas no formato do igb-db: uma família de 5 graus (linhas 0..4) e uma bloqueada até o nível 12.

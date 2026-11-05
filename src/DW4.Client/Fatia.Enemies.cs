@@ -333,6 +333,18 @@ public partial class Fatia
         return (block.FirstOrDefault(c => c.Kind == "ACTION")?.S(0), block.FirstOrDefault(c => c.Kind == "MOVE" && c.S(0) == "Move")?.F(1));
     }
 
+    // FATO (e_blosso): SQ_AGRDMG faz LABELCTRL "SWON" "SQ_WAIT" e JUMP "SQ_LDMG"; o SQ_LDMG volta com JUMP "SQ_WAIT", e o bloco SWON do
+    // SQ_WAIT é só JUMP "SQ_SWON" (fúria: MAP01, rótulos ANGER, giro). A IA do cliente não roda o SQ_WAIT do jogo, então o salto do
+    // rótulo guardado vem daqui: o bloco do rótulo cujo primeiro comando é JUMP para outra sequência.
+    static string? LabelJump(Enemy e, string seq)
+    {
+        if (!e.Labels.TryGetValue(seq, out var label) || !e.Kind.Sequences.TryGetValue(seq, out var cmds)) return null;
+        int at = cmds.FindIndex(c => c.Kind == "LABEL" && c.S(0) == label);
+        if (at < 0 || at + 1 >= cmds.Count || cmds[at + 1].Kind != "JUMP") return null;
+        var to = cmds[at + 1].S(0);
+        return to != seq && e.Kind.Sequences.ContainsKey(to) ? to : null;
+    }
+
     float? EnemyAnimFrames(Enemy e, string action) => ActionAnimations.Length(e.Kind.Actions, action, motion =>
         e.Anim != null && e.Anim.HasAnimation(motion) ? (float)e.Anim.GetAnimation(motion).Length * SequenceRunner.FramesPerSecond : null);
 
@@ -584,6 +596,12 @@ public partial class Fatia
                     && (e.Hp > 0 || next.StartsWith("SQ_DFORM", StringComparison.Ordinal)) && StartEnemySequence(e, next))
                 {
                     e.Brain.Force(next);
+                    e.Serial = -1;
+                }
+                else if (e.Started && !e.Runner.Running && e.Hp > 0 && e.Runner.Next == "SQ_WAIT" && LabelJump(e, "SQ_WAIT") is { } jump
+                    && StartEnemySequence(e, jump))
+                {
+                    e.Brain.Force(jump);
                     e.Serial = -1;
                 }
                 if (e.Started && !e.Runner.Running)

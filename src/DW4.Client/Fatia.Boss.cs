@@ -20,7 +20,13 @@ public partial class Fatia
     bool _fightCrit;
     int _fightDamage;
 
-    bool UsesHitScript(Enemy e) => e.Kind.Model.StartsWith("f_", StringComparison.Ordinal) && _stage?.Has($"hit_{e.Kind.Model}.lua") == true;
+    // FATO (hit_e_blosso.lua): o chefe e_* também decide a reação no próprio script (contador g_blossoHitCount: do 3º golpe em
+    // diante, o golpe que passa uma marca de 10% do HP manda SQ_AGRDMG, a fúria). Os e_* chefes têm LABELCTRL "BOSS" no SQ_ENTR
+    // (e_blosso, e_mammos, e_mecha4/5, e_skulgrey, e_anomalo, e_ldknight, e_diabolo); os inimigos comuns seguem pelo PlayerStrikes.
+    bool UsesHitScript(Enemy e) => (e.Kind.Model.StartsWith("f_", StringComparison.Ordinal) || IsBossEnemy(e)) && _stage?.Has($"hit_{e.Kind.Model}.lua") == true;
+
+    static bool IsBossEnemy(Enemy e) => e.Kind.Model.StartsWith("e_", StringComparison.Ordinal)
+        && e.Kind.Sequences.TryGetValue("SQ_ENTR", out var entr) && entr.Any(c => c.Kind == "LABELCTRL" && c.S(0) == "BOSS");
 
     // Golpe do Guilmon num chefe: o próprio hit_<modelo>.lua decide (FATO: hit_f_apocaly.lua faz BLTisHitCheck, BLTisCritical,
     // BLTgetDamageValue, MDLaddHp(−dano), BLTgetDamageRank → SETLABEL + MDLsetSeq, e na morte a cena com BT_WIN02 e o portal).
@@ -63,7 +69,8 @@ public partial class Fatia
                 if (args.ElementAtOrDefault(0) != 0) SkillUp();
                 return 0;
             case "BLTcalcEXPUp" when e != null:
-                EnemyDefeated(e, Online.MyId, drop: false);
+                // Chefe e_* de gerador (FATO: GENE-08 do Blossomon tem a lista comonIMPT02): o drop dele continua saindo.
+                EnemyDefeated(e, Online.MyId, drop: IsBossEnemy(e) && e.Gen != null);
                 return 0;
             case "MDLdspDamage" when e != null:
                 int dmg = (int)args.ElementAtOrDefault(0);
