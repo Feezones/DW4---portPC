@@ -321,6 +321,9 @@ public partial class Fatia : Node3D
 
     public override void _PhysicsProcess(double delta)
     {
+        // A rede vem antes de qualquer saída do quadro: com _leaving (Esc > Gravar e voltar, trocar de Digimon) o resto do quadro
+        // para, e sem o Poll a resposta da gravação nunca chegava nem o tempo limite corria (ficava "Gravando..." para sempre).
+        Online.Poll(_leaving || _player == null || !IsInsideTree() ? null : MyState());
         TickQuickSaveAndSpeed(delta);
         float dt = (float)delta;
         TickChat(dt);

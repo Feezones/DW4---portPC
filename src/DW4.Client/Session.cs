@@ -185,6 +185,8 @@ public static class Session
         Online.KickedOut += () => s_unsaved = null;
     }
 
+    static readonly TimeSpan SaveTimeout = TimeSpan.FromSeconds(30);
+
     static async Task<bool> Persist(string account, int slot, CharacterSave save)
     {
         Hook();
@@ -192,15 +194,17 @@ public static class Session
         int mine = ++s_saveSeq;
         try
         {
-            await Store.SaveAsync(account, slot, save);
+            // Rede de segurança: o Online.Request já desiste em 20 s, mas a gravação nunca pode prender a saída para sempre.
+            await Store.SaveAsync(account, slot, save).WaitAsync(SaveTimeout);
             if (mine == s_saveSeq) s_unsaved = null;
             return true;
         }
-        catch (Exception e) when (e is OnlineCharacterStore.StoreException or System.IO.IOException or UnauthorizedAccessException)
+        catch (Exception e) when (e is OnlineCharacterStore.StoreException or System.IO.IOException or UnauthorizedAccessException or TimeoutException)
         {
-            GD.PrintErr($"[save] não gravou: {e.Message}");
-            LastError = e.Message;
-            if (mine == s_saveSeq) SaveFailed?.Invoke(e.Message);
+            string why = e is TimeoutException ? "O servidor não respondeu a tempo. Confira a internet e tente de novo." : e.Message;
+            GD.PrintErr($"[save] não gravou: {why}");
+            LastError = why;
+            if (mine == s_saveSeq) SaveFailed?.Invoke(why);
             return false;
         }
     }
