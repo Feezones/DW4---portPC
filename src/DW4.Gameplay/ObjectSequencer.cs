@@ -92,6 +92,9 @@ public sealed class ObjectSequencer
 
     public string? Label(string sequence) => _labels.GetValueOrDefault(sequence);
 
+    /// <summary>Alguma sequência faz LUACALL <paramref name="name"/> (ex.: g_sbutton/g_dbutton1 chamam o "hit" ao acender).</summary>
+    public bool CallsLua(string name) => _seqs.Values.Any(l => l.Any(c => c.Kind == "LUACALL" && c.S(0) == name));
+
     /// <summary>
     /// O bloco de <paramref name="sequence"/> no rótulo guardado só faz JUMP de volta para a sequência atual (ex.: g_sbutton já
     /// ligado: SQ_SWON/ON = JUMP "SQ_WAIT"). Recomeçar seria igual a ficar; o port não recomeça para a ação em laço não reiniciar
