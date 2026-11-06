@@ -10,7 +10,7 @@ namespace DW4.Client;
 /// com MP ≥ custo, desconta o MP, põe a recarga e devolve o LABEL da SQ_WAZA (<see cref="TechniquePanel"/>). FATO (db shinka): toda
 /// Digimon tem 6 famílias de técnica (TECH1..6), então a WAZALIST chega a 6. DESCONHECIDO: como o painel do jogo escolhe a técnica
 /// (a tela dele não foi lida).
-/// DECISÃO DO PORT (pedido do usuário, 2026-11-06): a barra das técnicas fica separada da hotbar de itens (1–5), logo acima dela,
+/// DECISÃO DO PORT (pedido do usuário, 2026-11-06): a barra das técnicas fica separada da hotbar de itens (1–5), logo abaixo dela,
 /// com a tecla de cada uma (padrão Q, E, R, F, C e V para a 6ª), custo e recarga. Tecla ou clique/toque na caixa usam direto; roda do
 /// mouse ou LB/RB trocam a selecionada, e K ou o X do controle usam a selecionada.
 /// </summary>
@@ -117,15 +117,14 @@ public partial class Fatia
             _techCool[i].Position = new Vector2(0, slot.Size.Y * (1 - frac));
             slot.AddThemeStyleboxOverride("panel", i == _techSelected ? _techStyleSelected : _techStyle);
         }
-        // Logo acima da hotbar de itens, na mesma escala (altura da janela, base 720) e no mesmo centro; em 4:3 começa depois do
-        // painel de status do canto de baixo à esquerda, como a hotbar.
+        // No pé da tela, com a hotbar de itens logo acima (pedido do usuário: números em cima, técnicas embaixo), na mesma escala
+        // (altura da janela, base 720); em 4:3 começa depois do painel de status do canto de baixo à esquerda, como a hotbar.
         var size = GetViewport().GetVisibleRect().Size;
         float s = size.Y / 720f;
         _techBar.Scale = new Vector2(s, s);
         _techBar.ResetSize();
         var barSize = _techBar.GetCombinedMinimumSize() * s;
-        float itemsH = (_quickHud?.GetCombinedMinimumSize().Y ?? 40) * s;
         float x = Math.Max((size.X - barSize.X) / 2, 290 * s);
-        _techBar.Position = new Vector2(x, size.Y - 10 * s - itemsH - 14 * s - barSize.Y);
+        _techBar.Position = new Vector2(x, size.Y - 10 * s - barSize.Y);
     }
 }
