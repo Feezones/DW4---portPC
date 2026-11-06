@@ -81,10 +81,11 @@ public partial class Fatia
             Seq.Start(parts[0]);
         }
 
+        float _shownAlpha = 1;
+
         public void Tick(float dt)
         {
             if (Seq == null) return;
-            float alpha = Seq.Alpha;
             Seq.Tick(dt);
             if (Rolling && dt > 0)
             {
@@ -101,7 +102,8 @@ public partial class Fatia
                 if (Grounded) MoveOnGround(new Vector3(local.X, local.Y, local.Z));
                 else Actor.Root.TranslateObjectLocal(new Vector3(local.X, local.Y, local.Z));
             }
-            if (Seq.Alpha != alpha) Actor.SetAlpha(Seq.Alpha);
+            // Compara com o último alfa posto no modelo: a sequência também muda fora do Tick (script, ex.: SQ_POWERON do laser).
+            if (Seq.Alpha != _shownAlpha) Actor.SetAlpha(_shownAlpha = Seq.Alpha);
             Actor.Root.Visible = Seq.Alpha > 0;
             // DECISÃO DO PORT (parede invisível): objeto transparente (FADE em 0, ainda entrando ou sumindo) não segura o jogador.
             if (Body != null) Body.ProcessMode = Actor.Root.Visible ? Node.ProcessModeEnum.Inherit : Node.ProcessModeEnum.Disabled;

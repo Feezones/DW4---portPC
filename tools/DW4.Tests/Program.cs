@@ -966,6 +966,37 @@ Test("Objeto: interruptor do portão (g_sbutton da stag0101) só tem IA com CTRL
     True(!s.OnlyJumpsBack("SQ_SWOF"), "saiu de cima: SQ_SWOF/ON apaga");
 });
 
+Test("Sequência: laser g_dbarrierw (dng103f1) — HIDE do SQ_WAIT vale só na ação; SQ_POWERON mostra, SQ_POWEROF esconde", () =>
+{
+    SeqCommand C(string k, params object[] v) => new(k, v);
+    // FATO (igb-seq do #218): SQ_WAIT = HIDE_ACTION (FADESET "HIDE"); SQ_POWERON → JUMP SQ_SWON = ONSW01 (só JOINTSET 21..40 LP).
+    var seqs = new Dictionary<string, List<SeqCommand>>
+    {
+        ["SQ_POWEROF"] = [C("JUMP", "SQ_WAIT")],
+        ["SQ_POWERON"] = [C("JUMP", "SQ_SWON")],
+        ["SQ_SWON"] = [C("ACTION", "ONSW01")],
+        ["SQ_WAIT"] = [C("ACTION", "HIDE_ACTION")],
+    };
+    var actions = new Dictionary<string, List<SeqCommand>>
+    {
+        ["HIDE_ACTION"] = [C("FADESET", "HIDE", 0f, 0f)],
+        ["ONSW01"] = [C("JOINTSET", "", 21f, 40f, "LP")],
+    };
+    var s = new ObjectSequencer(seqs, actions);
+    s.Start("SQ_WAIT");
+    Equal(0f, s.Alpha, "gerado: escondido");
+    s.Start("SQ_POWERON");
+    for (int i = 0; i < 10; i++) s.Tick(1 / ObjectSequencer.FramesPerSecond);
+    Equal(1f, s.Alpha, "ligado: laser aparece");
+    s.Start("SQ_POWEROF");
+    Equal(0f, s.Alpha, "desligado: some de novo");
+    // HIDE da própria sequência (fora da ação) continua valendo.
+    var seqs2 = new Dictionary<string, List<SeqCommand>> { ["SQ_HIDE"] = [C("FADESET", "HIDE", 0f, 0f), C("ACTION", "ONSW01")] };
+    var h = new ObjectSequencer(seqs2, actions);
+    h.Start("SQ_HIDE");
+    Equal(0f, h.Alpha, "HIDE da sequência fica");
+});
+
 Test("Sequência: pod de Numemon (g_numepodz01) — SQ_SWON com o rótulo ON já valendo não recomeça a espera, e o SQ_FIRE chega", () =>
 {
     SeqCommand C(string k, params object[] v) => new(k, v);
