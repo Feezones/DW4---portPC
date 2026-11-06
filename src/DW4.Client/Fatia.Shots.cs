@@ -126,7 +126,8 @@ public partial class Fatia
         foreach (var d in doc.RootElement.GetProperty("disparos").EnumerateArray())
         {
             string effect = d.GetProperty("nome").GetString() ?? "";
-            if (!effect.StartsWith("x_", StringComparison.Ordinal)) continue; // y_*: só efeito visual
+            // y_*: só efeito visual. g_*: objeto da fase gerado pelo disparador (o barril do g_barrelshotz01, Fatia.Barrels.cs).
+            if (!effect.StartsWith("x_", StringComparison.Ordinal) && !effect.StartsWith("g_", StringComparison.Ordinal)) continue;
             foreach (var t in d.GetProperty("alvos").EnumerateArray())
             {
                 string model = t.GetProperty("modelo").GetString() ?? "";
@@ -162,7 +163,11 @@ public partial class Fatia
         float from = action == lastAction ? lastFrame : -1;
         foreach (var s in list)
             if (s.Action == action && s.Frame > from && s.Frame <= frame && (!fromPlayer || PlayerBullet(s.Effect) || ChargeEffect(s.Effect)))
-                SpawnShot(s, at, owner, ownerName, source, sourceSequence, fromPlayer);
+            {
+                // g_* com modelo nos objetos da fase (o barril do g_barrelshotz01): nasce como objeto (Fatia.Barrels.cs).
+                if (!fromPlayer && IsStarterObject(s.Effect)) SpawnStarterObject(s, at);
+                else SpawnShot(s, at, owner, ownerName, source, sourceSequence, fromPlayer);
+            }
         lastAction = action;
         lastFrame = frame;
     }

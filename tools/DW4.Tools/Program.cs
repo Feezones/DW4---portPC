@@ -2093,7 +2093,14 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
     // "route00", 46 chaves em 180 s). O g_boatz01 anda preso a ele (MOVERL "JOINT" "r_boatz01"); sem exportar, o barco não saía.
     var objectNames = actors.Where(a => (a.Kind == "KIND_OBJECT" && (a.Name.StartsWith("g_") || a.Name.StartsWith("n_") || a.Name.StartsWith("r_"))) || (a.Kind == "KIND_ENEMY" && a.Name.StartsWith("g_")) || (a.Kind == "KIND_OBJECT" && a.Name.StartsWith("f_"))
         // Inimigos sem esqueleto (FATO: f_luce2 do stagbs03, "sem esqueleto"): vão como objeto rígido, e o cliente usa o ator como modelo.
-        || (a.Kind == "KIND_ENEMY" && (a.Name.StartsWith("e_") || a.Name.StartsWith("f_")) && IgbCharacter.Read(mainFile, mainData, a.Name).Bones.Count == 0)).Select(a => a.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
+        || (a.Kind == "KIND_ENEMY" && (a.Name.StartsWith("e_") || a.Name.StartsWith("f_")) && IgbCharacter.Read(mainFile, mainData, a.Name).Bones.Count == 0)).Select(a => a.Name)
+        // g_* que nascem por disparador (beActionStarterInfo @2): FATO (stag0102 #621) o lançador g_barrelshotz01 solta o barril
+        // g_bbarrelmz01 na BLST01 e o g_bbarrelgz01 na BLST02 (quadro 26, (0, 8, 6)). Eles não são KIND_OBJECT; sem exportar, o
+        // lançador abria e nenhum barril rolava pela ladeira.
+        .Concat(mainFile.Slots.OfType<IgbObject>().Where(o => o.TypeName == "beActionStarterInfo")
+            .Select(o => o.Fields.FirstOrDefault(v => v.Desc.Slot == 2 && v.Desc.ShortName == "String")?.Text ?? "")
+            .Where(n => n.StartsWith("g_", StringComparison.Ordinal) && actors.Any(a => a.Name == n)))
+        .Distinct().OrderBy(n => n, StringComparer.Ordinal).ToArray();
     var mapNames = actors.Where(a => a.Kind is "KIND_MAPBASE" or "KIND_MAPCURSOR").Select(a => a.Name).ToArray();
     var menuNames = actors.Where(a => a.Name.StartsWith("i_st") && !a.Name.StartsWith("i_stpnl") && !a.Name.StartsWith("i_stdownic")).Select(a => a.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
     // Raiz de cada ator: o @7 do beAction2Info com o mesmo nome (FATO: n_recorderdng → igSwitch #23790 na dng1, sem igAttrSet

@@ -63,6 +63,12 @@ public partial class Fatia
         /// <summary>NPC no chão: o deslocamento do MOVE não atravessa parede e segue a altura do chão (DECISÃO DO PORT, sem a colisão do jogo).</summary>
         public bool Grounded { get; init; }
         public bool Blocked { get; set; }
+        /// <summary>Barril do lançador (Fatia.Barrels): anda pelo MOVE seguindo o chão, com queda; FellOut = caiu fora do mapa.</summary>
+        public bool Rolling { get; set; }
+        public float FallSpeed { get; set; }
+        public bool FellOut { get; set; }
+        float? _rollBase;
+        float _rollLift, _rollStartY;
         public AnimationPlayer? CharacterAnim { get; set; }
         public int CharacterMotionSerial { get; set; } = -1;
 
@@ -80,7 +86,14 @@ public partial class Fatia
             if (Seq == null) return;
             float alpha = Seq.Alpha;
             Seq.Tick(dt);
-            if (Seq.Motion.AnyActive && dt > 0)
+            if (Rolling && dt > 0)
+            {
+                // O barril cai e segue o chão também depois que o "Push" parou.
+                var (rl, ryaw) = Seq.Motion.AnyActive ? Seq.Motion.Step(dt * SequenceRunner.FramesPerSecond) : (default, 0f);
+                Actor.Root.RotateY(ryaw * MathF.PI / 180);
+                Roll(new Vector3(rl.X, rl.Y, rl.Z), dt * SequenceRunner.FramesPerSecond);
+            }
+            else if (Seq.Motion.AnyActive && dt > 0)
             {
                 // MOVE/MOVEEX: deslocamento no espaço local do objeto e giro Y em graus (HIPÓTESE: quadros a 30 Hz, como os inimigos).
                 var (local, yawDeg) = Seq.Motion.Step(dt * SequenceRunner.FramesPerSecond);
@@ -114,6 +127,54 @@ public partial class Fatia
             if (floor.Count == 0) { Blocked = true; return; } // sem chão à frente: não anda para o vazio
             next.Y = ((Vector3)floor["position"]).Y;
             root.GlobalPosition = next;
+        }
+
+        // Barril (Fatia.Barrels): o "Push" anda no plano (frente do objeto), o "Jump" vira altura acima do chão, e o chão manda na
+        // altura: colado na ladeira enquanto ela desce menos que um passo íngreme; mais que isso, cai (MOVE "Fall" 1 2 da SQ_FALL,
+        // HIPÓTESE: 0,5 por quadro² até 1 por quadro). Parede à frente (até 12 de degrau) = Blocked.
+        public Rid IgnoreRid { get; set; }
+        const float RollFallAccel = 0.5f, RollFallMax = 1f, RollRadius = 4f, RollStep = 12f;
+
+        void Roll(Vector3 local, float frames)
+        {
+            var root = Actor.Root;
+            var space = root.GetWorld3D().DirectSpaceState;
+            float baseY = _rollBase ??= _rollStartY = root.GlobalPosition.Y;
+            // Pulinho do "Jump" 2 2: sobe pelo canal Y e, com o canal parado, volta ao chão na mesma queda.
+            _rollLift = local.Y > 0 ? _rollLift + local.Y : Math.Max(0, _rollLift - RollFallMax * frames);
+            var move = root.GlobalBasis.Orthonormalized() * new Vector3(local.X, 0, local.Z);
+            move.Y = 0;
+            var pos = root.GlobalPosition;
+            if (move.LengthSquared() > 1e-8f)
+            {
+                var from = new Vector3(pos.X, baseY + RollRadius, pos.Z);
+                var ahead = PhysicsRayQueryParameters3D.Create(from, from + move + move.Normalized() * RollRadius);
+                ahead.CollisionMask = 1;
+                if (IgnoreRid.IsValid) ahead.Exclude = [IgnoreRid];
+                ahead.HitBackFaces = false;
+                if (space.IntersectRay(ahead) is { Count: > 0 } wall && ((Vector3)wall["normal"]).Y < 0.7f) { Blocked = true; move = Vector3.Zero; }
+            }
+            var next = new Vector3(pos.X + move.X, baseY, pos.Z + move.Z);
+            var down = PhysicsRayQueryParameters3D.Create(next + Vector3.Up * RollStep, next + Vector3.Down * 200);
+            down.HitBackFaces = false;
+            down.CollisionMask = 1;
+            if (IgnoreRid.IsValid) down.Exclude = [IgnoreRid];
+            var floor = space.IntersectRay(down);
+            float slopeDrop = move.Length() * 1.5f + 0.25f; // ladeira de até ~56°: desce colado
+            if (floor.Count > 0 && ((Vector3)floor["position"]).Y is float fy && fy >= baseY - slopeDrop)
+            {
+                baseY = fy;
+                FallSpeed = 0;
+            }
+            else
+            {
+                FallSpeed = Math.Min(FallSpeed + RollFallAccel * frames, RollFallMax);
+                baseY -= FallSpeed * frames;
+                if (floor.Count > 0 && ((Vector3)floor["position"]).Y is float land && baseY <= land) { baseY = land; FallSpeed = 0; }
+                if (baseY < _rollStartY - 400) FellOut = true;
+            }
+            _rollBase = baseY;
+            root.GlobalPosition = new Vector3(next.X, baseY + _rollLift, next.Z);
         }
     }
 
@@ -320,6 +381,7 @@ public partial class Fatia
             while (o.Seq?.TakeLuaCallWithName() is { } lua) RunLuaCall(lua.Name, o.Name, o, lua.Call); // LUACALL das peças f_* (ex.: f_devl1f2 "bmh")
             UpdateCharacterAnim(o);
             CheckFloorHit(o);
+            UpdateRolling(o); // Fatia.Barrels.cs
             if (!o.Erased) continue;
             o.Actor.Root.QueueFree();
             o.Body?.QueueFree();

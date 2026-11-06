@@ -2353,6 +2353,20 @@ if (args.Length == 1)
         True(r.Start("SQ_FALL", "slash") && r.Move?.S(0) == "Fall" && jump.Active, "SQ_FALL começa pelo Fall e espera o pouso");
     });
 
+    Test("Jogo: barril do g_barrelshotz01 (stag0102): \"Push\" 0,9 100 rola quase sem frear e o \"Jump\" 2 2 é só um pulinho", () =>
+    {
+        // FATO (seq do g_bbarrelmz01, SQ_ATCK01): MOVE "Push" 0.9 100 e MOVE "Jump" 2 2. Freio do "Push" = 0,9/(0,5·100²) por quadro².
+        var m = new MotionChannels();
+        var jump = new SeqCommand("MOVE", ["Jump", 2f, 2]);
+        True(m.Apply(new SeqCommand("MOVE", ["Push", 0.9f, 100])) && m.Apply(jump), "aplica");
+        float z = 0, y = 0, peak = 0;
+        // 250 quadros do WAITCHECK "Frame" no relógio de 60 Hz = 125 quadros de 30 Hz do MOVE.
+        for (int i = 0; i < 125; i++) { var (local, _) = m.Step(1); z += local.Z; y += local.Y; peak = Math.Max(peak, y); }
+        True(m[2].Active && Math.Abs(m[2].Velocity - (0.9f - 125 * 0.9f / 5000)) < 1e-4f, $"ainda rolando a {m[2].Velocity:0.000}/quadro");
+        True(z > 105 && z < 113, $"andou {z:0.0} (o barril desce a ladeira do lançador até o fim dela)");
+        True(peak <= JumpMotion.PeakHeight(jump) + 1e-3f && !m[1].Active, $"pulinho de {peak:0.00}");
+    });
+
     Test("Jogo: MOVEEX/MOVE pelos canais do executor (0x8030A1F4/0x8030A2D8): texto → canal e modo, acelera, freia, troca de sequência", () =>
     {
         Equal((1, 0), MotionChannels.ParseEx("TYPACC")!.Value, "TYPACC = Y, acelera +");
