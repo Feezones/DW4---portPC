@@ -44,6 +44,8 @@ public partial class Fatia
         public bool SeqDead { get; init; }
         public bool Lock { get; init; }
         public Vector3 Offset { get; init; }
+        /// <summary>Onde nasceu (DIAG: DW4_DIAG_TIRO=1 mostra quanto o tiro do jogador andou até sumir).</summary>
+        public Vector3 Born { get; init; }
         /// <summary>Projétil do jogador (caixa 10000, ex. x_100gunv01 da pistola): acerta inimigos, não o jogador.</summary>
         public bool FromPlayer { get; init; }
         /// <summary>LUACALL de batida armado pela sequência (ex. "bht" "BHit" do x_bltnumemisz01): roda ao tocar a colisão.</summary>
@@ -87,7 +89,7 @@ public partial class Fatia
         {
             var at = (Vector3)r["position"];
             bool lands = PlayerShotLands(through, at);
-            if (DiagShot) GD.Print($"[tiro] {s.Name} {(lands ? "bateu em" : "passou por")} {through.Name} em {at.Round()}");
+            if (DiagShot) GD.Print($"[tiro] {s.Name} {(lands ? "bateu em" : "passou por")} {through.Name} em {at.Round()} normal {((Vector3)r["normal"]).Snapped(0.01f)} peça {ShotShapePath(through, (int)r["shape"])}");
             if (lands) break;
             var next = at + (to - from).Normalized() * 0.05f;
             if (next.DistanceSquaredTo(to) < 1e-4f || (to - next).Dot(to - from) <= 0) return;
@@ -102,6 +104,12 @@ public partial class Fatia
         var script = $"{hit.Name}_{s.Name}.lua";
         if (_stage?.Has(script) == true) _stage.RunAs(script, new ShotBeModel(s));
         else if (!s.Seq.Start("SQ_BREK")) s.Seq.Start("SQ_ERAS");
+    }
+
+    string ShotShapePath(StaticBody3D body, int shapeIndex)
+    {
+        var shape = body.ShapeOwnerGetOwner(body.ShapeFindOwner(shapeIndex)) as CollisionShape3D;
+        return shape == null ? "?" : _collisionShapes.Where(x => x.Shape == shape).Select(x => x.Path).FirstOrDefault() ?? shape.Name;
     }
 
     Dictionary<string, List<Starter>>? _starters;
@@ -201,7 +209,7 @@ public partial class Fatia
         int index = 0;
         while (_enemyShots.Any(o => o.Name == s.Effect && o.Index == index)) index++;
         _enemyShots.Add(new Shot { Name = s.Effect, Root = root, Seq = seq, Owner = owner, OwnerName = ownerName, Index = index, Actor = actor,
-            Source = source, SourceSequence = sourceSequence, SourceSequenceAtSpawn = sourceSequence(), SeqDead = s.SeqDead, Lock = s.Lock, Offset = s.Offset, FromPlayer = fromPlayer });
+            Source = source, SourceSequence = sourceSequence, SourceSequenceAtSpawn = sourceSequence(), SeqDead = s.SeqDead, Lock = s.Lock, Offset = s.Offset, FromPlayer = fromPlayer, Born = root.GlobalPosition });
     }
 
     HudData? _shotModels;
@@ -289,6 +297,8 @@ public partial class Fatia
             if (s.FromPlayer && s.Name == "x_100charge01" && _runner?.Running != true) orphan = true;
             if (s.Seq.Erased || !s.Seq.Running || orphan)
             {
+                if (DiagShot && s.FromPlayer && PlayerBullet(s.Name))
+                    GD.Print($"[tiro] {s.Name} sumiu em {s.Root.GlobalPosition.Round()} depois de {s.Born.DistanceTo(s.Root.GlobalPosition):0} ({(orphan ? "órfão" : s.Seq.Erased ? "apagado" : "sequência acabou")}, {(s.Hit ? "bateu" : "sem batida")}, seq {s.Seq.Sequence})");
                 s.Root.QueueFree();
                 _enemyShots.RemoveAt(i);
             }

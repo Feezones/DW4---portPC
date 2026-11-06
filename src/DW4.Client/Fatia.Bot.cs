@@ -17,6 +17,7 @@ public partial class Fatia
 
     Vector3? _walkTarget;
     Vector3 _dashFrom;
+    float? _botShootFacing;
 
     void BotInput(ref Vector3 dir, ref bool attackDown)
     {
@@ -57,6 +58,26 @@ public partial class Fatia
         bool tap = _tick % 30 < 2;
         // DW4_ALVO=npc: visita cada NPC (n_*) da fase, chega perto e aperta o ataque (sonda de conversa); 10 s por NPC.
         if (OS.GetEnvironment("DW4_ALVO") == "npc") { BotTalkToNpcs(ref dir, ref attackDown); return; }
+        // DW4_ALVO=atirar: parado onde está, atira em 8 direções (45° a cada 2 s); com DW4_DIAG_TIRO=1 o log [tiro] diz onde cada
+        // tiro bateu, passou ou sumiu (conferir até onde vai o tiro da Shot Pistol).
+        if (OS.GetEnvironment("DW4_ALVO") == "atirar")
+        {
+            if (!_padEnabled || !_playerCtrl || TalkWindowOpen || _choice >= 0 || _listChoice >= 0) { attackDown = tap; return; }
+            // Com DW4_TIRO_DE="x,z", anda até lá antes (ex.: a borda do mapa, para atirar para fora).
+            if (_botShootFacing == null && OS.GetEnvironment("DW4_TIRO_DE").Split(',') is [var tx, var tz]
+                && float.TryParse(tx, System.Globalization.CultureInfo.InvariantCulture, out float fromX)
+                && float.TryParse(tz, System.Globalization.CultureInfo.InvariantCulture, out float fromZ))
+            {
+                var go = new Vector3(fromX - _player.GlobalPosition.X, 0, fromZ - _player.GlobalPosition.Z);
+                if (go.Length() > 2) { dir = go.Normalized(); return; }
+            }
+            _botShootFacing ??= _move.Facing;
+            int step = _tick / 120 % 8, phase = _tick % 120;
+            if (_runner?.Running != true) _move.Face(_botShootFacing.Value + step * MathF.PI / 4);
+            if (phase == 0) GD.Print($"[tiro] direção {step * 45}° de {_player.GlobalPosition.Round()}");
+            attackDown = phase is >= 40 and < 42;
+            return;
+        }
         // DW4_ALVO=quebrar: vai (pulando direto) à frente de cada objeto com hit_<nome>.lua e gerador (caixa, barril, caixote) e
         // bate até quebrar, um golpe por segundo; com DW4_DIAG_DROP=1, o log [drop] segue o baú que sai.
         if (OS.GetEnvironment("DW4_ALVO") == "quebrar") { BotBreakObjects(ref dir, ref attackDown); return; }
