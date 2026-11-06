@@ -433,17 +433,22 @@ public partial class Fatia
     void CheckObjectHits()
     {
         if (_runner == null || _stage == null) return;
-        foreach (var h in _runner.ActiveHitBoxes().Where(h => h.Type is 10000 or 20000))
+        foreach (var h0 in _runner.ActiveHitBoxes().Where(h => h.Type is 10000 or 20000))
         {
+            var h = h0 with { Size = h0.Size * HitScale }; // modelo do CS maior: caixa maior (Fatia.cs BoxCenter)
             var c = BoxCenter(h);
             BreakMissiles(c, new Vector3(h.Size.X, h.Size.Y, h.Size.Z)); // Fatia.Missile.cs
             foreach (var o in _objects.Where(o => o.Body != null && !o.Dead && !_objectsHitThisAction.Contains(o)).ToList())
             {
                 var p = o.Actor.Root.GlobalPosition; // global: o f_bit fica preso ao chefe
-                bool touch = o.BodyBoxes.Count > 0
-                    ? HitBody.Hits(N(c), h.Size, _move.Facing, N(p), o.Actor.Root.GlobalRotation.Y, o.Actor.Root.GlobalBasis.Scale.X, o.BodyBoxes)
-                    : !(Math.Abs(c.X - p.X) > h.Size.X / 2 + GboxSize.X / 2 || Math.Abs(c.Z - p.Z) > h.Size.Z / 2 + GboxSize.Z / 2
-                        || c.Y + h.Size.Y / 2 < p.Y || c.Y - h.Size.Y / 2 > p.Y + GboxSize.Y);
+                // Caixa ou varredura do jogador até ela, com piso de corpo (DECISÃO DO PORT, Fatia.Enemies.cs PlayerSwing/FloorBody).
+                float scale = o.Actor.Root.GlobalBasis.Scale.X, yaw = o.Actor.Root.GlobalRotation.Y;
+                var body = o.BodyBoxes.Count > 0 ? FloorBody(o.BodyBoxes, scale) : null;
+                float hx = Math.Max(GboxSize.X / 2, MinBodyHalf), hz = Math.Max(GboxSize.Z / 2, MinBodyHalf);
+                bool touch = PlayerSwing(c, h, at => body != null
+                    ? HitBody.Hits(N(at), h.Size, _move.Facing, N(p), yaw, scale, body)
+                    : !(Math.Abs(at.X - p.X) > h.Size.X / 2 + hx || Math.Abs(at.Z - p.Z) > h.Size.Z / 2 + hz
+                        || at.Y + h.Size.Y / 2 < p.Y || at.Y - h.Size.Y / 2 > p.Y + GboxSize.Y)) != SwingHit.None;
                 if (!touch) continue;
                 _objectsHitThisAction.Add(o);
                 StrikeObject(o, h.Type);

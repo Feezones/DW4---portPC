@@ -21,7 +21,8 @@ public partial class CsSkin : Node3D
     // desloc: altura (unidades do modelo DW4) somada para os pés do CS ficarem onde estão os do DW4 na pose parada.
     // Mãos: ossos onde o jogo prende a arma (Fatia.Weapon: RArm04/LArm04) → osso equivalente do CS. A arma continua presa ao
     // osso do DW4 (mesma rotação), só é empurrada até a mão do modelo do CS, que tem outro tamanho de braço.
-    sealed record Entry(string File, float Scale, float Lift, Dictionary<string, string> Hands, Dictionary<string, Vector3> Grip, float WeaponScale);
+    sealed record Entry(string File, float Scale, float Lift, Dictionary<string, string> Hands, Dictionary<string, Vector3> Grip, float WeaponScale,
+        float HitScale);
     static Dictionary<string, Entry>? s_models;
     static Dictionary<string, Entry> Models => s_models ??= ReadManifest();
 
@@ -49,8 +50,10 @@ public partial class CsSkin : Node3D
                         if (v.Length == 3) grip[x.Name] = new Vector3(v[0], v[1], v[2]);
                     }
                 float weaponScale = p.Value.TryGetProperty("arma_escala", out var ws) ? ws.GetSingle() : 1f;
+                // "golpe": 1.25 aumenta as caixas de golpe do jogador (posição e tamanho) junto com o modelo maior do CS.
+                float hitScale = p.Value.TryGetProperty("golpe", out var hs) ? hs.GetSingle() : 1f;
                 map[p.Name] = new Entry(p.Value.GetProperty("arquivo").GetString() ?? "", p.Value.GetProperty("escala").GetSingle(),
-                    p.Value.TryGetProperty("desloc", out var d) ? d.GetSingle() : 0f, hands, grip, weaponScale);
+                    p.Value.TryGetProperty("desloc", out var d) ? d.GetSingle() : 0f, hands, grip, weaponScale, hitScale);
             }
             GD.Print($"[cs] {map.Count} modelos do Cyber Sleuth em {path}");
         }
@@ -80,6 +83,10 @@ public partial class CsSkin : Node3D
     Dictionary<string, Vector3> _grip = new();
     float _weaponScale = 1f;
     readonly Dictionary<Node3D, Vector3> _basePos = new();
+
+    /// <summary>Fator das caixas de golpe do jogador com o modelo do CS de <paramref name="key"/> ("golpe"); 1 sem modelo ou sem o campo.</summary>
+    public static float HitScale(string key) =>
+        Folder != null && Models.TryGetValue(key, out var m) && m.HitScale > 0 ? m.HitScale : 1f;
 
     /// <summary>Se houver modelo do CS para <paramref name="key"/>, esconde as malhas do DW4 e põe o do CS por cima.</summary>
     /// <param name="variant">NPCs: cada fase tem o próprio personagem.gltf (ndmw_0825_n_vmon_gltf) com animações de mesmo
