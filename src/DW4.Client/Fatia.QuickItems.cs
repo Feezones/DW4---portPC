@@ -51,11 +51,13 @@ public partial class Fatia
         if (_quickLayer != null) return;
         _quickLayer = new CanvasLayer { Layer = 3 };
         AddChild(_quickLayer);
-        // HUD: 5 caixas no pé da tela, centradas, na escala da altura da janela (base 720).
+        // HUD: 5 caixas na escala da altura da janela (base 720). PC: coluna em pé na lateral direita (pedido do usuário,
+        // 2026-11-06: "em pé fica melhor, senão fica muito poluído"). Celular: continua deitada no pé da tela.
         var holder = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
         holder.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         _quickLayer.AddChild(holder);
-        var bar = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        BoxContainer bar = Touch ? new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore }
+            : new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
         bar.AddThemeConstantOverride("separation", 6);
         holder.AddChild(bar);
         _quickHud = bar;
@@ -120,8 +122,12 @@ public partial class Fatia
         var hudSize = _quickHud.GetCombinedMinimumSize() * s;
         // Em 4:3 a barra centrada encostava no painel de status (canto de baixo à esquerda): começa depois dele.
         // Com a barra de técnicas no pé da tela (Fatia.TechBar.cs), a hotbar fica logo acima dela (o 14 deixa lugar às plaquinhas das teclas).
-        float techH = _techBar is { Visible: true } tb ? tb.GetCombinedMinimumSize().Y * s + 14 * s : 0;
-        _quickHud.Position = new Vector2(Math.Max((size.X - hudSize.X) / 2, 290 * s), size.Y - hudSize.Y - 10 * s - techH);
+        if (Touch)
+        {
+            float techH = _techBar is { Visible: true } tb ? tb.GetCombinedMinimumSize().Y * s + 14 * s : 0;
+            _quickHud.Position = new Vector2(Math.Max((size.X - hudSize.X) / 2, 290 * s), size.Y - hudSize.Y - 10 * s - techH);
+        }
+        else _quickHud.Position = new Vector2(size.X - hudSize.X - 16 * s, (size.Y - hudSize.Y) / 2);
         _quickHud.Visible = !InCutscene && !_menuOpen && !ShopOpen && !SubWindowOpen;
         var inv = _inventory;
         string key = string.Join(",", inv.QuickItems.Select(r => r >= 0 ? $"{r}:{inv.Disks(r)}" : "-"));
@@ -140,7 +146,9 @@ public partial class Fatia
         {
             w.Scale = new Vector2(s, s);
             var ws = w.GetCombinedMinimumSize() * s;
-            w.Position = new Vector2(size.X - ws.X - 24 * s, (size.Y - ws.Y) / 2);
+            // PC: a coluna dos atalhos está na direita, então a janela abre do lado esquerdo dela (dá para arrastar o disco até lá).
+            float right = Touch ? 24 * s : hudSize.X + 16 * s + 14 * s;
+            w.Position = new Vector2(size.X - ws.X - right, (size.Y - ws.Y) / 2);
         }
     }
 
@@ -190,7 +198,7 @@ public partial class Fatia
         }
         if (_quickWindow.FindChild("ajuda", true, false) is Label help)
             help.Text = Touch ? "Toque: usar   Arraste até um atalho lá embaixo: pôr nele"
-                : $"Clique ou {DeviceIcons.Of("confirmar")}: usar   1–5 com o mouse em cima ou arraste até a barra: pôr no atalho   {DeviceIcons.Of("cancelar")}: fechar";
+                : $"Clique ou {DeviceIcons.Of("confirmar")}: usar   1–5 com o mouse em cima ou arraste até a coluna à direita: pôr no atalho   {DeviceIcons.Of("cancelar")}: fechar";
         // Sem UseGameFont aqui: ele multiplica por 1,3 os tamanhos já pedidos a cada chamada, e a janela crescia a cada seta
         // (relato de 2026-11-02). O tema com a fonte do jogo vem da janela (posto uma vez no SetupQuickItems).
     }
