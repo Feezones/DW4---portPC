@@ -81,6 +81,20 @@ public partial class Fatia
         q.Exclude = [_player.GetRid()];
         q.CollisionMask = 1; // cenário e veículo; não as paredes só de inimigo (EnemyLayer) nem os parapeitos (EdgeLayer)
         var r = GetWorld3D().DirectSpaceState.IntersectRay(q);
+        // Tiro do jogador: passa pelas paredes invisíveis, pelo chão de veículo e pelas caixas (Fatia.ShotScenery.cs); depois de
+        // passar, segue o mesmo trecho para não furar uma parede de verdade logo atrás.
+        for (int pass = 0; s.FromPlayer && pass < 4 && r.Count > 0 && (Node)r["collider"] is StaticBody3D through; pass++)
+        {
+            var at = (Vector3)r["position"];
+            bool lands = PlayerShotLands(through, at);
+            if (DiagShot) GD.Print($"[tiro] {s.Name} {(lands ? "bateu em" : "passou por")} {through.Name} em {at.Round()}");
+            if (lands) break;
+            var next = at + (to - from).Normalized() * 0.05f;
+            if (next.DistanceSquaredTo(to) < 1e-4f || (to - next).Dot(to - from) <= 0) return;
+            q.From = next;
+            r = GetWorld3D().DirectSpaceState.IntersectRay(q);
+            if (pass == 3) return;
+        }
         if (r.Count == 0 || (Node)r["collider"] is not StaticBody3D body) return;
         s.HitLua = null;
         s.Hit = true; // bateu: a caixa dele não pega mais o jogador (do outro lado da parede)
@@ -259,13 +273,16 @@ public partial class Fatia
                 s.Root.RotateY(yawDeg * MathF.PI / 180);
                 s.Root.TranslateObjectLocal(new Vector3(local.X, local.Y, local.Z));
             }
+            // Tiro do jogador: o acerto em inimigo/objeto vem antes da batida (a caixa g_box tem corpo na camada 1 e o tiro batia nele
+            // sem dar dano). DIAG: DW4_DIAG_TIRO=1 mostra onde o tiro do jogador bateu ou passou.
+            if (s.FromPlayer && !s.Hit) CheckPlayerShotHit(s);
             CheckShotLand(s, before);
             string? la = s.LastAction; float lf = s.LastFrame;
             var me = s;
             FireStarters(s.Name, s.Seq.Action, s.Seq.ActionTime, ref la, ref lf, s.Root.GlobalTransform, s.Owner, s.OwnerName,
                 () => me.Seq.Erased ? null : me.Root.GlobalTransform, () => me.Seq.Erased ? null : me.Seq.Sequence);
             s.LastAction = la; s.LastFrame = lf;
-            if (!s.Hit) { if (s.FromPlayer) CheckPlayerShotHit(s); else CheckShotHit(s); }
+            if (!s.Hit && !s.FromPlayer) CheckShotHit(s);
             if (s.Lock && s.Source?.Invoke() is { } t) s.Root.GlobalTransform = new Transform3D(t.Basis, t * s.Offset);
             bool orphan = s.SeqDead && s.SourceSequence?.Invoke() != s.SourceSequenceAtSpawn;
             // A carga solta antes da hora (o SQ_ATCK1 para sem trocar de nome) ou parada (Stop): o brilho (b6) não fica no jogador.

@@ -185,7 +185,8 @@ public partial class Fatia : Node3D
         }
         scenery ??= Load("cenario", "cena.gltf");
         if (scenery != null) { ApplyAdditive(scenery); PaintUntextured(scenery, _fog?.Color ?? Colors.Black); AddChild(scenery); }
-        if (Load("colisao", "colisao.gltf") is { } collision) AddChild(MakeStaticBody(collision));
+        _sceneryRoot = scenery;
+        if (Load("colisao", "colisao.gltf") is { } collision) AddChild(_stageBody = MakeStaticBody(collision));
 
         _demo = OS.GetEnvironment("DW4_DEMO") == "1";
         _showBoxes = _demo;
