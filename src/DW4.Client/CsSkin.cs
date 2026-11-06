@@ -70,9 +70,13 @@ public partial class CsSkin : Node3D
     readonly Dictionary<Node3D, Vector3> _basePos = new();
 
     /// <summary>Se houver modelo do CS para <paramref name="key"/>, esconde as malhas do DW4 e põe o do CS por cima.</summary>
-    public static bool TryAttach(Node3D dw4Model, string key, AnimationPlayer? source)
+    /// <param name="variant">NPCs: cada fase tem o próprio personagem.gltf (ndmw_0825_n_vmon_gltf) com animações de mesmo
+    /// nome mas movimentos diferentes; "n_vmon@0825" no manifesto tem as animações daquele arquivo. Sem ela, usa "n_vmon".</param>
+    public static bool TryAttach(Node3D dw4Model, string key, AnimationPlayer? source, string? variant = null)
     {
-        if (Folder is not { } folder || !Models.TryGetValue(key, out var m)) return false;
+        if (Folder is not { } folder) return false;
+        if (variant != null && Models.TryGetValue($"{key}@{variant}", out _)) key = $"{key}@{variant}";
+        if (!Models.TryGetValue(key, out var m)) return false;
         if (!s_cache.TryGetValue(key, out var loaded))
         {
             var path = Path.Combine(folder, m.File);
