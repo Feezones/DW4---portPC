@@ -51,21 +51,29 @@ public partial class Fatia
     {
         var inv = _inventory;
         if (inv.ChipStage.Length == 0 || !inv.ChipStage.Equals(_stageName, StringComparison.OrdinalIgnoreCase)) return;
+        if (_chip is { Erased: false } old) old.SetSequence("SQ_EXIT"); // chip antigo desta fase (caiu de novo aqui)
+        _chip = MakeChip(new Vector3(inv.ChipPos[0], inv.ChipPos[1], inv.ChipPos[2]));
+    }
+
+    // Modelo do backup chip (g_000bcaps) num ponto, entrando com SQ_ENTR1P; também o cristal de um colega caído (Fatia.Spectator.cs).
+    WorldObject? MakeChip(Vector3 at)
+    {
         var dir = Path.Combine(DataPaths.Fases, "_comum", "g_000bcaps");
         if (HudData.Load(dir, _problems, "objetos.json", "falta <fases>\\_comum\\g_000bcaps (dw4 igb-objetos ndmw.afs 179 … g_000bcaps): backup chip sem modelo") is not { } data
-            || !data.Actors.TryGetValue("g_000bcaps", out int root)) return;
+            || !data.Actors.TryGetValue("g_000bcaps", out int root)) return null;
         var seqFile = GameFiles.EnumerateFiles(dir, "*_seq.json").FirstOrDefault();
         var json = seqFile != null ? GameFiles.ReadAllText(seqFile) : null;
         var actor = new HudActor(data, root, slot: 0);
-        _chip = new WorldObject
+        var chip = new WorldObject
         {
             Name = "g_000bcaps", Actor = actor,
             Seq = json != null ? new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)) : null,
         };
         AddChild(actor.Root);
-        actor.Root.Position = new Vector3(inv.ChipPos[0], inv.ChipPos[1], inv.ChipPos[2]);
-        _chip.SetSequence("SQ_ENTR1P");
-        _objects.Add(_chip);
+        actor.Root.Position = at;
+        chip.SetSequence("SQ_ENTR1P");
+        _objects.Add(chip);
+        return chip;
     }
 
     bool NearChip => _chip is { Erased: false } c && c.Actor.Root.GlobalPosition.DistanceTo(_player.GlobalPosition) <= ChipReach;
@@ -76,6 +84,7 @@ public partial class Fatia
     bool UseRaiseDisk(int row)
     {
         if (_db == null || !IsRaiseDisk(_db, row)) return false;
+        if (ReviveMateNear(row)) return true; // cristal de um colega caído no grupo (Fatia.Spectator.cs)
         if (!NearChip) { Toast("Use o Raise Disk perto do seu backup chip."); return true; }
         if (!_inventory.RemoveDisks(row, 1)) return true;
         var inv = _inventory;

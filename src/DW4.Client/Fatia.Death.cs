@@ -22,6 +22,7 @@ public partial class Fatia
     const float DeathDelay = 3f, GameOverDelay = 2f;
     const int DeathEntry = 0;
     bool _gameOver;
+    bool _chipDropped; // o espectador já deixou o cristal: o fim no lobby não guarda de novo (zeraria o chip)
     float _deathTimer = -1;
 
     // DEPURAÇÃO (só no build Debug): DW4_MORRER=5 zera o HP aos 5 s (conferir o fluxo da queda sem lutar).
@@ -30,11 +31,15 @@ public partial class Fatia
     void TickDeath(float dt)
     {
         if (_pf == null || _leaving) return;
+        TickArriveSpectating(); // seguiu o grupo até esta fase ainda caído (Fatia.Spectator.cs)
         if (OS.IsDebugBuild() && s_debugDeathClock >= 0 && float.TryParse(OS.GetEnvironment("DW4_MORRER"), out float dieAt) && (s_debugDeathClock += dt) >= dieAt) { s_debugDeathClock = -1; _hp = 0; _inventory.Bit += 123; } // +123 BIT para conferir o backup chip
-        if (_hp > 0) { _deathTimer = -1; _gameOver = false; return; }
+        if (_hp > 0) { _deathTimer = -1; _gameOver = false; _chipDropped = false; return; }
         if (_deathTimer < 0) { _deathTimer = 0; return; }
         _deathTimer += dt;
         if (_deathTimer < DeathDelay) return;
+        // Em grupo, com colega vivo na fase: modo espectador em vez do lobby (Fatia.Spectator.cs).
+        if (_spectating) { if (TickSpectating(dt)) return; _chipDropped = true; _deathTimer = DeathDelay; } // acabou: escurece e vai ao lobby
+        else if (!_gameOver && !_chipDropped && TryStartSpectating()) return;
         if (!_gameOver)
         {
             _gameOver = true;
@@ -47,7 +52,8 @@ public partial class Fatia
         _gameOver = false;
         bool field = !_stageName.StartsWith("stagML", StringComparison.OrdinalIgnoreCase);
         int lost = field ? _inventory.Bit : 0;
-        if (field) DropBackupChip(); // BIT e EXP perdida ficam no backup chip (Fatia.BackupChip.cs)
+        if (field && !_chipDropped) DropBackupChip(); // BIT e EXP perdida ficam no backup chip (Fatia.BackupChip.cs)
+        _chipDropped = false;
         _hp = _pf.MaxHp;
         _mp = _pf.MaxMp;
         ScriptLog($"caiu: {(field ? $"{lost} BIT no backup chip; " : "")}volta ao lobby");

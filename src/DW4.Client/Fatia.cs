@@ -291,6 +291,7 @@ public partial class Fatia : Node3D
         if (MenuInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (QuickItemInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (InteractInput(e)) { GetViewport().SetInputAsHandled(); return; }
+        if (SpectatorInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (e is InputEventKey { Pressed: true, Echo: false } k)
         {
             if (k.Keycode == Key.F1 && _cameraSets.Length > 1) _cameraSet = (_cameraSet + 1) % _cameraSets.Length;
@@ -505,7 +506,7 @@ public partial class Fatia : Node3D
     {
         while (_problemsLogged < _problems.Count) GD.Print($"[problema] {_problems[_problemsLogged++]}"); // também no log (passadas)
         DebugKeepAim();
-        var p = _player.GlobalPosition;
+        var p = SpectateFocus() ?? _player.GlobalPosition; // espectador: a câmera segue o colega (Fatia.Spectator.cs)
         if (_cameraDemo != null) { UpdateCameraDemo(dt); _cameraBlend.Reset(); }
         else if (_cameraSets.Length == 0)
         {
@@ -754,7 +755,8 @@ public partial class Fatia : Node3D
 
     // Sorteio do drop (0x802FCC48) na posição do inimigo morto. HIPÓTESE da fatia: só a lista do Numemon (nZ1nume1) é
     // conhecida; a ligação inimigo → lista de drop dos outros ainda não foi lida.
-    void DropItem(Enemy e) => DropAt(e.Gen, e.Body.GlobalPosition, e.Gen == null);
+    // Caído no grupo não ganha drop dos colegas (pedido do responsável, 2026-11-06).
+    void DropItem(Enemy e) { if (!(CoopOn && _hp <= 0)) DropAt(e.Gen, e.Body.GlobalPosition, e.Gen == null); }
 
     // FATO (drops.json da stag0101): os geradores de caixa, barril e caixote (GBOX-01, GBRL-01/02, GWCS-01..04) têm listas de drop
     // como os de inimigo (nZ1cont1, nZ1bit, nZ1reizu, nZ1gate, nZ1obje1…); o sorteio do gerador (0x802FCC44) vale para tudo que ele
