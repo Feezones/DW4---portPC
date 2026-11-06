@@ -335,6 +335,10 @@ public partial class Fatia
             };
         }
         if (!jump || end <= 0) return;
+        // O tempo da sequência (WCHECK "Action", quadro das caixas de golpe) segue a duração da fonte: o corte é só visual. FATO (e_mecha1
+        // NATK01): natk01 tem 0,417 s (12,5 quadros) e a caixa 70011 do ferrão liga no quadro 12; com a duração cortada (0,4 s = 12
+        // quadros) a ação acabava antes da caixa e o golpe nunca dava dano (relato do usuário na 0.6.20).
+        a.SetMeta(SourceLengthMeta, a.Length);
         for (int t = 0; t < a.GetTrackCount(); t++)
             for (int k = a.TrackGetKeyCount(t) - 1; k >= 0 && a.TrackGetKeyTime(t, k) > end + 1e-4; k--)
                 a.TrackRemoveKey(t, k);
@@ -367,8 +371,13 @@ public partial class Fatia
         return to != seq && e.Kind.Sequences.ContainsKey(to) ? to : null;
     }
 
+    const string SourceLengthMeta = "dw4_len";
+
     float? EnemyAnimFrames(Enemy e, string action) => ActionAnimations.Length(e.Kind.Actions, action, motion =>
-        e.Anim != null && e.Anim.HasAnimation(motion) ? (float)e.Anim.GetAnimation(motion).Length * SequenceRunner.FramesPerSecond : null);
+        e.Anim != null && e.Anim.HasAnimation(motion) ? SourceLength(e.Anim.GetAnimation(motion)) * SequenceRunner.FramesPerSecond : null);
+
+    // Duração da animação no jogo (antes do TrimWrapSample).
+    static float SourceLength(Animation a) => a.HasMeta(SourceLengthMeta) ? a.GetMeta(SourceLengthMeta).AsSingle() : (float)a.Length;
 
     bool Vulnerable(Enemy e) => !e.Dead && !e.Killed && !(e.Started && e.Runner?.Invincible == true);
 
