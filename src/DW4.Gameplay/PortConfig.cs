@@ -34,6 +34,9 @@ public sealed class PortConfig
     /// <summary>Campo de visão vertical das câmeras de jogo, em graus (45 = o do port até aqui; as de demonstração não mudam).</summary>
     public int Fov { get; set; } = DefaultFov;
     public const int DefaultFov = 45;
+    /// <summary>Tempo da passagem da câmera entre dois volumes, em segundos (0 = corte seco, como no original).</summary>
+    public float CameraBlend { get; set; } = DefaultCameraBlend;
+    public const float DefaultCameraBlend = 0.8f;
     /// <summary>Escala da resolução interna do 3D (0,5 a 2; abaixo de 1 usa FSR).</summary>
     public float RenderScale { get; set; } = 1f;
     /// <summary>Velocidade das cenas enquanto se segura a ação "acelerar" (2, 3 ou 4).</summary>
@@ -74,6 +77,7 @@ public sealed class PortConfig
         AntiAliasing = Math.Clamp(AntiAliasing, 0, 5);
         Shadows = Math.Clamp(Shadows, 0, 3);
         Fov = Math.Clamp(Fov, 35, 75);
+        CameraBlend = Math.Clamp(CameraBlend, 0f, 2f);
         RenderScale = Math.Clamp(RenderScale, 0.5f, 2f);
         FastForward = Math.Clamp(FastForward, 2, 4);
         Fullscreen = WindowMode == 1;
@@ -95,7 +99,7 @@ public sealed class PortConfig
         Put("camera", CameraMode); Put("luz", LightMode); Put("vibracao", Vibration); Put("idioma", Language); Put("controles", ControlsVersion);
         Section("grafico");
         Put("largura", Width); Put("altura", Height); Put("tela_cheia", Fullscreen); Put("modo", WindowMode); Put("vsync", VSync); Put("fps", FpsLimit); Put("escala", UiScale);
-        Put("aa", AntiAliasing); Put("sombras", Shadows); Put("fov", Fov); Put("resolucao_interna", RenderScale); Put("acelerar", FastForward);
+        Put("aa", AntiAliasing); Put("sombras", Shadows); Put("fov", Fov); Put("camera_suave", CameraBlend); Put("resolucao_interna", RenderScale); Put("acelerar", FastForward);
         Section("som");
         Put("geral", MasterVolume); Put("musica", MusicVolume); Put("efeitos", EffectsVolume); Put("vozes", VoiceVolume);
         foreach (var device in new[] { InputBindings.Keyboard, InputBindings.Pad })
@@ -136,6 +140,7 @@ public sealed class PortConfig
                 case ("grafico", "aa"): c.AntiAliasing = Int(value, c.AntiAliasing); break;
                 case ("grafico", "sombras"): c.Shadows = Int(value, c.Shadows); break;
                 case ("grafico", "fov"): c.Fov = Int(value, c.Fov); break;
+                case ("grafico", "camera_suave"): c.CameraBlend = Float(value, c.CameraBlend); break;
                 case ("grafico", "resolucao_interna"): c.RenderScale = Float(value, c.RenderScale); break;
                 case ("grafico", "acelerar"): c.FastForward = Int(value, c.FastForward); break;
                 case ("som", "vozes"): c.VoiceVolume = Float(value, c.VoiceVolume); break;
