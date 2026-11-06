@@ -16,6 +16,8 @@ public enum CoopType : byte
     EnemyKilled = 5,
     EnemyRemoved = 6,
     Wipeout = 7,
+    Revive = 8,
+    StageGo = 9,
 }
 
 /// <summary>Anfitrião → grupo: inimigo novo (linha da tabela enemy, posição, giro, HP e o gerador que o gerou, "" = nenhum).</summary>
@@ -51,6 +53,18 @@ public sealed record EnemyRemoved(int NetId);
 /// <summary>Anfitrião → grupo: a onda do gerador foi vencida; cada um roda o _callLua dele (portas, próxima onda).</summary>
 public sealed record Wipeout(string Generator);
 
+/// <summary>
+/// Membro → grupo: usei um Raise Disk no cristal (backup chip) de <see cref="TargetId"/>, que está caído no modo espectador.
+/// DECISÃO DO PORT (pedido do responsável, 2026-11-06): o disco é de quem revive; o BIT e a EXP do chip voltam ao caído.
+/// </summary>
+public sealed record Revive(int TargetId);
+
+/// <summary>
+/// Membro vivo → grupo, antes de trocar de fase: para onde vai (fase e entrada). Quem está caído no modo espectador vai junto
+/// quando não sobra ninguém vivo na fase (DECISÃO DO PORT, 2026-11-06).
+/// </summary>
+public sealed record StageGo(string Stage, int Entry);
+
 public static class CoopCodec
 {
     public static byte[] Write(object msg)
@@ -69,6 +83,8 @@ public static class CoopCodec
             case EnemyKilled x: w.Write((byte)CoopType.EnemyKilled); w.Write(x.NetId); w.Write(x.KillerId); w.Write(x.Drop); break;
             case EnemyRemoved x: w.Write((byte)CoopType.EnemyRemoved); w.Write(x.NetId); break;
             case Wipeout x: w.Write((byte)CoopType.Wipeout); Str(w, x.Generator); break;
+            case Revive x: w.Write((byte)CoopType.Revive); w.Write(x.TargetId); break;
+            case StageGo x: w.Write((byte)CoopType.StageGo); Str(w, x.Stage); w.Write(x.Entry); break;
             default: throw new ArgumentException("mensagem do grupo desconhecida: " + msg.GetType().Name);
         }
         return ms.ToArray();
@@ -92,6 +108,8 @@ public static class CoopCodec
                 CoopType.EnemyKilled => new EnemyKilled(r.ReadInt32(), r.ReadInt32(), r.ReadBoolean()),
                 CoopType.EnemyRemoved => new EnemyRemoved(r.ReadInt32()),
                 CoopType.Wipeout => new Wipeout(Str(r)),
+                CoopType.Revive => new Revive(r.ReadInt32()),
+                CoopType.StageGo => new StageGo(Str(r), r.ReadInt32()),
                 _ => throw new FormatException($"tipo do grupo {(byte)type}"),
             };
             if (r.BaseStream.Position != data.Length) throw new FormatException("sobra no pacote do grupo");

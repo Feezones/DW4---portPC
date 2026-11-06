@@ -21,6 +21,9 @@ public partial class Fatia
         public string ModelName = "";
         public string? WeaponName; // null = ainda sem arma posta
         public BoneAttachment3D? WeaponRight, WeaponLeft;
+        public WorldObject? Chip; // cristal do colega caído (Fatia.Spectator.cs)
+        public double DeadSince = -1;
+        public bool ReviveSent;
     }
 
     readonly Dictionary<int, Avatar> _avatars = [];
@@ -31,13 +34,14 @@ public partial class Fatia
         Online.Result += OnInteractResult;
         Online.Prompt += OnSocialPrompt;
         Online.Coop += OnCoop;
+        Online.Coop += OnSpectatorCoop;
         Online.KickedOut += OnKicked;
         Session.SaveFailed += OnSaveFailed;
         // Com vaga, fechar a janela espera a gravação no servidor (CloseRequested).
         GetTree().AutoAcceptQuit = !Session.Active;
         TreeExiting += () =>
         {
-            Online.Notice -= OnlineNotice; Online.Result -= OnInteractResult; Online.Prompt -= OnSocialPrompt; Online.Coop -= OnCoop;
+            Online.Notice -= OnlineNotice; Online.Result -= OnInteractResult; Online.Prompt -= OnSocialPrompt; Online.Coop -= OnCoop; Online.Coop -= OnSpectatorCoop;
             Online.KickedOut -= OnKicked; Session.SaveFailed -= OnSaveFailed;
             GetTree().AutoAcceptQuit = true;
             Ram.Ninzu = 1;
@@ -58,9 +62,11 @@ public partial class Fatia
     {
         TickCoop(dt); // o Online.Poll é feito no começo do _PhysicsProcess
         TickPartyHud();
+        TickReviverDebug(dt);
         foreach (var id in _avatars.Keys.ToList())
             if (!Online.Remotes.TryGetValue(id, out var r) || !r.State.Stage.Equals(_stageName, StringComparison.OrdinalIgnoreCase))
             {
+                RemoveMateChip(_avatars[id]);
                 _avatars[id].Root.QueueFree();
                 _avatars.Remove(id);
             }
@@ -82,6 +88,7 @@ public partial class Fatia
             if (a.Anim != null && r.State.Anim.Length > 0 && a.Anim.CurrentAnimation != r.State.Anim && a.Anim.HasAnimation(r.State.Anim))
                 a.Anim.Play(r.State.Anim, 0.13f);
             a.Plate?.Set(r.Character, r.State.Level);
+            UpdateMateChip(a, r);
         }
     }
 

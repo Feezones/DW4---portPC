@@ -763,6 +763,7 @@ public partial class Fatia
     /// <summary>Caixa de golpe (centro no mundo, tamanho nos eixos de quem bate) contra o corpo do jogador.</summary>
     bool HitsPlayer(Vector3 c, NVector3 size, float attackerYaw)
     {
+        if (_spectating) return false; // virou cristal: nada acerta
         var g = _player.GlobalPosition;
         return _playerBody.Count > 0
             ? HitBody.Hits(N(c), size, attackerYaw, N(g), _move.Facing, 1, _playerBody)

@@ -198,9 +198,11 @@ public partial class Fatia
     {
         var best = _player.GlobalPosition;
         if (!CoopOn) return best;
-        float d = from.DistanceSquaredTo(best);
+        // Caído (cristal) não é alvo: nem eu nem o colega (Fatia.Spectator.cs).
+        float d = _hp > 0 ? from.DistanceSquaredTo(best) : float.MaxValue;
         foreach (var id in _coopMembers)
-            if (_avatars.TryGetValue(id, out var a) && from.DistanceSquaredTo(a.Root.GlobalPosition) is var dd && dd < d)
+            if (_avatars.TryGetValue(id, out var a) && Online.Remotes.TryGetValue(id, out var r) && (r.State.Hp > 0 || r.State.MaxHp == 0)
+                && from.DistanceSquaredTo(a.Root.GlobalPosition) is var dd && dd < d)
                 (best, d) = (a.Root.GlobalPosition, dd);
         return best;
     }

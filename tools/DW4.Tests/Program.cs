@@ -3521,7 +3521,8 @@ Test("Online: chat de verdade (UDP local, DevApi: geral, amizade e grupo pelo F,
 Test("Online: pacotes do combate em grupo (ida e volta, limites)", () =>
 {
     object[] all = [new DW4.Net.EnemySpawn(7, 12, 1, 2, 3, 0.5f, 340, "GENE-03"), new DW4.Net.EnemySeq(7, "SQ_ATCK1", "common"),
-        new DW4.Net.EnemyHit(7, 55, "SQ_SDMG"), new DW4.Net.EnemyKilled(7, 2, false), new DW4.Net.EnemyRemoved(7), new DW4.Net.Wipeout("GENE-03")];
+        new DW4.Net.EnemyHit(7, 55, "SQ_SDMG"), new DW4.Net.EnemyKilled(7, 2, false), new DW4.Net.EnemyRemoved(7), new DW4.Net.Wipeout("GENE-03"),
+        new DW4.Net.Revive(9), new DW4.Net.StageGo("stag0102", 1)];
     foreach (var m in all) Equal(m, DW4.Net.CoopCodec.Read(DW4.Net.CoopCodec.Write(m)), m.GetType().Name);
     var poses = Enumerable.Range(0, 45).Select(i => new DW4.Net.EnemyPose(i, i, 0, 0, 0, 100, 12)).ToArray();
     var sync = (DW4.Net.EnemySync)DW4.Net.CoopCodec.Read(DW4.Net.CoopCodec.Write(new DW4.Net.EnemySync(poses)));
