@@ -419,16 +419,20 @@ public partial class Fatia : Node3D
                 var to = npc.Actor.Root.GlobalPosition - _player.GlobalPosition;
                 if (to.X * to.X + to.Z * to.Z > 0.01f) _move.Face(MathF.Atan2(to.X, to.Z));
             }
-            else if (attacking && !_demo && !_bot && !_usingPad && !DataPaths.Mobile && MouseGround() is { } aim) // o bot mira sozinho
-            {
-                // DECISÃO DO PORT PARA PC (não é do original): o golpe sai na direção do cursor do mouse.
-                var to = aim - _player.GlobalPosition;
-                if (to.X * to.X + to.Z * to.Z > 0.01f) _move.Face(MathF.Atan2(to.X, to.Z));
-            }
+            else if (attacking) AimAtCursor();
         }
-        else if (attacking) _runner!.Tick(dt, attackPressed && !wasWaza, attackDown && !wasWaza);
+        else if (attacking)
+        {
+            // Golpe seguinte do combo (nova ação por um toque, ou outra sequência SQ_ATCK*): mira no cursor de novo.
+            string seq = _runner!.Sequence; int serial = _runner.ActionSerial;
+            _runner.Tick(dt, attackPressed && !wasWaza, attackDown && !wasWaza);
+            if (_runner.Running && _runner.Sequence.StartsWith("SQ_ATCK", StringComparison.Ordinal)
+                && (_runner.Sequence != seq || (attackPressed && !wasWaza && _runner.ActionSerial != serial)))
+                AimAtCursor();
+        }
         // O golpe carregado: o SQ_ATCK1 termina em JUMP "SQ_ATCKTM" quando o ataque é solto depois de carregar.
-        if (attacking && _runner is { Running: false, Next: SequenceRunner.ChargedSequence }) _runner.Start(SequenceRunner.ChargedSequence, StyleOf(SequenceRunner.ChargedSequence));
+        if (attacking && _runner is { Running: false, Next: SequenceRunner.ChargedSequence } && _runner.Start(SequenceRunner.ChargedSequence, StyleOf(SequenceRunner.ChargedSequence)))
+            AimAtCursor();
         if (!attacking && TryStartAir(jumpPressed)) attacking = true;
         _techKey = -1;
         _panel.Tick(dt);
@@ -546,6 +550,15 @@ public partial class Fatia : Node3D
             (_problems.Count > 0 ? "\n" + string.Join("\n", _problems) : "");
     }
 
+    // DECISÃO DO PORT PARA PC (não é do original): o golpe sai na direção do cursor do mouse, no início de cada golpe (o primeiro,
+    // os seguintes do combo e o carregado). Não vale no controle, no celular, no bot (mira sozinho) nem no demo.
+    void AimAtCursor()
+    {
+        if (_demo || _bot || _usingPad || DataPaths.Mobile || MouseGround() is not { } aim) return;
+        var to = aim - _player.GlobalPosition;
+        if (to.X * to.X + to.Z * to.Z > 0.01f) _move.Face(MathF.Atan2(to.X, to.Z));
+    }
+
     // Ponto do chão (na altura do personagem) sob o cursor do mouse.
     Vector3? MouseGround()
     {
@@ -572,7 +585,11 @@ public partial class Fatia : Node3D
         _anim != null && _anim.HasAnimation(motion) ? (float)_anim.GetAnimation(motion).Length * SequenceRunner.FramesPerSecond : null);
 
     // Caixa local (x lateral, y altura, z à frente) no mundo, girada pela direção do personagem.
-    Vector3 BoxCenter(HitBox h) => _player.GlobalPosition + new Vector3(h.Position.X, h.Position.Y, h.Position.Z).Rotated(Vector3.Up, _move.Facing);
+    // Com o modelo do CS maior (teste local, "golpe" no cs_modelos.json), a caixa de golpe do jogador cresce junto: posição e tamanho.
+    // A sonda de conversa (Fatia.Recorder.cs) fica como no jogo (scaled: false).
+    float HitScale => CsSkin.HitScale(PlayerModel);
+    Vector3 BoxCenter(HitBox h, bool scaled = true) =>
+        _player.GlobalPosition + new Vector3(h.Position.X, h.Position.Y, h.Position.Z).Rotated(Vector3.Up, _move.Facing) * (scaled ? HitScale : 1f);
 
     void LoadCombat()
     {
@@ -952,7 +969,7 @@ public partial class Fatia : Node3D
     {
         var active = new List<(Vector3 Center, float Yaw, HitBox Box)>();
         if (_showBoxes && _runner?.Running == true)
-            active.AddRange(_runner.ActiveHitBoxes().Select(h => (BoxCenter(h), _move.Facing, h)));
+            active.AddRange(_runner.ActiveHitBoxes().Select(h => (BoxCenter(h), _move.Facing, h with { Size = h.Size * HitScale })));
         if (_showBoxes)
             foreach (var e in _enemies.Where(e => e.Started && e.Runner?.Running == true))
                 active.AddRange(e.Runner!.ActiveHitBoxes().Where(h => h.Type / 10000 == 7).Select(h => (EnemyBoxCenter(e, h), e.Yaw, h)));

@@ -811,8 +811,9 @@ public partial class Fatia
             var p = e.Body.GlobalPosition;
             // FATO (igb-seq do p_vmon): o golpe carregado (SQ_ATCKTM, bloco "gun": giro com pulo e 6 caixas) usa HITBOX 20000; o
             // x_100gunk01 da KATCG3 é só o efeito (sem caixa). Antes só o 10000 valia e o golpe carregado não acertava nada.
-            foreach (var h in _runner.ActiveHitBoxes().Where(h => h.Type is 10000 or 20000))
+            foreach (var h0 in _runner.ActiveHitBoxes().Where(h => h.Type is 10000 or 20000))
             {
+                var h = h0 with { Size = h0.Size * HitScale }; // modelo do CS maior: caixa maior (Fatia.cs BoxCenter)
                 // Caixa de dano contra as caixas do corpo do inimigo (beModelCtrlInfoDataHit, nos eixos e na escala dele). Sem elas no
                 // json, a caixa pela malha (HitHalf/HitHeight, mínimo a do Numemon 8 × 14 × 8) em eixos do mundo.
                 var c = BoxCenter(h);

@@ -433,8 +433,9 @@ public partial class Fatia
     void CheckObjectHits()
     {
         if (_runner == null || _stage == null) return;
-        foreach (var h in _runner.ActiveHitBoxes().Where(h => h.Type is 10000 or 20000))
+        foreach (var h0 in _runner.ActiveHitBoxes().Where(h => h.Type is 10000 or 20000))
         {
+            var h = h0 with { Size = h0.Size * HitScale }; // modelo do CS maior: caixa maior (Fatia.cs BoxCenter)
             var c = BoxCenter(h);
             BreakMissiles(c, new Vector3(h.Size.X, h.Size.Y, h.Size.Z)); // Fatia.Missile.cs
             foreach (var o in _objects.Where(o => o.Body != null && !o.Dead && !_objectsHitThisAction.Contains(o)).ToList())
