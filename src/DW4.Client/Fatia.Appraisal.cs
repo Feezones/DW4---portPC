@@ -20,7 +20,7 @@ public partial class Fatia
         return true;
     }
 
-    void OpenAppraisal() => Menu("SQ_AWINOPEN",
+    void OpenAppraisal() => Menu(
         $"{TextKey("mswkPRG1400", "Appraiser")}\n{TextKey("mswkPRG1450", "Select the Item to be appraised.")}  " +
         $"Nenhum item desconhecido na pasta ({AppraisalCost} BITS por avaliação).",
         [(TextKey("mswkPRG1457", "End appraisal."), CloseSaveWindow)]);

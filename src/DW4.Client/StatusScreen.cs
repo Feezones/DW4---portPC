@@ -70,8 +70,11 @@ public partial class StatusScreen : Control
     // chave mswkPRG, porque cada fase tem o pacote de textos em outra ordem (FATO: no lobby o índice 26 é uma fala de NPC).
     static readonly Dictionary<int, string> Keys = new() { [11] = "0000", [12] = "0001", [13] = "0002", [14] = "0003", [15] = "0004", [16] = "0005", [17] = "0006", [18] = "0007", [19] = "0008", [20] = "0009", [21] = "0010", [22] = "0011", [23] = "0012", [24] = "0013", [25] = "0014", [26] = "0015", [27] = "0016", [28] = "0017", [29] = "0031", [30] = "0032", [31] = "0033", [32] = "0034", [33] = "0035", [34] = "0036", [35] = "0037", [36] = "0039", [37] = "0043", [38] = "0044", [39] = "0045", [40] = "0046", [41] = "0047", [42] = "0048", [43] = "0049", [44] = "0061", [45] = "0062", [46] = "0063", [47] = "0064", [48] = "0085", [49] = "0065", [50] = "0066", [51] = "0067", [52] = "0073", [53] = "0075", [54] = "0077", [55] = "0078", [56] = "0079", [57] = "0080", [58] = "0081", [59] = "0082", [60] = "0083", [61] = "0084", [62] = "0087", [63] = "0088", [64] = "0091", [65] = "0093", [66] = "0094", [67] = "0096", [68] = "0098", [69] = "0099", [70] = "0100", [71] = "0101", [72] = "0102", [73] = "0103", [74] = "0104", [75] = "0105", [76] = "0106", [77] = "0107", [78] = "0108", [79] = "0109", [80] = "0111", [81] = "0112", [82] = "0113", [83] = "0114", [84] = "0115", [85] = "0116", [86] = "0117", [87] = "0118", [88] = "0119", [89] = "0120", [90] = "0124", [91] = "0127", [92] = "0128", [93] = "0130", [94] = "0131", [95] = "0132", [96] = "0133", [97] = "0134", [98] = "0135", [99] = "0136", [100] = "0137", [101] = "0138", [102] = "0139", [103] = "0140", [104] = "0141", [105] = "0142", [106] = "0143", [107] = "0144", [108] = "0145", [109] = "0146", [110] = "0147", [111] = "0148", [112] = "0149" };
 
-    string T(int index, string fallback) =>
-        (Keys.TryGetValue(index, out var key) && _c.TextByKey("mswkPRG" + key) is { Length: > 0 } t ? t : fallback).Replace("\r\n", "\n").Trim();
+    string T(int index, string fallback) => TextOf(_c.TextByKey, index, fallback);
+
+    /// <summary>Texto do menu pelo índice da dng1 (as lojas usam os mesmos nomes de atributo e skill).</summary>
+    internal static string TextOf(Func<string, string?> byKey, int index, string fallback) =>
+        (Keys.TryGetValue(index, out var key) && byKey("mswkPRG" + key) is { Length: > 0 } t ? t : fallback).Replace("\r\n", "\n").Trim();
 
     // Os textos de ajuda começam com ícones do GameCube (≡∇, ≪, ≫): a barra de ajuda põe o botão do aparelho no lugar.
     string Help(int index, string fallback) => new(T(index, fallback).SkipWhile(ch => !char.IsAsciiLetter(ch)).ToArray());
@@ -715,27 +718,34 @@ public partial class StatusScreen : Control
     // Descrição do item: nome, texto da tabela (TXT, " / " = quebra de linha) e os números que decidem o uso.
     Control ItemInfo(ItemRef it)
     {
-        var db = _c.Db;
         var box = new VBoxContainer();
         box.AddThemeConstantOverride("separation", 2);
         box.AddChild(Text(ItemName(it), 21, Gold));
-        if (!db.Contains(it.Table)) return box;
-        var t = db[it.Table];
-        string txt = Desc(t.Text(it.Row, "TXT"));
-        int pockets = EquipRules.Pockets(db, it.Table, it.Row);
-        if (txt.EndsWith("ポケットのかず:", StringComparison.Ordinal)) txt += $" {pockets}";
-        string extra = it.Table switch
-        {
-            "weapon" => $"{T(14, "Strength")} {t.Int(it.Row, "TSUYOSA")}   {SkillName(t.Int(it.Row, "SKILL"))} {t.Int(it.Row, "SKILLPOINT")}   Delay {t.Int(it.Row, "DELAY")}",
-            "armor1" => $"{T(15, "Defense")} {t.Int(it.Row, "MAMORI")}   HP +{t.Int(it.Row, "MAXHP")}   Lv {t.Int(it.Row, "LVPOINT")}",
-            "armor2" => $"Lv {t.Int(it.Row, "LVPOINT")}",
-            "abChip" => $"{(t.Int(it.Row, "WU") != 0 ? "∈" : "")}{(t.Int(it.Row, "BLUEAB") != 0 ? "∋" : "")}   ¶ {(t.Int(it.Row, "NEXTX") is var x and >= 0 ? x.ToString() : "-")}",
-            "conItem" => $"HP {t.Int(it.Row, "HP")}   MP {t.Int(it.Row, "MP")}",
-            _ => "",
-        };
+        var (txt, extra) = ItemText(_c.Db, it, T);
         if (txt.Length > 0) box.AddChild(InfoText(txt, 18));
         if (extra.Length > 0) box.AddChild(Text(extra, 18, Lilac));
         return box;
+    }
+
+    /// <summary>Texto do item (TXT, uma linha por "/") e a linha de números (força, defesa, skill, pockets…). Serve às lojas também.</summary>
+    internal static (string Text, string Numbers) ItemText(GameTables db, ItemRef it, Func<int, string, string> t)
+    {
+        if (!db.Contains(it.Table)) return ("", "");
+        var tb = db[it.Table];
+        string txt = Desc(tb.Text(it.Row, "TXT"));
+        int pockets = EquipRules.Pockets(db, it.Table, it.Row);
+        if (txt.EndsWith("ポケットのかず:", StringComparison.Ordinal)) txt += $" {pockets}";
+        string Skill(int k) => k is >= 0 and < 9 ? t(71 + k, SkillNames[k]) : "-";
+        string extra = it.Table switch
+        {
+            "weapon" => $"{t(14, "Strength")} {tb.Int(it.Row, "TSUYOSA")}   {Skill(tb.Int(it.Row, "SKILL"))} {tb.Int(it.Row, "SKILLPOINT")}   Delay {tb.Int(it.Row, "DELAY")}",
+            "armor1" => $"{t(15, "Defense")} {tb.Int(it.Row, "MAMORI")}   HP +{tb.Int(it.Row, "MAXHP")}   Lv {tb.Int(it.Row, "LVPOINT")}",
+            "armor2" => $"Lv {tb.Int(it.Row, "LVPOINT")}",
+            "abChip" => $"{(tb.Int(it.Row, "WU") != 0 ? "∈" : "")}{(tb.Int(it.Row, "BLUEAB") != 0 ? "∋" : "")}   ¶ {(tb.Int(it.Row, "NEXTX") is var x and >= 0 ? x.ToString() : "-")}",
+            "conItem" => $"HP {tb.Int(it.Row, "HP")}   MP {tb.Int(it.Row, "MP")}",
+            _ => "",
+        };
+        return (txt, extra);
     }
 
     // ---------- Folder ----------

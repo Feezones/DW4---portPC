@@ -13,7 +13,7 @@ namespace DW4.Client;
 ///    liberadas e o nível de cada;
 ///  · a escolha (0x8039CA4C) faz CURRENT2BASE e BASE2CURRENT (cada forma com nível, EXP, skills e UPCNT próprios), tira armaduras e
 ///    chips e re-escolhe a arma. Sem custo nem condição além de a forma estar liberada.
-/// PORT: lista na j_shwin (SQ_SINKAONOPEN, HIPÓTESE; caixa da Godot sem a pasta loja); o modelo novo entra recarregando a fase no mesmo ponto. A arma da fatia continua a
+/// PORT: lista no <see cref="MenuScreen"/> (DECISÃO DO PORT, 2026-11-06; antes a j_shwin SQ_SINKAONOPEN); o modelo novo entra recarregando a fase no mesmo ponto. A arma da fatia continua a
 /// w_sword01 (DECISÃO DA FATIA); só as armaduras e os chips saem.
 /// Modelos das formas: &lt;fatia&gt;\formas\&lt;MODEL_NAME&gt; (dw4 igb-gltf/igb-seq ndmw.afs 850..865); o Guilmon também aceita a pasta antiga
 /// &lt;fatia&gt;\guilmon.
@@ -45,15 +45,30 @@ public partial class Fatia
         StoreProgress();
         var forms = Ram.Players[0].Forms;
         var shinka = _db["shinka"];
-        var options = Enumerable.Range(0, Evolution.Forms).Where(d => forms[d].Unlocked).Select(d =>
+        var rows = Enumerable.Range(0, Evolution.Forms).Where(d => forms[d].Unlocked).Select(d =>
         {
-            string model = shinka.Text(d, "MODEL_NAME");
+            string model = shinka.Text(d, "MODEL_NAME"), name = shinka.Text(d, "NAME");
             bool here = d == forms.Current, drawable = HasPlayerModel(_common, model);
-            string label = $"{shinka.Text(d, "NAME")}" + (here ? " (atual)" : drawable ? "" : " (sem modelo)") + $"\tnv {forms[d].Level}";
-            return (label, (Action)(() => { if (!here && drawable) Evolve(d, model); else CloseSaveWindow(); }));
+            var info = new MenuInfo { Title = name, Lines = [new MenuLine($"Nível {forms[d].Level}", MenuTone.Info)] };
+            info.Lines.Add(here ? new MenuLine("É a forma de agora.", MenuTone.Dim)
+                : drawable ? new MenuLine("Cada forma tem nível, EXP e skills próprios. Armaduras e chips saem; a arma mais forte que ela usa é equipada.")
+                : new MenuLine("Esta forma ainda não tem modelo no port.", MenuTone.Warn));
+            return new MenuRow
+            {
+                Label = name + (here ? " (atual)" : ""), Value = $"Lv {forms[d].Level}", Short = !drawable, Color = here ? new Color(0.62f, 0.62f, 0.75f) : null,
+                Info = () => info, Action = !here && drawable ? TextKey("mswkPRG1251", "Digivolve Digimon.") : "",
+                Pick = !here && drawable ? () => Evolve(d, model) : null,
+            };
         }).ToList();
-        options.Add(("Voltar", CloseSaveWindow));
-        Menu("SQ_SINKAONOPEN", "Digievolução", options.ToArray());
+        rows.Add(new MenuRow { Label = TextKey("mswkPRG1259", "Return to the previous screen."), Pick = CloseSaveWindow });
+        ShowList(new MenuPage
+        {
+            Title = TextKey("mswkPRG1200", "Digi-Lab"),
+            Columns = ("", "", "Nível"),
+            Rows = rows,
+            Back = CloseSaveWindow,
+            Cursor = Math.Max(0, rows.FindIndex(r => r.Label.EndsWith(" (atual)", StringComparison.Ordinal))),
+        });
     }
 
     void Evolve(int digimonNo, string model)
