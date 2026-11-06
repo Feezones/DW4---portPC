@@ -561,6 +561,30 @@ int IgbDump(string path, string which, string? cls)
     return 0;
 }
 
+// Arte das cartas do Guardião das Cartas (area.afs #621, imagens cardNN.dds 128x128 formato 14) em <pasta>/cardNN.png.
+int CartasArte(string areaPath, int index, string outDir)
+{
+    using var afs = AfsArchive.Open(areaPath);
+    using var ms = new MemoryStream();
+    afs.CopyEntry(afs.Entries[index], ms);
+    var data = ms.ToArray();
+    var scene = IgbScene.Read(IgbFile.Read(data), data);
+    Directory.CreateDirectory(outDir);
+    int n = 0;
+    foreach (var img in scene.Images.Values)
+    {
+        var name = Path.GetFileNameWithoutExtension(img.Name ?? "");
+        if (!name.StartsWith("card", StringComparison.Ordinal) || img.PixelFormat != 14) continue;
+        var rgba = IgbScene.DecodeBlockCompressed(img, false);
+        if (rgba == null) continue;
+        using var fs = File.Create(Path.Combine(outDir, name + ".png"));
+        Png.WriteRgba(fs, img.Width, img.Height, rgba);
+        n++;
+    }
+    Console.WriteLine($"{n} cartas gravadas em {outDir}");
+    return n > 0 ? 0 : 1;
+}
+
 // Exporta um item IGB de um AFS para OBJ/MTL + PNG numa pasta de trabalho fora de qualquer repositório Git.
 // É uma conversão de amostra para inspeção visual; o relatório lista o que não foi decodificado.
 int IgbExport(string path, string which, string outDir)
@@ -2195,6 +2219,8 @@ int FaseExportar(string ndmwPath, string areaPath, string stage, string outRoot)
             // Tabela das cartas (area.afs #621: RARE, KAKURITSU, NAME…; o sorteio do B. Pack usa), uma vez ao lado das fases.
             var cardDir = Path.Combine(outRoot, "cartas");
             if (!Directory.Exists(cardDir)) Step("cartas", () => IgbDb(areaPath, "621", cardDir));
+            // Arte das cartas (mesmo #621: card00 = verso, card01..card50 = linhas 0..49; DXT no layout "pc", conferido na tela).
+            if (!File.Exists(Path.Combine(cardDir, "card01.png"))) Step("cartas/arte", () => CartasArte(areaPath, 621, cardDir));
         }
         // Janelas das lojas da Central Area (j_shback, j_shbase, j_shwin com as variantes SQ_AWINOPEN…SQ_JUNKOPEN; FATO: só no #825,
         // stagml12). As cartas j_shcardNN ficam de fora.
