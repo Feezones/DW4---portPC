@@ -16,10 +16,11 @@ namespace DW4.Client;
 public partial class CsSkin : Node3D
 {
     // forma/inimigo/NPC do DW4 → arquivo, escala e mãos, lidos de <pasta>/cs_modelos.json (gerado pelos scripts do teste,
-    // fora do repositório): { "p_agumon": { "arquivo": "p_agumon.glb", "escala": 5.01, "maos": { "RArm04": "J_hand_r" } } }.
+    // fora do repositório): { "p_agumon": { "arquivo": "p_agumon.glb", "escala": 5.01, "desloc": 0.0, "maos": { "RArm04": "J_hand_r" } } }.
+    // desloc: altura (unidades do modelo DW4) somada para os pés do CS ficarem onde estão os do DW4 na pose parada.
     // Mãos: ossos onde o jogo prende a arma (Fatia.Weapon: RArm04/LArm04) → osso equivalente do CS. A arma continua presa ao
     // osso do DW4 (mesma rotação), só é empurrada até a mão do modelo do CS, que tem outro tamanho de braço.
-    sealed record Entry(string File, float Scale, Dictionary<string, string> Hands);
+    sealed record Entry(string File, float Scale, float Lift, Dictionary<string, string> Hands);
     static Dictionary<string, Entry>? s_models;
     static Dictionary<string, Entry> Models => s_models ??= ReadManifest();
 
@@ -37,7 +38,8 @@ public partial class CsSkin : Node3D
                 var hands = new Dictionary<string, string>();
                 if (p.Value.TryGetProperty("maos", out var h))
                     foreach (var x in h.EnumerateObject()) hands[x.Name] = x.Value.GetString() ?? "";
-                map[p.Name] = new Entry(p.Value.GetProperty("arquivo").GetString() ?? "", p.Value.GetProperty("escala").GetSingle(), hands);
+                map[p.Name] = new Entry(p.Value.GetProperty("arquivo").GetString() ?? "", p.Value.GetProperty("escala").GetSingle(),
+                    p.Value.TryGetProperty("desloc", out var d) ? d.GetSingle() : 0f, hands);
             }
             GD.Print($"[cs] {map.Count} modelos do Cyber Sleuth em {path}");
         }
@@ -72,7 +74,7 @@ public partial class CsSkin : Node3D
         }
         if (loaded is not { } l || l.Doc.GenerateScene(l.State) is not Node3D scene) return false;
         foreach (var mi in Find<MeshInstance3D>(dw4Model)) mi.Visible = false; // a arma entra depois e continua visível
-        var skin = new CsSkin { Name = "CsSkin", _source = source, Scale = Vector3.One * m.Scale };
+        var skin = new CsSkin { Name = "CsSkin", _source = source, Scale = Vector3.One * m.Scale, Position = new Vector3(0, m.Lift, 0) };
         skin.AddChild(scene);
         skin._mine = Find<AnimationPlayer>(scene).FirstOrDefault();
         skin._dwSkeleton = Find<Skeleton3D>(dw4Model).FirstOrDefault();
