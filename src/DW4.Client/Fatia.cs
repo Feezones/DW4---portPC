@@ -585,11 +585,10 @@ public partial class Fatia : Node3D
         _anim != null && _anim.HasAnimation(motion) ? (float)_anim.GetAnimation(motion).Length * SequenceRunner.FramesPerSecond : null);
 
     // Caixa local (x lateral, y altura, z à frente) no mundo, girada pela direção do personagem.
-    // Com o modelo do CS maior (teste local, "golpe" no cs_modelos.json), a caixa de golpe do jogador cresce junto: posição e tamanho.
-    // A sonda de conversa (Fatia.Recorder.cs) fica como no jogo (scaled: false).
+    // Com o modelo do CS maior (teste local, "golpe" no cs_modelos.json), a caixa de golpe do jogador cresce só no tamanho; a
+    // posição é a do seq.json (empurrar o arco para fora fazia errar o inimigo colado).
     float HitScale => CsSkin.HitScale(PlayerModel);
-    Vector3 BoxCenter(HitBox h, bool scaled = true) =>
-        _player.GlobalPosition + new Vector3(h.Position.X, h.Position.Y, h.Position.Z).Rotated(Vector3.Up, _move.Facing) * (scaled ? HitScale : 1f);
+    Vector3 BoxCenter(HitBox h) => _player.GlobalPosition + new Vector3(h.Position.X, h.Position.Y, h.Position.Z).Rotated(Vector3.Up, _move.Facing);
 
     void LoadCombat()
     {

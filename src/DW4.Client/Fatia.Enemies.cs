@@ -801,6 +801,43 @@ public partial class Fatia
         }
     }
 
+    enum SwingHit { None, Box, Sweep }
+
+    // DECISÃO DO PORT (o teste nativo do jogo não foi lido): o golpe do jogador acerta pela caixa do seq.json ou, se ela não tocar,
+    // pela varredura do centro do jogador (na altura da caixa) até o centro dela, com o mesmo tamanho de caixa. As caixas formam um
+    // arco a ~13 do jogador e o inimigo colado (Goblimon, corpo 4 × 4) ficava dentro do arco sem ser tocado. O que está atrás não
+    // entra: a varredura só vai do jogador até a caixa, na frente dele.
+    SwingHit PlayerSwing(Vector3 c, HitBox h, Func<Vector3, bool> touches)
+    {
+        if (touches(c)) return SwingHit.Box;
+        var o = new Vector3(_player.GlobalPosition.X, c.Y, _player.GlobalPosition.Z);
+        float len = o.DistanceTo(c);
+        if (len < 1e-3f) return SwingHit.None;
+        // Começa meia caixa à frente do jogador (a borda de trás da caixa no centro dele), para não pegar quem está atrás.
+        float start = Math.Min(h.Size.Z / 2, len), step = Math.Max(0.5f, Math.Min(h.Size.X, h.Size.Z) / 2); // passos de meia caixa
+        int n = (int)MathF.Ceiling((len - start) / step);
+        for (int i = 0; i < n; i++)
+            if (touches(o.Lerp(c, (start + i * (len - start) / n) / len))) return SwingHit.Sweep;
+        return SwingHit.None;
+    }
+
+    // DECISÃO DO PORT: no golpe do jogador o corpo do alvo tem meia largura mínima 3 em X e Z (unidades do mundo), para corpos
+    // finos como o do Goblimon (−2..2) não sumirem perto do modelo maior. O golpe dos inimigos no jogador não muda.
+    const float MinBodyHalf = 3f;
+
+    static List<(NVector3 Min, NVector3 Max)> FloorBody(IReadOnlyList<(NVector3 Min, NVector3 Max)> body, float scale)
+    {
+        float m = MinBodyHalf / Math.Max(scale, 1e-4f); // as caixas do corpo estão no espaço do alvo (antes da escala)
+        var list = new List<(NVector3, NVector3)>(body.Count);
+        foreach (var (min, max) in body)
+        {
+            var mid = (min + max) / 2;
+            float hx = Math.Max((max.X - min.X) / 2, m), hz = Math.Max((max.Z - min.Z) / 2, m);
+            list.Add((new NVector3(mid.X - hx, min.Y, mid.Z - hz), new NVector3(mid.X + hx, max.Y, mid.Z + hz)));
+        }
+        return list;
+    }
+
     // Golpe físico do jogador contra cada inimigo (um acerto por inimigo por ação).
     void CheckHits()
     {
@@ -817,10 +854,14 @@ public partial class Fatia
                 // Caixa de dano contra as caixas do corpo do inimigo (beModelCtrlInfoDataHit, nos eixos e na escala dele). Sem elas no
                 // json, a caixa pela malha (HitHalf/HitHeight, mínimo a do Numemon 8 × 14 × 8) em eixos do mundo.
                 var c = BoxCenter(h);
-                bool touch = e.Kind.BodyBoxes.Count > 0
-                    ? HitBody.Hits(N(c), h.Size, _move.Facing, N(p), e.Yaw, e.Model?.Scale.X ?? 1, e.Kind.BodyBoxes)
-                    : Math.Abs(c.X - p.X) <= h.Size.X / 2 + e.HitHalf && Math.Abs(c.Z - p.Z) <= h.Size.Z / 2 + e.HitHalf && c.Y + h.Size.Y / 2 >= p.Y && c.Y - h.Size.Y / 2 <= p.Y + e.HitHeight;
-                if (DiagNpc && c.DistanceTo(p) < 40) GD.Print($"[golpe] {e.Kind.Model}: caixa {c.Round()} {h.Size} contra {p.Round()} (caixas do corpo {e.Kind.BodyBoxes.Count}, escala {e.Model?.Scale.X ?? 1:0.##}) → {(touch ? "acerta" : "erra")}");
+                float scale = e.Model?.Scale.X ?? 1;
+                var body = e.Kind.BodyBoxes.Count > 0 ? FloorBody(e.Kind.BodyBoxes, scale) : null;
+                float half = Math.Max(e.HitHalf, MinBodyHalf);
+                var hit = PlayerSwing(c, h, at => body != null
+                    ? HitBody.Hits(N(at), h.Size, _move.Facing, N(p), e.Yaw, scale, body)
+                    : Math.Abs(at.X - p.X) <= h.Size.X / 2 + half && Math.Abs(at.Z - p.Z) <= h.Size.Z / 2 + half && at.Y + h.Size.Y / 2 >= p.Y && at.Y - h.Size.Y / 2 <= p.Y + e.HitHeight);
+                bool touch = hit != SwingHit.None;
+                if (DiagNpc && c.DistanceTo(p) < 40) GD.Print($"[golpe] {e.Kind.Model}: caixa {c.Round()} {h.Size} contra {p.Round()} (caixas do corpo {e.Kind.BodyBoxes.Count}, escala {scale:0.##}) → {(hit == SwingHit.Box ? "acerta (caixa)" : hit == SwingHit.Sweep ? "acerta (varredura)" : "erra")}");
                 if (!touch) continue;
                 _enemiesHitThisAction.Add(e);
                 _hits++;

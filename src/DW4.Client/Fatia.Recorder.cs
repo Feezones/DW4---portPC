@@ -63,7 +63,7 @@ public partial class Fatia
         if (_runner.TakeTalkProbe() is { } tp) probes.Add(tp);
         foreach (var h in probes)
         {
-            var c = BoxCenter(h, scaled: false);
+            var c = BoxCenter(h);
             foreach (var o in _objects.Where(o => o.Name.StartsWith("n_", StringComparison.Ordinal) && !o.Dead).ToList())
             {
                 var p = o.Actor.Root.GlobalPosition;
