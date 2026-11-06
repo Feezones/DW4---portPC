@@ -67,6 +67,7 @@ public partial class Fatia
         if (!_artMenuOpen) return;
         if (DiagNpc) GD.Print("[menu] fechou");
         _artMenuOpen = false;
+        CloseCardScreen();
         if (!ShopOpen) CloseListScreen();
     }
 
