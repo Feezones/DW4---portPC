@@ -58,10 +58,10 @@ public partial class CsSkin : Node3D
     public override void _Process(double delta)
     {
         if (_source == null || _mine == null) return;
-        var name = _source.CurrentAnimation;
-        if (string.IsNullOrEmpty(name) && _source.AssignedAnimation is { Length: > 0 } assigned) name = assigned;
-        if (string.IsNullOrEmpty(name) || !_mine.HasAnimation(name)) return;
-        if (_mine.AssignedAnimation != name) { _mine.Play(name); _mine.Pause(); }
+        string name = _source.CurrentAnimation.ToString(); // StringName na Godot 4.7
+        if (name.Length == 0) name = _source.AssignedAnimation.ToString();
+        if (name.Length == 0 || !_mine.HasAnimation(name)) return;
+        if (_mine.AssignedAnimation.ToString() != name) { _mine.Play(name); _mine.Pause(); }
         _mine.Seek(_source.CurrentAnimationPosition, true);
     }
 
