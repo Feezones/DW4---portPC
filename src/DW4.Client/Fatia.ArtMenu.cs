@@ -2,122 +2,188 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Godot;
+using DW4.Gameplay;
 
 namespace DW4.Client;
 
 /// <summary>
-/// Menus do banco, X-data e LABO com a arte das lojas (j_shback, j_shbase, j_shwin) e a fonte do jogo.
-/// FATO: o j_shwin tem as variantes SQ_BITPUTINOPEN/SQ_BITDRAWOUTOPEN, SQ_XDATAITEMOPEN/SQ_XDATASTATUSOPEN e
-/// SQ_SINKAONOPEN/SQ_SINKAOFFOPEN, e as classes beNDMWShopCtrlEditBit, XdataChip, Evolve as usam (fase5-lojas.md).
-/// HIPÓTESE: a lista fica no mesmo lugar da loja (12 linhas de 16 px). DESCONHECIDO: o texto de cada variante no original.
-/// Sem a pasta loja, <see cref="Menu"/> cai na caixa da Godot (SaveWindow).
-/// Controles: cima/baixo escolhe, ataque confirma, esquerda/direita mexe no valor da linha (quando tem) ou troca a página,
-/// K/Backspace/B volta.
+/// Telas de lista das lojas, do banco, do X-data, do Digi-Lab e do avaliador: todas no <see cref="MenuScreen"/> (layout próprio no
+/// estilo do menu do TAB, DECISÃO DO PORT de 2026-11-06). Antes eram a janela j_shwin do jogo (variantes SQ_AWINOPEN, SQ_BWINOPEN,
+/// SQ_XDATA*, SQ_SINKA*, SQ_BITPUTINOPEN…; fase5-lojas.md) com 11 linhas por página, só de teclado, e o usuário achou ruim de usar.
+/// As regras (estoque, preços, banco, X-data, troca de forma) não mudaram.
 /// </summary>
 public partial class Fatia
 {
-    /// <summary>Linha do menu: rótulo, valor à direita, escolha e ajuste com esquerda/direita (−1/+1).</summary>
-    sealed record ArtRow(string Label, string Value, Action? Pick, Action<int>? Adjust = null);
+    MenuScreen? _listScreen;
+    CanvasLayer? _listLayer;
+    bool _artMenuOpen, _listLockedPad;
 
-    sealed class ArtMenuState
-    {
-        public string Variant = "", Title = "", Help = "";
-        public List<ArtRow> Rows = [];
-        public int Cursor, Page;
-        public Action? Back;
-    }
+    bool SubWindowOpen => _saveLayer != null || _artMenuOpen;
 
-    ArtMenuState? _artMenu;
-    readonly HashSet<string> _artHeld = [];
-
-    bool SubWindowOpen => _saveLayer != null || _artMenu != null;
-
-    /// <summary>Janela de escolhas: com a arte, primeira linha do texto vira o título e o resto a ajuda; sem ela, SaveWindow.</summary>
-    void Menu(string variant, string text, (string Label, Action Pick)[] options, Action? back = null)
-    {
-        if (!ShopArtReady()) { SaveWindow(text, options); return; }
-        var lines = text.Replace("\r\n", "\n").Split('\n');
-        // Reaberto pela própria escolha (mesma variante e mesmas linhas): o cursor fica onde estava.
-        int keep = _artMenu is { } old && old.Variant == variant && old.Rows.Count == options.Length ? old.Page * ShopPage + old.Cursor : 0;
-        OpenArtMenu(variant, lines[0], string.Join("  ", lines.Skip(1).Where(l => l.Length > 0)),
-            options.Select(o => { var p = o.Label.Split('\t', 2); return new ArtRow(p[0], p.Length > 1 ? p[1] : "", o.Pick); }).ToList(),
-            back ?? options.LastOrDefault().Pick, keep);
-    }
-
-    void OpenArtMenu(string variant, string title, string help, List<ArtRow> rows, Action? back, int cursor = 0)
+    /// <summary>Mostra a tela (abre na primeira vez; depois só troca o conteúdo).</summary>
+    void ShowList(MenuPage page)
     {
         if (_saveLayer != null) { _saveLayer.QueueFree(); _saveLayer = null; }
-        // DECISÃO DO PORT: o ¶ é o ícone de X-Data da fonte do jogo; antes de uma palavra ("Guardião dos ¶ Dados", "¶ Data: 30") ele
-        // aparecia solto e parecia um caractere estranho. Escreve "X-" nesses casos e deixa o ícone só como moeda ("120 ¶").
-        static string Xd(string s) => s.Replace("¶ ", "X-");
-        (title, help) = (Xd(title), Xd(help));
-        rows = rows.Select(r => r with { Label = Xd(r.Label) }).ToList();
-        bool reopen = _artMenu != null; // trocar de menu não fecha a arte (a variante igual não recomeça a abertura)
-        _padEnabled = false;
-        _artMenu = new ArtMenuState { Variant = variant, Title = title, Help = help, Rows = rows, Back = back ?? CloseSaveWindow };
-        _artMenu.Page = Math.Clamp(cursor, 0, Math.Max(0, rows.Count - 1)) / ShopPage;
-        _artMenu.Cursor = Math.Clamp(cursor, 0, Math.Max(0, rows.Count - 1)) % ShopPage;
-        if (!reopen)
+        if (!ShopOpen) _artMenuOpen = true;
+        if (_padEnabled) { _padEnabled = false; _listLockedPad = true; }
+        if (_listScreen == null)
         {
-            _artHeld.Clear();
-            foreach (var k in ShopKeys()) _artHeld.Add(k); // o botão que abriu ainda pode estar apertado
-            (_shopLeftHeld, _shopRightHeld, _shopMouseLast) = (true, true, _mousePos); // idem o clique
+            _listLayer ??= new CanvasLayer { Layer = 18 }; // por cima do HUD (atalhos, técnicas, vida)
+            if (!_listLayer.IsInsideTree()) AddChild(_listLayer);
+            _listScreen = new MenuScreen(GameFont());
+            _listScreen.CloseRequested += () => { if (ShopOpen) CloseShop(); else CloseSaveWindow(); };
+            _listLayer.AddChild(_listScreen);
         }
-        DrawArtMenu();
+        // Atalhos de item e técnicas no pé da tela ficavam por baixo da ajuda (o quadro deles só se atualiza com a fase andando).
+        if (_quickHud != null) _quickHud.Visible = false;
+        if (_techBar != null) _techBar.Visible = false;
+        if (DiagNpc) GD.Print($"[menu] {page.Title} aba {page.Tab}: {page.Rows.Count} linhas, cursor {page.Cursor} {page.Message}");
+        _listScreen.Show(page);
+    }
+
+    void CloseListScreen()
+    {
+        if (_listScreen == null) return;
+        _listScreen.QueueFree();
+        _listScreen = null;
+        if (_listLockedPad) { _padEnabled = true; _listLockedPad = false; }
+    }
+
+    /// <summary>Janela de escolhas simples: primeira linha do texto vira o título, o resto o quadro da direita; "\t" separa o valor.</summary>
+    void Menu(string text, (string Label, Action Pick)[] options, Action? back = null)
+    {
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        ShowList(new MenuPage
+        {
+            Title = lines[0],
+            Intro = new MenuInfo { Lines = lines.Skip(1).Where(l => l.Length > 0).Select(l => new MenuLine(l)).ToList() },
+            Rows = options.Select(o => { var p = o.Label.Split('\t', 2); return new MenuRow { Label = p[0], Value = p.Length > 1 ? p[1] : "", Pick = o.Pick }; }).ToList(),
+            Back = back ?? options.LastOrDefault().Pick,
+        });
     }
 
     void CloseArtMenu()
     {
-        if (_artMenu == null) return;
-        if (DiagNpc) GD.Print($"[menu] fechou {_artMenu.Variant}");
-        _artMenu = null;
-        _padEnabled = true;
-        if (!ShopOpen) UpdateShopArt("", [], "", "", 0);
+        if (!_artMenuOpen) return;
+        if (DiagNpc) GD.Print("[menu] fechou");
+        _artMenuOpen = false;
+        if (!ShopOpen) CloseListScreen();
     }
 
-    void DrawArtMenu()
-    {
-        if (_artMenu is not { } m) return;
-        var lines = Enumerable.Range(m.Page * ShopPage, ShopPage)
-            .Select(i => i < m.Rows.Count ? (m.Rows[i].Value.Length > 0 ? $"{m.Rows[i].Label}\t{m.Rows[i].Value}" : m.Rows[i].Label) : "").ToList();
-        int pages = Math.Max(1, (m.Rows.Count + ShopPage - 1) / ShopPage);
-        UpdateShopArt(m.Variant, lines, pages > 1 ? $"{m.Title}   {m.Page + 1}/{pages}" : m.Title, m.Help, m.Cursor);
-    }
+    /// <summary>Menu aberto: o jogador fica parado (a tela lê as teclas sozinha).</summary>
+    bool TickArtMenu() => _artMenuOpen;
 
-    /// <summary>Menu aberto: consome a entrada e segura o resto do quadro (como a loja).</summary>
-    bool TickArtMenu()
+    // ---------- textos e quadro de item compartilhados pelas telas ----------
+
+    string StatusText(int index, string fallback) => StatusScreen.TextOf(k => TextKey(k, "") is { Length: > 0 } t ? t : null, index, fallback);
+
+    string ItemName(ItemRef i) => _db != null && _db.Contains(i.Table) ? _db[i.Table].Text(i.Row, "NAME") : $"{i.Table} {i.Row}";
+
+    /// <summary>Itens iguais juntos (na ordem em que aparecem) com a quantidade.</summary>
+    static List<(ItemRef Item, int Count)> Grouped(IEnumerable<ItemRef> items) =>
+        items.GroupBy(i => i).Select(g => (g.Key, g.Count())).ToList();
+
+    /// <summary>Quadro do item: nome, texto, números e, para arma e armadura, os atributos se equipar no lugar do atual.</summary>
+    /// <summary>
+    /// O que o item pede e se o jogador tem (FATO, GameTables.CanEquipWeapon/CanEquipArmor e EquipRules.ChipFits): arma = o Digimon
+    /// no SOUBI e a skill da arma (SKILL) com pelo menos SKILLPOINT; armadura = nível ≥ LVPOINT; chip = lugar na arma (WU) ou na
+    /// armadura ∋ (BLUEAB).
+    /// </summary>
+    static readonly string[] SkillNamesEn = ["Blunt", "Slash", "Stab", "Bash", "Shot", "Crush", "Blast", "Heal", "Force"];
+
+    List<(string Text, bool Ok)> Requirements(ItemRef it)
     {
-        if (_artMenu is not { } m) return false;
-        // O que estava apertado no quadro anterior vem ANTES de atualizar: antes o conjunto era trocado primeiro e nenhuma tecla contava
-        // como apertada (banco, X-data e Digi-Lab abriam e não respondiam; só o Esc, tratado fora daqui, fechava).
-        var now = ShopKeys().ToHashSet();
-        var before = _artHeld.ToHashSet();
-        bool Pressed(string k) => now.Contains(k) && !before.Contains(k);
-        _artHeld.Clear();
-        foreach (var k in now) _artHeld.Add(k);
-        int count = m.Rows.Count, pages = Math.Max(1, (count + ShopPage - 1) / ShopPage);
-        int inPage = Math.Max(1, Math.Min(ShopPage, count - m.Page * ShopPage));
-        int index = m.Page * ShopPage + m.Cursor;
-        var row = index < count ? m.Rows[index] : null;
-        if (DiagNpc && now.Any(k => !before.Contains(k))) GD.Print($"[menu] {m.Variant}: {string.Join(",", now.Where(k => !before.Contains(k)))} na linha {index} ({row?.Label})");
-        // Mouse: a linha sob o cursor vira a escolhida; o clique esquerdo já chega como "ok" (ataque = clique), mas fora das linhas não
-        // escolhe nada; o direito volta.
-        var (hover, click, back) = ShopMouse(m.Variant, inPage);
-        if (hover >= 0) { m.Cursor = hover; index = m.Page * ShopPage + hover; row = index < count ? m.Rows[index] : null; }
-        bool mouseLeft = Input.IsMouseButtonPressed(MouseButton.Left);
-        if (back || Pressed("close")) { m.Back?.Invoke(); return true; }
-        if (click && row?.Pick != null) { row.Pick(); return true; }
-        if (mouseLeft) now.Remove("ok");
-        if (Pressed("up")) m.Cursor = (m.Cursor + inPage - 1) % inPage;
-        if (Pressed("down")) m.Cursor = (m.Cursor + 1) % inPage;
-        foreach (var (key, dir) in new[] { ("left", -1), ("right", 1) })
+        var list = new List<(string, bool)>();
+        if (_db == null || !_db.Contains(it.Table)) return list;
+        var t = _db[it.Table];
+        string me = _shinkaRow >= 0 ? _db["shinka"].Text(_shinkaRow, "NAME") : "seu Digimon";
+        switch (it.Table)
         {
-            if (!Pressed(key)) continue;
-            if (row?.Adjust != null) row.Adjust(dir);
-            else if (pages > 1) { m.Page = (m.Page + pages + dir) % pages; m.Cursor = Math.Min(m.Cursor, Math.Min(ShopPage, count - m.Page * ShopPage) - 1); }
+            case "weapon":
+            {
+                int soubi = t.Int(it.Row, "SOUBI");
+                bool mine = _shinkaRow >= 0 && (soubi & (1 << _shinkaRow)) != 0;
+                var who = Enumerable.Range(0, Math.Min(16, _db["shinka"].Rows)).Where(d => (soubi & (1 << d)) != 0).Select(d => _db["shinka"].Text(d, "NAME")).ToList();
+                list.Add((mine ? $"Serve para {me}" : $"Não serve para {me}" + (who.Count is > 0 and <= 4 ? $" (só {string.Join(", ", who)})" : ""), mine));
+                int k = t.Int(it.Row, "SKILL"), need = t.Int(it.Row, "SKILLPOINT"), have = k >= 0 && k < _skill.Length ? _skill[k] : 0;
+                string skill = k is >= 0 and < 9 ? StatusText(71 + k, SkillNamesEn[k]) : "skill";
+                list.Add(($"Skill {skill} {need} (você tem {have})", have >= need));
+                break;
+            }
+            case "armor1" or "armor2":
+            {
+                int need = t.Int(it.Row, "LVPOINT");
+                list.Add(($"Nível {need} (você é {_level})", _level >= need));
+                break;
+            }
+            case "abChip":
+            {
+                bool wu = t.Int(it.Row, "WU") != 0, blue = t.Int(it.Row, "BLUEAB") != 0;
+                list.Add((wu && blue ? "Vai na arma ou na armadura ∋" : wu ? "Vai só na arma" : blue ? "Vai só na armadura ∋" : "Não encaixa em nada", wu || blue));
+                break;
+            }
         }
-        if (Pressed("ok") && !mouseLeft && row?.Pick != null) { row.Pick(); return true; } // a escolha pode abrir outro menu
-        if (_artMenu == m) DrawArtMenu();
-        return true;
+        return list;
+    }
+
+    /// <summary>Marca da linha da loja: diferença do atributo principal para o equipado (arma: força; armadura: defesa) ou o que falta.</summary>
+    (string Tag, Color? Color) ItemTag(ItemRef it)
+    {
+        if (_db == null) return ("", null);
+        var miss = Requirements(it).Where(r => !r.Ok).Select(r => r.Text).FirstOrDefault();
+        if (miss != null)
+        {
+            var t = _db[it.Table];
+            int k = it.Table == "weapon" ? t.Int(it.Row, "SKILL") : -1;
+            string tag = miss.StartsWith("Não serve", StringComparison.Ordinal) ? "não serve"
+                : it.Table == "weapon" && k is >= 0 and < 9 ? $"{StatusText(71 + k, SkillNamesEn[k])} {t.Int(it.Row, "SKILLPOINT")}"
+                : it.Table is "armor1" or "armor2" ? $"Lv {t.Int(it.Row, "LVPOINT")}" : "falta";
+            return (tag, new Color(1f, 0.45f, 0.45f));
+        }
+        if (it.Table is not ("weapon" or "armor1" or "armor2") || _equip == null || _pf == null) return ("", null);
+        var after = it.Table == "weapon" ? EquipRules.SetSocket(_db, _equip, 0, it.Row)
+            : EquipRules.SetArmor(_db, _equip, it.Table == "armor1" ? EquipSlot.Armor : EquipSlot.Sub, it.Row);
+        if (after == null) return ("", null);
+        var then = PreviewFighter(after);
+        int d = it.Table == "weapon" ? then.Tsuyosa - _pf.Tsuyosa : it.Table == "armor1" ? then.Mamori - _pf.Mamori
+            : then.Tsuyosa + then.Mamori + then.Kashikosa + then.Seishin + then.Subayasa - (_pf.Tsuyosa + _pf.Mamori + _pf.Kashikosa + _pf.Seishin + _pf.Subayasa);
+        return d == 0 ? ("=", new Color(0.62f, 0.62f, 0.75f)) : ($"{(d > 0 ? "+" : "")}{d}", d > 0 ? new Color(0.45f, 1f, 0.55f) : new Color(1f, 0.45f, 0.45f));
+    }
+
+    MenuInfo ItemMenuInfo(ItemRef it, params MenuLine[] extra)
+    {
+        var info = new MenuInfo { Title = ItemName(it) };
+        if (_db == null) return info;
+        var (txt, nums) = StatusScreen.ItemText(_db, it, StatusText);
+        if (txt.Length > 0) info.Lines.Add(new MenuLine(txt));
+        if (nums.Length > 0) info.Lines.Add(new MenuLine(nums, MenuTone.Info));
+        info.Lines.AddRange(extra);
+        info.Requirements.AddRange(Requirements(it));
+        if (it.Table is "weapon" or "armor1" or "armor2" && _equip != null && _pf != null)
+        {
+            var after = it.Table == "weapon" ? EquipRules.SetSocket(_db, _equip, 0, it.Row)
+                : EquipRules.SetArmor(_db, _equip, it.Table == "armor1" ? EquipSlot.Armor : EquipSlot.Sub, it.Row);
+            if (after != null)
+            {
+                var now = _pf;
+                var then = PreviewFighter(after);
+                (string, int, int)[] stats =
+                [
+                    (StatusText(14, "Strength"), now.Tsuyosa, then.Tsuyosa), (StatusText(15, "Defense"), now.Mamori, then.Mamori),
+                    (StatusText(16, "Wisdom"), now.Kashikosa, then.Kashikosa), (StatusText(17, "Spirit"), now.Seishin, then.Seishin),
+                    (StatusText(18, "Speed"), now.Subayasa, then.Subayasa), ("HP", now.MaxHp, then.MaxHp), ("MP", now.MaxMp, then.MaxMp),
+                    (StatusText(19, "⊂Resist"), now.Res(0), then.Res(0)), (StatusText(20, "⊃Resist"), now.Res(1), then.Res(1)),
+                    (StatusText(21, "∪Resist"), now.Res(2), then.Res(2)), (StatusText(22, "∩Resist"), now.Res(3), then.Res(3)),
+                ];
+                var changed = stats.Where(s => s.Item2 != s.Item3).ToList();
+                var slot = it.Table == "weapon" ? EquipRules.SocketRows(_equip)[0] : it.Table == "armor1" ? _equip.Armor1Row : _equip.Armor2Row;
+                string current = slot >= 0 ? ItemName(new ItemRef(it.Table, slot)) : "nada equipado";
+                int up = changed.Count(s => s.Item3 > s.Item2), down = changed.Count(s => s.Item3 < s.Item2);
+                string verdict = changed.Count == 0 ? "igual" : down == 0 ? "MELHOR" : up == 0 ? "PIOR" : "melhor em uns, pior em outros";
+                info.CompareTitle = changed.Count == 0 ? $"Igual ao que você usa ({current})." : $"Comparado com {current}: {verdict}";
+                info.Stats.AddRange(changed.Take(8));
+            }
+        }
+        return info;
     }
 }

@@ -9,28 +9,23 @@ using DW4.Script.Be;
 namespace DW4.Client;
 
 /// <summary>
-/// Lojas de equipamento da Central Area (SUBWND GENERATE "WPU/I&lt;p&gt;", "APU", "CHIP", "JUNK"). O estoque e a compra/venda
-/// seguem o executável (ShopStock, ShopTrade; docs/gameplay/fase5-lojas.md). DECISÃO DA FATIA: as janelas do jogo (j_shwin…)
-/// ainda não foram exportadas; a loja é uma caixa da Godot (com a fonte do jogo) com 12 linhas por página, como a do jogo.
-/// Controles: cima/baixo escolhe, esquerda/direita troca a página, ataque compra/vende, V ou Y alterna comprar/vender,
-/// K/Backspace/B fecha.
+/// Lojas de equipamento da Central Area (SUBWND GENERATE "WPU/I&lt;p&gt;", "APU", "CHIP", "JUNK", "DISK"). O estoque e a compra/venda
+/// seguem o executável (ShopStock, ShopTrade; docs/gameplay/fase5-lojas.md). A tela é o <see cref="MenuScreen"/> (DECISÃO DO PORT,
+/// 2026-11-06): abas Comprar/Vender, itens iguais numa linha só, quadro com o texto do item e a comparação com o equipado,
+/// quantidade com esquerda/direita ou − e +. FATO: o estoque do jogo tem 36 posições com repetidos e vazios ("----") e a compra não
+/// tira do estoque, então juntar os repetidos não muda o que dá para comprar.
 /// </summary>
 public partial class Fatia
 {
     // FATO (0x804E16B0): nomes dos tipos de SUBWND, índice = tipo.
     static readonly string[] SubWndNames = ["STATUS", "XDATA", "LABO", "BANK", "CNOS", "DISK", "WPU", "APU", "CHIP", "JUNK", "CARD"];
-    // Linhas por página: as 11 linhas da arte do j_shwin (a 12ª caía em cima da ajuda), a cada 19 unidades.
-    const int ShopPage = 11;
-    const float ShopRowStep = 19;
 
     GameTables? _shopDb;
-    int _shopKind = -1, _shopCursor, _shopPageNo;
-    bool _shopSelling;
+    int _shopKind = -1, _shopCursor, _shopQty = 1;
+    bool _shopSelling, _shopMessageBad;
+    ItemRef? _shopQtyItem;
     List<ItemRef?> _shopItems = [];
     string _shopMessage = "";
-    readonly HashSet<string> _shopHeld = [];
-    PanelContainer? _shopPanel;
-    Label? _shopLabel;
 
     bool ShopOpen => _shopKind >= 0;
 
@@ -57,141 +52,147 @@ public partial class Fatia
         var t = db[table];
         _shopItems = row >= 0 && row < t.Rows ? ShopStock.Items(kind, col => t.Int(row, col)) : [];
         _shopKind = kind;
-        _shopCursor = _shopPageNo = 0;
+        _shopCursor = 0;
         _shopSelling = false;
-        _shopMessage = row < 0 ? "Nada à venda ainda." : "";
-        _shopHeld.Clear();
-        (_shopLeftHeld, _shopRightHeld, _shopMouseLast) = (true, true, _mousePos);
-        foreach (var k in ShopKeys()) _shopHeld.Add(k); // o botão que abriu a loja ainda pode estar apertado
+        (_shopMessage, _shopMessageBad) = row < 0 ? ("Nada à venda ainda.", true) : ("", false);
         ScriptLog($"loja {type}: {table} linha {row}, {_shopItems.Count(i => i != null)} itens");
-        UpdateShop();
+        ShowShop();
         return true;
     }
 
     double? QueryShop(BeMessage m) => m.Class == "SUBWND" && m.Command == "ISRUN" ? (ShopOpen || SubWindowOpen ? 1 : 0) : null;
 
-    IEnumerable<string> ShopKeys()
+    /// <summary>Loja aberta: o jogador fica parado (a tela lê as teclas sozinha).</summary>
+    bool TickShop() => ShopOpen;
+
+    void CloseShop()
     {
-        if (ChatOpen) yield break;
-        // Pelo mapa de controles; o direcional do controle também anda (nas telas não troca técnica).
-        if (PortInput.Down("cima") || Input.IsJoyButtonPressed(0, JoyButton.DpadUp)) yield return "up";
-        if (PortInput.Down("baixo") || Input.IsJoyButtonPressed(0, JoyButton.DpadDown)) yield return "down";
-        if (PortInput.Down("esquerda") || Input.IsJoyButtonPressed(0, JoyButton.DpadLeft)) yield return "left";
-        if (PortInput.Down("direita") || Input.IsJoyButtonPressed(0, JoyButton.DpadRight)) yield return "right";
-        if (PortInput.Down("confirmar") || PortInput.Down("ataque")) yield return "ok";
-        if (Input.IsKeyPressed(Key.V) || Input.IsJoyButtonPressed(0, JoyButton.Y)) yield return "mode";
-        if (PortInput.Down("cancelar")) yield return "close";
+        if (!ShopOpen) return;
+        ScriptLog("loja fechada");
+        _shopKind = -1;
+        if (!_artMenuOpen) CloseListScreen();
     }
 
-    /// <summary>Loja aberta: consome a entrada e segura o resto do quadro (como o menu de status).</summary>
-    bool TickShop()
+    // FATO (textos mswkPRG1500..1900 da Central Area): "Disk Shop", "Weapon Shop", "Armor Shop", "Chip Shop", "Junk Shop".
+    string ShopTitle => _shopKind switch
     {
-        if (!ShopOpen) return false;
-        var now = ShopKeys().ToHashSet();
-        bool Pressed(string k) => now.Contains(k) && !_shopHeld.Contains(k);
-        if (DiagNpc && now.Any(k => !_shopHeld.Contains(k))) GD.Print($"[loja] {string.Join(",", now.Where(k => !_shopHeld.Contains(k)))} (seguradas {string.Join(",", _shopHeld)})");
-        var list = ShopList();
-        int pages = Math.Max(1, (list.Count + ShopPage - 1) / ShopPage);
-        // Mouse (como nos menus do banco/X-data/LABO): passar por cima escolhe, clique esquerdo compra/vende ali, direito sai.
-        var (hover, click, back) = ShopMouse(_shopArtVariant, ShopPage);
-        if (hover >= 0) _shopCursor = hover;
-        bool mouseLeft = Input.IsMouseButtonPressed(MouseButton.Left);
-        if (back || Pressed("close")) { ScriptLog("loja fechada"); _shopKind = -1; UpdateShop(); _shopHeld.Clear(); return true; }
-        if (click) ShopAct(list);
-        if (Pressed("mode")) { _shopSelling = !_shopSelling; _shopCursor = _shopPageNo = 0; _shopMessage = ""; }
-        if (Pressed("up")) _shopCursor = (_shopCursor + ShopPage - 1) % ShopPage;
-        if (Pressed("down")) _shopCursor = (_shopCursor + 1) % ShopPage;
-        if (Pressed("left")) _shopPageNo = (_shopPageNo + pages - 1) % pages;
-        if (Pressed("right")) _shopPageNo = (_shopPageNo + 1) % pages;
-        if (Pressed("ok") && !mouseLeft) ShopAct(list);
-        _shopHeld.Clear();
-        foreach (var k in now) _shopHeld.Add(k);
-        UpdateShop();
-        return true;
-    }
-
-    // Comprar: as 36 posições do estoque. Vender: o DEVICEFOLDER (beNDMWShopCtrlDeviceSell); na loja de discos, os discos
-    // guardados (HIPÓTESE: beNDMWShopCtrlDiskSell vende discos da DISKFOLDER, um por toque).
-    List<ItemRef?> ShopList() => !_shopSelling ? _shopItems
-        : _shopKind == ShopStock.Disk ? _inventory.DiskCounts.Where(kv => kv.Value > 0).OrderBy(kv => kv.Key).Select(kv => (ItemRef?)new ItemRef("conItem", kv.Key)).ToList()
-        : _inventory.Devices.Select(d => (ItemRef?)d).ToList();
+        ShopStock.Disk => TextKey("mswkPRG1500", "Disk Shop"),
+        ShopStock.Weapon => TextKey("mswkPRG1600", "Weapon Shop"),
+        ShopStock.Armor => TextKey("mswkPRG1700", "Armor Shop"),
+        ShopStock.Chip => TextKey("mswkPRG1800", "Chip Shop"),
+        ShopStock.Junk => TextKey("mswkPRG1900", "Junk Shop"),
+        _ => SubWndNames[Math.Max(0, _shopKind)],
+    };
 
     // Equipado = nenhuma cópia livre (soquetes da arma, armaduras e chips contam: EquipRules).
     bool Equipped(ItemRef item) => item.Table is "weapon" or "armor1" or "armor2" or "abChip" && EquipRules.InUse(_equip, item) > 0
         && EquipRules.Free(_inventory, _equip, item) <= 0;
 
-    void ShopAct(List<ItemRef?> list)
+    // Cópias que dá para vender (as equipadas ficam).
+    int FreeCopies(ItemRef item) => item.Table == "conItem" ? _inventory.Disks(item.Row)
+        : Math.Max(0, item.Table is "weapon" or "armor1" or "armor2" or "abChip" ? EquipRules.Free(_inventory, _equip, item) : _inventory.Devices.Count(d => d == item));
+
+    int Owned(ItemRef item) => item.Table == "conItem" ? _inventory.Disks(item.Row) : _inventory.Devices.Count(d => d == item);
+
+    // Quantas dá para comprar: BIT, espaço na pasta (36) ou na pasta de discos (9 por disco).
+    int BuyMax(ItemRef item, int price)
     {
-        int i = _shopPageNo * ShopPage + _shopCursor;
-        if (_db == null || i >= list.Count || list[i] is not { } item) return;
-        string name = _db[item.Table].Text(item.Row, "NAME");
+        int room = item.Table == "conItem" ? Inventory.DiskMax - _inventory.Disks(item.Row) : Inventory.DeviceMax - _inventory.Devices.Count;
+        int money = price > 0 ? _inventory.Bit / price : 99;
+        return Math.Max(0, Math.Min(Math.Min(room, money), 99));
+    }
+
+    int QtyFor(ItemRef item, int max) => _shopQtyItem == item ? Math.Clamp(_shopQty, 1, Math.Max(1, max)) : 1;
+
+    void ShowShop()
+    {
+        if (!ShopOpen || _db == null) return;
+        var inv = _inventory;
+        bool disks = _shopKind == ShopStock.Disk;
+        var rows = new List<MenuRow>();
         if (!_shopSelling)
         {
-            int price = _db[item.Table].Int(item.Row, "HANBAI");
-            _shopMessage = ShopTrade.Buy(_inventory, item, price) ? $"Comprou {name} por {price} BIT."
-                : _inventory.Bit < price ? "BIT insuficiente." : item.Table == "conItem" ? "Já tem 9 desse disco." : "Pasta cheia.";
+            // Comprar: o estoque sem os vazios, cada item uma vez.
+            var stock = _shopItems.Where(i => i.HasValue).Select(i => i!.Value).Distinct().ToList();
+            for (int k = 0; k < stock.Count; k++)
+            {
+                var it = stock[k];
+                int index = k, price = _db[it.Table].Int(it.Row, "HANBAI"), have = Owned(it), max = BuyMax(it, price), q = QtyFor(it, max);
+                var (tag, tagColor) = ItemTag(it);
+                rows.Add(new MenuRow
+                {
+                    Label = ItemName(it), Tag = tag, TagColor = tagColor, Count = have > 0 ? $"×{have}" : "", Value = $"{price}", Short = max <= 0,
+                    Info = () => ItemMenuInfo(it, new MenuLine($"Preço {price} BIT   Você tem {have}" + (max > 0 ? $"   Cabem {max}" : ""), MenuTone.Dim)),
+                    Adjust = d => { _shopQty = Math.Clamp(QtyFor(it, max) + d, 1, Math.Max(1, max)); _shopQtyItem = it; _shopCursor = index; ShowShop(); },
+                    AdjustLabel = $"Quantidade {q}",
+                    Action = $"Comprar ×{q}  ·  {price * q} BIT",
+                    Pick = () => { _shopCursor = index; ShopBuy(it, price, QtyFor(it, max)); },
+                });
+            }
         }
         else
         {
-            int price = _db[item.Table].Int(item.Row, "KAITORI");
-            _shopMessage = ShopTrade.Sell(_inventory, item, price, Equipped(item)) ? $"Vendeu {name} por {price} BIT."
-                : Equipped(item) ? "Está equipado." : "Não dá para vender.";
+            // Vender: discos guardados na loja de discos (HIPÓTESE: beNDMWShopCtrlDiskSell vende da DISKFOLDER) ou a Device Folder,
+            // itens iguais juntos; equipado não vende (FATO 0x803A1338), só as cópias livres.
+            var list = disks ? inv.DiskCounts.Where(kv => kv.Value > 0).OrderBy(kv => kv.Key).Select(kv => (new ItemRef("conItem", kv.Key), kv.Value)).ToList()
+                : Grouped(inv.Devices);
+            for (int k = 0; k < list.Count; k++)
+            {
+                var (it, count) = list[k];
+                int index = k, price = _db[it.Table].Int(it.Row, "KAITORI"), free = FreeCopies(it), q = QtyFor(it, free);
+                bool equipped = free < count;
+                rows.Add(new MenuRow
+                {
+                    Label = ItemName(it) + (equipped ? " (E)" : ""), Count = $"×{count}", Value = price >= 1 ? $"{price}" : "—", Short = free <= 0 || price < 1,
+                    Info = () => ItemMenuInfo(it, [new MenuLine($"Vende por {price} BIT   Você tem {count}", MenuTone.Dim),
+                        .. equipped ? [new MenuLine(free > 0 ? $"{count - free} equipado: vende só as outras {free}." : "Está equipado: não dá para vender.", MenuTone.Warn)] : Array.Empty<MenuLine>()]),
+                    Adjust = free > 1 ? d => { _shopQty = Math.Clamp(QtyFor(it, free) + d, 1, free); _shopQtyItem = it; _shopCursor = index; ShowShop(); } : null,
+                    AdjustLabel = $"Quantidade {q}",
+                    Action = $"Vender ×{q}  ·  {Math.Max(0, price) * q} BIT",
+                    Pick = () => { _shopCursor = index; ShopSell(it, price, QtyFor(it, free)); },
+                });
+            }
         }
-        ScriptLog($"loja: {_shopMessage} (BIT {_inventory.Bit})");
+        string folder = disks ? $"{inv.DiskCounts.Values.Sum()}" : $"{inv.Devices.Count}/{Inventory.DeviceMax}";
+        ShowList(new MenuPage
+        {
+            Title = ShopTitle,
+            Tabs = ["Comprar", "Vender"],
+            Tab = _shopSelling ? 1 : 0,
+            SetTab = t => { _shopSelling = t == 1; _shopCursor = 0; _shopMessage = ""; _shopQtyItem = null; ShowShop(); },
+            Money = [(TextKey("mswkPRG1356", "BITS"), $"{inv.Bit}"), (TextKey(disks ? "mswkPRG1001" : "mswkPRG1000", disks ? "Disk Folder" : "Device Folder"), folder)],
+            Columns = ("Item", _shopSelling ? "Qtd" : "Tem", _shopSelling ? "Venda" : "Preço"),
+            Rows = rows,
+            Intro = new MenuInfo { Title = ShopTitle, Lines = [new MenuLine(_shopSelling ? "Nada para vender." : "Nada à venda.", MenuTone.Dim)] },
+            Message = _shopMessage,
+            MessageBad = _shopMessageBad,
+            Back = CloseShop,
+            Cursor = _shopCursor,
+        });
     }
 
-    void UpdateShop()
+    void ShopBuy(ItemRef item, int price, int qty)
     {
-        if (_shopPanel == null)
-        {
-            var layer = new CanvasLayer { Layer = 5 };
-            _shopPanel = new PanelContainer();
-            _shopPanel.SetAnchorsPreset(Control.LayoutPreset.Center);
-            _shopPanel.Position = new Vector2(-300, -230);
-            _shopPanel.CustomMinimumSize = new Vector2(600, 460);
-            _shopLabel = new Label();
-            _shopLabel.AddThemeFontSizeOverride("font_size", 15);
-            _shopLabel.AddThemeConstantOverride("line_spacing", -2);
-            _shopPanel.AddChild(_shopLabel);
-            UseGameFont(_shopPanel);
-            layer.AddChild(_shopPanel);
-            AddChild(layer);
-        }
-        bool art = ShopArtReady();
-        _shopPanel.Visible = ShopOpen && !art;
-        if (!ShopOpen || _db == null) { if (art && _artMenu == null) UpdateShopArt("", [], "", "", 0); return; }
-        var list = ShopList();
-        int pages = Math.Max(1, (list.Count + ShopPage - 1) / ShopPage);
-        if (art)
-        {
-            var rows = new List<string>();
-            for (int r = 0; r < ShopPage; r++)
-            {
-                int i = _shopPageNo * ShopPage + r;
-                if (i >= list.Count) { rows.Add(""); continue; }
-                if (list[i] is not { } it) { rows.Add("----"); continue; }
-                var tt = _db[it.Table];
-                rows.Add($"{tt.Text(it.Row, "NAME")}{(_shopSelling && Equipped(it) ? " (E)" : "")}\t{tt.Int(it.Row, _shopSelling ? "KAITORI" : "HANBAI")}");
-            }
-            string variant = _shopKind == Array.IndexOf(SubWndNames, "JUNK") ? "SQ_JUNKOPEN" : _shopSelling ? "SQ_BWINOPEN" : "SQ_AWINOPEN";
-            UpdateShopArt(variant, rows, $"{(_shopSelling ? "Vender" : "Comprar")}   BIT {_inventory.Bit}   {_shopPageNo + 1}/{pages}",
-                _shopMessage.Length > 0 ? _shopMessage : $"cima/baixo escolhe, esq./dir. página, {DeviceIcons.Of("confirmar")} confirma, {(DeviceIcons.Current == ButtonNames.Kind.Keyboard ? "V" : DeviceIcons.Name("botao:3", DeviceIcons.Current))} troca, {DeviceIcons.Of("cancelar")} sai", _shopCursor);
-            return;
-        }
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"{SubWndNames[_shopKind]} — {(_shopSelling ? "Vender" : "Comprar")}   BIT {_inventory.Bit}   página {_shopPageNo + 1}/{pages}");
-        sb.AppendLine("[cima/baixo escolhe, esq./dir. página, ataque confirma, V/Y troca, K/B sai]");
-        for (int r = 0; r < ShopPage; r++)
-        {
-            int i = _shopPageNo * ShopPage + r;
-            string cur = r == _shopCursor ? ">" : " ";
-            if (i >= list.Count) { sb.AppendLine(cur); continue; }
-            if (list[i] is not { } it) { sb.AppendLine($"{cur} ----"); continue; }
-            var t = _db[it.Table];
-            int price = t.Int(it.Row, _shopSelling ? "KAITORI" : "HANBAI");
-            sb.AppendLine($"{cur} {t.Text(it.Row, "NAME"),-28} {price,8}{(_shopSelling && Equipped(it) ? "  (equipado)" : "")}");
-        }
-        sb.Append(_shopMessage);
-        _shopLabel!.Text = sb.ToString();
+        string name = ItemName(item);
+        int done = 0;
+        while (done < qty && ShopTrade.Buy(_inventory, item, price)) done++;
+        if (done > 0) (_shopMessage, _shopMessageBad) = ($"Comprou {(done > 1 ? $"{done}× " : "")}{name} por {price * done} BIT.", false);
+        else (_shopMessage, _shopMessageBad) = (_inventory.Bit < price ? TextKey("mswkPRG1570", "Not enough BITS.")
+            : item.Table == "conItem" ? "Já tem 9 desse disco." : "Pasta cheia (36).", true);
+        ScriptLog($"loja: {_shopMessage} (BIT {_inventory.Bit})");
+        _shopQty = 1;
+        ShowShop();
+    }
+
+    void ShopSell(ItemRef item, int price, int qty)
+    {
+        string name = ItemName(item);
+        int done = 0;
+        while (done < qty && ShopTrade.Sell(_inventory, item, price, Equipped(item))) done++; // disco: tira um da DISKFOLDER
+        if (done > 0) (_shopMessage, _shopMessageBad) = ($"Vendeu {(done > 1 ? $"{done}× " : "")}{name} por {price * done} BIT.", false);
+        else (_shopMessage, _shopMessageBad) = (Equipped(item) ? "Está equipado." : "Não dá para vender.", true);
+        ScriptLog($"loja: {_shopMessage} (BIT {_inventory.Bit})");
+        _shopQty = 1;
+        ShowShop();
     }
 }

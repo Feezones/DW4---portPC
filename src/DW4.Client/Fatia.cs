@@ -315,8 +315,7 @@ public partial class Fatia : Node3D
     public override void _Input(InputEvent e)
     {
         DeviceIcons.Seen(e);
-        if (e is InputEventMouse mouse) _mousePos = mouse.Position; // janelas com arte (Fatia.ShopArt.cs)
-        if (e is InputEventJoypadButton { Pressed: true } || e is InputEventJoypadMotion { AxisValue: > 0.5f or < -0.5f }) _usingPad = true;
+                if (e is InputEventJoypadButton { Pressed: true } || e is InputEventJoypadMotion { AxisValue: > 0.5f or < -0.5f }) _usingPad = true;
         else if (e is InputEventKey { Pressed: true } || e is InputEventMouseButton { Pressed: true }) _usingPad = false;
     }
 
@@ -339,7 +338,6 @@ public partial class Fatia : Node3D
         TickBotStats(dt);
         if (_snapToFloor) SnapToFloor();
         if (TickMenu(dt)) { _jumpHeld = true; return; } // o botão que fechou o menu não vira pulo
-        TickShopArt(dt);
         if (TickShop() || TickArtMenu()) { _jumpHeld = true; return; } // loja aberta: o jogador fica parado
         _stage?.Tick();
         WatchDemo();
@@ -566,7 +564,9 @@ public partial class Fatia : Node3D
     void LoadCombat()
     {
         var dbDir = System.IO.Path.Combine(_dir, "db");
-        var dbFile = GameFiles.DirExists(dbDir) ? GameFiles.EnumerateFiles(dbDir, "*_db.json").FirstOrDefault() : null;
+        // Em ordem de nome: o area_*_db.json (tabelas do jogador) vem antes do ndmw_*_db.json das lojas; no Linux/Android a pasta não
+        // vem em ordem e a fase com loja pegava o banco das lojas (sem a shinka).
+        var dbFile = GameFiles.DirExists(dbDir) ? GameFiles.EnumerateFiles(dbDir, "*_db.json").Order(StringComparer.OrdinalIgnoreCase).FirstOrDefault() : null;
         if (dbFile == null) { _problems.Add("falta o *_db.json (dw4 igb-db area.afs 3 <fatia>\\db): combate desligado"); return; }
         _db = GameTables.FromJson(GameFiles.ReadAllText(dbFile));
         var skillFile = StagePath("skillup.json");
