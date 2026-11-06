@@ -51,12 +51,11 @@ public partial class Fatia
         _deathTimer = -1;
         _gameOver = false;
         bool field = !_stageName.StartsWith("stagML", StringComparison.OrdinalIgnoreCase);
-        int lost = field ? _inventory.Bit : 0;
         if (field && !_chipDropped) DropBackupChip(); // BIT e EXP perdida ficam no backup chip (Fatia.BackupChip.cs)
         _chipDropped = false;
         _hp = _pf.MaxHp;
         _mp = _pf.MaxMp;
-        ScriptLog($"caiu: {(field ? $"{lost} BIT no backup chip; " : "")}volta ao lobby");
+        ScriptLog($"caiu: {(field ? $"{_inventory.ChipBit} BIT no backup chip; " : "")}volta ao lobby");
         _nextEntry = DeathEntry;
         NextStage(LobbyStage);
     }

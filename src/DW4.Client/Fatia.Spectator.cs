@@ -102,6 +102,8 @@ public partial class Fatia
         _giveUpTimer = _hasFocus && !ChatOpen && JumpDown() ? _giveUpTimer + dt : 0;
         if (_giveUpTimer >= GiveUpHold) { ScriptLog("espectador: desistiu; volta ao lobby"); return EndSpectating(); }
         UpdateSpectateLabel();
+        if (OS.IsDebugBuild() && (int)(_deathTimer / 2) != (int)((_deathTimer - dt) / 2))
+            GD.Print($"[espectador] assistindo {_spectateId}, câmera em {SpectateFocus()}, HP {_hp}, BIT {_inventory.Bit}, EXP {_exp}");
         return true;
     }
 
@@ -217,6 +219,28 @@ public partial class Fatia
         Toast($"Você reviveu {who}.");
         ScriptLog($"Raise Disk no cristal de {id} ({who})");
         return true;
+    }
+
+    // DEPURAÇÃO (só no build Debug): DW4_REVIVER=1 — 2 s depois de aparecer o cristal de um colega, vai até ele, ganha um Raise
+    // Disk e usa (conferir o reviver sem janela, com outro jogo usando DW4_MORRER).
+    float _reviverClock = -1;
+
+    void TickReviverDebug(float dt)
+    {
+        if (!OS.IsDebugBuild() || OS.GetEnvironment("DW4_REVIVER") != "1" || _db == null || _hp <= 0) return;
+        var chip = _avatars.Values.FirstOrDefault(a => a.Chip is { Erased: false } && !a.ReviveSent)?.Chip;
+        if (chip == null) { _reviverClock = -1; return; }
+        if (_reviverClock < 0) _reviverClock = 0;
+        if ((_reviverClock += dt) < 2) return;
+        _reviverClock = -1;
+        var items = _db["conItem"];
+        int row = Enumerable.Range(0, items.Rows).FirstOrDefault(r => IsRaiseDisk(_db, r), -1);
+        if (row < 0) return;
+        _player.GlobalPosition = chip.Actor.Root.GlobalPosition + new Vector3(0, 0, 10);
+        _inventory.Add(new DW4.Gameplay.ItemRef("conItem", row));
+        int before = _inventory.Disks(row);
+        bool used = UseRaiseDisk(row);
+        GD.Print($"[espectador] reviver: Raise Disk usado={used}, discos {before}->{_inventory.Disks(row)}");
     }
 
     // Cristal de um colega caído: aparece no lugar do modelo dele depois da animação de queda; some quando ele levanta ou sai.
