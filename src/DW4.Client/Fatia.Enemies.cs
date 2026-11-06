@@ -282,6 +282,7 @@ public partial class Fatia
             e.HitHalf = Math.Max(4, Math.Min(all.Size.X * s.X, all.Size.Z * s.Z) * 0.35f);
             e.HitHeight = Math.Max(14, all.Size.Y * s.Y);
         }
+        CsSkin.TryAttach(model, kind.Model, e.Anim); // teste local, só com DW4_CS_MODELOS; depois da caixa do corpo (fica a do DW4)
         // Combate em grupo: netId ≠ 0 = cópia de um inimigo do anfitrião; senão, um número novo e o aviso ao grupo.
         (e.NetId, e.Proxy, e.NetPos, e.NetYaw) = (netId != 0 ? netId : NewNetId(), netId != 0, pos, yaw);
         _byNetId[e.NetId] = e;

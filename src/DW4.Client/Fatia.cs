@@ -213,6 +213,7 @@ public partial class Fatia : Node3D
         {
             _player.AddChild(_model);
             _anim = FindAll<AnimationPlayer>(_model).FirstOrDefault();
+            CsSkin.TryAttach(_model, PlayerModel, _anim); // teste local, só com DW4_CS_MODELOS
             if (_anim != null)
             {
             }
