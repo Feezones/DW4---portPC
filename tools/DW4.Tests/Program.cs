@@ -251,7 +251,7 @@ Test("Online: menu do F (jogador mais perto e opções conforme grupo e amizade)
     o = DW4.Gameplay.Online.PlayerInteraction.Options("Bia", new(null, "Gui", true, false, false, false));
     True(o[0].Enabled && o[2].Enabled, "amigo e sem grupo: convida e troca");
     var b = new InputBindings();
-    True(b.Get(InputBindings.Keyboard, "interagir").SequenceEqual(new[] { "tecla:F" }), "F no teclado");
+    True(b.Get(InputBindings.Keyboard, "interagir").SequenceEqual(new[] { "tecla:G" }), "G no teclado (o F é da 4ª técnica)");
 });
 
 Test("Online: troca de itens (travar, confirmar, tudo ou nada, mudança destrava, impItem fora)", () =>
@@ -739,7 +739,7 @@ Test("Port: mapa de controles (padrão, salvar e carregar no config, conflito, r
     var taken = b.Set(InputBindings.Keyboard, "pulo", "tecla:K");
     True(taken.SequenceEqual(new[] { "tecnica" }), "Set devolve de quem tirou");
     Equal("tecla:K", b.Get(InputBindings.Keyboard, "pulo")[0], "pulo agora em K");
-    True(!b.Get(InputBindings.Keyboard, "tecnica").Contains("tecla:K") && b.Get(InputBindings.Keyboard, "tecnica").Contains("tecla:E"), "técnica perdeu o K e manteve o E");
+    True(b.Get(InputBindings.Keyboard, "tecnica").Count == 0, "técnica escolhida perdeu o K");
     True(b.Get(InputBindings.Keyboard, "cancelar").Contains("tecla:K"), "cancelar (menus) continua com K");
     b.Set(InputBindings.Pad, "ataque", "botao:2");
     // Salvar e carregar pelo texto do config.cfg.
@@ -747,12 +747,24 @@ Test("Port: mapa de controles (padrão, salvar e carregar no config, conflito, r
     Equal((2, 144, 0.5f, false), (back.WindowMode, back.FpsLimit, back.VoiceVolume, back.Fullscreen), "modo sem borda, FPS e vozes voltam");
     True(back.Bindings.Get(InputBindings.Keyboard, "pulo").SequenceEqual(b.Get(InputBindings.Keyboard, "pulo")), "pulo trocado volta do arquivo");
     True(back.Bindings.Get(InputBindings.Pad, "ataque").SequenceEqual(new[] { "botao:2" }), "ataque do controle trocado volta do arquivo");
-    True(back.Bindings.Get(InputBindings.Keyboard, "tecnica").SequenceEqual(new[] { "tecla:E" }), "técnica sem o K volta do arquivo");
+    True(back.Bindings.Get(InputBindings.Keyboard, "tecnica").Count == 0, "técnica sem o K volta do arquivo");
     // Migração única dos padrões antigos do teclado (técnica K + clique direito, defesa L, técnicas 1–6): o que o jogador mudou fica.
     var old = PortConfig.FromIni("[teclado]\ntecnica=\"tecla:K,mouse:2\"\nguarda=\"tecla:L\"\ntecnica1=\"tecla:Key1\"\ntecnica2=\"tecla:Q\"\n");
-    True(old.Bindings.Get(InputBindings.Keyboard, "tecnica").SequenceEqual(new[] { "tecla:E", "tecla:K" }) && old.Bindings.Get(InputBindings.Keyboard, "guarda").SequenceEqual(new[] { "mouse:2", "tecla:L" })
+    // Depois a de 2026-11-06: o Q que o jogador pôs na técnica 2 fica, e a técnica 1 não rouba o Q dela.
+    True(old.Bindings.Get(InputBindings.Keyboard, "tecnica").SequenceEqual(new[] { "tecla:K" }) && old.Bindings.Get(InputBindings.Keyboard, "guarda").SequenceEqual(new[] { "mouse:2", "tecla:L" })
         && old.Bindings.Get(InputBindings.Keyboard, "tecnica1").Count == 0 && old.Bindings.Get(InputBindings.Keyboard, "tecnica2").SequenceEqual(new[] { "tecla:Q" })
-        && old.Bindings.Get(InputBindings.Keyboard, "item1").SequenceEqual(new[] { "tecla:Key1" }) && old.ControlsVersion == 2, "migração dos padrões do teclado");
+        && old.Bindings.Get(InputBindings.Keyboard, "tecnica3").SequenceEqual(new[] { "tecla:R" })
+        && old.Bindings.Get(InputBindings.Keyboard, "item1").SequenceEqual(new[] { "tecla:Key1" }) && old.ControlsVersion == 3, "migração dos padrões do teclado");
+    // Config da 0.6.22 (versão 2, padrões de 2026-11-02): técnicas diretas vão para Q E R F C V, a escolhida fica no K, interagir no G.
+    var mig = PortConfig.FromIni("[jogo]\ncontroles=2\n[teclado]\ntecnica=\"tecla:E,tecla:K\"\ninteragir=\"tecla:F\"\n"
+        + string.Concat(Enumerable.Range(1, 6).Select(i => $"tecnica{i}=\"\"\n"))).Bindings;
+    Equal("Q,E,R,F,C,V", string.Join(",", Enumerable.Range(1, 6).Select(i => InputBindings.Describe(mig.Get(InputBindings.Keyboard, $"tecnica{i}").FirstOrDefault() ?? "-"))), "técnicas diretas migradas");
+    True(mig.Get(InputBindings.Keyboard, "tecnica").SequenceEqual(new[] { "tecla:K" }) && mig.Get(InputBindings.Keyboard, "interagir").SequenceEqual(new[] { "tecla:G" }), "escolhida no K e interagir no G");
+    // Padrão novo: nenhuma ação do jogo divide tecla com outra.
+    var fresh = new InputBindings();
+    foreach (var a in InputBindings.Actions)
+        foreach (var k in fresh.Get(InputBindings.Keyboard, a.Id))
+            True(fresh.Conflicts(InputBindings.Keyboard, k, a.Id).Count == 0, $"{a.Id} sem conflito em {k}: " + string.Join(",", fresh.Conflicts(InputBindings.Keyboard, k, a.Id)));
     True(PortConfig.FromIni(old.ToIni()).Bindings.Get(InputBindings.Keyboard, "tecnica2").SequenceEqual(new[] { "tecla:Q" }), "migração não roda de novo");
     // Restaurar o padrão de um aparelho não mexe no outro.
     back.Bindings.RestoreDefaults(InputBindings.Keyboard);
