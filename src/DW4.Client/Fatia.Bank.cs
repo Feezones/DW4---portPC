@@ -36,11 +36,11 @@ public partial class Fatia
             var help = new MenuInfo
             {
                 Title = TextKey("mswkPRG1356", "BITS"),
-                Lines = [new MenuLine("Escolha o valor com esquerda/direita (ou − e +) e o passo; depois Depositar ou Sacar."), new MenuLine("Os BITS do banco não se perdem.", MenuTone.Dim)],
+                Lines = [new MenuLine("Escolha o valor com esquerda/direita (ou − e +). \"Cada toque soma\" diz de quanto em quanto o valor muda (1, 10, 100, 1000…). Depois escolha Depositar ou Sacar."), new MenuLine("Os BITS do banco não se perdem.", MenuTone.Dim)],
             };
             rows.Add(new MenuRow { Label = "Valor", Value = $"{_bankAmount}", AdjustLabel = $"Valor {_bankAmount}", Info = () => help,
                 Adjust = d => { _bankAmount = Math.Clamp(_bankAmount + d * _bankStep, 0, Math.Max(maxIn, maxOut)); OpenBankArt("", false, 0); } });
-            rows.Add(new MenuRow { Label = "Passo", Value = $"{_bankStep}", AdjustLabel = $"Passo {_bankStep}", Info = () => help,
+            rows.Add(new MenuRow { Label = "Cada toque soma", Value = $"{_bankStep}", AdjustLabel = $"De {_bankStep} em {_bankStep}", Info = () => help,
                 Adjust = d => { _bankStep = Math.Clamp(d > 0 ? _bankStep * 10 : _bankStep / 10, 1, 1_000_000); OpenBankArt("", false, 1); } });
             rows.Add(new MenuRow { Label = $"Depositar {_bankAmount}", Short = _bankAmount > maxIn || _bankAmount == 0, Info = () => help,
                 Pick = () => BankBits(true, _bankAmount, 2) });

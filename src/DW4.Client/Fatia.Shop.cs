@@ -122,7 +122,7 @@ public partial class Fatia
                 rows.Add(new MenuRow
                 {
                     Label = ItemName(it), Tag = tag, TagColor = tagColor, Count = have > 0 ? $"×{have}" : "", Value = $"{price}", Short = max <= 0,
-                    Info = () => ItemMenuInfo(it, new MenuLine($"Preço {price} BIT   Você tem {have}" + (max > 0 ? $"   Cabem {max}" : ""), MenuTone.Dim)),
+                    Info = () => ItemMenuInfo(it, new MenuLine($"Preço {price} BIT   Você possui {have}" + (max > 0 ? $"   Cabem {max}" : ""), MenuTone.Dim)),
                     Adjust = d => { _shopQty = Math.Clamp(QtyFor(it, max) + d, 1, Math.Max(1, max)); _shopQtyItem = it; _shopCursor = index; ShowShop(); },
                     AdjustLabel = $"Quantidade {q}",
                     Action = $"Comprar ×{q}  ·  {price * q} BIT",
@@ -144,7 +144,7 @@ public partial class Fatia
                 rows.Add(new MenuRow
                 {
                     Label = ItemName(it) + (equipped ? " (E)" : ""), Count = $"×{count}", Value = price >= 1 ? $"{price}" : "—", Short = free <= 0 || price < 1,
-                    Info = () => ItemMenuInfo(it, [new MenuLine($"Vende por {price} BIT   Você tem {count}", MenuTone.Dim),
+                    Info = () => ItemMenuInfo(it, [new MenuLine($"Vende por {price} BIT   Você possui {count}", MenuTone.Dim),
                         .. equipped ? [new MenuLine(free > 0 ? $"{count - free} equipado: vende só as outras {free}." : "Está equipado: não dá para vender.", MenuTone.Warn)] : Array.Empty<MenuLine>()]),
                     Adjust = free > 1 ? d => { _shopQty = Math.Clamp(QtyFor(it, free) + d, 1, free); _shopQtyItem = it; _shopCursor = index; ShowShop(); } : null,
                     AdjustLabel = $"Quantidade {q}",
@@ -161,7 +161,7 @@ public partial class Fatia
             Tab = _shopSelling ? 1 : 0,
             SetTab = t => { _shopSelling = t == 1; _shopCursor = 0; _shopMessage = ""; _shopQtyItem = null; ShowShop(); },
             Money = [(TextKey("mswkPRG1356", "BITS"), $"{inv.Bit}"), (TextKey(disks ? "mswkPRG1001" : "mswkPRG1000", disks ? "Disk Folder" : "Device Folder"), folder)],
-            Columns = ("Item", _shopSelling ? "Qtd" : "Tem", _shopSelling ? "Venda" : "Preço"),
+            Columns = ("Item", _shopSelling ? "Qtd" : "Possui", _shopSelling ? "Venda" : "Preço"),
             Rows = rows,
             Intro = new MenuInfo { Title = ShopTitle, Lines = [new MenuLine(_shopSelling ? "Nada para vender." : "Nada à venda.", MenuTone.Dim)] },
             Message = _shopMessage,
