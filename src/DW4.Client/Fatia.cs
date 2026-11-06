@@ -324,6 +324,12 @@ public partial class Fatia : Node3D
         else if (e is InputEventKey { Pressed: true } || e is InputEventMouseButton { Pressed: true }) _usingPad = false;
     }
 
+    // Cursor (GameCursor.cs, DECISÃO DO PORT): mira quando o golpe sairia para o cursor; seta em menus, conversas, chat e cenas.
+    public override void _Process(double delta) => GameCursor.Update(GetViewport(), CursorAims);
+
+    bool CursorAims => !_demo && !_bot && !_usingPad && !Touch && _padEnabled && _playerCtrl && !_leaving && !_spectating
+        && (_pf == null || _hp > 0) && !_menuOpen && !ShopOpen && !SubWindowOpen && !ChatOpen && !TalkWindowOpen;
+
     public override void _PhysicsProcess(double delta)
     {
         // A rede vem antes de qualquer saída do quadro: com _leaving (Esc > Gravar e voltar, trocar de Digimon) o resto do quadro

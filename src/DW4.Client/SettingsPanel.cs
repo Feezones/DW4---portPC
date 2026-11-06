@@ -79,6 +79,9 @@ public partial class SettingsPanel : VBoxContainer
         Choice(video, "Câmera da dungeon", ["Perto", "Longe"], c.CameraMode, v => c.CameraMode = v);
         // DECISÃO DO PORT: o original corta seco ao trocar de volume; 0 volta a isso.
         Slider(video, "Transição da câmera (s, 0 = original)", 0, 2, 0.1f, c.CameraBlend, v => c.CameraBlend = v);
+        // DECISÃO DO PORT (GameCursor.cs): cursor próprio; a mira em combate mostra para onde o golpe sai.
+        Choice(video, "Cursor do mouse", ["Digital (mira em combate)", "Digital (só a seta)", "Do sistema"], c.CursorStyle, v => c.CursorStyle = v);
+        Slider(video, "Tamanho do cursor", 0.75f, 2f, 0.25f, c.CursorSize, v => c.CursorSize = v);
 
         var sound = Page(tabs, "Som");
         Slider(sound, "Volume geral", 0, 1, 0.05f, c.MasterVolume, v => c.MasterVolume = v);
