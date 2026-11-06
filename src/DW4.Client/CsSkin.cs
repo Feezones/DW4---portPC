@@ -27,6 +27,16 @@ public partial class CsSkin : Node3D
     static readonly Dictionary<string, (GltfDocument Doc, GltfState State)?> s_cache = new();
 
     AnimationPlayer? _source, _mine;
+    Skeleton3D? _dwSkeleton, _csSkeleton;
+    Dictionary<string, string> _hands = new();
+    readonly Dictionary<Node3D, Vector3> _basePos = new();
+
+    // Mãos onde o jogo prende a arma (Fatia.Weapon: RArm04/LArm04) → osso equivalente do CS. A arma continua presa ao
+    // osso do DW4 (mesma rotação), só é empurrada até a mão do modelo do CS, que tem outro tamanho de braço.
+    static readonly Dictionary<string, Dictionary<string, string>> Hands = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["p_dorumon"] = new() { ["RArm04"] = "J_te_R", ["LArm04"] = "J_te_L" },
+    };
 
     /// <summary>Se houver modelo do CS para <paramref name="key"/>, esconde as malhas do DW4 e põe o do CS por cima.</summary>
     public static bool TryAttach(Node3D dw4Model, string key, AnimationPlayer? source)
@@ -50,6 +60,9 @@ public partial class CsSkin : Node3D
         var skin = new CsSkin { Name = "CsSkin", _source = source, Scale = Vector3.One * m.Scale };
         skin.AddChild(scene);
         skin._mine = Find<AnimationPlayer>(scene).FirstOrDefault();
+        skin._dwSkeleton = Find<Skeleton3D>(dw4Model).FirstOrDefault();
+        skin._csSkeleton = Find<Skeleton3D>(scene).FirstOrDefault();
+        if (Hands.TryGetValue(key, out var hands)) skin._hands = hands;
         dw4Model.AddChild(skin);
         GD.Print($"[cs] {key}: modelo do Cyber Sleuth ligado ({m.File}, escala {m.Scale})");
         return true;
@@ -63,6 +76,27 @@ public partial class CsSkin : Node3D
         if (name.Length == 0 || !_mine.HasAnimation(name)) return;
         if (_mine.AssignedAnimation.ToString() != name) { _mine.Play(name); _mine.Pause(); }
         _mine.Seek(_source.CurrentAnimationPosition, true);
+        FollowHands();
+    }
+
+    void FollowHands()
+    {
+        if (_dwSkeleton == null || _csSkeleton == null || _hands.Count == 0) return;
+        foreach (var att in _dwSkeleton.GetChildren().OfType<BoneAttachment3D>())
+        {
+            if (!_hands.TryGetValue(att.BoneName, out var csBone)) continue;
+            int dwi = _dwSkeleton.FindBone(att.BoneName), csi = _csSkeleton.FindBone(csBone);
+            if (dwi < 0 || csi < 0) continue;
+            var dwPos = (_dwSkeleton.GlobalTransform * _dwSkeleton.GetBoneGlobalPose(dwi)).Origin;
+            var csPos = (_csSkeleton.GlobalTransform * _csSkeleton.GetBoneGlobalPose(csi)).Origin;
+            var basis = (_dwSkeleton.GlobalTransform * _dwSkeleton.GetBoneGlobalPose(dwi)).Basis;
+            var local = basis.Inverse() * (csPos - dwPos);
+            foreach (var child in att.GetChildren().OfType<Node3D>())
+            {
+                if (!_basePos.TryGetValue(child, out var p0)) _basePos[child] = p0 = child.Position;
+                child.Position = p0 + local;
+            }
+        }
     }
 
     static IEnumerable<T> Find<T>(Node n) where T : Node
