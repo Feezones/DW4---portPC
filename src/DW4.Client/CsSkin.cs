@@ -7,11 +7,12 @@ using Godot;
 namespace DW4.Client;
 
 /// <summary>
-/// TESTE LOCAL (não é do jogo, desligado por padrão): troca só a APARÊNCIA de um Digimon pelo modelo do Cyber Sleuth.
+/// Troca só a APARÊNCIA de um Digimon pelo modelo do Cyber Sleuth (publicado a partir da 0.6.22, decisão do responsável em 2026-11-06).
 /// O modelo do DW4 continua carregado e tocando as animações originais (hitboxes, quadros de ataque, arma, placa de nome
 /// seguem os ossos dele); só as malhas dele ficam invisíveis. O modelo do CS (D:\dw4-work\cyber-sleuth\saida\*_dw4.glb,
 /// fora do repositório) tem as mesmas animações do DW4 passadas para o esqueleto dele e acompanha quadro a quadro.
-/// Liga com DW4_CS_MODELOS=&lt;pasta dos .glb&gt;.
+/// Pasta dos .glb: DW4_CS_MODELOS ou, sem ela, &lt;dados&gt;\cs_modelos (vai solta no pacote do CDN, nunca no git).
+/// Sem a pasta, o jogo fica com os modelos do DW4.
 /// </summary>
 public partial class CsSkin : Node3D
 {
@@ -47,7 +48,20 @@ public partial class CsSkin : Node3D
         return map;
     }
 
-    static string? Folder => OS.GetEnvironment("DW4_CS_MODELOS") is { Length: > 0 } d ? d : null;
+    static string? s_folder;
+    static bool s_folderInit;
+    static string? Folder
+    {
+        get
+        {
+            if (s_folderInit) return s_folder;
+            s_folderInit = true;
+            var env = OS.GetEnvironment("DW4_CS_MODELOS");
+            var dir = env is { Length: > 0 } ? env : Path.Combine(DataPaths.DataRoot, "cs_modelos");
+            s_folder = File.Exists(Path.Combine(dir, "cs_modelos.json")) ? dir : null;
+            return s_folder;
+        }
+    }
     static readonly Dictionary<string, (GltfDocument Doc, GltfState State)?> s_cache = new();
 
     AnimationPlayer? _source, _mine;
