@@ -73,6 +73,7 @@ public partial class Fatia
     {
         while (s.Seq.TakeLuaCallWithName() is { } call)
             if (call.Call.EndsWith("Hit", StringComparison.Ordinal)) s.HitLua = call;
+        if (IsPodMissile(s)) return; // DECISÃO DO PORT (Fatia.Missile.cs): o míssil dos pods passa pelo casco do barco
         if (s.HitLua is not { } hit || s.Hit || s.Seq.Erased) return;
         var to = s.Root.GlobalPosition;
         if (from.DistanceSquaredTo(to) < 1e-6f) return;
@@ -248,6 +249,7 @@ public partial class Fatia
                 act.Time = s.Seq.Frame / 60f;
                 act.Update();
             }
+            SteerMissile(s, dt);
             var before = s.Root.GlobalPosition;
             if (s.Seq.Motion.AnyActive && dt > 0)
             {
@@ -294,6 +296,7 @@ public partial class Fatia
         foreach (var h in s.Seq.ActiveHitBoxes.Where(h => h.Type == 10000))
         {
             var c = s.Root.GlobalTransform * new Vector3(h.Position.X, h.Position.Y, h.Position.Z);
+            if (BreakMissiles(c, new Vector3(h.Size.X, h.Size.Y, h.Size.Z)) > 0) { s.Hit = true; s.Seq.Start("SQ_ERAS"); return; }
             foreach (var e in _enemies.ToList())
             {
                 if (e.Dead || e.Killed || (e.Started && e.Runner?.Invincible == true)) continue;

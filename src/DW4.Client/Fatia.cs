@@ -669,6 +669,7 @@ public partial class Fatia : Node3D
             });
             bool hit = target != null;
             if (target != null) TechniqueStrikes(target, tech);
+            else if (BreakMissiles(c, new Vector3(4, 4, 4)) > 0) hit = true; // Fatia.Missile.cs
             // Objetos com hit_<nome>.lua também levam a técnica (FATO, hit_g_numeprisonz01.lua da stag0103: técnica que não é
             // 40040..40099 tira 20 da jaula, e as de 40040..40099 a quebram na hora). Do barco, só a técnica alcança as jaulas da
             // margem; antes ela só procurava inimigos e as jaulas nunca quebravam (relato do usuário, 0.6.14).

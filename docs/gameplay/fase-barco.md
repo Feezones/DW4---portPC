@@ -268,3 +268,13 @@ não quebram e (3) a vida do barco não aparece nem parece baixar.
   prateleiras ficavam no lado R.
 - **Teste com os scripts reais** (dw4-testes): 6 torres com 2 golpes e 2 prateleiras com 3 golpes. Com uma prateleira de pé,
   as bombas seguem armadas. Com as 8 derrubadas, liga a 489 e saem bombas SQ_DEAD e despejador SQ_DDMG.
+
+## 0.6.17 → 0.6.18: míssil dos pods (decisão do usuário, 2026-11-06)
+
+Diferente do original, por pedido do usuário (registrado em `docs/decisoes-port-pc.md`), em `Fatia.Missile.cs`:
+- O `x_bltnumemisz01` não some mais ao bater no casco do barco. A bolota `x_003eblst01a` continua sumindo.
+- **Perseguição leve:** só enquanto voa (SQ_WAIT), vira na direção do membro da party mais perto, no máximo 75°/s. Não muda a
+  velocidade nem o tempo de vida. Sem janela, ele chega com desvio ~0° e, se passar do alvo, volta a curvar (−86° → −37°).
+- **Quebrável:** golpe de perto (10000/20000), tiro de arma e técnica que encostem na caixa do míssil ((0, −3, 0), 4 × 7 × 4, a
+  mesma da caixa de golpe 70108) o mandam para o SQ_HIDE, o mesmo do bht. Não há dano no jogador. O y_cannon01 da ação HIDE é
+  só visual e o port não desenha os y_*.

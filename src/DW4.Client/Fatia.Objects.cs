@@ -369,6 +369,7 @@ public partial class Fatia
         foreach (var h in _runner.ActiveHitBoxes().Where(h => h.Type is 10000 or 20000))
         {
             var c = BoxCenter(h);
+            BreakMissiles(c, new Vector3(h.Size.X, h.Size.Y, h.Size.Z)); // Fatia.Missile.cs
             foreach (var o in _objects.Where(o => o.Body != null && !o.Dead && !_objectsHitThisAction.Contains(o)).ToList())
             {
                 var p = o.Actor.Root.GlobalPosition; // global: o f_bit fica preso ao chefe
