@@ -912,6 +912,35 @@ Test("Câmera por volumes: escolha do volume e pose com recuo e inclinação", (
     True(Vector3.Distance(pos, expected) < 1e-3f, $"câmera {pos}, esperado {expected}");
 });
 
+Test("Câmera: passagem suave entre volumes (CameraBlend) segue o alvo, gira em arco e termina na pose do volume", () =>
+{
+    var blend = new CameraBlend { Duration = 1f };
+    var target = new Vector3(10, 0, 10);
+    // Volume A: câmera atrás (+Z) e acima; volume B: ao lado (+X), mais longe.
+    var (p0, l0) = blend.Update(1, target + new Vector3(0, 60, 100), target + new Vector3(0, 10, 0), target, 0.016f);
+    True(Vector3.Distance(p0, target + new Vector3(0, 60, 100)) < 1e-3f, "primeiro quadro corta direto");
+    var offA = new Vector3(0, 50, 100);
+    var offB = new Vector3(150, 50, 0);
+    var (pm, lm) = blend.Update(2, target + new Vector3(0, 10, 0) + offB, target + new Vector3(0, 10, 0), target, 0.5f);
+    True(blend.Blending, "no meio da passagem");
+    float mid = (offA.Length() + offB.Length()) / 2;
+    True(MathF.Abs((pm - lm).Length() - mid) < 0.5f, $"recuo no meio = média dos dois ({(pm - lm).Length()} ≠ {mid})");
+    var lin = Vector3.Lerp(offA, offB, 0.5f);
+    True((pm - lm).Length() > lin.Length() + 10, "arco, não reta (a reta encurtaria o recuo)");
+    var moved = target + new Vector3(30, 0, 0);
+    var (p1, l1) = blend.Update(2, moved + new Vector3(0, 10, 0) + offB, moved + new Vector3(0, 10, 0), moved, 0.6f);
+    True(!blend.Blending && Vector3.Distance(p1, moved + new Vector3(0, 10, 0) + offB) < 1e-3f, $"fim: pose do volume B seguindo o alvo ({p1})");
+    var far = moved + new Vector3(1000, 0, 0);
+    var (p2, _) = blend.Update(1, far + new Vector3(0, 10, 0) + offA, far + new Vector3(0, 10, 0), far, 0.016f);
+    True(!blend.Blending && Vector3.Distance(p2, far + new Vector3(0, 10, 0) + offA) < 1e-3f, "teleporte corta direto");
+    var seco = new CameraBlend { Duration = 0 };
+    seco.Update(1, offA, Vector3.Zero, Vector3.Zero, 0.016f);
+    var (p3, _) = seco.Update(2, offB, Vector3.Zero, Vector3.Zero, 0.016f);
+    True(Vector3.Distance(p3, offB) < 1e-3f, "duração 0 = corte seco do original");
+    var opp = CameraBlend.Arc(new Vector3(0, 0, 100), new Vector3(0, 0, -100), 0.5f);
+    True(MathF.Abs(opp.Length() - 100) < 1e-2f && MathF.Abs(opp.Y) < 1e-2f, $"opostos giram em volta do eixo vertical ({opp})");
+});
+
 Test("Objeto: caixa do HITBOX vale do quadro inicial até o fim da duração; AIMAP fica para a IA (f_bit SQ_PHASE2)", () =>
 {
     SeqCommand C(string k, params object[] v) => new(k, v);

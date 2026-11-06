@@ -32,6 +32,7 @@ public partial class Fatia : Node3D
     string _dir = "";
     CameraZones[] _cameraSets = [];
     int _cameraSet, _zone = -1;
+    readonly CameraBlend _cameraBlend = new(); // passagem suave entre volumes (DECISÃO DO PORT)
     readonly PadMovement _move = new();
     CharacterBody3D _player = null!;
     Node3D? _model;
@@ -505,7 +506,7 @@ public partial class Fatia : Node3D
         while (_problemsLogged < _problems.Count) GD.Print($"[problema] {_problems[_problemsLogged++]}"); // também no log (passadas)
         DebugKeepAim();
         var p = _player.GlobalPosition;
-        if (_cameraDemo != null) UpdateCameraDemo(dt);
+        if (_cameraDemo != null) { UpdateCameraDemo(dt); _cameraBlend.Reset(); }
         else if (_cameraSets.Length == 0)
         {
             _camera.LookAtFromPosition(p + new Vector3(0, 80, 110), p, Vector3.Up);
@@ -518,6 +519,8 @@ public partial class Fatia : Node3D
             var target = new NVector3(p.X, p.Y, p.Z);
             _zone = set.Select(target, _zone);
             var (pos, look) = set.Pose(_zone, target);
+            _cameraBlend.Duration = PortSettings.Current.CameraBlend;
+            (pos, look) = _cameraBlend.Update(_cameraSet * 100000 + _zone, pos, look, target, dt);
             _camera.LookAtFromPosition(new Vector3(pos.X, pos.Y, pos.Z), new Vector3(look.X, look.Y, look.Z), Vector3.Up);
         }
         _hud.Text = $"pos ({p.X:0.0}, {p.Y:0.0}, {p.Z:0.0})  vel {_move.Velocity.Length():0.0} u/s\n" +

@@ -77,6 +77,8 @@ public partial class SettingsPanel : VBoxContainer
         // As duas opções da tela de opções do jogo (mswkMem0010..0015 → CAMERAMODE e LIGHTMODE da GAMERAM).
         Choice(video, "Luz", ["Suave", "Forte"], c.LightMode, v => c.LightMode = v);
         Choice(video, "Câmera da dungeon", ["Perto", "Longe"], c.CameraMode, v => c.CameraMode = v);
+        // DECISÃO DO PORT: o original corta seco ao trocar de volume; 0 volta a isso.
+        Slider(video, "Transição da câmera (s, 0 = original)", 0, 2, 0.1f, c.CameraBlend, v => c.CameraBlend = v);
 
         var sound = Page(tabs, "Som");
         Slider(sound, "Volume geral", 0, 1, 0.05f, c.MasterVolume, v => c.MasterVolume = v);
