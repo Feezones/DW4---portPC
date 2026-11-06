@@ -142,6 +142,7 @@ public partial class MainMenu : Control
 
     public override void _Process(double delta)
     {
+        GameCursor.Update(GetViewport(), false);
         Online.Poll(null);
         FitScreen();
         if (_art == null) return;

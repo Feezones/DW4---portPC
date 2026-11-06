@@ -699,6 +699,16 @@ Test("Port: vaga gravada no meio do tutorial volta ao começo dele (FLG 503 desl
     True(other.FlagOn(503) == 1, "flag fica fora do tutorial");
 });
 
+Test("Port: cursor do mouse (estilo e tamanho) volta do config e respeita a faixa", () =>
+{
+    var b = PortConfig.FromIni(new PortConfig { CursorStyle = 2, CursorSize = 1.5f }.ToIni());
+    Equal((2, 1.5f), (b.CursorStyle, b.CursorSize), "ida e volta");
+    var d = new PortConfig();
+    Equal((0, 1f), (d.CursorStyle, d.CursorSize), "padrão: digital com mira, tamanho 1");
+    var x = PortConfig.FromIni("[grafico]\ncursor=7\ncursor_tamanho=9\n");
+    Equal((2, 2f), (x.CursorStyle, x.CursorSize), "fora da faixa é corrigido");
+});
+
 Test("Port: gráfico (anti-aliasing, sombras, campo de visão, resolução interna) volta do config e respeita a faixa", () =>
 {
     var c = new PortConfig { AntiAliasing = 3, Shadows = 2, Fov = 60, RenderScale = 0.75f, FastForward = 4 };
