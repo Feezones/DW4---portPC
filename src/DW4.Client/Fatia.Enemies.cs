@@ -242,6 +242,7 @@ public partial class Fatia
         Node3D? model = kind.RigidRoot >= 0 && ObjectData() is { } od ? new HudActor(od, kind.RigidRoot, slot: 0).Root
             : kind.Doc?.GenerateScene(kind.State!) as Node3D;
         if (model == null) return null;
+        if (netId == 0) pos = FreeSpawnPoint(pos, gen);
         // Caixa de corpo do Numemon (igAABox do HIT): 8 × 14 × 8, FATO; HIPÓTESE: a mesma para os outros até ler o HIT de cada um.
         var body = new CharacterBody3D { Position = pos, FloorSnapLength = 4f, CollisionMask = 1 | CollisionKinds.EdgeLayer | CollisionKinds.EnemyLayer };
         body.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = 4f, Height = 14f }, Position = new Vector3(0, 7, 0) });
@@ -287,6 +288,27 @@ public partial class Fatia
         _enemies.Add(e);
         SendSpawn(e);
         return e;
+    }
+
+    // FATO (stag0104, geradores.json do #637): GENE-07/08 (ondas que ligam os anéis do portão, gene07/08.lua) usam as mesmas vagas
+    // dos avulsos GENE-09..016 (ex.: GENE-07 vaga 1 = GENE-09 em (135, 120, -235)). Os dois nasciam no mesmo ponto, as cápsulas se
+    // empurravam para dentro do chão e os dois caíam para sempre: a onda nunca acabava e o portão não abria (relato 2026-11-06).
+    // DECISÃO DO PORT: quem nasceria dentro de outro inimigo vivo nasce ao lado (2 corpos de distância, direção fixa pelo gerador).
+    Vector3 FreeSpawnPoint(Vector3 pos, Generator? gen)
+    {
+        const float Gap = 9f; // 2 × raio 4 da cápsula + folga
+        bool Taken(Vector3 p) => _enemies.Any(o => !o.Dead && Mathf.Abs(o.Body.GlobalPosition.Y - p.Y) < 14
+            && new Vector2(o.Body.GlobalPosition.X - p.X, o.Body.GlobalPosition.Z - p.Z).Length() < Gap);
+        if (!Taken(pos)) return pos;
+        float start = gen != null ? (gen.Name.Aggregate(0, (h, c) => h * 31 + c) & 7) * MathF.PI / 4 : 0;
+        for (int ring = 1; ring <= 2; ring++)
+            for (int k = 0; k < 8; k++)
+            {
+                float a = start + k * MathF.PI / 4;
+                var p = pos + new Vector3(MathF.Sin(a), 0, MathF.Cos(a)) * Gap * ring;
+                if (!Taken(p)) return p;
+            }
+        return pos;
     }
 
     // Tira a amostra final que repete a primeira pose (AnimationWrap): sem isso a trnsIN acabava com o inimigo embaixo da terra.
@@ -659,6 +681,15 @@ public partial class Fatia
         }
         e.Body.Velocity = vel;
         e.Body.MoveAndSlide();
+        // DECISÃO DO PORT (rede contra queda, como a do jogador): inimigo que atravessou o chão e caiu 100 abaixo de onde nasceu volta
+        // ao ponto de nascimento. Sem isso ele ficava vivo caindo para sempre e a onda dele (e o script dela) nunca terminava.
+        if (!e.Proxy && e.Body.GlobalPosition.Y < e.Home.Y - 100)
+        {
+            ScriptLog($"{e.Kind.Model} ({e.Gen?.Name ?? "sem gerador"}) caiu do mapa: volta a {e.Home.Round()}");
+            e.Body.GlobalPosition = e.Home + Vector3.Up;
+            e.Body.Velocity = Vector3.Zero;
+            e.Airborne = false;
+        }
         // HIPÓTESE (f_devl3 SQ_WALK: LUACALL "wft" "WHit" e MOVEEX "TZPACC" para a frente; wft_f_devl3.lua manda SQ_WALKOFF): "WHit"
         // é o evento de bater na parede. No passeio da IA (SQ_WALK interno) o evento vem do SQ_WALK do jogo.
         if (e.HitLua == null && e.Brain?.Walking == true && !e.Started && e.Kind.Sequences.TryGetValue("SQ_WALK", out var walk)
