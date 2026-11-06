@@ -21,7 +21,7 @@ public partial class CsSkin : Node3D
     // desloc: altura (unidades do modelo DW4) somada para os pés do CS ficarem onde estão os do DW4 na pose parada.
     // Mãos: ossos onde o jogo prende a arma (Fatia.Weapon: RArm04/LArm04) → osso equivalente do CS. A arma continua presa ao
     // osso do DW4 (mesma rotação), só é empurrada até a mão do modelo do CS, que tem outro tamanho de braço.
-    sealed record Entry(string File, float Scale, float Lift, Dictionary<string, string> Hands);
+    sealed record Entry(string File, float Scale, float Lift, Dictionary<string, string> Hands, Dictionary<string, Vector3> Grip, float WeaponScale);
     static Dictionary<string, Entry>? s_models;
     static Dictionary<string, Entry> Models => s_models ??= ReadManifest();
 
@@ -39,8 +39,18 @@ public partial class CsSkin : Node3D
                 var hands = new Dictionary<string, string>();
                 if (p.Value.TryGetProperty("maos", out var h))
                     foreach (var x in h.EnumerateObject()) hands[x.Name] = x.Value.GetString() ?? "";
+                // ajuste fino da arma: "pegada": { "RArm04": [x, y, z] } desloca a arma no referencial da mão do CS, em
+                // unidades do modelo DW4; "arma_escala": 0.9 encolhe/aumenta as armas para o tamanho do modelo novo.
+                var grip = new Dictionary<string, Vector3>();
+                if (p.Value.TryGetProperty("pegada", out var g))
+                    foreach (var x in g.EnumerateObject())
+                    {
+                        var v = x.Value.EnumerateArray().Select(e => e.GetSingle()).ToArray();
+                        if (v.Length == 3) grip[x.Name] = new Vector3(v[0], v[1], v[2]);
+                    }
+                float weaponScale = p.Value.TryGetProperty("arma_escala", out var ws) ? ws.GetSingle() : 1f;
                 map[p.Name] = new Entry(p.Value.GetProperty("arquivo").GetString() ?? "", p.Value.GetProperty("escala").GetSingle(),
-                    p.Value.TryGetProperty("desloc", out var d) ? d.GetSingle() : 0f, hands);
+                    p.Value.TryGetProperty("desloc", out var d) ? d.GetSingle() : 0f, hands, grip, weaponScale);
             }
             GD.Print($"[cs] {map.Count} modelos do Cyber Sleuth em {path}");
         }
@@ -67,6 +77,8 @@ public partial class CsSkin : Node3D
     AnimationPlayer? _source, _mine;
     Skeleton3D? _dwSkeleton, _csSkeleton;
     Dictionary<string, string> _hands = new();
+    Dictionary<string, Vector3> _grip = new();
+    float _weaponScale = 1f;
     readonly Dictionary<Node3D, Vector3> _basePos = new();
 
     /// <summary>Se houver modelo do CS para <paramref name="key"/>, esconde as malhas do DW4 e põe o do CS por cima.</summary>
@@ -97,7 +109,7 @@ public partial class CsSkin : Node3D
         skin._mine = Find<AnimationPlayer>(scene).FirstOrDefault();
         skin._dwSkeleton = Find<Skeleton3D>(dw4Model).FirstOrDefault();
         skin._csSkeleton = Find<Skeleton3D>(scene).FirstOrDefault();
-        skin._hands = m.Hands;
+        skin._hands = m.Hands; skin._grip = m.Grip; skin._weaponScale = m.WeaponScale;
         dw4Model.AddChild(skin);
         GD.Print($"[cs] {key}: modelo do Cyber Sleuth ligado ({m.File}, escala {m.Scale})");
         return true;
@@ -125,10 +137,15 @@ public partial class CsSkin : Node3D
             var dwPos = (_dwSkeleton.GlobalTransform * _dwSkeleton.GetBoneGlobalPose(dwi)).Origin;
             var csPos = (_csSkeleton.GlobalTransform * _csSkeleton.GetBoneGlobalPose(csi)).Origin;
             var basis = (_dwSkeleton.GlobalTransform * _dwSkeleton.GetBoneGlobalPose(dwi)).Basis;
+            if (_grip.TryGetValue(att.BoneName, out var off))
+            {
+                var csBasis = (_csSkeleton.GlobalTransform * _csSkeleton.GetBoneGlobalPose(csi)).Basis.Orthonormalized();
+                csPos += csBasis * off * _dwSkeleton.GlobalTransform.Basis.Scale.X;
+            }
             var local = basis.Inverse() * (csPos - dwPos);
             foreach (var child in att.GetChildren().OfType<Node3D>())
             {
-                if (!_basePos.TryGetValue(child, out var p0)) _basePos[child] = p0 = child.Position;
+                if (!_basePos.TryGetValue(child, out var p0)) { _basePos[child] = p0 = child.Position; child.Scale *= _weaponScale; }
                 child.Position = p0 + local;
             }
         }
