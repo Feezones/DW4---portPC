@@ -199,6 +199,9 @@ public partial class Fatia
                 var rot = m.Arg(1) is { Kind: 'V', Numbers.Length: 3 } r ? new Vector3((float)r.Numbers[0], (float)r.Numbers[1], (float)r.Numbers[2]) : Vector3.Zero;
                 var spawned = Spawn(m.Name, m.Index, new Vector3((float)p.Numbers[0], (float)p.Numbers[1], (float)p.Numbers[2]), rot);
                 if (spawned != null) MakeHittable(spawned);
+                // 3º valor = sequência inicial (FATO, matb03.lua da stag0103: g_shelfz06 0/1 GENERATE "V<…>/V<…>/SQ_RSET" e "…/SQ_LSET",
+                // que põem o rótulo DEFR/DEFL do lado da prateleira). Antes o port ignorava e as duas ficavam no lado R.
+                if (spawned != null && m.Text(2) is { } first && first.StartsWith("SQ_", StringComparison.Ordinal)) spawned.SetSequence(first);
             }
             // FATO (bit_f_apocaly.lua, hit_g_b01cpole.lua): GENERATE "f_apocaly/I<0>/V<0,30,0>/V<0,90,0>/SQ_ENTR" = dono, índice
             // do dono, posição, rotação e sequência inicial. HIPÓTESE: posição no mundo (= a do chefe no pedestal; assim as caixas

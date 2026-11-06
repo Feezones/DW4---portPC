@@ -233,3 +233,38 @@ não quebram e (3) a vida do barco não aparece nem parece baixar.
   jogador desta fase segue o script: o barco perde vida e o jogador não.
 - Sem janela (115 s, bot): o medidor desce de 50 até 5 e o barco passa por SQ_ADAM, SQ_BDAM e SQ_CDAM. O HP do jogador fica
   em 150/150.
+
+## 0.6.16: mísseis atravessando o barco; torres e bombas da fábrica (2026-11-06)
+
+### Mísseis no casco
+
+- **FATO (seq):** o `x_bltnumemisz01` e a bolota `x_003eblst01a` armam `LUACALL "bht" "BHit"`. O `bht_x_bltnumemisz01.lua`
+  manda `SQ_HIDE`: o tiro some (FADESET HIDE) e vai para o SQ_ERAS. O port não armava esse evento, e os mísseis atravessavam
+  o barco.
+- **HIPÓTESE:** "BHit"/"WHit" = bater em colisão de chão ou parede (beHitLand). O chão de veículo do barco (0x1405) é um
+  beHitLandModelInfo, então conta.
+- **Correção:** o tiro com evento de batida some ao cruzar colisão da camada 1 (cenário e chão de veículo) e não pega mais o
+  jogador do outro lado. Sem janela: os mísseis batem no `chao_g_boatz01` e somem.
+- Bater no casco **não** tira vida do barco, como no original. Nenhum dado liga o tiro ao `g_boathp`; foi a escolha do
+  usuário.
+
+### Torres, prateleiras e bombas da fábrica
+
+- **FATO (hit_g_facttowerz06.lua, hit_g_shelfz06.lua, matf00.lua, matz00.lua):**
+  - O `matb03.lua` gera **6 torres** `g_facttowerz06` (índices 0..5) e **2 prateleiras** `g_shelfz06` (0 e 1, com
+    `SQ_RSET`/`SQ_LSET`), as 2 bombas `g_annihilativebomz06` e o despejador `g_dumperz06`.
+  - Torre: cada golpe tira 50 (HP 100, **2 golpes**). Prateleira: cada golpe tira 35 (100 → 65 → 30 → −5, **3 golpes**, em
+    três estágios de estrago). O golpe carregado (20000) não conta. Nada conta depois da flag 489.
+  - Cada uma derrubada liga uma flag: torres 481..486, prateleiras 487 e 488. Quando **as 8** estão ligadas (e a 489 não):
+    bombas `SQ_SWON` e `SQ_DEAD` (desarmadas e apagadas), despejador `SQ_DDMG` e **flag 489**.
+  - `matf00.lua` (x −560..−530, z −160..−130), só com a 489 **desligada**: demo "bomb", bombas `SQ_FIRE`, fade branco e
+    `NEXTSTAGE stag0102` (fracasso: volta para fora).
+  - Com a 489 ligada o barco segue o rio até o `matz00.lua` (x 420..450, z −170..−120): fade, `SQ_ENJOY` e
+    `NEXTSTAGE stag0104` (a fase seguinte).
+  - As bombas não têm caixa de golpe: não tiram vida do barco. Elas encerram a fase pela demo.
+- No relato, as torres caíram com 2 golpes, como no original. As bombas continuaram porque faltavam as 2 prateleiras. Elas
+  ficam nas margens, a ~50 do trilho: do barco, só a técnica alcança (corrigido na 0.6.15).
+- **Correção:** o GENERATE de objeto com 3º valor de sequência (`".../SQ_RSET"`) agora começa nela. Antes as duas
+  prateleiras ficavam no lado R.
+- **Teste com os scripts reais** (dw4-testes): 6 torres com 2 golpes e 2 prateleiras com 3 golpes. Com uma prateleira de pé,
+  as bombas seguem armadas. Com as 8 derrubadas, liga a 489 e saem bombas SQ_DEAD e despejador SQ_DDMG.

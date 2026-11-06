@@ -2611,6 +2611,36 @@ if (args.Length == 1)
         True(seqs.TryGetValue("SQ_GO02", out var go2) && go2.Any(c => c.Kind == "LUACALL" && c.Values.FirstOrDefault() as string == "brk"), "SQ_GO02 chama o brk_r_boatz01.lua");
     });
 
+    Test("Jogo: stag0103 com os scripts reais — 6 torres (2 golpes) e 2 prateleiras (3 golpes) derrubadas ligam a 489 e desarmam as bombas", () =>
+    {
+        var fases = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fases");
+        var chunks = Directory.GetFiles(Path.Combine(fases, "stag0103", "lua"), "*.lua").ToDictionary(f => Path.GetFileName(f), File.ReadAllBytes);
+        var ram = new GameRam();
+        var engine = new RecordingEngine();
+        var stage = new StageScripts(chunks, new BeHost(engine, ram, new BeSystem { FolderName = "stag0103" }));
+        var errors = new List<string>();
+        stage.Error = (n, e) => errors.Add($"{n}: {e}");
+        stage.Boot();
+        // Golpe físico (10000) num objeto com HP 100; devolve as sequências pedidas.
+        List<string> Hit(string model, int ramNo, int times)
+        {
+            var seqs = new List<string>();
+            var m = new TestModel { Name = model, RamNo = ramNo, Hp = 100, BulletKind = 10000, OnSequence = seqs.Add };
+            for (int i = 0; i < times; i++) stage.RunAs($"hit_{model}.lua", m);
+            return seqs;
+        }
+        for (int t = 0; t < 6; t++)
+            Equal("SQ_SDMG,SQ_DDMG", string.Join(",", Hit("g_facttowerz06", t, 2)), $"torre {t}: 2 golpes de 50");
+        Equal("SQ_SDMG01,SQ_MDMG01,SQ_LDMG01", string.Join(",", Hit("g_shelfz06", 0, 3)), "prateleira 0: 3 golpes de 35");
+        True(ram.FlagOn(489) == 0 && !engine.Log.Any(l => l.Contains("g_annihilativebomz06")), "falta uma prateleira: bombas armadas");
+        Hit("g_shelfz06", 1, 3);
+        True(ram.FlagOn(489) == 1, "as 8 derrubadas: flag 489");
+        for (int i = 0; i < 200; i++) stage.Tick(); // os sd com espera (30 e 150 quadros)
+        True(engine.Log.Count(l => l.Contains("g_annihilativebomz06") && l.Contains("SQ_DEAD")) == 2 && engine.Log.Any(l => l.Contains("g_dumperz06 0 SQ_DDMG")),
+            "bombas SQ_SWON/SQ_DEAD e despejador SQ_DDMG: " + string.Join(" | ", engine.Log.TakeLast(5)));
+        True(errors.Count == 0, string.Join("; ", errors));
+    });
+
     Test("Port: backup chip na última plataforma (SafeGround): queda em buraco não move o ponto; escada sim", () =>
     {
         var g = new SafeGround(40);
