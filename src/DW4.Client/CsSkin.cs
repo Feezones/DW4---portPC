@@ -15,13 +15,35 @@ namespace DW4.Client;
 /// </summary>
 public partial class CsSkin : Node3D
 {
-    // forma/inimigo do DW4 → arquivo e escala (altura do DW4 na pose parada ÷ altura do CS com a mesma animação).
-    static readonly Dictionary<string, (string File, float Scale)> Models = new(StringComparer.OrdinalIgnoreCase)
+    // forma/inimigo/NPC do DW4 → arquivo, escala e mãos, lidos de <pasta>/cs_modelos.json (gerado pelos scripts do teste,
+    // fora do repositório): { "p_agumon": { "arquivo": "p_agumon.glb", "escala": 5.01, "maos": { "RArm04": "J_hand_r" } } }.
+    // Mãos: ossos onde o jogo prende a arma (Fatia.Weapon: RArm04/LArm04) → osso equivalente do CS. A arma continua presa ao
+    // osso do DW4 (mesma rotação), só é empurrada até a mão do modelo do CS, que tem outro tamanho de braço.
+    sealed record Entry(string File, float Scale, Dictionary<string, string> Hands);
+    static Dictionary<string, Entry>? s_models;
+    static Dictionary<string, Entry> Models => s_models ??= ReadManifest();
+
+    static Dictionary<string, Entry> ReadManifest()
     {
-        ["p_dorumon"] = ("dorumon_dw4.glb", 4.13f),
-        ["e_goburi"] = ("goblimon_dw4.glb", 4.45f),
-        ["e_ogre"] = ("ogremon_dw4.glb", 74f),
-    };
+        var map = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
+        if (Folder is not { } folder) return map;
+        var path = Path.Combine(folder, "cs_modelos.json");
+        if (!File.Exists(path)) { GD.PrintErr($"[cs] falta {path}"); return map; }
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+            foreach (var p in doc.RootElement.EnumerateObject())
+            {
+                var hands = new Dictionary<string, string>();
+                if (p.Value.TryGetProperty("maos", out var h))
+                    foreach (var x in h.EnumerateObject()) hands[x.Name] = x.Value.GetString() ?? "";
+                map[p.Name] = new Entry(p.Value.GetProperty("arquivo").GetString() ?? "", p.Value.GetProperty("escala").GetSingle(), hands);
+            }
+            GD.Print($"[cs] {map.Count} modelos do Cyber Sleuth em {path}");
+        }
+        catch (Exception e) { GD.PrintErr($"[cs] erro em {path}: {e.Message}"); }
+        return map;
+    }
 
     static string? Folder => OS.GetEnvironment("DW4_CS_MODELOS") is { Length: > 0 } d ? d : null;
     static readonly Dictionary<string, (GltfDocument Doc, GltfState State)?> s_cache = new();
@@ -30,13 +52,6 @@ public partial class CsSkin : Node3D
     Skeleton3D? _dwSkeleton, _csSkeleton;
     Dictionary<string, string> _hands = new();
     readonly Dictionary<Node3D, Vector3> _basePos = new();
-
-    // Mãos onde o jogo prende a arma (Fatia.Weapon: RArm04/LArm04) → osso equivalente do CS. A arma continua presa ao
-    // osso do DW4 (mesma rotação), só é empurrada até a mão do modelo do CS, que tem outro tamanho de braço.
-    static readonly Dictionary<string, Dictionary<string, string>> Hands = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["p_dorumon"] = new() { ["RArm04"] = "J_te_R", ["LArm04"] = "J_te_L" },
-    };
 
     /// <summary>Se houver modelo do CS para <paramref name="key"/>, esconde as malhas do DW4 e põe o do CS por cima.</summary>
     public static bool TryAttach(Node3D dw4Model, string key, AnimationPlayer? source)
@@ -62,7 +77,7 @@ public partial class CsSkin : Node3D
         skin._mine = Find<AnimationPlayer>(scene).FirstOrDefault();
         skin._dwSkeleton = Find<Skeleton3D>(dw4Model).FirstOrDefault();
         skin._csSkeleton = Find<Skeleton3D>(scene).FirstOrDefault();
-        if (Hands.TryGetValue(key, out var hands)) skin._hands = hands;
+        skin._hands = m.Hands;
         dw4Model.AddChild(skin);
         GD.Print($"[cs] {key}: modelo do Cyber Sleuth ligado ({m.File}, escala {m.Scale})");
         return true;

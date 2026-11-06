@@ -408,6 +408,7 @@ public partial class Fatia
         if (!FindAll<MeshInstance3D>(model).Any()) _problems.Add($"{o.Name}: personagem sem malha (pele igSkin sem igBlendMatrixSelect, formato ainda não lido)");
         o.Actor.Root.AddChild(model);
         o.CharacterAnim = FindAll<AnimationPlayer>(model).FirstOrDefault();
+        CsSkin.TryAttach(model, o.Name, o.CharacterAnim); // teste local, só com DW4_CS_MODELOS
         // DEPURAÇÃO (DW4_DIAG_NPC=1): o que cada NPC tem e o que recebe (T-pose dos NPCs).
         if (DiagNpc) GD.Print($"[npc] {o.Name}/{o.Index}: AnimationPlayer {(o.CharacterAnim != null ? string.Join(",", o.CharacterAnim.GetAnimationList()) : "nenhum")}, esqueletos {FindAll<Skeleton3D>(model).Count()}");
         if (o.CharacterAnim is { } ca && o.Seq != null)
