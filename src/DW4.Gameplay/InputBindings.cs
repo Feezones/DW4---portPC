@@ -33,14 +33,15 @@ public sealed class InputBindings
     static readonly Dictionary<string, string[]> KeyboardDefaults = new()
     {
         ["cima"] = ["tecla:W", "tecla:Up"], ["baixo"] = ["tecla:S", "tecla:Down"], ["esquerda"] = ["tecla:A", "tecla:Left"], ["direita"] = ["tecla:D", "tecla:Right"],
-        // Pedido do usuário (2026-11-02): técnica no E, defesa no clique direito, 1–5 para os itens rápidos (as técnicas diretas ficam
-        // sem tecla padrão; a técnica escolhida troca pela roda do mouse).
-        ["ataque"] = ["tecla:J", "mouse:1"], ["tecnica"] = ["tecla:E", "tecla:K"], ["pulo"] = ["tecla:Space"], ["guarda"] = ["mouse:2", "tecla:L"],
+        // Pedidos do usuário: defesa no clique direito e 1–5 para os itens rápidos (2026-11-02); as técnicas diretas em Q, E, R, F, C
+        // (2026-11-06; a 6ª, que o jogo também tem, no V). A técnica escolhida pela roda do mouse fica no K. Interagir com jogador
+        // saiu do F para o G.
+        ["ataque"] = ["tecla:J", "mouse:1"], ["tecnica"] = ["tecla:K"], ["pulo"] = ["tecla:Space"], ["guarda"] = ["mouse:2", "tecla:L"],
         ["tecnica_anterior"] = ["mouse:4"], ["tecnica_proxima"] = ["mouse:5"],
-        ["tecnica1"] = [], ["tecnica2"] = [], ["tecnica3"] = [], ["tecnica4"] = [], ["tecnica5"] = [], ["tecnica6"] = [],
+        ["tecnica1"] = ["tecla:Q"], ["tecnica2"] = ["tecla:E"], ["tecnica3"] = ["tecla:R"], ["tecnica4"] = ["tecla:F"], ["tecnica5"] = ["tecla:C"], ["tecnica6"] = ["tecla:V"],
         ["item1"] = ["tecla:Key1"], ["item2"] = ["tecla:Key2"], ["item3"] = ["tecla:Key3"], ["item4"] = ["tecla:Key4"], ["item5"] = ["tecla:Key5"], ["itens"] = ["tecla:I"],
         ["status"] = ["tecla:Tab"], ["confirmar"] = ["tecla:Enter", "tecla:J"], ["cancelar"] = ["tecla:Backspace", "tecla:K"],
-        ["chat"] = ["tecla:Enter"], ["interagir"] = ["tecla:F"], ["pausa"] = ["tecla:Escape"],
+        ["chat"] = ["tecla:Enter"], ["interagir"] = ["tecla:G"], ["pausa"] = ["tecla:Escape"],
         ["salvar_rapido"] = ["tecla:F5"], ["acelerar"] = ["tecla:Shift"],
     };
 
@@ -113,13 +114,34 @@ public sealed class InputBindings
     public void MigrateKeyboard2()
     {
         var map = _maps[Keyboard];
-        void From(string action, params string[] old)
+        // Os valores novos são os padrões de 2026-11-02 (não os de hoje): a MigrateKeyboard3 parte deles.
+        void From(string action, string[] to, params string[] old)
         {
-            if (map.TryGetValue(action, out var cur) && cur.SequenceEqual(old)) map[action] = [.. KeyboardDefaults[action]];
+            if (map.TryGetValue(action, out var cur) && cur.SequenceEqual(old)) map[action] = [.. to];
         }
-        From("tecnica", "tecla:K", "mouse:2");
-        From("guarda", "tecla:L");
-        for (int i = 1; i <= 6; i++) From($"tecnica{i}", $"tecla:Key{i}");
+        From("tecnica", ["tecla:E", "tecla:K"], "tecla:K", "mouse:2");
+        From("guarda", ["mouse:2", "tecla:L"], "tecla:L");
+        for (int i = 1; i <= 6; i++) From($"tecnica{i}", [], $"tecla:Key{i}");
+    }
+
+    /// <summary>
+    /// Migração única dos padrões do teclado de 2026-11-06 (técnicas diretas em Q, E, R, F, C, V; técnica escolhida só no K;
+    /// interagir no G). Só mexe no que ainda está igual ao padrão anterior; se o jogador já tinha posto uma dessas teclas em outra
+    /// ação, a técnica fica sem ela (sem roubar a tecla dele).
+    /// </summary>
+    public void MigrateKeyboard3()
+    {
+        var map = _maps[Keyboard];
+        bool Is(string action, params string[] old) => map.TryGetValue(action, out var cur) && cur.SequenceEqual(old);
+        if (Is("tecnica", "tecla:E", "tecla:K")) map["tecnica"] = ["tecla:K"];
+        if (Is("interagir", "tecla:F")) map["interagir"] = ["tecla:G"];
+        for (int i = 1; i <= 6; i++)
+        {
+            string action = $"tecnica{i}";
+            if (!Is(action)) continue;
+            var keys = KeyboardDefaults[action].Where(k => Conflicts(Keyboard, k, action).Count == 0).ToList();
+            map[action] = keys;
+        }
     }
 
     /// <summary>Linhas "id=\"a,b\"" de um aparelho, para a seção dele no config.cfg.</summary>

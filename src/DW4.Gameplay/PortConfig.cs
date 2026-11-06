@@ -17,8 +17,8 @@ public sealed class PortConfig
     public bool Vibration { get; set; } = true;
     /// <summary>Idioma dos textos do jogo (<see cref="GameLanguage"/>): 0 inglês original, 1 português, 2 português com nomes originais.</summary>
     public int Language { get; set; }
-    /// <summary>Versão dos padrões de controle gravados ([jogo] controles): abaixo de 2, migra o teclado (InputBindings.MigrateKeyboard2).</summary>
-    public int ControlsVersion { get; set; } = 2;
+    /// <summary>Versão dos padrões de controle gravados ([jogo] controles): abaixo de 2, migra o teclado (InputBindings.MigrateKeyboard2); abaixo de 3, MigrateKeyboard3.</summary>
+    public int ControlsVersion { get; set; } = 3;
     // [grafico]
     public int Width { get; set; } = 1280;
     public int Height { get; set; } = 720;
@@ -149,6 +149,7 @@ public sealed class PortConfig
             }
         }
         if (c.ControlsVersion < 2) { c.Bindings.MigrateKeyboard2(); c.ControlsVersion = 2; }
+        if (c.ControlsVersion < 3) { c.Bindings.MigrateKeyboard3(); c.ControlsVersion = 3; }
         c.Clamp();
         return c;
     }

@@ -299,7 +299,9 @@ public partial class Fatia : Node3D
             if (k.Keycode == Key.F8 && OS.IsDebugBuild()) DebugNextTarget();
         }
         // Ações do mapa de controles (PortInput, configurável nas Configurações).
-        for (int i = 0; i < 6; i++) if (PortInput.Pressed(e, $"tecnica{i + 1}")) _techKey = i;
+        // Técnicas diretas (padrão Q, E, R, F, C, V): fora de menus e janelas, para o Q/E das abas não soltar técnica.
+        if (!_menuOpen && !ShopOpen && !SubWindowOpen && !_quickOpen)
+            for (int i = 0; i < 6; i++) if (PortInput.Pressed(e, $"tecnica{i + 1}")) _techKey = i;
         // DEPURAÇÃO (só no build Debug, com o F3 ligado): F7 equipa o último item pego. No jogo, equipar é só pelo menu de status e
         // pelas lojas, como no original (o atalho "equipar" do port, E/Y, saiu: trocava de arma sem querer e briga com o Q/E do menu).
         if (OS.IsDebugBuild() && _hud.Visible && e is InputEventKey { Pressed: true, Echo: false, Keycode: Key.F7 }) EquipLast();

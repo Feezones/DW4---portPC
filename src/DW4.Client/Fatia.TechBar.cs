@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Godot;
 using DW4.Gameplay;
 
@@ -6,35 +7,71 @@ namespace DW4.Client;
 
 /// <summary>
 /// Barra de técnicas do port. FATO (fase4-levantamento-combate.md): o jogador manda GENERATEWAZA ao painel, que só aceita sem recarga e
-/// com MP ≥ custo, desconta o MP, põe a recarga e devolve o LABEL da SQ_WAZA (<see cref="TechniquePanel"/>). DESCONHECIDO: como o
-/// painel do jogo escolhe a técnica (a tela dele não foi lida). DECISÃO DO PORT: as 6 técnicas da WAZALIST numa barra embaixo, com
-/// custo e recarga; 1..6 usam direto; roda do mouse ou LB/RB trocam a selecionada, e K, botão direito ou Y usam a selecionada.
+/// com MP ≥ custo, desconta o MP, põe a recarga e devolve o LABEL da SQ_WAZA (<see cref="TechniquePanel"/>). FATO (db shinka): toda
+/// Digimon tem 6 famílias de técnica (TECH1..6), então a WAZALIST chega a 6. DESCONHECIDO: como o painel do jogo escolhe a técnica
+/// (a tela dele não foi lida).
+/// DECISÃO DO PORT (pedido do usuário, 2026-11-06): a barra das técnicas fica separada da hotbar de itens (1–5), logo acima dela,
+/// com a tecla de cada uma (padrão Q, E, R, F, C e V para a 6ª), custo e recarga. Tecla ou clique/toque na caixa usam direto; roda do
+/// mouse ou LB/RB trocam a selecionada, e K ou o X do controle usam a selecionada.
 /// </summary>
 public partial class Fatia
 {
     int _techSelected;
     HBoxContainer? _techBar;
     readonly Label[] _techLabels = new Label[6];
+    readonly Label[] _techKeys = new Label[6];
     readonly ColorRect[] _techCool = new ColorRect[6];
+    readonly PanelContainer[] _techBoxes = new PanelContainer[6];
+    StyleBoxFlat? _techStyle, _techStyleSelected;
 
     void SetupTechBar()
     {
         var layer = new CanvasLayer { Layer = 6 };
-        _techBar = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.End, AnchorLeft = 1, AnchorRight = 1, AnchorTop = 1, AnchorBottom = 1, OffsetLeft = -680, OffsetRight = -20, OffsetTop = -74, OffsetBottom = -14, MouseFilter = Control.MouseFilterEnum.Ignore };
+        var holder = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
+        holder.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        layer.AddChild(holder);
+        _techBar = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
         _techBar.AddThemeConstantOverride("separation", 6);
+        _techStyle = QuickBox(new Color(0.35f, 0.75f, 0.95f));
+        _techStyleSelected = QuickBox(QuickGold, 3);
         for (int i = 0; i < 6; i++)
         {
-            var slot = new PanelContainer { CustomMinimumSize = new Vector2(104, 56), MouseFilter = Control.MouseFilterEnum.Ignore };
-            var cool = new ColorRect { Color = new Color(0, 0, 0, 0.55f), AnchorRight = 1, AnchorBottom = 1, MouseFilter = Control.MouseFilterEnum.Ignore };
-            var label = new Label { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+            var box = new PanelContainer { CustomMinimumSize = new Vector2(104, 48), MouseFilter = Control.MouseFilterEnum.Stop };
+            box.AddThemeStyleboxOverride("panel", _techStyle);
+            int slot = i;
+            box.GuiInput += ev =>
+            {
+                if (ev is not InputEventMouseButton { Pressed: false, ButtonIndex: MouseButton.Left }) return;
+                box.AcceptEvent();
+                if (slot < _techs.Count && !_menuOpen && !ShopOpen && !SubWindowOpen && !_quickOpen) _techKey = slot;
+            };
+            var cool = new ColorRect { Color = new Color(0, 0, 0, 0.6f), MouseFilter = Control.MouseFilterEnum.Ignore };
+            var label = new Label { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
             label.AddThemeFontSizeOverride("font_size", 13);
-            slot.AddChild(label);
-            slot.AddChild(cool);
-            _techBar.AddChild(slot);
+            // Tecla numa plaquinha sobre o canto de cima à esquerda (fora do texto), como nos atalhos de MMO.
+            var badgeStyle = new StyleBoxFlat { BgColor = new Color(0.05f, 0.05f, 0.12f, 0.95f), BorderColor = QuickGold, CornerDetail = 4 };
+            badgeStyle.SetBorderWidthAll(1);
+            badgeStyle.SetCornerRadiusAll(4);
+            badgeStyle.ContentMarginLeft = badgeStyle.ContentMarginRight = 4;
+            var badge = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore, Position = new Vector2(-14, -18) };
+            badge.AddThemeStyleboxOverride("panel", badgeStyle);
+            var key = new Label { MouseFilter = Control.MouseFilterEnum.Ignore };
+            key.AddThemeFontSizeOverride("font_size", 13);
+            key.AddThemeColorOverride("font_color", QuickGold);
+            badge.AddChild(key);
+            var keyHolder = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
+            keyHolder.AddChild(badge);
+            box.AddChild(label);
+            box.AddChild(cool);
+            box.AddChild(keyHolder);
+            _techBar.AddChild(box);
             _techLabels[i] = label;
+            _techKeys[i] = key;
             _techCool[i] = cool;
+            _techBoxes[i] = box;
         }
-        layer.AddChild(_techBar);
+        holder.AddChild(_techBar);
+        UseGameFont(_techBar);
         AddChild(layer);
     }
 
@@ -47,25 +84,48 @@ public partial class Fatia
         return true;
     }
 
+    // Tecla do aparelho em uso para a técnica direta n (1..6); sem ligação, nada.
+    string TechKeyName(int n)
+    {
+        var device = _usingPad ? InputBindings.Pad : InputBindings.Keyboard;
+        return PortSettings.Current.Bindings.Get(device, $"tecnica{n}").FirstOrDefault() is { } b ? InputBindings.Describe(b) : "";
+    }
+
     void UpdateTechBar()
     {
         if (_techBar == null) return;
         // Some com a janela de fala aberta (a barra cobria a moldura de baixo).
-        _techBar.Visible = _techs.Count > 0 && !_menuOpen && !TalkWindowOpen && !ShopOpen && !SubWindowOpen;
+        _techBar.Visible = _techs.Count > 0 && !InCutscene && !_menuOpen && !TalkWindowOpen && !ShopOpen && !SubWindowOpen;
+        if (!_techBar.Visible) return;
         if (_techSelected >= _techs.Count) _techSelected = 0;
         for (int i = 0; i < 6; i++)
         {
-            var slot = (Control)_techLabels[i].GetParent();
+            var slot = _techBoxes[i];
             if (i >= _techs.Count) { slot.Visible = false; continue; }
             slot.Visible = true;
             var t = _techs[i];
             float cd = _panel.Cooldown(t);
             bool noMp = _mp < t.Mp;
-            _techLabels[i].Text = $"{i + 1}  {t.Name}\n{t.Mp} MP";
-            _techLabels[i].Modulate = noMp ? new Color(1, 0.5f, 0.5f) : i == _techSelected ? new Color(1, 1, 0.5f) : new Color(1, 1, 1);
+            _techKeys[i].Text = TechKeyName(i + 1);
+            ((Control)_techKeys[i].GetParent()).Visible = _techKeys[i].Text.Length > 0;
+            _techLabels[i].Text = $"{t.Name}\n{t.Mp} MP";
+            _techLabels[i].Modulate = noMp ? new Color(1, 0.5f, 0.5f) : i == _techSelected ? new Color(1, 1, 0.6f) : Colors.White;
             float frac = t.Delay > 0 ? Math.Clamp(cd / (t.Delay / 60f), 0, 1) : 0;
-            _techCool[i].AnchorTop = 1 - frac;
-            slot.SelfModulate = i == _techSelected ? new Color(1.4f, 1.4f, 0.8f) : new Color(1, 1, 1);
+            // A sombra da recarga desce de cima para baixo (cobre a caixa toda e vai encolhendo).
+            _techCool[i].Visible = frac > 0;
+            _techCool[i].Size = new Vector2(slot.Size.X, slot.Size.Y * frac);
+            _techCool[i].Position = new Vector2(0, slot.Size.Y * (1 - frac));
+            slot.AddThemeStyleboxOverride("panel", i == _techSelected ? _techStyleSelected : _techStyle);
         }
+        // Logo acima da hotbar de itens, na mesma escala (altura da janela, base 720) e no mesmo centro; em 4:3 começa depois do
+        // painel de status do canto de baixo à esquerda, como a hotbar.
+        var size = GetViewport().GetVisibleRect().Size;
+        float s = size.Y / 720f;
+        _techBar.Scale = new Vector2(s, s);
+        _techBar.ResetSize();
+        var barSize = _techBar.GetCombinedMinimumSize() * s;
+        float itemsH = (_quickHud?.GetCombinedMinimumSize().Y ?? 40) * s;
+        float x = Math.Max((size.X - barSize.X) / 2, 290 * s);
+        _techBar.Position = new Vector2(x, size.Y - 10 * s - itemsH - 14 * s - barSize.Y);
     }
 }
