@@ -57,13 +57,16 @@ public partial class ModelView : SubViewportContainer
         _model = m;
         _pivot.AddChild(m);
         _pivot.Rotation = new Vector3(0, Mathf.DegToRad(20), 0);
-        if (m.FindChildren("*", nameof(AnimationPlayer), true, false).OfType<AnimationPlayer>().FirstOrDefault() is { } player)
+        var player = m.FindChildren("*", nameof(AnimationPlayer), true, false).OfType<AnimationPlayer>().FirstOrDefault();
+        if (player != null)
         {
             var wait = player.GetAnimationList().FirstOrDefault(a => a.StartsWith("wait", StringComparison.OrdinalIgnoreCase)) ?? player.GetAnimationList().FirstOrDefault();
             if (wait != null) { player.GetAnimation(wait).LoopMode = Animation.LoopModeEnum.Linear; player.Play(wait); }
         }
+        CsSkin.TryAttach(m, playerModel, player); // modelo do Cyber Sleuth também no menu (esconde as malhas do DW4)
         // Enquadra pela caixa das malhas (no espaço do pivô; o modelo ainda não terminou de entrar na árvore).
         var boxes = m.FindChildren("*", nameof(MeshInstance3D), true, false).OfType<MeshInstance3D>()
+            .Where(mi => !UnderCsSkin(mi)) // pelas malhas do DW4 (escondidas): a do CS fica na escala dela (Veemon ~0,1) e enquadrava errado
             .Select(mi => Relative(mi, _pivot) * mi.Mesh.GetAabb()).ToList();
         if (boxes.Count == 0) return;
         var box = boxes.Aggregate((a, b) => a.Merge(b));
@@ -72,6 +75,12 @@ public partial class ModelView : SubViewportContainer
         float dist = size / 2 / MathF.Tan(Mathf.DegToRad(_camera.Fov / 2)) * 1.2f;
         var pos = center + new Vector3(0, size * 0.06f, dist);
         _camera.Transform = new Transform3D(Basis.LookingAt(center - pos, Vector3.Up), pos); // sem LookAt: pode estar fora da árvore
+    }
+
+    static bool UnderCsSkin(Node n)
+    {
+        for (var x = n.GetParent(); x != null; x = x.GetParent()) if (x is CsSkin) return true;
+        return false;
     }
 
     static Transform3D Relative(Node3D n, Node3D root)

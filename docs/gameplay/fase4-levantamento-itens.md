@@ -49,3 +49,13 @@ Leitura estática do main.dol e das tabelas beDataBase do area #3 em 2026-10-24.
 - Estado em dados+0x1C: 0 = início (_startModeStr 'd' direct = já, 't' = BOOT_TIMER); 1 = primeiro lote; 2 = rodando, com reposição pelo _fillModeStr ('w' wipeout: novo lote quando todos morrem; 'a': repõe sempre que vivos ≠ _geneCount; 't': a cada GENE_TIMER); quando o pool restante (+0x10) acaba, estado 3.
 - Estado 3: drop com flag 1, e a lista "last" só vale quando resta exatamente 1 registro (0x802FCD2C). Ou seja, o último inimigo do gerador usa o _itemLastDataList (o drop "perfeito"). Com todos mortos, roda o _callLua (ex.: gene01.lua) e desliga o gerador.
 - O byte do re-sorteio garantido é +0x24 do objeto gerenciador (r29), não dos dados do gerador; onde ele é ligado: DESCONHECIDO. O handler do comando PERFECTDROP não foi lido.
+
+## Baú da caixa quebrada: sair, cair e coleta (2026-11-05)
+
+- FATO (0x802FCE60..0x802FCEBC): com o sorteio dando item, o gerador manda MODELCTRL <modelo> GENERATE com a posição da matriz do objeto morto (GETMATRIX_ALL, 0x802FCCA4/0x802FCE70), a linha do item e o índice da tabela. Nenhuma velocidade é passada.
+- FATO (0x802FCEDC..0x802FCEEC): sem item no sorteio, só sorteia de novo se o byte +0x24 do gerenciador estiver ligado; senão não sai nada (soma das _rate abaixo de 10000 = chance de nada; nZ1obje1 da stag0102 ~43%).
+- FATO (beNDMWMdlItem 0x803AA9A0..0x803AC438): nenhuma constante de gravidade ou velocidade; as floats lidas (1, 3, 10, 100, 0,5, 0,7, −5) são do nome flutuando (TEXTCTL/SETPOSITION, 10 acima do baú).
+- FATO (ndmw.afs #179, objetos.json): o pulo e a queda são da animação de juntas. g_000item, capsule y: q0 3 → q10 8 → q20 2 (TRAN01, 1..20) → q30 5,5 → q40 3,5 → q50 6 → q60 5 (TRAN02, 20..60). g_000bit, coin: gira em Y e y 0 → −3 → −2,32 → −1 → −3 …; g_000xdata1, xdataup y 4 → 2,5 → 6.
+- FATO (0x803AB6EC..0x803AB710, 0x8031C02C..0x8031C190): o "PLAYER NEAR" grava em 0x80535C0C dx² + dy² + dz² do jogador mais perto, e a coleta compara com 64f: o raio é 8, não 64. O nome do dono (0x803ABB64..0x803ABBA8) faz a mesma conta.
+- HIPÓTESE (seq): o baú só pode ser pego depois do CTRL "isLive" do SQ_ENT2 (o SQ_ENTR, o pulo, não tem). O código que liga o isLive à coleta não foi lido.
+- Port até a 0.6.9: raio 64 como distância. O jogador, a ~10 da caixa, pegava o baú no quadro em que nascia (o SQ_EXIT some em 10 quadros), e ninguém via o baú sair nem cair. Além disso, os baús de BIT/X-Data/plug (igTextureMatrixStateAttr) tinham o giro e o pulo tratados como animação de UV pelo HudActor e ficavam parados.

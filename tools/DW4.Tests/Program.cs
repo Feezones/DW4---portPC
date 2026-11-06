@@ -251,7 +251,7 @@ Test("Online: menu do F (jogador mais perto e opções conforme grupo e amizade)
     o = DW4.Gameplay.Online.PlayerInteraction.Options("Bia", new(null, "Gui", true, false, false, false));
     True(o[0].Enabled && o[2].Enabled, "amigo e sem grupo: convida e troca");
     var b = new InputBindings();
-    True(b.Get(InputBindings.Keyboard, "interagir").SequenceEqual(new[] { "tecla:F" }), "F no teclado");
+    True(b.Get(InputBindings.Keyboard, "interagir").SequenceEqual(new[] { "tecla:G" }), "G no teclado (o F é da 4ª técnica)");
 });
 
 Test("Online: troca de itens (travar, confirmar, tudo ou nada, mudança destrava, impItem fora)", () =>
@@ -647,6 +647,45 @@ Test("Port: baú do item no chão (tabela do main.dol 0x804DE0A8 e coluna MODEL 
     Equal("g_000item", Drops.ChestModel(db, new ItemRef("conItem", 99)), "linha fora");
 });
 
+Test("Port: baú da caixa quebrada sai, cai e só então pode ser pego (distância² < 64 do beNDMWMdlItem, isLive do SQ_ENT2)", () =>
+{
+    Equal(8f, Drops.PickupRadius, "raio 8 (64 é a distância ao quadrado, 0x803AB704)");
+    True(Drops.InPickupRange(5, 0, 6), "a 7,8: pega");
+    True(!Drops.InPickupRange(6, 0, 6), "a 8,5: não pega");
+    True(!Drops.InPickupRange(10, 0, 0), "colado na caixa (corpo de 14 segura o jogador a ~10): não pega mais no quadro em que nasce");
+    True(!Drops.InPickupRange(0, 9, 0), "conta a altura também (dx² + dy² + dz²)");
+    SeqCommand C(string k, params object[] v) => new(k, v);
+    // Sequências do g_000item (ndmw.afs #179).
+    var seqs = new Dictionary<string, List<SeqCommand>>
+    {
+        ["SQ_WAIT"] = [C("LABEL", "DEF"), C("JUMP", "SQ_ENTR"), C("LABEL", "ON"), C("ACTION", "WAIT01"), C("CTRL", "isLive"), C("WCHECK", "Action"), C("JUMP", "SQ_BODING")],
+        ["SQ_ENTR"] = [C("ACTION", "TRAN01"), C("WCHECK", "Action"), C("JUMP", "SQ_ENT2")],
+        ["SQ_ENT2"] = [C("ACTION", "TRAN02"), C("CTRL", "isLive"), C("WCHECK", "Action"), C("LABELCTRL", "ON", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
+        ["SQ_BODING"] = [C("ACTION", "FLASH1"), C("CTRL", "isLive"), C("WCHECK", "Action"), C("JUMP", "SQ_EXIT")],
+        ["SQ_EXIT"] = [C("ACTION", "EXIT01"), C("WCHECK", "Action"), C("JUMP", "SQ_ERAS")],
+    };
+    var actions = new Dictionary<string, List<SeqCommand>>
+    {
+        ["TRAN01"] = [C("JOINTSET", "", 1f, 20f, "OS"), C("WAITCHECK", "Joint", 0f)],
+        ["TRAN02"] = [C("JOINTSET", "", 20f, 60f, "OS"), C("WAITCHECK", "Joint", 0f)],
+        ["WAIT01"] = [C("JOINTSET", "", 70f, 190f, "LP"), C("WAITCHECK", "Frame", 960f)],
+        ["FLASH1"] = [C("JOINTSET", "", 70f, 190f, "OS"), C("WAITCHECK", "Frame", 10f)],
+        ["EXIT01"] = [C("JOINTSET", "", 180f, 190f, "OS"), C("WAITCHECK", "Joint", 0f)],
+    };
+    var s = new ObjectSequencer(seqs, actions);
+    s.Start("SQ_WAIT");
+    Equal("SQ_ENTR", s.Sequence, "DEF → SQ_ENTR");
+    True(!Drops.ChestPickable(s), "saindo da caixa (TRAN01, sem isLive): não pega");
+    for (int i = 0; i < 30 && s.Sequence == "SQ_ENTR"; i++) s.Tick(1 / ObjectSequencer.FramesPerSecond);
+    Equal("SQ_ENT2", s.Sequence, "depois do pulo, a queda");
+    True(Drops.ChestPickable(s), "caindo (TRAN02, isLive): já pega");
+    for (int i = 0; i < 60 && s.Sequence == "SQ_ENT2"; i++) s.Tick(1 / ObjectSequencer.FramesPerSecond);
+    True(s.Sequence == "SQ_WAIT" && Drops.ChestPickable(s), $"no chão (SQ_WAIT/ON): pega ({s.Sequence})");
+    s.Start("SQ_EXIT");
+    True(!Drops.ChestPickable(s), "sumindo: não pega de novo");
+    True(Drops.ChestPickable(null), "cubo de reserva (sem sequência): pega");
+});
+
 Test("Port: vaga gravada no meio do tutorial volta ao começo dele (FLG 503 desligada, entrada 0, como o restart.lua)", () =>
 {
     var ram = new GameRam();
@@ -658,6 +697,16 @@ Test("Port: vaga gravada no meio do tutorial volta ao começo dele (FLG 503 desl
     other.SetFlag(503, true);
     Equal(("stagml11", 3), DW4.Script.Save.ResumePoint.Adjust(other, "stagml11", 3), "outra fase não muda");
     True(other.FlagOn(503) == 1, "flag fica fora do tutorial");
+});
+
+Test("Port: cursor do mouse (estilo e tamanho) volta do config e respeita a faixa", () =>
+{
+    var b = PortConfig.FromIni(new PortConfig { CursorStyle = 2, CursorSize = 1.5f }.ToIni());
+    Equal((2, 1.5f), (b.CursorStyle, b.CursorSize), "ida e volta");
+    var d = new PortConfig();
+    Equal((0, 1f), (d.CursorStyle, d.CursorSize), "padrão: digital com mira, tamanho 1");
+    var x = PortConfig.FromIni("[grafico]\ncursor=7\ncursor_tamanho=9\n");
+    Equal((2, 2f), (x.CursorStyle, x.CursorSize), "fora da faixa é corrigido");
 });
 
 Test("Port: gráfico (anti-aliasing, sombras, campo de visão, resolução interna) volta do config e respeita a faixa", () =>
@@ -700,7 +749,7 @@ Test("Port: mapa de controles (padrão, salvar e carregar no config, conflito, r
     var taken = b.Set(InputBindings.Keyboard, "pulo", "tecla:K");
     True(taken.SequenceEqual(new[] { "tecnica" }), "Set devolve de quem tirou");
     Equal("tecla:K", b.Get(InputBindings.Keyboard, "pulo")[0], "pulo agora em K");
-    True(!b.Get(InputBindings.Keyboard, "tecnica").Contains("tecla:K") && b.Get(InputBindings.Keyboard, "tecnica").Contains("tecla:E"), "técnica perdeu o K e manteve o E");
+    True(b.Get(InputBindings.Keyboard, "tecnica").Count == 0, "técnica escolhida perdeu o K");
     True(b.Get(InputBindings.Keyboard, "cancelar").Contains("tecla:K"), "cancelar (menus) continua com K");
     b.Set(InputBindings.Pad, "ataque", "botao:2");
     // Salvar e carregar pelo texto do config.cfg.
@@ -708,12 +757,24 @@ Test("Port: mapa de controles (padrão, salvar e carregar no config, conflito, r
     Equal((2, 144, 0.5f, false), (back.WindowMode, back.FpsLimit, back.VoiceVolume, back.Fullscreen), "modo sem borda, FPS e vozes voltam");
     True(back.Bindings.Get(InputBindings.Keyboard, "pulo").SequenceEqual(b.Get(InputBindings.Keyboard, "pulo")), "pulo trocado volta do arquivo");
     True(back.Bindings.Get(InputBindings.Pad, "ataque").SequenceEqual(new[] { "botao:2" }), "ataque do controle trocado volta do arquivo");
-    True(back.Bindings.Get(InputBindings.Keyboard, "tecnica").SequenceEqual(new[] { "tecla:E" }), "técnica sem o K volta do arquivo");
+    True(back.Bindings.Get(InputBindings.Keyboard, "tecnica").Count == 0, "técnica sem o K volta do arquivo");
     // Migração única dos padrões antigos do teclado (técnica K + clique direito, defesa L, técnicas 1–6): o que o jogador mudou fica.
     var old = PortConfig.FromIni("[teclado]\ntecnica=\"tecla:K,mouse:2\"\nguarda=\"tecla:L\"\ntecnica1=\"tecla:Key1\"\ntecnica2=\"tecla:Q\"\n");
-    True(old.Bindings.Get(InputBindings.Keyboard, "tecnica").SequenceEqual(new[] { "tecla:E", "tecla:K" }) && old.Bindings.Get(InputBindings.Keyboard, "guarda").SequenceEqual(new[] { "mouse:2", "tecla:L" })
+    // Depois a de 2026-11-06: o Q que o jogador pôs na técnica 2 fica, e a técnica 1 não rouba o Q dela.
+    True(old.Bindings.Get(InputBindings.Keyboard, "tecnica").SequenceEqual(new[] { "tecla:K" }) && old.Bindings.Get(InputBindings.Keyboard, "guarda").SequenceEqual(new[] { "mouse:2", "tecla:L" })
         && old.Bindings.Get(InputBindings.Keyboard, "tecnica1").Count == 0 && old.Bindings.Get(InputBindings.Keyboard, "tecnica2").SequenceEqual(new[] { "tecla:Q" })
-        && old.Bindings.Get(InputBindings.Keyboard, "item1").SequenceEqual(new[] { "tecla:Key1" }) && old.ControlsVersion == 2, "migração dos padrões do teclado");
+        && old.Bindings.Get(InputBindings.Keyboard, "tecnica3").SequenceEqual(new[] { "tecla:R" })
+        && old.Bindings.Get(InputBindings.Keyboard, "item1").SequenceEqual(new[] { "tecla:Key1" }) && old.ControlsVersion == 3, "migração dos padrões do teclado");
+    // Config da 0.6.22 (versão 2, padrões de 2026-11-02): técnicas diretas vão para Q E R F C V, a escolhida fica no K, interagir no G.
+    var mig = PortConfig.FromIni("[jogo]\ncontroles=2\n[teclado]\ntecnica=\"tecla:E,tecla:K\"\ninteragir=\"tecla:F\"\n"
+        + string.Concat(Enumerable.Range(1, 6).Select(i => $"tecnica{i}=\"\"\n"))).Bindings;
+    Equal("Q,E,R,F,C,V", string.Join(",", Enumerable.Range(1, 6).Select(i => InputBindings.Describe(mig.Get(InputBindings.Keyboard, $"tecnica{i}").FirstOrDefault() ?? "-"))), "técnicas diretas migradas");
+    True(mig.Get(InputBindings.Keyboard, "tecnica").SequenceEqual(new[] { "tecla:K" }) && mig.Get(InputBindings.Keyboard, "interagir").SequenceEqual(new[] { "tecla:G" }), "escolhida no K e interagir no G");
+    // Padrão novo: nenhuma ação do jogo divide tecla com outra.
+    var fresh = new InputBindings();
+    foreach (var a in InputBindings.Actions)
+        foreach (var k in fresh.Get(InputBindings.Keyboard, a.Id))
+            True(fresh.Conflicts(InputBindings.Keyboard, k, a.Id).Count == 0, $"{a.Id} sem conflito em {k}: " + string.Join(",", fresh.Conflicts(InputBindings.Keyboard, k, a.Id)));
     True(PortConfig.FromIni(old.ToIni()).Bindings.Get(InputBindings.Keyboard, "tecnica2").SequenceEqual(new[] { "tecla:Q" }), "migração não roda de novo");
     // Restaurar o padrão de um aparelho não mexe no outro.
     back.Bindings.RestoreDefaults(InputBindings.Keyboard);
@@ -861,6 +922,35 @@ Test("Câmera por volumes: escolha do volume e pose com recuo e inclinação", (
     True(Vector3.Distance(pos, expected) < 1e-3f, $"câmera {pos}, esperado {expected}");
 });
 
+Test("Câmera: passagem suave entre volumes (CameraBlend) segue o alvo, gira em arco e termina na pose do volume", () =>
+{
+    var blend = new CameraBlend { Duration = 1f };
+    var target = new Vector3(10, 0, 10);
+    // Volume A: câmera atrás (+Z) e acima; volume B: ao lado (+X), mais longe.
+    var (p0, l0) = blend.Update(1, target + new Vector3(0, 60, 100), target + new Vector3(0, 10, 0), target, 0.016f);
+    True(Vector3.Distance(p0, target + new Vector3(0, 60, 100)) < 1e-3f, "primeiro quadro corta direto");
+    var offA = new Vector3(0, 50, 100);
+    var offB = new Vector3(150, 50, 0);
+    var (pm, lm) = blend.Update(2, target + new Vector3(0, 10, 0) + offB, target + new Vector3(0, 10, 0), target, 0.5f);
+    True(blend.Blending, "no meio da passagem");
+    float mid = (offA.Length() + offB.Length()) / 2;
+    True(MathF.Abs((pm - lm).Length() - mid) < 0.5f, $"recuo no meio = média dos dois ({(pm - lm).Length()} ≠ {mid})");
+    var lin = Vector3.Lerp(offA, offB, 0.5f);
+    True((pm - lm).Length() > lin.Length() + 10, "arco, não reta (a reta encurtaria o recuo)");
+    var moved = target + new Vector3(30, 0, 0);
+    var (p1, l1) = blend.Update(2, moved + new Vector3(0, 10, 0) + offB, moved + new Vector3(0, 10, 0), moved, 0.6f);
+    True(!blend.Blending && Vector3.Distance(p1, moved + new Vector3(0, 10, 0) + offB) < 1e-3f, $"fim: pose do volume B seguindo o alvo ({p1})");
+    var far = moved + new Vector3(1000, 0, 0);
+    var (p2, _) = blend.Update(1, far + new Vector3(0, 10, 0) + offA, far + new Vector3(0, 10, 0), far, 0.016f);
+    True(!blend.Blending && Vector3.Distance(p2, far + new Vector3(0, 10, 0) + offA) < 1e-3f, "teleporte corta direto");
+    var seco = new CameraBlend { Duration = 0 };
+    seco.Update(1, offA, Vector3.Zero, Vector3.Zero, 0.016f);
+    var (p3, _) = seco.Update(2, offB, Vector3.Zero, Vector3.Zero, 0.016f);
+    True(Vector3.Distance(p3, offB) < 1e-3f, "duração 0 = corte seco do original");
+    var opp = CameraBlend.Arc(new Vector3(0, 0, 100), new Vector3(0, 0, -100), 0.5f);
+    True(MathF.Abs(opp.Length() - 100) < 1e-2f && MathF.Abs(opp.Y) < 1e-2f, $"opostos giram em volta do eixo vertical ({opp})");
+});
+
 Test("Objeto: caixa do HITBOX vale do quadro inicial até o fim da duração; AIMAP fica para a IA (f_bit SQ_PHASE2)", () =>
 {
     SeqCommand C(string k, params object[] v) => new(k, v);
@@ -925,6 +1015,68 @@ Test("Objeto: interruptor do portão (g_sbutton da stag0101) só tem IA com CTRL
     True(s.Sequence == "SQ_WAIT" && s.Live && s.Action == "ONSW01", $"aceso com IA ({s.Sequence}, {s.Action})");
     True(s.OnlyJumpsBack("SQ_SWON"), "parado em cima: SQ_SWON/ON não recomeça nem chama o hit de novo");
     True(!s.OnlyJumpsBack("SQ_SWOF"), "saiu de cima: SQ_SWOF/ON apaga");
+});
+
+Test("Sequência: laser g_dbarrierw (dng103f1) — HIDE do SQ_WAIT vale só na ação; SQ_POWERON mostra, SQ_POWEROF esconde", () =>
+{
+    SeqCommand C(string k, params object[] v) => new(k, v);
+    // FATO (igb-seq do #218): SQ_WAIT = HIDE_ACTION (FADESET "HIDE"); SQ_POWERON → JUMP SQ_SWON = ONSW01 (só JOINTSET 21..40 LP).
+    var seqs = new Dictionary<string, List<SeqCommand>>
+    {
+        ["SQ_POWEROF"] = [C("JUMP", "SQ_WAIT")],
+        ["SQ_POWERON"] = [C("JUMP", "SQ_SWON")],
+        ["SQ_SWON"] = [C("ACTION", "ONSW01")],
+        ["SQ_WAIT"] = [C("ACTION", "HIDE_ACTION")],
+    };
+    var actions = new Dictionary<string, List<SeqCommand>>
+    {
+        ["HIDE_ACTION"] = [C("FADESET", "HIDE", 0f, 0f)],
+        ["ONSW01"] = [C("JOINTSET", "", 21f, 40f, "LP")],
+    };
+    var s = new ObjectSequencer(seqs, actions);
+    s.Start("SQ_WAIT");
+    Equal(0f, s.Alpha, "gerado: escondido");
+    s.Start("SQ_POWERON");
+    for (int i = 0; i < 10; i++) s.Tick(1 / ObjectSequencer.FramesPerSecond);
+    Equal(1f, s.Alpha, "ligado: laser aparece");
+    s.Start("SQ_POWEROF");
+    Equal(0f, s.Alpha, "desligado: some de novo");
+    // HIDE da própria sequência (fora da ação) continua valendo.
+    var seqs2 = new Dictionary<string, List<SeqCommand>> { ["SQ_HIDE"] = [C("FADESET", "HIDE", 0f, 0f), C("ACTION", "ONSW01")] };
+    var h = new ObjectSequencer(seqs2, actions);
+    h.Start("SQ_HIDE");
+    Equal(0f, h.Alpha, "HIDE da sequência fica");
+});
+
+Test("Sequência: pod de Numemon (g_numepodz01) — SQ_SWON com o rótulo ON já valendo não recomeça a espera, e o SQ_FIRE chega", () =>
+{
+    SeqCommand C(string k, params object[] v) => new(k, v);
+    // Mesma forma do pod da stag0103 (FATO, igb-seq): SQ_SWON = LABELCTRL "ON" "SQ_WAIT" + JUMP; SQ_WAIT/ON = WAIT02 (3 s) + JUMP SQ_FIRE.
+    var seqs = new Dictionary<string, List<SeqCommand>>
+    {
+        ["SQ_POWERON"] = [C("LABELCTRL", "RDY", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
+        ["SQ_SWON"] = [C("LABELCTRL", "ON", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
+        ["SQ_SWOF"] = [C("LABELCTRL", "RDY", "SQ_WAIT"), C("JUMP", "SQ_WAIT")],
+        ["SQ_FIRE"] = [C("CTRL", "isLive"), C("ACTION", "FIRE"), C("WCHECK", "Action"), C("JUMP", "SQ_WAIT")],
+        ["SQ_WAIT"] = [C("LABEL", "DEF"), C("ACTION", "WAIT01"), C("LABEL", "RDY"), C("CTRL", "isLive"), C("ACTION", "WAIT01"),
+            C("LABEL", "ON"), C("CTRL", "isLive"), C("ACTION", "WAIT02"), C("WCHECK", "Action"), C("JUMP", "SQ_FIRE")],
+    };
+    var actions = new Dictionary<string, List<SeqCommand>>
+    {
+        ["WAIT01"] = [C("JOINTSET", "", 200f, 210f, "LP")],
+        ["WAIT02"] = [C("JOINTSET", "", 10f, 190f, "OS"), C("WAITCHECK", "Joint", 0f)],
+        ["FIRE"] = [C("JOINTSET", "", 200f, 210f, "OS"), C("WAITCHECK", "Joint", 0f)],
+    };
+    var s = new ObjectSequencer(seqs, actions);
+    s.Start("SQ_POWERON");
+    True(!s.OnlyJumpsBack("SQ_SWON"), "ligado (RDY): SQ_SWON muda para ON");
+    s.Start("SQ_SWON");
+    for (int i = 0; i < 5; i++) s.Tick(1 / ObjectSequencer.FramesPerSecond);
+    True(s.Action == "WAIT02" && s.OnlyJumpsBack("SQ_SWON"), "já em ON: SQ_SWON de novo não recomeça o WAIT02");
+    True(!s.OnlyJumpsBack("SQ_SWOF"), "SQ_SWOF (RDY) ainda muda");
+    bool fired = false;
+    for (int i = 0; i < 400 && !fired; i++) { s.Tick(1 / ObjectSequencer.FramesPerSecond); fired = s.Sequence == "SQ_FIRE"; }
+    True(fired, "depois do WAIT02 vem o SQ_FIRE");
 });
 
 Test("Sequência: caixas agendadas antes de uma ação curta passam para a ação seguinte (CarryHitBoxes, SQ_MAGIC do f_apocaly)", () =>
@@ -2283,6 +2435,20 @@ if (args.Length == 1)
         True(r.Start("SQ_FALL", "slash") && r.Move?.S(0) == "Fall" && jump.Active, "SQ_FALL começa pelo Fall e espera o pouso");
     });
 
+    Test("Jogo: barril do g_barrelshotz01 (stag0102): \"Push\" 0,9 100 rola quase sem frear e o \"Jump\" 2 2 é só um pulinho", () =>
+    {
+        // FATO (seq do g_bbarrelmz01, SQ_ATCK01): MOVE "Push" 0.9 100 e MOVE "Jump" 2 2. Freio do "Push" = 0,9/(0,5·100²) por quadro².
+        var m = new MotionChannels();
+        var jump = new SeqCommand("MOVE", ["Jump", 2f, 2]);
+        True(m.Apply(new SeqCommand("MOVE", ["Push", 0.9f, 100])) && m.Apply(jump), "aplica");
+        float z = 0, y = 0, peak = 0;
+        // 250 quadros do WAITCHECK "Frame" no relógio de 60 Hz = 125 quadros de 30 Hz do MOVE.
+        for (int i = 0; i < 125; i++) { var (local, _) = m.Step(1); z += local.Z; y += local.Y; peak = Math.Max(peak, y); }
+        True(m[2].Active && Math.Abs(m[2].Velocity - (0.9f - 125 * 0.9f / 5000)) < 1e-4f, $"ainda rolando a {m[2].Velocity:0.000}/quadro");
+        True(z > 105 && z < 113, $"andou {z:0.0} (o barril desce a ladeira do lançador até o fim dela)");
+        True(peak <= JumpMotion.PeakHeight(jump) + 1e-3f && !m[1].Active, $"pulinho de {peak:0.00}");
+    });
+
     Test("Jogo: MOVEEX/MOVE pelos canais do executor (0x8030A1F4/0x8030A2D8): texto → canal e modo, acelera, freia, troca de sequência", () =>
     {
         Equal((1, 0), MotionChannels.ParseEx("TYPACC")!.Value, "TYPACC = Y, acelera +");
@@ -2506,6 +2672,101 @@ if (args.Length == 1)
         Equal("0,1,2,3,4,5", string.Join(",", d0), "vértices do dígito 0");
         var geom = nodes[((int)dmg[0]!["geometry"]!).ToString()]!["meshes"]![0]!["positions"]!.AsArray().Select(p => D(p)).ToArray();
         True(geom[0] >= 0 && geom[3 * 6] < 0, "dígito 0 à direita do dígito 1");
+    });
+
+    Test("Jogo: fase do barco (stag0103, #628): trilho r_boatz01 com gravador, chão de veículo do g_boatz01 e medidor boathp", () =>
+    {
+        using var afs = AfsArchive.Open(ndmwPath);
+        using var ms = new MemoryStream();
+        afs.CopyEntry(afs.Entries[628], ms);
+        var stage = ms.ToArray();
+        var igb = IgbFile.Read(stage);
+        static double D(System.Text.Json.Nodes.JsonNode? n) => Convert.ToDouble(n!.GetValue<object>(), System.Globalization.CultureInfo.InvariantCulture);
+        var (json, hud) = IgbHud.Export(igb, stage, null, null, ["r_boatz01=5201", "g_boatz01", "i_stpnlsp05"]);
+        Equal(0, hud.Notes.Count, $"notas: {string.Join("; ", hud.Notes)}");
+        var nodes = json["nodes"]!.AsObject();
+        // Trilho: "route00" animado (46 chaves em 180 s, do cais em (585, 15, 395) até (537, 15, −154)) com o igTransformRecorder.
+        var route = nodes["6947"]!;
+        Equal("route00", (string?)route["name"], "nó do trilho");
+        Equal("189", string.Join(",", route["children"]!.AsArray().Select(c => (int)c!)), "filho = gravador");
+        Equal("igTransformRecorder", (string?)nodes["189"]!["type"], "gravador exportado");
+        var seq = route["sequence"]!;
+        Equal(46, seq["times"]!.AsArray().Count, "46 chaves");
+        Equal(180.0, Math.Round(D(seq["times"]!.AsArray()[^1]), 1), "180 s");
+        var t = seq["translation"]!.AsArray().Select(D).ToArray();
+        Equal((585.0, 15.0, 395.0), (Math.Round(t[0]), Math.Round(t[1]), Math.Round(t[2])), "começa no cais, onde o start.lua gera o barco");
+        // Barco: beHitLandModelInfo 0x1405 → caixa aberta (chão em y 0, paredes até 100).
+        var boat = json["actors"]!.AsArray().First(a => (string?)a!["name"] == "g_boatz01")!;
+        Equal(0x1405, (int)boat["land"]!["kind"]!, "tipo do chão do barco");
+        True(RideLand.IsVehicle((int)boat["land"]!["kind"]!), "bit de veículo");
+        True(json["actors"]!.AsArray().First(a => (string?)a!["name"] == "r_boatz01")!["land"] == null, "trilho sem colisão");
+        var boathp = json["meters"]!.AsArray().Single(m => (string?)m!["name"] == "boathp")!["data"]!.AsArray().Single()!;
+        True(nodes.ContainsKey(((int)boathp["node"]!).ToString()), "medidor da vida do barco dentro do i_stpnlsp05");
+        // As sequências do trilho: SQ_GO = WAIT01 (0..4500) e SQ_GO02 = LUACALL "brk" + WAIT02 (4501..11040), quadros de 60 Hz.
+        var seqs = IgbSequences.Read(igb, stage, "r_boatz01", []);
+        True(seqs.TryGetValue("SQ_GO02", out var go2) && go2.Any(c => c.Kind == "LUACALL" && c.Values.FirstOrDefault() as string == "brk"), "SQ_GO02 chama o brk_r_boatz01.lua");
+    });
+
+    Test("Jogo: stag0103 com os scripts reais — 6 torres (2 golpes) e 2 prateleiras (3 golpes) derrubadas ligam a 489 e desarmam as bombas", () =>
+    {
+        var fases = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetFullPath(dir)))!, "fases");
+        var chunks = Directory.GetFiles(Path.Combine(fases, "stag0103", "lua"), "*.lua").ToDictionary(f => Path.GetFileName(f), File.ReadAllBytes);
+        var ram = new GameRam();
+        var engine = new RecordingEngine();
+        var stage = new StageScripts(chunks, new BeHost(engine, ram, new BeSystem { FolderName = "stag0103" }));
+        var errors = new List<string>();
+        stage.Error = (n, e) => errors.Add($"{n}: {e}");
+        stage.Boot();
+        // Golpe físico (10000) num objeto com HP 100; devolve as sequências pedidas.
+        List<string> Hit(string model, int ramNo, int times)
+        {
+            var seqs = new List<string>();
+            var m = new TestModel { Name = model, RamNo = ramNo, Hp = 100, BulletKind = 10000, OnSequence = seqs.Add };
+            for (int i = 0; i < times; i++) stage.RunAs($"hit_{model}.lua", m);
+            return seqs;
+        }
+        for (int t = 0; t < 6; t++)
+            Equal("SQ_SDMG,SQ_DDMG", string.Join(",", Hit("g_facttowerz06", t, 2)), $"torre {t}: 2 golpes de 50");
+        Equal("SQ_SDMG01,SQ_MDMG01,SQ_LDMG01", string.Join(",", Hit("g_shelfz06", 0, 3)), "prateleira 0: 3 golpes de 35");
+        True(ram.FlagOn(489) == 0 && !engine.Log.Any(l => l.Contains("g_annihilativebomz06")), "falta uma prateleira: bombas armadas");
+        Hit("g_shelfz06", 1, 3);
+        True(ram.FlagOn(489) == 1, "as 8 derrubadas: flag 489");
+        for (int i = 0; i < 200; i++) stage.Tick(); // os sd com espera (30 e 150 quadros)
+        True(engine.Log.Count(l => l.Contains("g_annihilativebomz06") && l.Contains("SQ_DEAD")) == 2 && engine.Log.Any(l => l.Contains("g_dumperz06 0 SQ_DDMG")),
+            "bombas SQ_SWON/SQ_DEAD e despejador SQ_DDMG: " + string.Join(" | ", engine.Log.TakeLast(5)));
+        True(errors.Count == 0, string.Join("; ", errors));
+    });
+
+    Test("Port: backup chip na última plataforma (SafeGround): queda em buraco não move o ponto; escada sim", () =>
+    {
+        var g = new SafeGround(40);
+        g.Step(new(0, 100, 0), true);
+        g.Step(new(5, 100, 0), true);
+        g.Step(new(10, 90, 0), false); // pulou para o buraco
+        g.Step(new(12, 20, 0), false);
+        g.Step(new(12, 0, 0), true);   // pousou 100 abaixo
+        g.Step(new(20, 0, 0), true);   // anda lá embaixo
+        Equal(new System.Numerics.Vector3(5, 100, 0), g.Safe!.Value, "chip fica na borda de onde caiu");
+        g.Step(new(30, 70, 0), true);  // subiu de volta até perto
+        Equal(70f, g.Safe!.Value.Y, "voltou para cima: segue de novo");
+        var s = new SafeGround(40);
+        for (int i = 0; i <= 100; i++) s.Step(new(i, 100 - i, 0), true); // escada/rampa sem sair do chão
+        Equal(0f, s.Safe!.Value.Y, "descer no chão atualiza");
+        s.Step(new(0, 10, 0), false);
+        s.Step(new(0, 0, 0), true);    // pulo comum
+        Equal(0f, s.Safe!.Value.Y, "pulo comum atualiza");
+    });
+
+    Test("Port: chão de veículo (RideLand): bit 0x1000 e caixa local com folga", () =>
+    {
+        True(RideLand.IsVehicle(0x1405) && RideLand.IsVehicle(0x1403), "barco e blindado");
+        True(!RideLand.IsVehicle(0x402) && !RideLand.IsVehicle(0x401), "g_box e andaime não");
+        var min = new System.Numerics.Vector3(-17, 0, -23);
+        var max = new System.Numerics.Vector3(17, 100, 23);
+        True(RideLand.Inside(new(0, 0, 0), min, max), "no meio do chão");
+        True(RideLand.Inside(new(18, 3, -24), min, max), "encostado na parede (folga 2)");
+        True(!RideLand.Inside(new(30, 0, 0), min, max), "fora pela lateral");
+        True(!RideLand.Inside(new(0, -20, 0), min, max), "muito abaixo do chão");
     });
 
     Test("Jogo: 12 tabelas beDataBase na dng1 (area #3); w_sword01 com TSUYOSA 60..199; Guilmon e Numemon nas tabelas", () =>
@@ -3270,7 +3531,8 @@ Test("Online: chat de verdade (UDP local, DevApi: geral, amizade e grupo pelo F,
 Test("Online: pacotes do combate em grupo (ida e volta, limites)", () =>
 {
     object[] all = [new DW4.Net.EnemySpawn(7, 12, 1, 2, 3, 0.5f, 340, "GENE-03"), new DW4.Net.EnemySeq(7, "SQ_ATCK1", "common"),
-        new DW4.Net.EnemyHit(7, 55, "SQ_SDMG"), new DW4.Net.EnemyKilled(7, 2, false), new DW4.Net.EnemyRemoved(7), new DW4.Net.Wipeout("GENE-03")];
+        new DW4.Net.EnemyHit(7, 55, "SQ_SDMG"), new DW4.Net.EnemyKilled(7, 2, false), new DW4.Net.EnemyRemoved(7), new DW4.Net.Wipeout("GENE-03"),
+        new DW4.Net.Revive(9), new DW4.Net.StageGo("stag0102", 1)];
     foreach (var m in all) Equal(m, DW4.Net.CoopCodec.Read(DW4.Net.CoopCodec.Write(m)), m.GetType().Name);
     var poses = Enumerable.Range(0, 45).Select(i => new DW4.Net.EnemyPose(i, i, 0, 0, 0, 100, 12)).ToArray();
     var sync = (DW4.Net.EnemySync)DW4.Net.CoopCodec.Read(DW4.Net.CoopCodec.Write(new DW4.Net.EnemySync(poses)));

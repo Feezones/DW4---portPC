@@ -230,6 +230,7 @@ public partial class Fatia
         if (StartEnding(stage)) return;
         if (IsMenuStage(stage)) { MenuStageInPlace(stage); return; }
         ScriptLog($"troca de fase: {stage}, entrada {_nextEntry}");
+        AnnounceStageGo(stage); // quem está caído no grupo pode vir junto (Fatia.Spectator.cs)
         _choice = -1;
         if (_choicePanel != null) _choicePanel.Visible = false;
         var stages = DataPaths.Fases;

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using Godot;
+using DW4.Script.Be;
 using DW4.Gameplay;
 
 namespace DW4.Client;
@@ -43,8 +44,72 @@ public partial class Fatia
         public bool SeqDead { get; init; }
         public bool Lock { get; init; }
         public Vector3 Offset { get; init; }
+        /// <summary>Onde nasceu (DIAG: DW4_DIAG_TIRO=1 mostra quanto o tiro do jogador andou até sumir).</summary>
+        public Vector3 Born { get; init; }
         /// <summary>Projétil do jogador (caixa 10000, ex. x_100gunv01 da pistola): acerta inimigos, não o jogador.</summary>
         public bool FromPlayer { get; init; }
+        /// <summary>LUACALL de batida armado pela sequência (ex. "bht" "BHit" do x_bltnumemisz01): roda ao tocar a colisão.</summary>
+        public (string Name, string Call)? HitLua { get; set; }
+    }
+
+    // Contexto do bht_<tiro>.lua: MDLsetSeq vai para a sequência do tiro (FATO: bht_x_bltnumemisz01.lua = MDLsetSeq "SQ_HIDE").
+    sealed class ShotBeModel(Shot s) : IBeModel
+    {
+        public int Index => s.Index;
+        public int Hp { get => 0; set { } }
+        public int BulletKind => 0;
+        public string ModelName => s.Name;
+        public string? SequenceName => s.Seq.Sequence;
+        public void SetSequence(string name) => s.Seq.Start(name);
+    }
+
+    /// <summary>
+    /// Tiro batendo na colisão (cenário, objetos com corpo e o chão de veículo). FATO (seq): os tiros armam um LUACALL com nome de
+    /// chamada "BHit" ou "WHit" (x_bltnumemisz01: "bht" "BHit"; bht_x_bltnumemisz01.lua = MDLsetSeq "SQ_HIDE", que some com FADESET
+    /// HIDE e vai ao SQ_ERAS). HIPÓTESE: "BHit"/"WHit" = bater em colisão de chão/parede (beHitLand), e o chão de veículo do barco
+    /// (beHitLandModelInfo 0x1405) conta como colisão. Antes o port não armava o evento e os mísseis atravessavam o barco.
+    /// FATO: nada liga o tiro à vida do barco (só o hit_p_*.lua mexe no g_boathp): bater no casco só apaga o tiro (escolha do
+    /// usuário, 2026-11-06: igual ao original).
+    /// </summary>
+    void CheckShotLand(Shot s, Vector3 from)
+    {
+        while (s.Seq.TakeLuaCallWithName() is { } call)
+            if (call.Call.EndsWith("Hit", StringComparison.Ordinal)) s.HitLua = call;
+        if (IsPodMissile(s)) return; // DECISÃO DO PORT (Fatia.Missile.cs): o míssil dos pods passa pelo casco do barco
+        if (s.HitLua is not { } hit || s.Hit || s.Seq.Erased) return;
+        var to = s.Root.GlobalPosition;
+        if (from.DistanceSquaredTo(to) < 1e-6f) return;
+        var q = PhysicsRayQueryParameters3D.Create(from, to);
+        q.Exclude = [_player.GetRid()];
+        q.CollisionMask = 1; // cenário e veículo; não as paredes só de inimigo (EnemyLayer) nem os parapeitos (EdgeLayer)
+        var r = GetWorld3D().DirectSpaceState.IntersectRay(q);
+        // Tiro do jogador: passa pelas paredes invisíveis, pelo chão de veículo e pelas caixas (Fatia.ShotScenery.cs); depois de
+        // passar, segue o mesmo trecho para não furar uma parede de verdade logo atrás.
+        for (int pass = 0; s.FromPlayer && pass < 4 && r.Count > 0 && (Node)r["collider"] is StaticBody3D through; pass++)
+        {
+            var at = (Vector3)r["position"];
+            bool lands = PlayerShotLands(through, at);
+            if (DiagShot) GD.Print($"[tiro] {s.Name} {(lands ? "bateu em" : "passou por")} {through.Name} em {at.Round()} normal {((Vector3)r["normal"]).Snapped(0.01f)} peça {ShotShapePath(through, (int)r["shape"])}");
+            if (lands) break;
+            var next = at + (to - from).Normalized() * 0.05f;
+            if (next.DistanceSquaredTo(to) < 1e-4f || (to - next).Dot(to - from) <= 0) return;
+            q.From = next;
+            r = GetWorld3D().DirectSpaceState.IntersectRay(q);
+            if (pass == 3) return;
+        }
+        if (r.Count == 0 || (Node)r["collider"] is not StaticBody3D body) return;
+        s.HitLua = null;
+        s.Hit = true; // bateu: a caixa dele não pega mais o jogador (do outro lado da parede)
+        if (DiagRide) GD.Print($"[barco] {s.Name} bateu em {body.Name} em {((Vector3)r["position"]).Round()}");
+        var script = $"{hit.Name}_{s.Name}.lua";
+        if (_stage?.Has(script) == true) _stage.RunAs(script, new ShotBeModel(s));
+        else if (!s.Seq.Start("SQ_BREK")) s.Seq.Start("SQ_ERAS");
+    }
+
+    string ShotShapePath(StaticBody3D body, int shapeIndex)
+    {
+        var shape = body.ShapeOwnerGetOwner(body.ShapeFindOwner(shapeIndex)) as CollisionShape3D;
+        return shape == null ? "?" : _collisionShapes.Where(x => x.Shape == shape).Select(x => x.Path).FirstOrDefault() ?? shape.Name;
     }
 
     Dictionary<string, List<Starter>>? _starters;
@@ -61,7 +126,8 @@ public partial class Fatia
         foreach (var d in doc.RootElement.GetProperty("disparos").EnumerateArray())
         {
             string effect = d.GetProperty("nome").GetString() ?? "";
-            if (!effect.StartsWith("x_", StringComparison.Ordinal)) continue; // y_*: só efeito visual
+            // y_*: só efeito visual. g_*: objeto da fase gerado pelo disparador (o barril do g_barrelshotz01, Fatia.Barrels.cs).
+            if (!effect.StartsWith("x_", StringComparison.Ordinal) && !effect.StartsWith("g_", StringComparison.Ordinal)) continue;
             foreach (var t in d.GetProperty("alvos").EnumerateArray())
             {
                 string model = t.GetProperty("modelo").GetString() ?? "";
@@ -96,8 +162,12 @@ public partial class Fatia
         if (!Starters().TryGetValue(model, out var list)) { lastAction = action; lastFrame = frame; return; }
         float from = action == lastAction ? lastFrame : -1;
         foreach (var s in list)
-            if (s.Action == action && s.Frame > from && s.Frame <= frame && (!fromPlayer || PlayerBullet(s.Effect)))
-                SpawnShot(s, at, owner, ownerName, source, sourceSequence, fromPlayer);
+            if (s.Action == action && s.Frame > from && s.Frame <= frame && (!fromPlayer || PlayerBullet(s.Effect) || ChargeEffect(s.Effect)))
+            {
+                // g_* com modelo nos objetos da fase (o barril do g_barrelshotz01): nasce como objeto (Fatia.Barrels.cs).
+                if (!fromPlayer && IsStarterObject(s.Effect)) SpawnStarterObject(s, at);
+                else SpawnShot(s, at, owner, ownerName, source, sourceSequence, fromPlayer);
+            }
         lastAction = action;
         lastFrame = frame;
     }
@@ -106,6 +176,13 @@ public partial class Fatia
     // rastros de golpe, e as técnicas x_200* já saem pelo ReleaseTechnique).
     bool PlayerBullet(string effect) =>
         ShotSeqs(effect) is { } seqs && seqs.Seqs.Values.Any(cmds => cmds.Any(c => c.Kind == "HITBOX" && c.I(1) == 10000));
+
+    // Efeitos do golpe carregado (FATO, disparos.json, beActionStarterInfo de todos os p_*): x_100charge01 nas poses de carregar
+    // (KATC?1 → SQ_S01/SQ_D01… nos quadros 6 e 18; KATC?2 → SQ_KIRIKAE, o clarão de "carregado", e SQ_OWARI em laço nos quadros 0
+    // e 12) e o x_100<estilo>k01 na soltura (KATC?3, quadro 0). Todos com b6 (somem quando a sequência do jogador muda) e b7 (presos
+    // ao jogador). Sem caixa de golpe: só visual. Antes o filtro acima deixava sair só o tiro da pistola e a carga não aparecia.
+    static bool ChargeEffect(string effect) =>
+        effect == "x_100charge01" || effect.StartsWith("x_100", StringComparison.Ordinal) && effect.EndsWith("k01", StringComparison.Ordinal);
 
     void SpawnShot(Starter s, Transform3D at, Fighter? owner, string ownerName, Func<Transform3D?> source, Func<string?> sourceSequence, bool fromPlayer = false)
     {
@@ -137,7 +214,7 @@ public partial class Fatia
         int index = 0;
         while (_enemyShots.Any(o => o.Name == s.Effect && o.Index == index)) index++;
         _enemyShots.Add(new Shot { Name = s.Effect, Root = root, Seq = seq, Owner = owner, OwnerName = ownerName, Index = index, Actor = actor,
-            Source = source, SourceSequence = sourceSequence, SourceSequenceAtSpawn = sourceSequence(), SeqDead = s.SeqDead, Lock = s.Lock, Offset = s.Offset, FromPlayer = fromPlayer });
+            Source = source, SourceSequence = sourceSequence, SourceSequenceAtSpawn = sourceSequence(), SeqDead = s.SeqDead, Lock = s.Lock, Offset = s.Offset, FromPlayer = fromPlayer, Born = root.GlobalPosition });
     }
 
     HudData? _shotModels;
@@ -199,6 +276,8 @@ public partial class Fatia
                 act.Time = s.Seq.Frame / 60f;
                 act.Update();
             }
+            SteerMissile(s, dt);
+            var before = s.Root.GlobalPosition;
             if (s.Seq.Motion.AnyActive && dt > 0)
             {
                 // HIPÓTESE (relato "o tiro da Shot Pistol é lento"): o tiro do jogador anda no relógio do sequenciador de objetos (60 Hz, o
@@ -207,16 +286,24 @@ public partial class Fatia
                 s.Root.RotateY(yawDeg * MathF.PI / 180);
                 s.Root.TranslateObjectLocal(new Vector3(local.X, local.Y, local.Z));
             }
+            // Tiro do jogador: o acerto em inimigo/objeto vem antes da batida (a caixa g_box tem corpo na camada 1 e o tiro batia nele
+            // sem dar dano). DIAG: DW4_DIAG_TIRO=1 mostra onde o tiro do jogador bateu ou passou.
+            if (s.FromPlayer && !s.Hit) CheckPlayerShotHit(s);
+            CheckShotLand(s, before);
             string? la = s.LastAction; float lf = s.LastFrame;
             var me = s;
             FireStarters(s.Name, s.Seq.Action, s.Seq.ActionTime, ref la, ref lf, s.Root.GlobalTransform, s.Owner, s.OwnerName,
                 () => me.Seq.Erased ? null : me.Root.GlobalTransform, () => me.Seq.Erased ? null : me.Seq.Sequence);
             s.LastAction = la; s.LastFrame = lf;
-            if (!s.Hit) { if (s.FromPlayer) CheckPlayerShotHit(s); else CheckShotHit(s); }
+            if (!s.Hit && !s.FromPlayer) CheckShotHit(s);
             if (s.Lock && s.Source?.Invoke() is { } t) s.Root.GlobalTransform = new Transform3D(t.Basis, t * s.Offset);
             bool orphan = s.SeqDead && s.SourceSequence?.Invoke() != s.SourceSequenceAtSpawn;
+            // A carga solta antes da hora (o SQ_ATCK1 para sem trocar de nome) ou parada (Stop): o brilho (b6) não fica no jogador.
+            if (s.FromPlayer && s.Name == "x_100charge01" && _runner?.Running != true) orphan = true;
             if (s.Seq.Erased || !s.Seq.Running || orphan)
             {
+                if (DiagShot && s.FromPlayer && PlayerBullet(s.Name))
+                    GD.Print($"[tiro] {s.Name} sumiu em {s.Root.GlobalPosition.Round()} depois de {s.Born.DistanceTo(s.Root.GlobalPosition):0} ({(orphan ? "órfão" : s.Seq.Erased ? "apagado" : "sequência acabou")}, {(s.Hit ? "bateu" : "sem batida")}, seq {s.Seq.Sequence})");
                 s.Root.QueueFree();
                 _enemyShots.RemoveAt(i);
             }
@@ -241,6 +328,7 @@ public partial class Fatia
         foreach (var h in s.Seq.ActiveHitBoxes.Where(h => h.Type == 10000))
         {
             var c = s.Root.GlobalTransform * new Vector3(h.Position.X, h.Position.Y, h.Position.Z);
+            if (BreakMissiles(c, new Vector3(h.Size.X, h.Size.Y, h.Size.Z)) > 0) { s.Hit = true; s.Seq.Start("SQ_ERAS"); return; }
             foreach (var e in _enemies.ToList())
             {
                 if (e.Dead || e.Killed || (e.Started && e.Runner?.Invincible == true)) continue;
@@ -265,9 +353,8 @@ public partial class Fatia
             // Objetos também levam o tiro (FATO: hit_g_rock01z01.lua pergunta BLTisPlayerBullet).
             foreach (var o in _objects.Where(o => o.Body != null && !o.Dead).ToList())
             {
-                var p = o.Actor.Root.GlobalPosition;
-                if (Math.Abs(c.X - p.X) > h.Size.X / 2 + GboxSize.X / 2 || Math.Abs(c.Z - p.Z) > h.Size.Z / 2 + GboxSize.Z / 2
-                    || c.Y + h.Size.Y / 2 < p.Y || c.Y - h.Size.Y / 2 > p.Y + GboxSize.Y) continue;
+                // Caixas do HIT do objeto quando ele tem (a jaula g_numeprisonz01 tem 20 × 20 × 20; a caixa da g_box só 14 × 10 × 14).
+                if (!ObjectTouched(o, c, new Vector3(h.Size.X, h.Size.Y, h.Size.Z))) continue;
                 s.Hit = true;
                 StrikeObject(o, h.Type);
                 s.Seq.Start("SQ_ERAS");

@@ -82,7 +82,17 @@ public sealed class IgbHud
                 : f.Slots.OfType<IgbObject>().FirstOrDefault(o => f.Is(o, "igAttrSet") && Text(o, 2) == name);
             if (root == null) { h.Notes.Add($"ator {name}: raiz não encontrada"); continue; }
             h.Visit(root);
-            list.Add(new JsonObject { ["name"] = name, ["root"] = root.Index });
+            var entry = new JsonObject { ["name"] = name, ["root"] = root.Index };
+            // Colisão própria do ator (beHitLandModelInfo com o mesmo nome: @8 = igSwitch com as peças, @10 = tipo).
+            // FATO (stag0103): g_boatz01 tem @8 → beCopyTransform → caixa aberta 34 × 100 × 46 (chão em y 0 e quatro paredes) e
+            // @10 = 5125 (0x1405); g_soukouz02 (stag0203) tem 0x1403; g_box e os outros objetos quebráveis têm 0x402.
+            if (f.Slots.OfType<IgbObject>().FirstOrDefault(o => o.TypeName == "beHitLandModelInfo" && Text(o, 2) == name) is { } land
+                && h.Obj(h.Ref(land, 8)) is { } landRoot)
+            {
+                h.Visit(landRoot);
+                entry["land"] = new JsonObject { ["node"] = landRoot.Index, ["kind"] = h.Int(land, 10) };
+            }
+            list.Add(entry);
         }
         var json = new JsonObject
         {

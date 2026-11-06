@@ -25,11 +25,25 @@ public partial class Fatia
     {
         var inv = _inventory;
         long loss = PlayerGrowth.DeathExpLoss(_level, _exp);
-        var p = _player.GlobalPosition;
+        var p = _safeGround ?? _player.GlobalPosition;
         (inv.ChipStage, inv.ChipPos, inv.ChipBit, inv.ChipExp) = (_stageName, [p.X, p.Y, p.Z], inv.Bit, loss);
         _exp -= loss;
         inv.Bit = 0;
         ScriptLog($"backup chip em {_stageName} ({p.X:0}, {p.Y:0}, {p.Z:0}): {inv.ChipBit} BIT, {loss} EXP");
+    }
+
+    // Relato do usuário (2026-11-05): caindo num buraco e morrendo lá, o chip ficava lá embaixo. DECISÃO DO PORT: o chip fica na
+    // última plataforma pisada (SafeGround). Pousar mais de PitDrop abaixo de onde saiu do chão é queda; a plataforma guardada só
+    // volta a andar quando o jogador sobe de novo até perto dela (descer escada ou rampa sem sair do chão segue normal).
+    const float PitDrop = 40f;
+    readonly SafeGround _safe = new(PitDrop);
+    Vector3? _safeGround => _safe.Safe is { } s ? new Vector3(s.X, s.Y, s.Z) : null;
+
+    void TrackSafeGround()
+    {
+        if (_hp <= 0) return;
+        var p = _player.GlobalPosition;
+        _safe.Step(new System.Numerics.Vector3(p.X, p.Y, p.Z), _player.IsOnFloor());
     }
 
     // Ao abrir a fase: o chip da vaga aparece onde o Digimon caiu.
@@ -37,21 +51,29 @@ public partial class Fatia
     {
         var inv = _inventory;
         if (inv.ChipStage.Length == 0 || !inv.ChipStage.Equals(_stageName, StringComparison.OrdinalIgnoreCase)) return;
+        if (_chip is { Erased: false } old) old.SetSequence("SQ_EXIT"); // chip antigo desta fase (caiu de novo aqui)
+        _chip = MakeChip(new Vector3(inv.ChipPos[0], inv.ChipPos[1], inv.ChipPos[2]));
+    }
+
+    // Modelo do backup chip (g_000bcaps) num ponto, entrando com SQ_ENTR1P; também o cristal de um colega caído (Fatia.Spectator.cs).
+    WorldObject? MakeChip(Vector3 at)
+    {
         var dir = Path.Combine(DataPaths.Fases, "_comum", "g_000bcaps");
         if (HudData.Load(dir, _problems, "objetos.json", "falta <fases>\\_comum\\g_000bcaps (dw4 igb-objetos ndmw.afs 179 … g_000bcaps): backup chip sem modelo") is not { } data
-            || !data.Actors.TryGetValue("g_000bcaps", out int root)) return;
+            || !data.Actors.TryGetValue("g_000bcaps", out int root)) return null;
         var seqFile = GameFiles.EnumerateFiles(dir, "*_seq.json").FirstOrDefault();
         var json = seqFile != null ? GameFiles.ReadAllText(seqFile) : null;
         var actor = new HudActor(data, root, slot: 0);
-        _chip = new WorldObject
+        var chip = new WorldObject
         {
             Name = "g_000bcaps", Actor = actor,
             Seq = json != null ? new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)) : null,
         };
         AddChild(actor.Root);
-        actor.Root.Position = new Vector3(inv.ChipPos[0], inv.ChipPos[1], inv.ChipPos[2]);
-        _chip.SetSequence("SQ_ENTR1P");
-        _objects.Add(_chip);
+        actor.Root.Position = at;
+        chip.SetSequence("SQ_ENTR1P");
+        _objects.Add(chip);
+        return chip;
     }
 
     bool NearChip => _chip is { Erased: false } c && c.Actor.Root.GlobalPosition.DistanceTo(_player.GlobalPosition) <= ChipReach;
@@ -62,6 +84,7 @@ public partial class Fatia
     bool UseRaiseDisk(int row)
     {
         if (_db == null || !IsRaiseDisk(_db, row)) return false;
+        if (ReviveMateNear(row)) return true; // cristal de um colega caído no grupo (Fatia.Spectator.cs)
         if (!NearChip) { Toast("Use o Raise Disk perto do seu backup chip."); return true; }
         if (!_inventory.RemoveDisks(row, 1)) return true;
         var inv = _inventory;

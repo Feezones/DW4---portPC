@@ -32,6 +32,7 @@ public partial class Fatia : Node3D
     string _dir = "";
     CameraZones[] _cameraSets = [];
     int _cameraSet, _zone = -1;
+    readonly CameraBlend _cameraBlend = new(); // passagem suave entre volumes (DECISÃO DO PORT)
     readonly PadMovement _move = new();
     CharacterBody3D _player = null!;
     Node3D? _model;
@@ -152,7 +153,7 @@ public partial class Fatia : Node3D
     public override void _Ready()
     {
         PortSettings.ApplyLanguage(PortSettings.Current); // a fase pode abrir direto (DW4_FASE), sem passar pelo menu inicial
-        if (Touch) AddChild(new TouchControls { Blocked = () => _menuOpen || ShopOpen || SubWindowOpen || ChatOpen, Shop = () => ShopOpen && !ChatOpen, UiAt = QuickSlotAt }); // celular: botões na tela (some com o controle Bluetooth)
+        if (Touch) AddChild(new TouchControls { Blocked = () => _menuOpen || ShopOpen || SubWindowOpen || ChatOpen, UiAt = QuickSlotAt, Spectating = () => _spectating && !ChatOpen, Tech = TouchTech, UseTech = TouchUseTech }); // celular: botões na tela (some com o controle Bluetooth)
         ChooseStage();
         var env = new Godot.Environment { AmbientLightSource = Godot.Environment.AmbientSource.Color, AmbientLightColor = new Color(0.6f, 0.6f, 0.65f), BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black };
         // FATO (stag0102 #621): igFogAttr 60..300 com cor (0,8 0,7 0,8). Fundo na cor da neblina e neblina por profundidade.
@@ -185,7 +186,8 @@ public partial class Fatia : Node3D
         }
         scenery ??= Load("cenario", "cena.gltf");
         if (scenery != null) { ApplyAdditive(scenery); PaintUntextured(scenery, _fog?.Color ?? Colors.Black); AddChild(scenery); }
-        if (Load("colisao", "colisao.gltf") is { } collision) AddChild(MakeStaticBody(collision));
+        _sceneryRoot = scenery;
+        if (Load("colisao", "colisao.gltf") is { } collision) AddChild(_stageBody = MakeStaticBody(collision));
 
         _demo = OS.GetEnvironment("DW4_DEMO") == "1";
         _showBoxes = _demo;
@@ -212,6 +214,7 @@ public partial class Fatia : Node3D
         {
             _player.AddChild(_model);
             _anim = FindAll<AnimationPlayer>(_model).FirstOrDefault();
+            CsSkin.TryAttach(_model, PlayerModel, _anim); // teste local, só com DW4_CS_MODELOS
             if (_anim != null)
             {
             }
@@ -288,6 +291,7 @@ public partial class Fatia : Node3D
         if (MenuInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (QuickItemInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (InteractInput(e)) { GetViewport().SetInputAsHandled(); return; }
+        if (SpectatorInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (e is InputEventKey { Pressed: true, Echo: false } k)
         {
             if (k.Keycode == Key.F1 && _cameraSets.Length > 1) _cameraSet = (_cameraSet + 1) % _cameraSets.Length;
@@ -298,7 +302,9 @@ public partial class Fatia : Node3D
             if (k.Keycode == Key.F8 && OS.IsDebugBuild()) DebugNextTarget();
         }
         // Ações do mapa de controles (PortInput, configurável nas Configurações).
-        for (int i = 0; i < 6; i++) if (PortInput.Pressed(e, $"tecnica{i + 1}")) _techKey = i;
+        // Técnicas diretas (padrão Q, E, R, F, C, V): fora de menus e janelas, para o Q/E das abas não soltar técnica.
+        if (!_menuOpen && !ShopOpen && !SubWindowOpen && !_quickOpen)
+            for (int i = 0; i < 6; i++) if (PortInput.Pressed(e, $"tecnica{i + 1}")) _techKey = i;
         // DEPURAÇÃO (só no build Debug, com o F3 ligado): F7 equipa o último item pego. No jogo, equipar é só pelo menu de status e
         // pelas lojas, como no original (o atalho "equipar" do port, E/Y, saiu: trocava de arma sem querer e briga com o Q/E do menu).
         if (OS.IsDebugBuild() && _hud.Visible && e is InputEventKey { Pressed: true, Echo: false, Keycode: Key.F7 }) EquipLast();
@@ -314,10 +320,15 @@ public partial class Fatia : Node3D
     public override void _Input(InputEvent e)
     {
         DeviceIcons.Seen(e);
-        if (e is InputEventMouse mouse) _mousePos = mouse.Position; // janelas com arte (Fatia.ShopArt.cs)
-        if (e is InputEventJoypadButton { Pressed: true } || e is InputEventJoypadMotion { AxisValue: > 0.5f or < -0.5f }) _usingPad = true;
+                if (e is InputEventJoypadButton { Pressed: true } || e is InputEventJoypadMotion { AxisValue: > 0.5f or < -0.5f }) _usingPad = true;
         else if (e is InputEventKey { Pressed: true } || e is InputEventMouseButton { Pressed: true }) _usingPad = false;
     }
+
+    // Cursor (GameCursor.cs, DECISÃO DO PORT): mira quando o golpe sairia para o cursor; seta em menus, conversas, chat e cenas.
+    public override void _Process(double delta) => GameCursor.Update(GetViewport(), CursorAims);
+
+    bool CursorAims => !_demo && !_bot && !_usingPad && !Touch && _padEnabled && _playerCtrl && !_leaving && !_spectating
+        && (_pf == null || _hp > 0) && !_menuOpen && !ShopOpen && !SubWindowOpen && !ChatOpen && !TalkWindowOpen;
 
     public override void _PhysicsProcess(double delta)
     {
@@ -338,7 +349,6 @@ public partial class Fatia : Node3D
         TickBotStats(dt);
         if (_snapToFloor) SnapToFloor();
         if (TickMenu(dt)) { _jumpHeld = true; return; } // o botão que fechou o menu não vira pulo
-        TickShopArt(dt);
         if (TickShop() || TickArtMenu()) { _jumpHeld = true; return; } // loja aberta: o jogador fica parado
         _stage?.Tick();
         WatchDemo();
@@ -451,6 +461,7 @@ public partial class Fatia : Node3D
         // DECISÃO DO PORT PC: rede de segurança. Se atravessar o chão (empurrão forte numa borda, ponto inicial dentro de
         // uma parede), volta ao último ponto em que estava no chão em vez de cair para sempre.
         _airTime = _player.IsOnFloor() ? 0 : _airTime + dt;
+        TrackSafeGround(); // plataforma do backup chip (Fatia.BackupChip.cs)
         if (_player.IsOnFloor()) _lastFloor = _player.GlobalPosition;
         else if (_player.GlobalPosition.Y < _lastFloor.Y - 400) { _player.GlobalPosition = _lastFloor; _player.Velocity = Vector3.Zero; }
         if (_model != null) _model.Rotation = new Vector3(0, _move.Facing, 0);
@@ -501,8 +512,8 @@ public partial class Fatia : Node3D
     {
         while (_problemsLogged < _problems.Count) GD.Print($"[problema] {_problems[_problemsLogged++]}"); // também no log (passadas)
         DebugKeepAim();
-        var p = _player.GlobalPosition;
-        if (_cameraDemo != null) UpdateCameraDemo(dt);
+        var p = SpectateFocus() ?? _player.GlobalPosition; // espectador: a câmera segue o colega (Fatia.Spectator.cs)
+        if (_cameraDemo != null) { UpdateCameraDemo(dt); _cameraBlend.Reset(); }
         else if (_cameraSets.Length == 0)
         {
             _camera.LookAtFromPosition(p + new Vector3(0, 80, 110), p, Vector3.Up);
@@ -515,6 +526,8 @@ public partial class Fatia : Node3D
             var target = new NVector3(p.X, p.Y, p.Z);
             _zone = set.Select(target, _zone);
             var (pos, look) = set.Pose(_zone, target);
+            _cameraBlend.Duration = PortSettings.Current.CameraBlend;
+            (pos, look) = _cameraBlend.Update(_cameraSet * 100000 + _zone, pos, look, target, dt);
             _camera.LookAtFromPosition(new Vector3(pos.X, pos.Y, pos.Z), new Vector3(look.X, look.Y, look.Z), Vector3.Up);
         }
         _hud.Text = $"pos ({p.X:0.0}, {p.Y:0.0}, {p.Z:0.0})  vel {_move.Velocity.Length():0.0} u/s\n" +
@@ -564,7 +577,9 @@ public partial class Fatia : Node3D
     void LoadCombat()
     {
         var dbDir = System.IO.Path.Combine(_dir, "db");
-        var dbFile = GameFiles.DirExists(dbDir) ? GameFiles.EnumerateFiles(dbDir, "*_db.json").FirstOrDefault() : null;
+        // Em ordem de nome: o area_*_db.json (tabelas do jogador) vem antes do ndmw_*_db.json das lojas; no Linux/Android a pasta não
+        // vem em ordem e a fase com loja pegava o banco das lojas (sem a shinka).
+        var dbFile = GameFiles.DirExists(dbDir) ? GameFiles.EnumerateFiles(dbDir, "*_db.json").Order(StringComparer.OrdinalIgnoreCase).FirstOrDefault() : null;
         if (dbFile == null) { _problems.Add("falta o *_db.json (dw4 igb-db area.afs 3 <fatia>\\db): combate desligado"); return; }
         _db = GameTables.FromJson(GameFiles.ReadAllText(dbFile));
         var skillFile = StagePath("skillup.json");
@@ -668,6 +683,15 @@ public partial class Fatia : Node3D
             });
             bool hit = target != null;
             if (target != null) TechniqueStrikes(target, tech);
+            else if (BreakMissiles(c, new Vector3(4, 4, 4)) > 0) hit = true; // Fatia.Missile.cs
+            // Objetos com hit_<nome>.lua também levam a técnica (FATO, hit_g_numeprisonz01.lua da stag0103: técnica que não é
+            // 40040..40099 tira 20 da jaula, e as de 40040..40099 a quebram na hora). Do barco, só a técnica alcança as jaulas da
+            // margem; antes ela só procurava inimigos e as jaulas nunca quebravam (relato do usuário, 0.6.14).
+            else if (_objects.FirstOrDefault(o => o.Body != null && !o.Dead && !o.Erased && ObjectTouched(o, c, new Vector3(4, 4, 4))) is { } obj)
+            {
+                hit = true;
+                StrikeObject(obj, 40000 + tech.Row);
+            }
             if (hit || life <= 0) { mesh.QueueFree(); _shots.RemoveAt(i); continue; }
             _shots[i] = (mesh, dir, life, tech);
         }
@@ -737,7 +761,8 @@ public partial class Fatia : Node3D
 
     // Sorteio do drop (0x802FCC48) na posição do inimigo morto. HIPÓTESE da fatia: só a lista do Numemon (nZ1nume1) é
     // conhecida; a ligação inimigo → lista de drop dos outros ainda não foi lida.
-    void DropItem(Enemy e) => DropAt(e.Gen, e.Body.GlobalPosition, e.Gen == null);
+    // Caído no grupo não ganha drop dos colegas (pedido do responsável, 2026-11-06).
+    void DropItem(Enemy e) { if (!(CoopOn && _hp <= 0)) DropAt(e.Gen, e.Body.GlobalPosition, e.Gen == null); }
 
     // FATO (drops.json da stag0101): os geradores de caixa, barril e caixote (GBOX-01, GBRL-01/02, GWCS-01..04) têm listas de drop
     // como os de inimigo (nZ1cont1, nZ1bit, nZ1reizu, nZ1gate, nZ1obje1…); o sorteio do gerador (0x802FCC44) vale para tudo que ele
@@ -748,10 +773,12 @@ public partial class Fatia : Node3D
         string? listName = gen != null && _dropOfGenerator.TryGetValue(gen.Name, out var perPlayers) && perPlayers.Length > 0
             ? perPlayers[Math.Clamp(Ram.Ninzu, 1, perPlayers.Length) - 1].ElementAtOrDefault(Math.Clamp(Ram.Difficulty, 0, 2)) : fallback ? DropList : null;
         var drops = listName != null ? _dropLists.GetValueOrDefault(listName) : null;
+        if (DiagDrop) GD.Print($"[drop] {gen?.Name ?? "sem gerador"} em {at.Round()}: lista {listName ?? "nenhuma"} ({drops?.Count ?? -1} itens), ninzu {Ram.Ninzu}, dificuldade {Ram.Difficulty}");
         if (drops == null && OS.GetEnvironment("DW4_DROP").Length == 0) return;
         // DW4_DROP="tabela:linha" (ex.: insItem:0): força o item, para conferir a coleta sem depender do sorteio.
         DropEntry? d = OS.GetEnvironment("DW4_DROP").Split(':') is [var tb, var rw] && int.TryParse(rw, out int forced)
             ? new DropEntry(new ItemRef(tb, forced), 0, 0) : drops != null ? Drops.Roll(drops, _mt) : null;
+        if (DiagDrop) GD.Print($"[drop]   sorteio: {(d == null ? "nada" : $"{d.Item.Table}:{d.Item.Row}")}");
         if (d == null) return;
         string name = _db!.Contains(d.Item.Table) ? _db[d.Item.Table].Text(d.Item.Row, "NAME") : "";
         if (name.Length == 0) name = $"{d.Item.Table}:{d.Item.Row}";
@@ -764,7 +791,7 @@ public partial class Fatia : Node3D
         ScriptLog($"caiu {name} ({gen?.Name ?? "sem gerador"}, {(g.Chest != null ? g.Chest.Name : "cubo")})");
     }
 
-    // Coleta a menos de 64 unidades (FATO). insItem tem efeito na hora; o resto vai para o inventário. HIPÓTESE da fatia:
+    // Coleta a menos de 8 unidades (FATO: distância ao quadrado < 64, Drops.PickupRadius). insItem tem efeito na hora; o resto vai para o inventário. HIPÓTESE da fatia:
     // tudo é pego por proximidade (no jogo, armas e armaduras só ganham dono; a confirmação não foi lida).
     void UpdateGround()
     {
@@ -785,10 +812,11 @@ public partial class Fatia : Node3D
                     _ground.RemoveAt(i);
                     continue;
                 }
-                if (g.Taken || chest.Sequence is "SQ_EXIT" or "SQ_DDMG") continue;
+                if (g.Taken || !Drops.ChestPickable(chest.Seq)) continue;
             }
             else node.RotateY(0.03f);
-            if (node.GlobalPosition.DistanceTo(_player.GlobalPosition) >= Drops.PickupRadius || _hp <= 0) continue;
+            var gap = node.GlobalPosition - _player.GlobalPosition;
+            if (!Drops.InPickupRange(gap.X, gap.Y, gap.Z) || _hp <= 0) continue;
             string text;
             if (item.Table == "insItem")
             {

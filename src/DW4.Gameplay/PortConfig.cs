@@ -17,8 +17,8 @@ public sealed class PortConfig
     public bool Vibration { get; set; } = true;
     /// <summary>Idioma dos textos do jogo (<see cref="GameLanguage"/>): 0 inglês original, 1 português, 2 português com nomes originais.</summary>
     public int Language { get; set; }
-    /// <summary>Versão dos padrões de controle gravados ([jogo] controles): abaixo de 2, migra o teclado (InputBindings.MigrateKeyboard2).</summary>
-    public int ControlsVersion { get; set; } = 2;
+    /// <summary>Versão dos padrões de controle gravados ([jogo] controles): abaixo de 2, migra o teclado (InputBindings.MigrateKeyboard2); abaixo de 3, MigrateKeyboard3.</summary>
+    public int ControlsVersion { get; set; } = 3;
     // [grafico]
     public int Width { get; set; } = 1280;
     public int Height { get; set; } = 720;
@@ -34,11 +34,18 @@ public sealed class PortConfig
     /// <summary>Campo de visão vertical das câmeras de jogo, em graus (45 = o do port até aqui; as de demonstração não mudam).</summary>
     public int Fov { get; set; } = DefaultFov;
     public const int DefaultFov = 45;
+    /// <summary>Tempo da passagem da câmera entre dois volumes, em segundos (0 = corte seco, como no original).</summary>
+    public float CameraBlend { get; set; } = DefaultCameraBlend;
+    public const float DefaultCameraBlend = 0.8f;
     /// <summary>Escala da resolução interna do 3D (0,5 a 2; abaixo de 1 usa FSR).</summary>
     public float RenderScale { get; set; } = 1f;
     /// <summary>Velocidade das cenas enquanto se segura a ação "acelerar" (2, 3 ou 4).</summary>
     public int FastForward { get; set; } = 3;
     public bool VSync { get; set; } = true;
+    /// <summary>Cursor do mouse (DECISÃO DO PORT): 0 = digital com mira em combate, 1 = só a seta digital, 2 = o do sistema.</summary>
+    public int CursorStyle { get; set; }
+    /// <summary>Tamanho do cursor digital (0,75 a 2; 1 = 32 px em 1080p, cresce com a altura da janela).</summary>
+    public float CursorSize { get; set; } = 1f;
     /// <summary>Escala da interface (content scale), 0,5 a 2.</summary>
     public float UiScale { get; set; } = 1f;
     // [som], 0 a 1
@@ -74,8 +81,11 @@ public sealed class PortConfig
         AntiAliasing = Math.Clamp(AntiAliasing, 0, 5);
         Shadows = Math.Clamp(Shadows, 0, 3);
         Fov = Math.Clamp(Fov, 35, 75);
+        CameraBlend = Math.Clamp(CameraBlend, 0f, 2f);
         RenderScale = Math.Clamp(RenderScale, 0.5f, 2f);
         FastForward = Math.Clamp(FastForward, 2, 4);
+        CursorStyle = Math.Clamp(CursorStyle, 0, 2);
+        CursorSize = Math.Clamp(CursorSize, 0.75f, 2f);
         Fullscreen = WindowMode == 1;
         if (Account.Length == 0 || Account.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) Account = "local";
     }
@@ -95,7 +105,8 @@ public sealed class PortConfig
         Put("camera", CameraMode); Put("luz", LightMode); Put("vibracao", Vibration); Put("idioma", Language); Put("controles", ControlsVersion);
         Section("grafico");
         Put("largura", Width); Put("altura", Height); Put("tela_cheia", Fullscreen); Put("modo", WindowMode); Put("vsync", VSync); Put("fps", FpsLimit); Put("escala", UiScale);
-        Put("aa", AntiAliasing); Put("sombras", Shadows); Put("fov", Fov); Put("resolucao_interna", RenderScale); Put("acelerar", FastForward);
+        Put("aa", AntiAliasing); Put("sombras", Shadows); Put("fov", Fov); Put("camera_suave", CameraBlend); Put("resolucao_interna", RenderScale); Put("acelerar", FastForward);
+        Put("cursor", CursorStyle); Put("cursor_tamanho", CursorSize);
         Section("som");
         Put("geral", MasterVolume); Put("musica", MusicVolume); Put("efeitos", EffectsVolume); Put("vozes", VoiceVolume);
         foreach (var device in new[] { InputBindings.Keyboard, InputBindings.Pad })
@@ -136,8 +147,11 @@ public sealed class PortConfig
                 case ("grafico", "aa"): c.AntiAliasing = Int(value, c.AntiAliasing); break;
                 case ("grafico", "sombras"): c.Shadows = Int(value, c.Shadows); break;
                 case ("grafico", "fov"): c.Fov = Int(value, c.Fov); break;
+                case ("grafico", "camera_suave"): c.CameraBlend = Float(value, c.CameraBlend); break;
                 case ("grafico", "resolucao_interna"): c.RenderScale = Float(value, c.RenderScale); break;
                 case ("grafico", "acelerar"): c.FastForward = Int(value, c.FastForward); break;
+                case ("grafico", "cursor"): c.CursorStyle = Int(value, c.CursorStyle); break;
+                case ("grafico", "cursor_tamanho"): c.CursorSize = Float(value, c.CursorSize); break;
                 case ("som", "vozes"): c.VoiceVolume = Float(value, c.VoiceVolume); break;
                 case (InputBindings.Keyboard or InputBindings.Pad, _): c.Bindings.Load(section, key, Text(value) ?? ""); break;
                 case ("grafico", "vsync"): c.VSync = Bool(value, c.VSync); break;
@@ -149,6 +163,7 @@ public sealed class PortConfig
             }
         }
         if (c.ControlsVersion < 2) { c.Bindings.MigrateKeyboard2(); c.ControlsVersion = 2; }
+        if (c.ControlsVersion < 3) { c.Bindings.MigrateKeyboard3(); c.ControlsVersion = 3; }
         c.Clamp();
         return c;
     }

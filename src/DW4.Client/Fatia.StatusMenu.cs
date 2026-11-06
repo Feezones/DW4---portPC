@@ -62,11 +62,7 @@ public partial class Fatia
                 _hp = System.Math.Min(_hp, _pf!.MaxHp);
                 _mp = System.Math.Min(_mp, _pf.MaxMp);
             },
-            Preview = eq =>
-            {
-                var up = Ram.Players[0].Forms.Current == _shinkaRow && _shinkaRow >= 0 ? Ram.Players[0].Forms[_shinkaRow].UpCount : null;
-                return _db.Player(_shinkaRow, _level, eq, _skill, up);
-            },
+            Preview = PreviewFighter,
             Player = () => _pf,
             Numbers = () => (_level, _hp, _mp, _exp),
             Name = PlayerName,
@@ -80,6 +76,13 @@ public partial class Fatia
         });
         _statusScreen.Closed += () => { _menuOpen = false; _statusScreen = null; };
         _menuLayer.AddChild(_statusScreen);
+    }
+
+    /// <summary>Atributos do jogador com outro equipamento (comparação no menu de status e nas lojas).</summary>
+    Fighter PreviewFighter(Equipment eq)
+    {
+        var up = Ram.Players[0].Forms.Current == _shinkaRow && _shinkaRow >= 0 ? Ram.Players[0].Forms[_shinkaRow].UpCount : null;
+        return _db!.Player(_shinkaRow, _level, eq, _skill, up);
     }
 
     /// <summary>Com o menu aberto a fase fica parada (HIPÓTESE): só o menu anda. true = pular o resto do quadro.</summary>

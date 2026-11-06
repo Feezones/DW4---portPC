@@ -28,6 +28,7 @@ public sealed class ObjectSequencer
     bool _waitAction;
     float _from, _to, _fadeFrom = 1, _fadeTo = 1, _fadeLen, _fadeT;
     bool _loop;
+    bool _hidden; // o último FADESET foi um "HIDE" de ação (ver PlayAction)
     // A ação também é um pequeno programa: JOINTSET, FADESET e as esperas dela (WAITCHECK "Frame" n / "Joint").
     List<SeqCommand> _act = [];
     int _apc;
@@ -104,7 +105,23 @@ public sealed class ObjectSequencer
     {
         if (Sequence == null || !_seqs.TryGetValue(sequence, out var cmds)) return false;
         int start = BlockStart(sequence, cmds);
-        return start < cmds.Count && cmds[start].Kind == "JUMP" && cmds[start].S(0) == Sequence;
+        if (start >= cmds.Count) return false;
+        if (cmds[start].Kind == "JUMP") return cmds[start].S(0) == Sequence;
+        // Também: só LABELCTRL que põem o rótulo que já está valendo e o JUMP de volta (FATO, g_numepodz01 da stag0103: SQ_SWON =
+        // LABELCTRL "ON" "SQ_WAIT" + JUMP "SQ_WAIT", e o SQ_WAIT/ON espera o WAIT02 de 3 s antes do JUMP "SQ_FIRE"). Recomeçando a
+        // cada quadro que a IA escolhe SQ_SWON, o pod nunca chegava ao tiro.
+        for (int i = start; i < cmds.Count; i++)
+        {
+            var c = cmds[i];
+            if (c.Kind == "LABEL") return false;
+            if (c.Kind == "JUMP") return c.S(0) == Sequence;
+            if (c.Kind != "LABELCTRL") return false;
+            var texts = c.Values.OfType<string>().ToList();
+            string target = texts.FirstOrDefault(t => t.StartsWith("SQ_", StringComparison.Ordinal)) ?? "SQ_WAIT";
+            string? label = texts.FirstOrDefault(t => !t.StartsWith("SQ_", StringComparison.Ordinal));
+            if (label == null || _labels.GetValueOrDefault(target) != label) return false;
+        }
+        return false;
     }
 
     int BlockStart(string sequence, List<SeqCommand> cmds)
@@ -243,6 +260,7 @@ public sealed class ObjectSequencer
                     break;
                 case "FADESET":
                     Fade(c);
+                    _hidden = false; // HIDE da sequência (SQ_HIDE dos tiros) não é da ação: fica
                     break;
             }
         }
@@ -254,6 +272,15 @@ public sealed class ObjectSequencer
         ActionTime = 0;
         _loop = false;
         _act = _actions.TryGetValue(name, out var cmds) ? cmds : [];
+        // HIPÓTESE forte: o FADESET "HIDE" vale só na ação que o pôs; ação nova sem FADESET volta a aparecer. FATO (seqs): o laser
+        // g_dbarrierw1..9 tem SQ_WAIT = HIDE_ACTION e SQ_POWERON → ONSW01 só com JOINTSET; o g_dbasewall esconde no OFSW01 e
+        // volta no OF2WIT; a mina g_minez04 esconde no WAIT03 e salta no WAIT02; o g_dtrailmon esconde no WAIT02 e anda no
+        // START1; o f_luce2 some no TRNS1x e volta no DAMAGE/GURD. Antes o HIDE ficava para sempre: laser invisível com
+        // colisão (barrierwall01) parecendo parede invisível. FADESET "OUT" continua valendo (porta aberta, inimigo sumindo).
+        if (_hidden && !_act.Any(c => c.Kind == "FADESET"))
+        {
+            (_fadeLen, Alpha, _hidden) = (0, 1, false);
+        }
         _apc = 0;
         _actWait = 0;
         _actWaitJoint = false;
@@ -325,9 +352,9 @@ public sealed class ObjectSequencer
     {
         switch (c.S(0))
         {
-            case "IN": (_fadeFrom, _fadeTo, _fadeLen, _fadeT) = (0, 1, Math.Max(1, c.F(1)), 0); Alpha = 0; break;
-            case "OUT": (_fadeFrom, _fadeTo, _fadeLen, _fadeT) = (Alpha, 0, Math.Max(1, c.F(1)), 0); break;
-            case "HIDE": (_fadeLen, Alpha) = (0, 0); break;
+            case "IN": (_fadeFrom, _fadeTo, _fadeLen, _fadeT, _hidden) = (0, 1, Math.Max(1, c.F(1)), 0, false); Alpha = 0; break;
+            case "OUT": (_fadeFrom, _fadeTo, _fadeLen, _fadeT, _hidden) = (Alpha, 0, Math.Max(1, c.F(1)), 0, false); break;
+            case "HIDE": (_fadeLen, Alpha, _hidden) = (0, 0, true); break;
         }
     }
 }

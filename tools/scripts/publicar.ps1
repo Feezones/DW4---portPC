@@ -107,6 +107,17 @@ Remove-Item (Join-Path $Pacote "dados\fatia"), (Join-Path $Pacote "dados\fases")
 New-Item -ItemType Directory -Force -Path (Join-Path $Pacote "dados\arquivos") | Out-Null
 Copy-Item (Join-Path $Trabalho "extracted\files\area.afs") (Join-Path $Pacote "dados\arquivos\area.afs") -Force
 
+# 2b. Modelos do Cyber Sleuth (0.6.22+, decisão do responsável 2026-11-06): .glb convertidos + cs_modelos.json, soltos em
+#     dados\cs_modelos. Gerados pelos scripts de D:\dw4-work\cyber-sleuth (fora do git). Sem a pasta, o jogo usa os do DW4.
+$csOrigem = Join-Path $Trabalho "cyber-sleuth\modelos_cs"
+$csDestino = Join-Path $Pacote "dados\cs_modelos"
+Remove-Item $csDestino -Recurse -Force -ErrorAction SilentlyContinue
+if (Test-Path (Join-Path $csOrigem "cs_modelos.json")) {
+    New-Item -ItemType Directory -Force -Path $csDestino | Out-Null
+    Copy-Item (Join-Path $csOrigem "cs_modelos.json"), (Join-Path $csOrigem "*.glb") $csDestino -Force
+    Write-Host "Modelos do Cyber Sleuth: $((Get-ChildItem $csDestino -Filter *.glb).Count) arquivos"
+}
+
 # 3. Versão que o jogo mostra no título da janela e no log.
 Set-Content -Path (Join-Path $Pacote "versao.txt") -Value "$Versao ($commit)" -Encoding UTF8 -NoNewline
 

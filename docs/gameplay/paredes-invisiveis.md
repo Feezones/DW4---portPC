@@ -54,3 +54,17 @@ Relato: não dava para pular para os pilares na beira do penhasco da stag0102. F
   vão para a camada 2, que o jogador só olha fora do pulo (`UpdatePlayerMask`). As faces de parede das peças 8 vão para a camada 3,
   que só os inimigos olham. O chão das mesmas peças continua segurando todo mundo.
 - A conferir no original: se o pulo passa mesmo pelo parapeito e se o jogador atravessa as `wallE`.
+
+## Tiro do jogador e paredes invisíveis (2026-11-06)
+
+Relato: o tiro (Shot Pistol, `x_100gunv01`) não seguia o trajeto todo ao atirar para fora do mapa. Desde a 0.6.17 os tiros com
+LUACALL de batida somem ao cruzar a camada 1 da colisão, e a colisão de todas as fases tem muita parede sem cenário.
+
+- **FATO (main.dol):** `"BHit"` vai para o campo 0x30 do beModelCtrl e roda pela mensagem `CHKBULLET` (tiro contra modelo,
+  0x8031029c), não pelo cenário. `"WHit"` (0x34) e `"FHit"` (0x38) rodam no contato com a colisão (0x80309c74); as checagens de
+  parede (0xd8, `ONWALL`/`OFFWALL`) e de queda (0xda, `onFall`/`noFall`) começam ligadas (0x8030ea00).
+- **FATO:** `x_100gunv01` arma BHit, WHit e FHit com `bht_x_100gunv01.lua` = `MDLsetSeq "SQ_ERAS"`.
+- **HIPÓTESE (relato do usuário):** o tiro do jogador passa pelas paredes invisíveis. No cliente (`Fatia.ShotScenery.cs`) ele só
+  some na colisão da fase com cenário a menos de 6 do ponto (o critério da auditoria); passa pelo chão de veículo e pelas caixas,
+  e o acerto em inimigo/objeto vem antes da batida (a `g_box` tinha corpo na camada 1 e o tiro batia nela sem dar dano).
+- `DW4_DIAG_TIRO=1` mostra no log onde o tiro do jogador bateu ou passou.

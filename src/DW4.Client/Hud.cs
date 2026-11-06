@@ -31,6 +31,8 @@ public sealed class HudData
     public Dictionary<string, int> Actors { get; } = [];
     public Dictionary<string, List<MeterData>> Meters { get; } = [];
     public Dictionary<string, List<NumberRam>> Numbers { get; } = [];
+    /// <summary>Colisão própria do ator (beHitLandModelInfo: nó do igSwitch @8 e o tipo @10), quando o exportador achou.</summary>
+    public Dictionary<string, (int Node, int Kind)> Lands { get; } = [];
     readonly Dictionary<string, Texture2D?> _textures = [];
 
     HudData(string dir) => Dir = dir;
@@ -42,7 +44,12 @@ public sealed class HudData
         var h = new HudData(dir);
         using var doc = JsonDocument.Parse(GameFiles.ReadAllText(file));
         var root = doc.RootElement;
-        foreach (var a in root.GetProperty("actors").EnumerateArray()) h.Actors[a.GetProperty("name").GetString()!] = a.GetProperty("root").GetInt32();
+        foreach (var a in root.GetProperty("actors").EnumerateArray())
+        {
+            var name = a.GetProperty("name").GetString()!;
+            h.Actors[name] = a.GetProperty("root").GetInt32();
+            if (a.TryGetProperty("land", out var land)) h.Lands[name] = (land.GetProperty("node").GetInt32(), land.GetProperty("kind").GetInt32());
+        }
         foreach (var p in root.GetProperty("nodes").EnumerateObject()) h.Nodes[int.Parse(p.Name)] = ReadNode(int.Parse(p.Name), p.Value);
         foreach (var m in root.GetProperty("meters").EnumerateArray())
             h.Meters[m.GetProperty("name").GetString()!] = m.GetProperty("data").EnumerateArray().Select(d => new MeterData(
@@ -143,6 +150,8 @@ public sealed class HudActor
     sealed record TexMapped(StandardMaterial3D Material, HudData.NodeData[] Chain, int Meter);
 
     public Node3D Root { get; } = new();
+    /// <summary>Nó do igTransformRecorder do ator (trilhos r_*), se houver.</summary>
+    public Node3D? Recorder { get; private set; }
     public float Time { get; set; }
     readonly HudData _h;
     readonly List<Animated> _animated = [];
@@ -153,6 +162,7 @@ public sealed class HudActor
     int _drawOrder = -1;
     readonly bool _billboard;
     readonly bool _skipFlat;
+    readonly bool _world;
     readonly float _widen, _widenFull;
     readonly List<(Node3D Node, float Shift)> _shifted = [];
 
@@ -165,8 +175,11 @@ public sealed class HudActor
     /// largas (mais de 400 de largura, como as faixas da caixa de fala e o escurecido i_bgclear) esticam só no meio: os vértices
     /// com |x| > 200 andam ±widen. Peças fora do centro (|x| entre 150 e 480 em repouso, como o rosto e a placa do nome) andam
     /// ±widen inteiras. Cantos, rosto e setas ficam na proporção.</param>
-    public HudActor(HudData h, int root, int slot, bool billboard = false, int drawOrder = -1, bool skipFlat = false, float widen = 0, float widenFull = -1)
+    /// <param name="world">Modelo 3D no mundo (baú do item): transformação com giro 3D ou deslocamento grande debaixo da matriz de
+    /// textura é do desenho, não da UV (ver Build).</param>
+    public HudActor(HudData h, int root, int slot, bool billboard = false, int drawOrder = -1, bool skipFlat = false, float widen = 0, float widenFull = -1, bool world = false)
     {
+        _world = world;
         _widen = widen;
         _widenFull = widenFull < 0 ? widen : widenFull;
         _skipFlat = skipFlat;
@@ -192,6 +205,12 @@ public sealed class HudActor
             static bool Whole(float v) => Math.Abs(v - MathF.Round(v)) < 1e-3f;
             bool positional = texSpace && n.Sequence is { } sq && sq.T.Any(v => Math.Abs(v.X) > 1.5f || Math.Abs(v.Y) > 1.5f)
                 && sq.T.All(v => Whole(v.X) && Whole(v.Y));
+            // Modelo de mundo (baús g_000*): debaixo do igTextureMatrixStateAttr do g_000bit/xdata1/xdata2 ficam tanto o giro e o pulo
+            // do desenho (coin: rotação em Y e y 0 → −3 → −2,32 …; xdataup y 4 → 2,5 → 6; xmark e arrowhead giram em X/Y) quanto a
+            // rolagem do brilho (|t| ≤ 1, sem rotação fora do eixo Z). HIPÓTESE tirada dos dados: com rotação fora do eixo Z (a UV só
+            // gira em Z) ou translação acima de 1,5, é posição. Antes os baús de BIT e de X-Data ficavam parados no chão.
+            if (_world && texSpace && !positional && n.Sequence is { } wq)
+                positional = wq.R.Any(q => Math.Abs(q.X) > 1e-3f || Math.Abs(q.Y) > 1e-3f) || wq.T.Any(v => v.Length() > 1.5f);
             if (texSpace && !positional) texChain = [.. texChain, n];
             else
             {
@@ -208,6 +227,13 @@ public sealed class HudActor
                     if (n.Sequence == null) node.Position += new Vector3(shift, 0, 0);
                 }
             }
+        }
+        // igTransformRecorder (folha sem malha): guarda a matriz acumulada do pai. FATO (r_boatz01 da stag0103): o trilho é só
+        // "route00" (igTransform animado) com um gravador embaixo; o MOVERL "JOINT" pede GETTRCDATA à peça (Fatia.Boss AttachTarget).
+        if (n.Type == "igTransformRecorder" && Recorder == null)
+        {
+            Recorder = new Node3D { Name = "igTransformRecorder" };
+            here.AddChild(Recorder);
         }
         foreach (var m in n.Meshes)
         {
@@ -417,6 +443,53 @@ public sealed class HudOverlay
             if (_lvNum != null) _numbers.SetNumber(_lvNum, level);
         }
         foreach (var p in _panels) p.Update();
+        foreach (var (node, at, a) in _stagePanels)
+        {
+            if (_owner.IsInsideTree())
+            {
+                var win = _owner.GetViewport().GetVisibleRect().Size;
+                node.Position = new Vector3(ScreenLayout.Fit(win.X, win.Y).AnchorX(at.X), at.Y, at.Z + StagePanelDepth);
+            }
+            a.Update();
+        }
+    }
+
+    // Painéis especiais da fase (FATO, stag0103: start.lua gera i_stpnlsp04 e i_stpnlsp05 em V<-296,225,0>, o first.lua manda
+    // SQ_OPEN, e o 05 tem o medidor "boathp" que o hit_p_*.lua acerta com METERCTRL boathp SETPERCENT a cada golpe no jogador).
+    // DECISÃO DO PORT: aparecem já abertos no GENERATE (as sequências SQ_OPEN deles não foram exportadas), presos à borda
+    // esquerda como o painel do jogador.
+    readonly List<(Node3D Node, Vector3 At, HudActor Actor)> _stagePanels = [];
+    // FATO (hud da stag0103): as malhas do i_stpnlsp04/05 ficam em z 0..60, e as do painel do jogador em z −90..−143. A câmera
+    // ortográfica do port olha para −z a partir de z 0 (near 1), então o painel do barco ficava atrás dela e não aparecia (relato
+    // do usuário na 0.6.14). DECISÃO DO PORT: o painel vai 200 para dentro; a ordem entre a moldura e o medidor fica a mesma.
+    const float StagePanelDepth = -200;
+
+    public bool ShowStagePanel(string name, Vector3 at)
+    {
+        if (_stagePanels.Any(p => p.Node.Name == name)) return true;
+        if (!_h.Actors.TryGetValue(name, out int root)) return false;
+        var node = new Node3D { Name = name, Position = at + new Vector3(0, 0, StagePanelDepth) };
+        var a = new HudActor(_h, root, slot: 0);
+        node.AddChild(a.Root);
+        _vp.AddChild(node);
+        _stagePanels.Add((node, at, a));
+        foreach (var (meterNode, t) in _stageMeterTimes) a.SetMeterTime(meterNode, t);
+        a.Update();
+        return true;
+    }
+
+    readonly Dictionary<int, float> _stageMeterTimes = [];
+
+    public bool HasMeter(string meter) => _h.Meters.ContainsKey(meter);
+
+    public bool HasStagePanel(string name) => _stagePanels.Any(p => p.Node.Name == name);
+
+    /// <summary>METERCTRL &lt;medidor&gt; SETPERCENT: o tempo do medidor pela mesma regra do HP (máximo 100).</summary>
+    public void SetStageMeter(string meter, float percent)
+    {
+        if (_h.Meters.GetValueOrDefault(meter)?.FirstOrDefault() is not { } m) return;
+        _stageMeterTimes[m.Node] = MeterTime(m, percent, 100);
+        foreach (var (_, _, a) in _stagePanels) a.SetMeterTime(m.Node, _stageMeterTimes[m.Node]);
     }
 }
 

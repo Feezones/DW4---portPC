@@ -119,8 +119,10 @@ public partial class Fatia
         _quickHud.Scale = new Vector2(s, s);
         var hudSize = _quickHud.GetCombinedMinimumSize() * s;
         // Em 4:3 a barra centrada encostava no painel de status (canto de baixo à esquerda): começa depois dele.
-        _quickHud.Position = new Vector2(Math.Max((size.X - hudSize.X) / 2, 290 * s), size.Y - hudSize.Y - 10 * s);
-        _quickHud.Visible = !InCutscene && !_menuOpen && !ShopOpen;
+        // Com a barra de técnicas no pé da tela (Fatia.TechBar.cs), a hotbar fica logo acima dela (o 14 deixa lugar às plaquinhas das teclas).
+        float techH = _techBar is { Visible: true } tb ? tb.GetCombinedMinimumSize().Y * s + 14 * s : 0;
+        _quickHud.Position = new Vector2(Math.Max((size.X - hudSize.X) / 2, 290 * s), size.Y - hudSize.Y - 10 * s - techH);
+        _quickHud.Visible = !InCutscene && !_menuOpen && !ShopOpen && !SubWindowOpen;
         var inv = _inventory;
         string key = string.Join(",", inv.QuickItems.Select(r => r >= 0 ? $"{r}:{inv.Disks(r)}" : "-"));
         if (key != _quickHudKey)

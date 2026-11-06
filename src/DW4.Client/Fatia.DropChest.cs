@@ -67,7 +67,7 @@ public partial class Fatia
         }
         var chest = new WorldObject
         {
-            Name = model, Actor = new HudActor(_dropData, root, slot: 0),
+            Name = model, Actor = new HudActor(_dropData, root, slot: 0, world: true),
             Seq = json != null ? new ObjectSequencer(SeqCommand.LoadAll(json), SeqCommand.LoadActions(json)) : null,
         };
         chest.SetSequence("SQ_WAIT"); // rótulo DEF → SQ_ENTR
@@ -78,8 +78,36 @@ public partial class Fatia
     // e outro a 300 (fica no chão e some sozinho no fim do SQ_BODING); o log [script] mostra "caiu", "pegou" e "sumiu".
     float _dropHereClock = -1;
 
+    // DEPURAÇÃO (só Debug): DW4_DIAG_DROP=1 segue cada drop (lista, sorteio) e o baú no chão (sequência, quadro, altura, visível).
+    static readonly bool DiagDrop = OS.IsDebugBuild() && OS.GetEnvironment("DW4_DIAG_DROP") == "1";
+    float _diagDropClock;
+
+    void TickDropDiag(float dt)
+    {
+        if (!DiagDrop || _ground.Count == 0) return;
+        float before = _diagDropClock;
+        _diagDropClock += dt;
+        if ((int)(before / 0.25f) == (int)(_diagDropClock / 0.25f)) return;
+        foreach (var g in _ground)
+        {
+            // Altura do desenho acima do chão: o pulo e os quiques vêm da animação de juntas (capsule y 3 → 8 → 2 → 5,5 … 5).
+            var meshes = FindAll<MeshInstance3D>(g.Node).Where(m => m.IsVisibleInTree()).ToList();
+            string up = meshes.Count > 0 ? $"{meshes.Max(m => m.GlobalPosition.Y) - g.Node.GlobalPosition.Y:0.0}" : "-";
+            if (meshes.Count > 0)
+            {
+                var chain = new List<string>();
+                for (Node? n = meshes[0]; n != null && n != g.Node; n = n.GetParent()) chain.Add(n is Node3D n3 ? $"{n.Name}:{n3.Position.Y:0.0}" : n.Name);
+                up += $" [{string.Join(" < ", chain)}] t{g.Chest?.Actor.Time:0.00}";
+            }
+            var gap = g.Node.GlobalPosition - _player.GlobalPosition;
+            GD.Print($"[drop] {_diagDropClock:0.00} s: {g.Chest?.Name ?? "cubo"} {g.Chest?.Sequence} {g.Chest?.Seq?.Action} q{g.Chest?.Seq?.Frame:0} isLive {g.Chest?.Seq?.Live} "
+                + $"nó {g.Node.GlobalPosition.Round()} altura {up} malhas {meshes.Count} jogador a {gap.Length():0.0} pego {g.Taken}");
+        }
+    }
+
     void TickDropHereDebug(float dt)
     {
+        TickDropDiag(dt);
         if (_dropHereClock < 0) { if (!OS.IsDebugBuild() || OS.GetEnvironment("DW4_DROP_AQUI") != "1") return; _dropHereClock = 0; }
         float before = _dropHereClock;
         _dropHereClock += dt;

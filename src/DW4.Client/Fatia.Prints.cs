@@ -40,7 +40,7 @@ public partial class Fatia
             case "pausa": OpenPause(); break;
             case "config": OpenSettings(); break;
             case "status": OpenMenu(); break;
-            case "banco": if (ShopArtReady()) OpenBankArt(); else OpenBank(); break;
+            case "banco": OpenBankArt(); break;
             case "xdata": OpenXDataMenu(); break;
             case "labo": OpenEvolve(); break;
             case "cartas": OpenCardShop(); break;
