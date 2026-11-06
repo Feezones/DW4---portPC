@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using Godot;
+using DW4.Script.Be;
 using DW4.Gameplay;
 
 namespace DW4.Client;
@@ -45,6 +46,47 @@ public partial class Fatia
         public Vector3 Offset { get; init; }
         /// <summary>Projétil do jogador (caixa 10000, ex. x_100gunv01 da pistola): acerta inimigos, não o jogador.</summary>
         public bool FromPlayer { get; init; }
+        /// <summary>LUACALL de batida armado pela sequência (ex. "bht" "BHit" do x_bltnumemisz01): roda ao tocar a colisão.</summary>
+        public (string Name, string Call)? HitLua { get; set; }
+    }
+
+    // Contexto do bht_<tiro>.lua: MDLsetSeq vai para a sequência do tiro (FATO: bht_x_bltnumemisz01.lua = MDLsetSeq "SQ_HIDE").
+    sealed class ShotBeModel(Shot s) : IBeModel
+    {
+        public int Index => s.Index;
+        public int Hp { get => 0; set { } }
+        public int BulletKind => 0;
+        public string ModelName => s.Name;
+        public string? SequenceName => s.Seq.Sequence;
+        public void SetSequence(string name) => s.Seq.Start(name);
+    }
+
+    /// <summary>
+    /// Tiro batendo na colisão (cenário, objetos com corpo e o chão de veículo). FATO (seq): os tiros armam um LUACALL com nome de
+    /// chamada "BHit" ou "WHit" (x_bltnumemisz01: "bht" "BHit"; bht_x_bltnumemisz01.lua = MDLsetSeq "SQ_HIDE", que some com FADESET
+    /// HIDE e vai ao SQ_ERAS). HIPÓTESE: "BHit"/"WHit" = bater em colisão de chão/parede (beHitLand), e o chão de veículo do barco
+    /// (beHitLandModelInfo 0x1405) conta como colisão. Antes o port não armava o evento e os mísseis atravessavam o barco.
+    /// FATO: nada liga o tiro à vida do barco (só o hit_p_*.lua mexe no g_boathp): bater no casco só apaga o tiro (escolha do
+    /// usuário, 2026-11-06: igual ao original).
+    /// </summary>
+    void CheckShotLand(Shot s, Vector3 from)
+    {
+        while (s.Seq.TakeLuaCallWithName() is { } call)
+            if (call.Call.EndsWith("Hit", StringComparison.Ordinal)) s.HitLua = call;
+        if (s.HitLua is not { } hit || s.Hit || s.Seq.Erased) return;
+        var to = s.Root.GlobalPosition;
+        if (from.DistanceSquaredTo(to) < 1e-6f) return;
+        var q = PhysicsRayQueryParameters3D.Create(from, to);
+        q.Exclude = [_player.GetRid()];
+        q.CollisionMask = 1; // cenário e veículo; não as paredes só de inimigo (EnemyLayer) nem os parapeitos (EdgeLayer)
+        var r = GetWorld3D().DirectSpaceState.IntersectRay(q);
+        if (r.Count == 0 || (Node)r["collider"] is not StaticBody3D body) return;
+        s.HitLua = null;
+        s.Hit = true; // bateu: a caixa dele não pega mais o jogador (do outro lado da parede)
+        if (DiagRide) GD.Print($"[barco] {s.Name} bateu em {body.Name} em {((Vector3)r["position"]).Round()}");
+        var script = $"{hit.Name}_{s.Name}.lua";
+        if (_stage?.Has(script) == true) _stage.RunAs(script, new ShotBeModel(s));
+        else if (!s.Seq.Start("SQ_BREK")) s.Seq.Start("SQ_ERAS");
     }
 
     Dictionary<string, List<Starter>>? _starters;
@@ -206,6 +248,7 @@ public partial class Fatia
                 act.Time = s.Seq.Frame / 60f;
                 act.Update();
             }
+            var before = s.Root.GlobalPosition;
             if (s.Seq.Motion.AnyActive && dt > 0)
             {
                 // HIPÓTESE (relato "o tiro da Shot Pistol é lento"): o tiro do jogador anda no relógio do sequenciador de objetos (60 Hz, o
@@ -214,6 +257,7 @@ public partial class Fatia
                 s.Root.RotateY(yawDeg * MathF.PI / 180);
                 s.Root.TranslateObjectLocal(new Vector3(local.X, local.Y, local.Z));
             }
+            CheckShotLand(s, before);
             string? la = s.LastAction; float lf = s.LastFrame;
             var me = s;
             FireStarters(s.Name, s.Seq.Action, s.Seq.ActionTime, ref la, ref lf, s.Root.GlobalTransform, s.Owner, s.OwnerName,
