@@ -26,7 +26,7 @@ public sealed class InputBindings
         new("item1", "Item rápido 1"), new("item2", "Item rápido 2"), new("item3", "Item rápido 3"), new("item4", "Item rápido 4"),
         new("item5", "Item rápido 5"), new("itens", "Janela de itens"),
         new("status", "Menu de status"), new("confirmar", "Confirmar"), new("cancelar", "Cancelar"),
-        new("chat", "Abrir o chat"), new("interagir", "Interagir com jogador"), new("pausa", "Pausa (menu)"),
+        new("chat", "Abrir o chat"), new("interagir", "Interagir com jogador"), new("guilda", "Janela da guilda"), new("pausa", "Pausa (menu)"),
         new("salvar_rapido", "Salvar rápido"), new("acelerar", "Acelerar cenas (segurar)"),
     ];
 
@@ -41,7 +41,8 @@ public sealed class InputBindings
         ["tecnica1"] = ["tecla:Q"], ["tecnica2"] = ["tecla:E"], ["tecnica3"] = ["tecla:R"], ["tecnica4"] = ["tecla:F"], ["tecnica5"] = ["tecla:C"], ["tecnica6"] = ["tecla:V"],
         ["item1"] = ["tecla:Key1"], ["item2"] = ["tecla:Key2"], ["item3"] = ["tecla:Key3"], ["item4"] = ["tecla:Key4"], ["item5"] = ["tecla:Key5"], ["itens"] = ["tecla:I"],
         ["status"] = ["tecla:Tab"], ["confirmar"] = ["tecla:Enter", "tecla:J"], ["cancelar"] = ["tecla:Backspace", "tecla:K"],
-        ["chat"] = ["tecla:Enter"], ["interagir"] = ["tecla:G"], ["pausa"] = ["tecla:Escape"],
+        // Guilda do DW4 (2026-11-07): janela no O (livre); também pela pausa, no controle e no celular.
+        ["chat"] = ["tecla:Enter"], ["interagir"] = ["tecla:G"], ["guilda"] = ["tecla:O"], ["pausa"] = ["tecla:Escape"],
         ["salvar_rapido"] = ["tecla:F5"], ["acelerar"] = ["tecla:Shift"],
     };
 
@@ -58,7 +59,7 @@ public sealed class InputBindings
         ["item1"] = [], ["item2"] = [], ["item3"] = [], ["item4"] = [], ["item5"] = [], ["itens"] = ["botao:1"],
         ["status"] = ["botao:6"], ["confirmar"] = ["botao:0"], ["cancelar"] = ["botao:1"],
         // Interagir com jogador no Y (2026-11-07: estava sem botão no controle; o Y não tem outra ação no port).
-        ["chat"] = [], ["interagir"] = ["botao:3"], ["pausa"] = ["botao:4"],
+        ["chat"] = [], ["interagir"] = ["botao:3"], ["guilda"] = [], ["pausa"] = ["botao:4"],
         ["salvar_rapido"] = [], ["acelerar"] = ["eixo:5+"],
     };
 

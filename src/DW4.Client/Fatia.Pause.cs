@@ -13,6 +13,7 @@ public partial class Fatia
     void OpenPause() => SaveWindow("Pausa",
     [
         ("Continuar", CloseSaveWindow),
+        ("Guilda", () => { CloseSaveWindow(); OpenGuild(); }),
         ("Configurações", OpenSettings),
         ("Gravar e voltar ao menu", () => { CloseSaveWindow(); LeaveGame(); }),
     ]);

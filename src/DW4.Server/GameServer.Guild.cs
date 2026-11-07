@@ -164,9 +164,11 @@ public sealed partial class GameServer
     {
         if (g == null) { Reply(me, "Crie uma guilda ou entre em uma primeiro."); return; }
         if (g.Member(who.AccountId) is not { Rank: <= 2 }) { Reply(me, "Só o Mestre e os Sub-mestres convidam."); return; }
-        int target = x.TargetId > 0 ? x.TargetId : _world.FindByName(x.Text.Trim());
-        var tw = target > 0 ? _world.Who(target) : null;
-        if (tw == null) { Reply(me, x.TargetId > 0 ? "Esse jogador não está mais online." : $"{x.Text.Trim()} não está online."); return; }
+        // Pelo nome (janela da guilda) ou pelo id (menu de interagir, Text vazio: o id 0 é um jogador válido).
+        bool byName = x.Text.Trim().Length > 0;
+        int target = byName ? _world.FindByName(x.Text.Trim()) : x.TargetId;
+        var tw = target >= 0 ? _world.Who(target) : null;
+        if (tw == null) { Reply(me, byName ? $"{x.Text.Trim()} não está online." : "Esse jogador não está mais online."); return; }
         if (target == me) { Reply(me, "Você já está na guilda."); return; }
         if (_world.GuildOf(target) != 0) { Reply(me, _world.GuildOf(target) == g.Id ? "Esse jogador já está na sua guilda." : "Esse jogador já está em outra guilda."); return; }
         string targetName = _world.Name(target);

@@ -290,6 +290,7 @@ public partial class Fatia : Node3D
         if (ChatInput(e)) { GetViewport().SetInputAsHandled(); return; } // chat aberto: nada chega ao jogo
         if (SaveWindowInput(e)) { if (IsInsideTree()) GetViewport().SetInputAsHandled(); return; } // a escolha pode trocar de fase
         if (TradeInput(e)) { GetViewport().SetInputAsHandled(); return; } // janela de troca aberta: nada chega ao jogo
+        if (GuildInput(e)) { GetViewport().SetInputAsHandled(); return; } // janela da guilda (O / pausa): nada chega ao jogo
         if (TechBarInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (MenuInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (QuickItemInput(e)) { GetViewport().SetInputAsHandled(); return; }
@@ -841,7 +842,7 @@ public partial class Fatia : Node3D
             {
                 if (item.Row == 0)
                 {
-                    int bit = Drops.Bit(_level, _pf!.Bitritsu, _mt);
+                    int bit = WithGuildBonus(Drops.Bit(_level, _pf!.Bitritsu, _mt), GuildBonus);
                     _inventory.Bit += bit;
                     text = $"+{bit} BIT";
                 }
@@ -898,7 +899,9 @@ public partial class Fatia : Node3D
         // DECISÃO DO PORT (2026-11-05): no grupo todos levam a parte de quem matou; o EnemyKilled só chega a quem está na party
         // e na mesma fase, então quem não é do grupo continua sem EXP.
         if (CoopOn && _hp <= 0) return;
-        AddExp(DamageFormula.ExpShare(_db!["enemy"].Int(e.Kind.Row, "EXP"), _pf?.Expritsu ?? 0, players: Math.Clamp(Ram.Ninzu, 1, 4), killer: true));
+        int exp = DamageFormula.ExpShare(_db!["enemy"].Int(e.Kind.Row, "EXP"), _pf?.Expritsu ?? 0, players: Math.Clamp(Ram.Ninzu, 1, 4), killer: true);
+        GuildXpFrom(e, exp); // XP da guilda vem da EXP sem o bônus dela
+        AddExp(WithGuildBonus(exp, GuildBonus)); // DECISÃO DO PORT (guilda, 2026-11-07): +1% por nível da guilda acima do 1
     }
 
     void AddExp(int gain)
