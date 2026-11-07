@@ -59,6 +59,7 @@ public sealed partial class GameServer
             }
         if (now >= _nextHeartbeat) { _nextHeartbeat = now + HeartbeatEvery; Heartbeat(); }
         TickTrades(now);
+        TickGuilds(now);
     }
 
     public void Stop()
@@ -99,6 +100,9 @@ public sealed partial class GameServer
             case TradeCmd x when _world.IsOnline(p.Id):
                 OnTrade(p, x);
                 break;
+            case GuildCmd x when _world.IsOnline(p.Id):
+                OnGuild(p, x);
+                break;
             case PlayerState s when _world.IsOnline(p.Id):
                 if (!Allow(p.Id)) return;
                 Send(_world.Update(p.Id, s));
@@ -129,6 +133,7 @@ public sealed partial class GameServer
         Log($"[{p.Id}] entrou: {who.Tamer} (conta {who.AccountId}) com {h.Character}");
         Send(p, new Welcome(p.Id, who.Tamer), true);
         RefreshParty(p.Id, who.AccountId);
+        GuildOnJoin(p.Id, who, h.Character);
     }
 
     static readonly HashSet<string> Actions =
@@ -390,7 +395,9 @@ public sealed partial class GameServer
         if (_world.Who(id) is { } who)
         {
             Log($"[{id}] saiu: {who.Tamer}");
+            long guild = _world.GuildOf(id);
             Send(_world.Leave(id));
+            GuildOnLeave(id, guild);
             _ = SafeAsync(() => _api.PresenceAsync(who.AccountId, false));
         }
     }

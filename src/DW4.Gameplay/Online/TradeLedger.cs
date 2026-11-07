@@ -34,6 +34,22 @@ public static class TradeLedger
         return new TradeCommit(null, a.ToJsonString(), b.ToJsonString(), seqA, seqB, Str(a, "Name"), Str(b, "Name"));
     }
 
+    /// <summary>
+    /// Um lado só (baú da guilda, 2026-11-07): sai <paramref name="give"/> e entra <paramref name="get"/> no save, com as mesmas
+    /// conferências da troca, e o TradeSeq sobe (gravação velha do cliente não desfaz). JsonA/SeqA/NameA são o resultado.
+    /// </summary>
+    public static TradeCommit Apply(string json, TradeOffer give, TradeOffer get)
+    {
+        JsonObject a;
+        try { a = JsonNode.Parse(json) as JsonObject ?? throw new FormatException(); }
+        catch (Exception e) when (e is FormatException or System.Text.Json.JsonException) { return new TradeCommit("Save inválido no servidor."); }
+        var (inv, eq) = Read(a);
+        if (TradeSession.Check(give, inv, eq, get) is { } why) return new TradeCommit(why);
+        TradeSession.Move(give, get, inv);
+        int seq = Write(a, inv);
+        return new TradeCommit(null, a.ToJsonString(), SeqA: seq, NameA: Str(a, "Name"));
+    }
+
     /// <summary>TradeSeq de um save (0 quando não tem: saves de antes da troca).</summary>
     public static int SeqOf(string json)
     {

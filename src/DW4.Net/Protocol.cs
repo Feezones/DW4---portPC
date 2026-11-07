@@ -9,11 +9,12 @@ namespace DW4.Net;
 public static class Protocol
 {
     /// <summary>Muda quando o formato muda; cliente e servidor de versões diferentes não conversam.</summary>
-    public const int Version = 7; // 2 (0.6.1): arma, menu do F; 3 (0.6.2): combate em grupo (CoopGroup, CoopRelay), HP/MP e PartyRoster;
+    public const int Version = 8; // 2 (0.6.1): arma, menu do F; 3 (0.6.2): combate em grupo (CoopGroup, CoopRelay), HP/MP e PartyRoster;
                                   // 4: vagas de personagem no servidor (SaveList, SaveWrite, SaveDelete, SaveReply);
                                   // 5 (0.6.8): chat pelo servidor (ChatSend, ChatFrom, ChatNotice)
                                   // 6: troca de itens entre jogadores (TradeCmd, TradeView)
                                   // 7: líder no quadro da party (PartyEntry.Leader); party-leave/kick/promote no Interact
+                                  // 8: guilda do DW4 (GuildCmd, GuildView, GuildBankDone, GuildLog, PlayerTag, Spawn.Guild, chat da guilda)
     /// <summary>Chave de conexão da LiteNetLib (recusa quem não é o DW4 antes de qualquer pacote).</summary>
     public const string ConnectionKey = "DW4-online-1";
     public const int DefaultPort = 7031;
@@ -34,6 +35,10 @@ public static class Protocol
     public const int MaxChat = 120;
     /// <summary>Itens por lado numa troca (TradeOffer.MaxItems).</summary>
     public const int MaxTradeItems = 8;
+    /// <summary>Membros e pilhas do baú que cabem num <see cref="GuildView"/> (a guilda tem até 65; o baú, 60 tipos).</summary>
+    public const int MaxGuildMembers = 80;
+    public const int MaxGuildBank = 80;
+    public const int MaxGuildLog = 60;
     /// <summary>
     /// Motivo da recusa quando a mesma conta entra em outro aparelho: o cliente derrubado volta ao menu sem gravar e não reconecta
     /// sozinho (senão os dois aparelhos ficariam se derrubando e gravando um por cima do outro).
@@ -53,6 +58,7 @@ public enum MsgType : byte
     SaveDelete = 7,
     ChatSend = 8,
     TradeCmd = 9,
+    GuildCmd = 24,
     // servidor → cliente
     Welcome = 10,
     Reject = 11,
@@ -68,7 +74,49 @@ public enum MsgType : byte
     ChatFrom = 21,
     ChatNotice = 22,
     TradeView = 23,
+    GuildView = 25,
+    GuildBankDone = 26,
+    GuildLog = 27,
+    PlayerTag = 28,
 }
+
+/// <summary>
+/// Cliente → servidor: guilda do DW4 (protocolo 8). Ações: info (manda a <see cref="GuildView"/>), create (Text = nome, Text2 = tag),
+/// invite (TargetId = jogador perto, ou Text = nome de um jogador online), accept / decline (TargetId = quem convidou), leave,
+/// kick / transfer (Account = conta do membro), rank (Account e Num = cargo 2..4), notice (Text), deposit / withdraw (Table e Row
+/// do item, Num = quantidade; Table "bit" = BIT, Num = quantia; Slot = a vaga do personagem), log, xp (Num = EXP ganha num inimigo)
+/// e boss (chefe derrotado).
+/// </summary>
+public sealed record GuildCmd(string Action, int TargetId = 0, long Account = 0, string Text = "", string Text2 = "", int Num = 0, string Table = "",
+    int Row = 0, int Slot = 0);
+
+/// <summary>Membro na janela da guilda: conta, nome, cargo (1 Mestre .. 4 Novato), contribuição; online = PlayerId ≥ 0 (fase e nível); fora do jogo = −1.</summary>
+public sealed record GuildMemberEntry(long Account, string Name, int Rank, long Contribution, int PlayerId, string Stage, int Level, long LastSeen);
+
+public sealed record GuildBankEntry(string Table, int Row, int Count);
+
+/// <summary>
+/// Servidor → cliente: a guilda do jogador (Id 0 = sem guilda). Vem ao entrar e a cada mudança (membro entrou, saiu, cargo, aviso,
+/// baú, nível, alguém ficou online). <see cref="Message"/> = resultado da última ação de quem recebe ("Guilda criada.", o motivo da
+/// recusa...); vazio nas atualizações. <see cref="Bonus"/> = % a mais de EXP e BIT.
+/// </summary>
+public sealed record GuildView(long Id, string Name, string Tag, int Level, long Xp, long LevelXp, long NextXp, int MaxMembers, int Bonus,
+    string Notice, long BankBit, long LogoVersion, int MyRank, GuildMemberEntry[] Members, GuildBankEntry[] Bank, string Message = "")
+{
+    public static GuildView None(string message = "") => new(0, "", "", 0, 0, 0, 0, 0, 0, "", 0, 0, 0, [], [], message);
+}
+
+/// <summary>
+/// Servidor → cliente: guardar/tirar do baú terminou. Ok: o save do servidor já mudou (sai ou entra o item / BIT) e
+/// <see cref="Seq"/> é o TradeSeq novo; o cliente faz o mesmo e grava. Senão, o motivo em Message e nada mudou.
+/// </summary>
+public sealed record GuildBankDone(bool Ok, string Action, string Table, int Row, int Count, int Bit, int Seq, string Message);
+
+/// <summary>Servidor → cliente: o histórico da guilda, já em texto, do mais novo para o mais velho.</summary>
+public sealed record GuildLog(string[] Lines);
+
+/// <summary>Servidor → quem vê o jogador: a tag da guilda dele mudou ("" = sem guilda).</summary>
+public sealed record PlayerTag(int PlayerId, string Tag);
 
 /// <summary>Um item na troca: tabela do jogo (weapon, armor1, armor2, abChip, conItem) e linha.</summary>
 public sealed record TradeItem(string Table, int Row);
@@ -90,7 +138,7 @@ public sealed record TradeView(int OtherId, string OtherName, string State, Trad
     TradeItem[] TheirItems, int TheirBit, bool TheirLocked, bool TheirConfirmed, string Message = "", int Seq = 0);
 
 /// <summary>Canal do chat no fio (mesma ordem do ChatChannel do jogo): todos no DW4, a party da conta ou privada.</summary>
-public enum ChatTo : byte { Global = 0, Party = 1, Whisper = 2 }
+public enum ChatTo : byte { Global = 0, Party = 1, Whisper = 2, Guild = 4 }
 
 /// <summary>
 /// Cliente → servidor: mensagem de chat. <see cref="To"/> é o destinatário da privada (nome do personagem da placa ou do Tamer);
@@ -126,8 +174,8 @@ public sealed record PartyRoster(PartyEntry[] Members);
 
 public sealed record Welcome(int PlayerId, string Tamer);
 public sealed record Reject(string Reason);
-/// <summary>Outro jogador apareceu na mesma instância da fase.</summary>
-public sealed record Spawn(int PlayerId, string Character, string Tamer, PlayerState State);
+/// <summary>Outro jogador apareceu na mesma instância da fase. <see cref="Guild"/> = tag da guilda dele (protocolo 8; "" = sem guilda).</summary>
+public sealed record Spawn(int PlayerId, string Character, string Tamer, PlayerState State, string Guild = "");
 public sealed record Despawn(int PlayerId);
 public sealed record RemoteState(int PlayerId, PlayerState State);
 
@@ -226,7 +274,34 @@ public static class Codec
             case PlayerState s: w.Write((byte)MsgType.State); State(w, s); break;
             case Welcome x: w.Write((byte)MsgType.Welcome); w.Write(x.PlayerId); Str(w, x.Tamer); break;
             case Reject x: w.Write((byte)MsgType.Reject); Str(w, x.Reason, 200); break;
-            case Spawn x: w.Write((byte)MsgType.Spawn); w.Write(x.PlayerId); Str(w, x.Character); Str(w, x.Tamer); State(w, x.State); break;
+            case Spawn x: w.Write((byte)MsgType.Spawn); w.Write(x.PlayerId); Str(w, x.Character); Str(w, x.Tamer); State(w, x.State); Str(w, x.Guild, 8); break;
+            case GuildCmd x:
+                w.Write((byte)MsgType.GuildCmd); Str(w, x.Action, 16); w.Write(x.TargetId); w.Write(x.Account); Str(w, x.Text, 200); Str(w, x.Text2, 16);
+                w.Write(x.Num); Str(w, x.Table, 16); w.Write(x.Row); w.Write((byte)Math.Clamp(x.Slot, 0, Protocol.Slots - 1));
+                break;
+            case GuildView x:
+                w.Write((byte)MsgType.GuildView); w.Write(x.Id); Str(w, x.Name, 32); Str(w, x.Tag, 8); w.Write(x.Level); w.Write(x.Xp); w.Write(x.LevelXp);
+                w.Write(x.NextXp); w.Write(x.MaxMembers); w.Write(x.Bonus); Str(w, x.Notice, 200); w.Write(x.BankBit); w.Write(x.LogoVersion); w.Write(x.MyRank);
+                if (x.Members.Length > Protocol.MaxGuildMembers || x.Bank.Length > Protocol.MaxGuildBank) throw new ArgumentException("guilda grande demais");
+                w.Write((byte)x.Members.Length);
+                foreach (var m in x.Members)
+                {
+                    w.Write(m.Account); Str(w, m.Name); w.Write((byte)m.Rank); w.Write(m.Contribution); w.Write(m.PlayerId); Str(w, m.Stage); w.Write(m.Level);
+                    w.Write(m.LastSeen);
+                }
+                w.Write((byte)x.Bank.Length);
+                foreach (var b in x.Bank) { Str(w, b.Table, 16); w.Write(b.Row); w.Write(b.Count); }
+                Str(w, x.Message, 200);
+                break;
+            case GuildBankDone x:
+                w.Write((byte)MsgType.GuildBankDone); w.Write(x.Ok); Str(w, x.Action, 16); Str(w, x.Table, 16); w.Write(x.Row); w.Write(x.Count); w.Write(x.Bit);
+                w.Write(x.Seq); Str(w, x.Message, 200);
+                break;
+            case GuildLog x:
+                w.Write((byte)MsgType.GuildLog); w.Write((byte)Math.Min(x.Lines.Length, Protocol.MaxGuildLog));
+                foreach (var l in x.Lines.Take(Protocol.MaxGuildLog)) Str(w, l, 200);
+                break;
+            case PlayerTag x: w.Write((byte)MsgType.PlayerTag); w.Write(x.PlayerId); Str(w, x.Tag, 8); break;
             case Despawn x: w.Write((byte)MsgType.Despawn); w.Write(x.PlayerId); break;
             case Interact x: w.Write((byte)MsgType.Interact); w.Write(x.TargetId); Str(w, x.Action, 32); Str(w, x.InviteId, 64); break;
             case InteractResult x:
@@ -293,7 +368,12 @@ public static class Codec
                 MsgType.State => State(r),
                 MsgType.Welcome => new Welcome(r.ReadInt32(), Str(r)),
                 MsgType.Reject => new Reject(Str(r, 200)),
-                MsgType.Spawn => new Spawn(r.ReadInt32(), Str(r), Str(r), State(r)),
+                MsgType.Spawn => new Spawn(r.ReadInt32(), Str(r), Str(r), State(r), Str(r, 8)),
+                MsgType.GuildCmd => new GuildCmd(Str(r, 16), r.ReadInt32(), r.ReadInt64(), Str(r, 200), Str(r, 16), r.ReadInt32(), Str(r, 16), r.ReadInt32(), Slot(r)),
+                MsgType.GuildView => ReadGuild(r),
+                MsgType.GuildBankDone => new GuildBankDone(r.ReadBoolean(), Str(r, 16), Str(r, 16), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), Str(r, 200)),
+                MsgType.GuildLog => ReadGuildLog(r),
+                MsgType.PlayerTag => new PlayerTag(r.ReadInt32(), Str(r, 8)),
                 MsgType.Despawn => new Despawn(r.ReadInt32()),
                 MsgType.Interact => new Interact(r.ReadInt32(), Str(r, 32), Str(r, 64)),
                 MsgType.InteractResult => new InteractResult(r.ReadInt32(), Str(r, 32), r.ReadBoolean(), Str(r, 200), Str(r, 32), r.ReadBoolean(),
@@ -329,6 +409,37 @@ public static class Codec
         var m = new int[n];
         for (int i = 0; i < n; i++) m[i] = r.ReadInt32();
         return new CoopGroup(host, m);
+    }
+
+    static GuildView ReadGuild(BinaryReader r)
+    {
+        long id = r.ReadInt64();
+        string name = Str(r, 32), tag = Str(r, 8);
+        int level = r.ReadInt32();
+        long xp = r.ReadInt64(), levelXp = r.ReadInt64(), nextXp = r.ReadInt64();
+        int max = r.ReadInt32(), bonus = r.ReadInt32();
+        string notice = Str(r, 200);
+        long bankBit = r.ReadInt64(), logo = r.ReadInt64();
+        int rank = r.ReadInt32();
+        int n = r.ReadByte();
+        if (n > Protocol.MaxGuildMembers) throw new FormatException("membros demais");
+        var members = new GuildMemberEntry[n];
+        for (int i = 0; i < n; i++)
+            members[i] = new GuildMemberEntry(r.ReadInt64(), Str(r), r.ReadByte(), r.ReadInt64(), r.ReadInt32(), Str(r), r.ReadInt32(), r.ReadInt64());
+        int b = r.ReadByte();
+        if (b > Protocol.MaxGuildBank) throw new FormatException("baú grande demais");
+        var bank = new GuildBankEntry[b];
+        for (int i = 0; i < b; i++) bank[i] = new GuildBankEntry(Str(r, 16), r.ReadInt32(), r.ReadInt32());
+        return new GuildView(id, name, tag, level, xp, levelXp, nextXp, max, bonus, notice, bankBit, logo, rank, members, bank, Str(r, 200));
+    }
+
+    static GuildLog ReadGuildLog(BinaryReader r)
+    {
+        int n = r.ReadByte();
+        if (n > Protocol.MaxGuildLog) throw new FormatException("histórico grande demais");
+        var lines = new string[n];
+        for (int i = 0; i < n; i++) lines[i] = Str(r, 200);
+        return new GuildLog(lines);
     }
 
     static PartyRoster ReadRoster(BinaryReader r)
@@ -373,7 +484,7 @@ public static class Codec
     static ChatTo Channel(BinaryReader r)
     {
         var c = (ChatTo)r.ReadByte();
-        if (c is not (ChatTo.Global or ChatTo.Party or ChatTo.Whisper)) throw new FormatException("canal de chat inválido");
+        if (c is not (ChatTo.Global or ChatTo.Party or ChatTo.Whisper or ChatTo.Guild)) throw new FormatException("canal de chat inválido");
         return c;
     }
 
