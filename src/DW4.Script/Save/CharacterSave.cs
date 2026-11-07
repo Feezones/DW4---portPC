@@ -55,6 +55,8 @@ public sealed class CharacterSave
     public string Flags { get; set; } = "";
     public string Cards { get; set; } = "";
     public int[] Counters { get; set; } = [];
+    /// <summary>Trocas feitas por esta vaga (o servidor sobe a cada troca e recusa save com número menor: ver TradeLedger).</summary>
+    public int TradeSeq { get; set; }
 
     /// <summary>Nível da forma atual (para a tela de vagas).</summary>
     [JsonIgnore]

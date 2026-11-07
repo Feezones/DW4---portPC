@@ -33,6 +33,7 @@ public partial class Fatia
         Online.Notice += OnlineNotice;
         Online.Result += OnInteractResult;
         Online.Prompt += OnSocialPrompt;
+        Online.TradeIn += OnTradeView;
         Online.Coop += OnCoop;
         Online.Coop += OnSpectatorCoop;
         Online.KickedOut += OnKicked;
@@ -41,7 +42,7 @@ public partial class Fatia
         GetTree().AutoAcceptQuit = !Session.Active;
         TreeExiting += () =>
         {
-            Online.Notice -= OnlineNotice; Online.Result -= OnInteractResult; Online.Prompt -= OnSocialPrompt; Online.Coop -= OnCoop; Online.Coop -= OnSpectatorCoop;
+            Online.Notice -= OnlineNotice; Online.Result -= OnInteractResult; Online.Prompt -= OnSocialPrompt; Online.TradeIn -= OnTradeView; Online.Coop -= OnCoop; Online.Coop -= OnSpectatorCoop;
             Online.KickedOut -= OnKicked; Session.SaveFailed -= OnSaveFailed;
             GetTree().AutoAcceptQuit = true;
             Ram.Ninzu = 1;

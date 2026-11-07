@@ -81,6 +81,17 @@ public static class Online
         return true;
     }
 
+    /// <summary>Troca de itens: como está a troca (pedido, ofertas, feita ou cancelada), vinda do servidor.</summary>
+    public static event Action<TradeView>? TradeIn;
+
+    /// <summary>Troca de itens: manda a ação ao servidor (false se não está online).</summary>
+    public static bool Trade(TradeCmd cmd)
+    {
+        if (State != Status.Online) return false;
+        Send(cmd, true);
+        return true;
+    }
+
     static string? Arg(string name)
     {
         var a = OS.GetCmdlineUserArgs();
@@ -283,6 +294,9 @@ public static class Online
                 break;
             case ChatFrom c:
                 ChatIn?.Invoke(c);
+                break;
+            case TradeView tv:
+                TradeIn?.Invoke(tv);
                 break;
             case ChatNotice n:
                 Session.SystemMessage(n.Text);
