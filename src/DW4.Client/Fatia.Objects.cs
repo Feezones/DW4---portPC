@@ -89,10 +89,13 @@ public partial class Fatia
             Seq.Tick(dt);
             if (Rolling && dt > 0)
             {
-                // O barril cai e segue o chão também depois que o "Push" parou.
-                var (rl, ryaw) = Seq.Motion.AnyActive ? Seq.Motion.Step(dt * SequenceRunner.FramesPerSecond) : (default, 0f);
+                // O barril cai e segue o chão também depois que o "Push" parou. O MOVE anda no relógio da ação dele (60 Hz,
+                // ObjectSequencer.MotionFrames): a 30 Hz o barril rolava metade do caminho até o WAITCHECK "Frame" 250 acabar.
+                float frames = ObjectSequencer.MotionFrames(dt);
+                RollAge += dt;
+                var (rl, ryaw) = Seq.Motion.AnyActive ? Seq.Motion.Step(frames) : (default, 0f);
                 Actor.Root.RotateY(ryaw * MathF.PI / 180);
-                Roll(new Vector3(rl.X, rl.Y, rl.Z), dt * SequenceRunner.FramesPerSecond);
+                Roll(new Vector3(rl.X, rl.Y, rl.Z), frames);
             }
             else if (Seq.Motion.AnyActive && dt > 0)
             {
@@ -133,8 +136,14 @@ public partial class Fatia
 
         // Barril (Fatia.Barrels): o "Push" anda no plano (frente do objeto), o "Jump" vira altura acima do chão, e o chão manda na
         // altura: colado na ladeira enquanto ela desce menos que um passo íngreme; mais que isso, cai (MOVE "Fall" 1 2 da SQ_FALL,
-        // HIPÓTESE: 0,5 por quadro² até 1 por quadro). Parede à frente (até 12 de degrau) = Blocked.
+        // HIPÓTESE: 0,5 por quadro² até 1 por quadro).
+        // FATO (main.dol, 0x80309c74): com a checagem de parede ligada (0xd8, padrão em 0x8030ea00) o modelo é empurrado para fora
+        // da parede (HITLANDDELIVER "HITWALL"); só roda algo a mais se houver LUACALL "WHit" (campo 0x34), e o barril não tem. Por
+        // isso o barril não quebra na parede: desliza por ela (WallHits conta as batidas, para o diagnóstico).
         public Rid IgnoreRid { get; set; }
+        public float RollAge { get; private set; }
+        public Vector3? RollFrom { get; set; }
+        public int WallHits { get; private set; }
         const float RollFallAccel = 0.5f, RollFallMax = 1f, RollRadius = 4f, RollStep = 12f;
 
         void Roll(Vector3 local, float frames)
@@ -147,14 +156,22 @@ public partial class Fatia
             var move = root.GlobalBasis.Orthonormalized() * new Vector3(local.X, 0, local.Z);
             move.Y = 0;
             var pos = root.GlobalPosition;
-            if (move.LengthSquared() > 1e-8f)
+            // Parede à frente: tira a parte do passo que entra nela (desliza); se ainda bater, fica parado neste quadro.
+            for (int tries = 0; tries < 2 && move.LengthSquared() > 1e-8f; tries++)
             {
                 var from = new Vector3(pos.X, baseY + RollRadius, pos.Z);
                 var ahead = PhysicsRayQueryParameters3D.Create(from, from + move + move.Normalized() * RollRadius);
                 ahead.CollisionMask = 1;
                 if (IgnoreRid.IsValid) ahead.Exclude = [IgnoreRid];
                 ahead.HitBackFaces = false;
-                if (space.IntersectRay(ahead) is { Count: > 0 } wall && ((Vector3)wall["normal"]).Y < 0.7f) { Blocked = true; move = Vector3.Zero; }
+                if (space.IntersectRay(ahead) is not { Count: > 0 } wall || ((Vector3)wall["normal"]).Y >= 0.7f) break;
+                if (tries == 0) WallHits++;
+                var n = (Vector3)wall["normal"];
+                n.Y = 0;
+                if (tries == 1 || n.LengthSquared() < 1e-6f) { move = Vector3.Zero; break; }
+                n = n.Normalized();
+                move -= n * Math.Min(0, move.Dot(n));
+                move.Y = 0;
             }
             var next = new Vector3(pos.X + move.X, baseY, pos.Z + move.Z);
             var down = PhysicsRayQueryParameters3D.Create(next + Vector3.Up * RollStep, next + Vector3.Down * 200);

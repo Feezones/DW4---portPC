@@ -2633,11 +2633,42 @@ if (args.Length == 1)
         var jump = new SeqCommand("MOVE", ["Jump", 2f, 2]);
         True(m.Apply(new SeqCommand("MOVE", ["Push", 0.9f, 100])) && m.Apply(jump), "aplica");
         float z = 0, y = 0, peak = 0;
-        // 250 quadros do WAITCHECK "Frame" no relógio de 60 Hz = 125 quadros de 30 Hz do MOVE.
-        for (int i = 0; i < 125; i++) { var (local, _) = m.Step(1); z += local.Z; y += local.Y; peak = Math.Max(peak, y); }
-        True(m[2].Active && Math.Abs(m[2].Velocity - (0.9f - 125 * 0.9f / 5000)) < 1e-4f, $"ainda rolando a {m[2].Velocity:0.000}/quadro");
-        True(z > 105 && z < 113, $"andou {z:0.0} (o barril desce a ladeira do lançador até o fim dela)");
+        // 250 quadros do WAITCHECK "Frame": o MOVE anda no mesmo relógio (KEIKATIMER, ObjectSequencer.MotionFrames).
+        for (int i = 0; i < 250; i++) { var (local, _) = m.Step(1); z += local.Z; y += local.Y; peak = Math.Max(peak, y); }
+        True(m[2].Active && Math.Abs(m[2].Velocity - (0.9f - 250 * 0.9f / 5000)) < 1e-4f, $"ainda rolando a {m[2].Velocity:0.000}/quadro");
+        True(z > 215 && z < 222, $"andou {z:0.0}");
         True(peak <= JumpMotion.PeakHeight(jump) + 1e-3f && !m[1].Active, $"pulinho de {peak:0.00}");
+    });
+
+    Test("Jogo: barril do lançador (stag0102) só estoura no fim da ação: ~219 adiante em ~4,2 s, MOVE no relógio do WAITCHECK", () =>
+    {
+        // Relato (0.6.29): "os barril estão explodindo muito antes". O MOVE andava a 30 Hz e a espera da ação a 60 Hz: ~111 em 4,2 s.
+        // FATO (seq do g_bbarrelmz01): SQ_ATCK01 = ACTION WAIT01 (JOINTSET 40..100 LP, WAITCHECK "Frame" 250), MOVE "Push" 0.9 100,
+        // MOVE "Jump" 2 2, WCHECK "Action", JUMP SQ_DDMG.
+        static SeqCommand C(string k, params object[] v) => new(k, v);
+        var seqs = new Dictionary<string, List<SeqCommand>>
+        {
+            ["SQ_ATCK01"] = [C("ACTION", "WAIT01"), C("MOVE", "Push", 0.9f, 100f), C("MOVE", "Jump", 2f, 2f), C("WCHECK", "Action"), C("JUMP", "SQ_DDMG")],
+            ["SQ_DDMG"] = [C("ACTION", "DEAD01"), C("WCHECK", "Action"), C("JUMP", "SQ_ERAS")],
+        };
+        var actions = new Dictionary<string, List<SeqCommand>>
+        {
+            ["WAIT01"] = [C("JOINTSET", "", 40f, 100f, "LP"), C("WAITCHECK", "Frame", 250f)],
+            ["DEAD01"] = [C("JOINTSET", "", 110f, 120f, "OS"), C("WAITCHECK", "Joint", 0f)],
+        };
+        var s = new ObjectSequencer(seqs, actions);
+        s.Start("SQ_ATCK01");
+        const float dt = 1 / 60f;
+        float z = 0, t = 0;
+        for (int i = 0; i < 1000 && s.Sequence == "SQ_ATCK01"; i++)
+        {
+            s.Tick(dt);
+            t += dt;
+            if (s.Sequence == "SQ_ATCK01" && s.Motion.AnyActive) z += s.Motion.Step(ObjectSequencer.MotionFrames(dt)).Item1.Z;
+        }
+        Equal("SQ_DDMG", s.Sequence, "quebra pelo JUMP do fim da ação");
+        True(Math.Abs(t - 250 / 60f) < 0.05f, $"em {t:0.00} s");
+        True(z > 213 && z < 222, $"andou {z:0.0} (a 30 Hz eram ~111)");
     });
 
     Test("Jogo: MOVEEX/MOVE pelos canais do executor (0x8030A1F4/0x8030A2D8): texto → canal e modo, acelera, freia, troca de sequência", () =>

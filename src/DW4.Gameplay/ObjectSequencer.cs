@@ -17,6 +17,17 @@ namespace DW4.Gameplay;
 public sealed class ObjectSequencer
 {
     public const float FramesPerSecond = 60f;
+
+    /// <summary>
+    /// Quadros do MOVE de um objeto que anda sozinho (barril do lançador, tiro do jogador) em <paramref name="dt"/> segundos: o
+    /// mesmo relógio do WAITCHECK "Frame" da ação dele.
+    /// FATO (main.dol): o executor do modelo (0x8030A448) passa aos canais do MOVE (0x8030A2D8, chamadas em 0x8030A624..0x8030A654)
+    /// o valor "KEIKATIMER" do próprio modelo (0x8031E4C4 em 0x8030A498), o tempo decorrido do quadro; não há conta própria de 30 Hz.
+    /// HIPÓTESE: esse tempo está na unidade dos quadros da ação (60 Hz, a do JOINTSET). Bate com o relato do tiro do jogador (lento
+    /// a 30 Hz) e com o do barril (estourava na metade da ladeira: espera de 250 quadros a 60 Hz com o "Push" andando a 30 Hz).
+    /// </summary>
+    public static float MotionFrames(float dt) => dt * FramesPerSecond;
+
     readonly IReadOnlyDictionary<string, List<SeqCommand>> _seqs;
     readonly IReadOnlyDictionary<string, List<SeqCommand>> _actions;
     readonly Dictionary<string, string> _labels = [];
