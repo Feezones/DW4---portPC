@@ -84,6 +84,20 @@ public partial class Fatia
         return true;
     }
 
+    // Botões de técnica do celular: o mesmo que o clique na caixa da barra.
+    TouchControls.TechInfo? TouchTech(int i)
+    {
+        if (i >= _techs.Count || InCutscene || TalkWindowOpen) return null;
+        var t = _techs[i];
+        float cd = _panel.Cooldown(t);
+        return new(t.Name, t.Mp, t.Delay > 0 ? Math.Clamp(cd / (t.Delay / 60f), 0, 1) : 0, _mp < t.Mp);
+    }
+
+    void TouchUseTech(int i)
+    {
+        if (i < _techs.Count && !_menuOpen && !ShopOpen && !SubWindowOpen && !_quickOpen) { _techKey = i; _techSelected = i; }
+    }
+
     // Tecla do aparelho em uso para a técnica direta n (1..6); sem ligação, nada.
     string TechKeyName(int n)
     {
@@ -95,7 +109,8 @@ public partial class Fatia
     {
         if (_techBar == null) return;
         // Some com a janela de fala aberta (a barra cobria a moldura de baixo).
-        _techBar.Visible = _techs.Count > 0 && !InCutscene && !_menuOpen && !TalkWindowOpen && !ShopOpen && !SubWindowOpen;
+        // Celular com os botões da tela à vista: as técnicas são botões em volta do ATQ (TouchControls); a barra volta com o controle.
+        _techBar.Visible = _techs.Count > 0 && !InCutscene && !_menuOpen && !TalkWindowOpen && !ShopOpen && !SubWindowOpen && !TouchControls.Showing;
         if (!_techBar.Visible) return;
         if (_techSelected >= _techs.Count) _techSelected = 0;
         for (int i = 0; i < 6; i++)
