@@ -313,6 +313,11 @@ public partial class Fatia
     }
 
     // Tira a amostra final que repete a primeira pose (AnimationWrap): sem isso a trnsIN acabava com o inimigo embaixo da terra.
+    static void TrimWrapSamples(AnimationPlayer player)
+    {
+        foreach (var n in player.GetAnimationList()) TrimWrapSample(player.GetAnimation(n));
+    }
+
     static void TrimWrapSample(Animation a)
     {
         if (a.HasMeta("dw4_wrap")) return;

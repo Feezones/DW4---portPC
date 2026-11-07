@@ -108,6 +108,7 @@ public partial class Fatia
         a.Root.AddChild(m);
         a.Model = m;
         a.Anim = FindAll<AnimationPlayer>(m).FirstOrDefault();
+        if (a.Anim != null) TrimWrapSamples(a.Anim); // como no próprio jogador (Fatia.cs)
         CsSkin.TryAttach(m, model, a.Anim); // teste local, só com DW4_CS_MODELOS
         a.Plate = Nameplate.Attach(m);
     }
