@@ -149,7 +149,7 @@ public partial class Fatia : IBeEngine
         // FATO (lua-trace do matx01.lua, Security Hole da stag0101): MDLisLive(SYSgetPlayerName(p), 0) decide entre SQ_SWON (liga o
         // símbolo e mostra o aviso na primeira vez) e SQ_SWOF; o jogador vivo responde 1 (antes 0: o símbolo apagava ao entrar).
         "ISLIVE" when m.Name == PlayerModel && m.Index == 0 => _hp > 0 ? 1 : 0,
-        "ISLIVE" => (m.Name == "i_bosshp01" && _bossBarOpen) || _minimap?.Has(m.Name ?? "", m.Index) == true || _objects.Any(o => o.Name == m.Name && o.Index == m.Index && !o.Dead && !o.Erased)
+        "ISLIVE" => (m.Name?.StartsWith("i_bosshp", StringComparison.Ordinal) == true && _bossBarOpen) || _minimap?.Has(m.Name ?? "", m.Index) == true || _objects.Any(o => o.Name == m.Name && o.Index == m.Index && !o.Dead && !o.Erased)
             || _enemyShots.Any(s => s.Name == m.Name && s.Index == m.Index && !s.Seq.Erased) || _enemies.Any(e => e.Kind.Model == m.Name && m.Index <= 0 && !e.Dead) ? 1 : 0,
         _ => null,
     };

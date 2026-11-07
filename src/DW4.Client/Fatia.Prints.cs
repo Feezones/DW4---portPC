@@ -46,7 +46,7 @@ public partial class Fatia
             case "cartas": OpenCardShop(); break;
             case "avaliar": OpenAppraisal(); break;
             case "troca" or "troca-lista": OpenTradeDemo(what == "troca-lista"); break;
-            case "guilda" or "guilda-bau" or "guilda-membro" or "guilda-criar": OpenGuildDemo(what.Length > 7 ? what[7..] : ""); break;
+            case "guilda" or "guilda-bau" or "guilda-membro" or "guilda-criar" or "guilda-historico" or "guilda-guardar": OpenGuildDemo(what.Length > 7 ? what[7..] : ""); break;
             // Grupo falso de 3 (você + Bia na fase + Caio em outra fase); "grupo" = você líder, "grupo-membro" = Bia líder.
             case "grupo" or "grupo-membro":
             {

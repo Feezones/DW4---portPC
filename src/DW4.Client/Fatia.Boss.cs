@@ -282,10 +282,10 @@ public partial class Fatia
 
     // ---------- barra de HP do chefe (i_bosshp01 + METERCTRL bshp01) ----------
 
-    ProgressBar? _bossBar;
+    BossHpBar? _bossBar;
     bool _bossBarOpen;
     string? _bossBarModel; // SETMODELHP "<modelo>/I<n>"
-    string? _bossMeter; // bshp01..10: medidor da arte i_bosshp<n> quando a camada de janelas desenha o ator do jogo
+    string? _bossMeter; // bshp01..10 do chefe atual (o SQ_CLOSE do fim vai para o i_bosshp<n> certo)
 
     bool DeliverToBossBar(BeMessage m)
     {
@@ -302,15 +302,13 @@ public partial class Fatia
                 return true;
             case ("METERCTRL", "bshp01", "SETMODELHP"):
                 // "f_apocaly/I<0>": a barra segue o HP desse modelo (o hit_*.lua também manda SETPERCENT a cada golpe).
-                if (_bossBar != null) _bossBar.Value = 100;
+                _bossBar?.SetPercent(100);
                 _bossMeter = m.Name;
-                SetBossMeter(100);
                 _bossBarModel = m.RawArgs?.Split('/')[0];
                 return true;
             case ("METERCTRL", "bshp01", "SETPERCENT") when m.Arg(0) is { Numbers.Length: > 0 } pc:
-                if (_bossBar != null) _bossBar.Value = Math.Clamp(pc.Numbers[0], 0, 100);
+                _bossBar?.SetPercent((float)Math.Clamp(pc.Numbers[0], 0, 100));
                 _bossMeter = m.Name;
-                SetBossMeter((float)Math.Clamp(pc.Numbers[0], 0, 100));
                 return true;
         }
         return false;
@@ -327,38 +325,25 @@ public partial class Fatia
         {
             _bossBarModel = null;
             ShowBossBar(false);
-            SetBossMeter(0);
             if (_bossMeter is { } meter) Deliver(new BeMessage("MODELCTRL", "i_bosshp" + meter[4..], 0, "SQ_CLOSE", [], null));
             return;
         }
         float pct = (float)Math.Ceiling(boss.Hp * 100.0 / max);
-        if (_bossBar != null) _bossBar.Value = pct;
-        SetBossMeter(pct);
+        _bossBar?.SetPercent(pct);
     }
 
-    // Medidor da arte do jogo (i_bosshp<n>, desenhada pela camada de janelas): a mesma conta do HUD do jogador (Hud.MeterTime).
-    void SetBossMeter(float pct)
-    {
-        if (_bossMeter == null || _winData?.Meters.GetValueOrDefault(_bossMeter) is not { } meters) return;
-        foreach (var w in _windows.Values)
-            foreach (var md in meters) w.Actor.SetMeterTime(md.Node, HudOverlay.MeterTime(md, pct, 100));
-    }
-
-    // DECISÃO DA FATIA: o ator i_bosshp01 ainda não foi exportado; a barra é uma ProgressBar no topo (V<0,205,0> = alto da tela).
+    // DECISÃO DO PORT (2026-11-07, pedido do usuário): a arte i_bosshp<n> do original (três camadas aditivas, ver BossHpBar) não é
+    // mais desenhada pela camada de janelas (IsWindowName); a barra é a BossHpBar, no mesmo lugar (V<0,205,0> = alto da tela).
     void ShowBossBar(bool open)
     {
         _bossBarOpen = open;
         if (_bossBar == null)
         {
             var layer = new CanvasLayer { Layer = 1 };
-            _bossBar = new ProgressBar { MinValue = 0, MaxValue = 100, Value = 100, ShowPercentage = false, CustomMinimumSize = new Vector2(420, 18) };
-            _bossBar.SetAnchorsPreset(Control.LayoutPreset.CenterTop);
-            _bossBar.Position = new Vector2(-210, 16);
-            var fill = new StyleBoxFlat { BgColor = new Color(0.85f, 0.15f, 0.15f) };
-            _bossBar.AddThemeStyleboxOverride("fill", fill);
+            _bossBar = new BossHpBar { VirtualWidth = DataPaths.Mobile ? 400 : 460 };
             layer.AddChild(_bossBar);
             AddChild(layer);
         }
-        _bossBar.Visible = open;
+        _bossBar.SetOpen(open);
     }
 }
