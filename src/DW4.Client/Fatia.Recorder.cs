@@ -107,6 +107,22 @@ public partial class Fatia
                 if (m.Arg(1) is { Kind: 'V', Numbers.Length: 3 } mr) _move.Face(Mathf.DegToRad((float)mr.Numbers[1]));
                 _snapToFloor = true;
                 return true;
+            // FATO (matt05.lua/matt06.lua da dng103f2, buraco dos andaimes): quem cai leva ADDHP −99999 e PLAYER REMOVE; com todos
+            // caídos (e sem backup chip na fase), o script lê o MP, faz PLAYER GENERATE "V<borda>/V<giro>" no g_posTbl11/12, SQ_ENTR,
+            // ADDHP "I<n>/I<0>/I<0>/I<1>" e ADDMP (MP − MMP). O ADDMP negativo só fecha se o GENERATE nasce com o MP cheio.
+            // HIPÓTESE: o GENERATE nasce com HP e MP cheios (como o DEADRESTART) e o MP volta ao de antes pelo ADDMP. Antes o port
+            // ignorava o GENERATE: o jogador ficava no fundo do buraco com HP 0 e ia ao lobby. Só vale caído (HP 0), para não mexer
+            // em outro GENERATE do jogador.
+            case ("PLAYER", "GENERATE") when m.Index <= 0 && _pf != null && _hp <= 0 && m.Arg(0) is { Kind: 'V', Numbers.Length: 3 } gp:
+                _player.GlobalPosition = new Vector3((float)gp.Numbers[0], (float)gp.Numbers[1], (float)gp.Numbers[2]);
+                _player.Velocity = Vector3.Zero;
+                _move.Stop();
+                if (m.Arg(1) is { Kind: 'V', Numbers.Length: 3 } gr) _move.Face(Mathf.DegToRad((float)gr.Numbers[1]));
+                _snapToFloor = true;
+                _hp = _pf.MaxHp;
+                _mp = _pf.MaxMp;
+                ScriptLog($"de volta da queda em {_player.GlobalPosition.Round()}: HP {_hp}/{_pf.MaxHp}");
+                return true;
             case ("ENEMY", "OFCTRL") when m.Name is { Length: > 0 } frozen: _frozenModels.Add(frozen); return true;
             case ("ENEMY", "ONCTRL") when m.Name is { Length: > 0 } freed: _frozenModels.Remove(freed); return true;
             case ("ENEMY", "OFCTRL"): _enemiesFrozen = true; return true;

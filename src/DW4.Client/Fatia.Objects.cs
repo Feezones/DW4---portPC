@@ -325,7 +325,9 @@ public partial class Fatia
     // FATO (g_boatz01): a peça é um igSwitch → beCopyTransform (matriz identidade) → caixa aberta com o chão em y 0 do barco.
     void MakeRideLand(WorldObject o, HudData data)
     {
-        if (!data.Lands.TryGetValue(o.Name, out var land) || !RideLand.IsVehicle(land.Kind)) return;
+        if (!data.Lands.TryGetValue(o.Name, out var land)) return;
+        bool vehicle = RideLand.IsVehicle(land.Kind);
+        if (!vehicle && !RideLand.IsFloor(land.Kind)) return;
         var shapes = new HudActor(data, land.Node, slot: 0);
         var body = new StaticBody3D { Name = $"chao_{o.Name}" };
         Vector3 min = new(float.MaxValue, float.MaxValue, float.MaxValue), max = -min;
@@ -346,6 +348,8 @@ public partial class Fatia
         shapes.Root.Free();
         if (body.GetChildCount() == 0) { body.Free(); return; }
         o.Actor.Root.AddChild(body);
+        // Chão parado (andaime): só o corpo preso ao ator; quem está em cima não é levado (CarryRiders é dos veículos).
+        if (!vehicle) { if (DiagRide) GD.Print($"[barco] {o.Name}/{o.Index}: chão parado com {body.GetChildCount()} peça(s), caixa {min.Round()}..{max.Round()}"); return; }
         o.Ride = body;
         o.RideMin = min;
         o.RideMax = max;
