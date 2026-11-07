@@ -9,9 +9,10 @@ namespace DW4.Net;
 public static class Protocol
 {
     /// <summary>Muda quando o formato muda; cliente e servidor de versões diferentes não conversam.</summary>
-    public const int Version = 5; // 2 (0.6.1): arma, menu do F; 3 (0.6.2): combate em grupo (CoopGroup, CoopRelay), HP/MP e PartyRoster;
+    public const int Version = 6; // 2 (0.6.1): arma, menu do F; 3 (0.6.2): combate em grupo (CoopGroup, CoopRelay), HP/MP e PartyRoster;
                                   // 4: vagas de personagem no servidor (SaveList, SaveWrite, SaveDelete, SaveReply);
                                   // 5 (0.6.8): chat pelo servidor (ChatSend, ChatFrom, ChatNotice)
+                                  // 6: troca de itens entre jogadores (TradeCmd, TradeView)
     /// <summary>Chave de conexão da LiteNetLib (recusa quem não é o DW4 antes de qualquer pacote).</summary>
     public const string ConnectionKey = "DW4-online-1";
     public const int DefaultPort = 7031;
@@ -30,6 +31,8 @@ public static class Protocol
     public const int Slots = 4;
     /// <summary>Letras de uma mensagem de chat (o mesmo limite da caixa do jogo, ChatLog.MaxLength).</summary>
     public const int MaxChat = 120;
+    /// <summary>Itens por lado numa troca (TradeOffer.MaxItems).</summary>
+    public const int MaxTradeItems = 8;
     /// <summary>
     /// Motivo da recusa quando a mesma conta entra em outro aparelho: o cliente derrubado volta ao menu sem gravar e não reconecta
     /// sozinho (senão os dois aparelhos ficariam se derrubando e gravando um por cima do outro).
@@ -48,6 +51,7 @@ public enum MsgType : byte
     SaveWrite = 6,
     SaveDelete = 7,
     ChatSend = 8,
+    TradeCmd = 9,
     // servidor → cliente
     Welcome = 10,
     Reject = 11,
@@ -62,7 +66,27 @@ public enum MsgType : byte
     SaveReply = 20,
     ChatFrom = 21,
     ChatNotice = 22,
+    TradeView = 23,
 }
+
+/// <summary>Um item na troca: tabela do jogo (weapon, armor1, armor2, abChip, conItem) e linha.</summary>
+public sealed record TradeItem(string Table, int Row);
+
+/// <summary>
+/// Cliente → servidor: troca de itens (protocolo 6). Ações: ask (pede troca a <see cref="TargetId"/>, com a vaga <see cref="Slot"/>
+/// de quem pede), accept / decline (resposta ao pedido de <see cref="TargetId"/>, com a vaga de quem aceita), add / remove
+/// (<see cref="Table"/> e <see cref="Row"/>), bit (<see cref="Bit"/> oferecido), lock, confirm e cancel.
+/// </summary>
+public sealed record TradeCmd(string Action, int TargetId = 0, int Slot = 0, string Table = "", int Row = 0, int Bit = 0);
+
+/// <summary>
+/// Servidor → cliente: como está a troca com <see cref="OtherId"/> (<see cref="OtherName"/>, o nome da placa). State: ask (o outro
+/// pediu a troca: aceitar ou recusar), asked (seu pedido foi enviado), open, committing (gravando), done (feita: os itens já
+/// trocaram no save do servidor; <see cref="Seq"/> é o número de trocas da vaga) ou cancelled (o motivo em <see cref="Message"/>).
+/// Message num estado open é um aviso só para você (ex.: "No máximo 8 itens por troca.").
+/// </summary>
+public sealed record TradeView(int OtherId, string OtherName, string State, TradeItem[] MyItems, int MyBit, bool MyLocked, bool MyConfirmed,
+    TradeItem[] TheirItems, int TheirBit, bool TheirLocked, bool TheirConfirmed, string Message = "", int Seq = 0);
 
 /// <summary>Canal do chat no fio (mesma ordem do ChatChannel do jogo): todos no DW4, a party da conta ou privada.</summary>
 public enum ChatTo : byte { Global = 0, Party = 1, Whisper = 2 }
@@ -231,6 +255,16 @@ public static class Codec
                 Str(w, x.Text, Protocol.MaxChat);
                 break;
             case ChatNotice x: w.Write((byte)MsgType.ChatNotice); Str(w, x.Text, 200); break;
+            case TradeCmd x:
+                w.Write((byte)MsgType.TradeCmd); Str(w, x.Action, 16); w.Write(x.TargetId); w.Write((byte)Math.Clamp(x.Slot, 0, Protocol.Slots - 1));
+                Str(w, x.Table, 16); w.Write(x.Row); w.Write(x.Bit);
+                break;
+            case TradeView x:
+                w.Write((byte)MsgType.TradeView); w.Write(x.OtherId); Str(w, x.OtherName); Str(w, x.State, 16);
+                Items(w, x.MyItems); w.Write(x.MyBit); w.Write(x.MyLocked); w.Write(x.MyConfirmed);
+                Items(w, x.TheirItems); w.Write(x.TheirBit); w.Write(x.TheirLocked); w.Write(x.TheirConfirmed);
+                Str(w, x.Message, 200); w.Write(x.Seq);
+                break;
             case SaveReply x:
                 w.Write((byte)MsgType.SaveReply); w.Write(x.ReqId); w.Write(x.Ok); Str(w, x.Message, 200);
                 w.Write((byte)Math.Min(x.Slots.Length, Protocol.Slots));
@@ -273,6 +307,9 @@ public static class Codec
                 MsgType.ChatSend => new ChatSend(Channel(r), Str(r), Str(r, Protocol.MaxChat)),
                 MsgType.ChatFrom => new ChatFrom(Channel(r), r.ReadInt32(), Str(r), Str(r), Str(r, Protocol.MaxChat)),
                 MsgType.ChatNotice => new ChatNotice(Str(r, 200)),
+                MsgType.TradeCmd => new TradeCmd(Str(r, 16), r.ReadInt32(), Slot(r), Str(r, 16), r.ReadInt32(), r.ReadInt32()),
+                MsgType.TradeView => new TradeView(r.ReadInt32(), Str(r), Str(r, 16), Items(r), r.ReadInt32(), r.ReadBoolean(), r.ReadBoolean(),
+                    Items(r), r.ReadInt32(), r.ReadBoolean(), r.ReadBoolean(), Str(r, 200), r.ReadInt32()),
                 _ => throw new FormatException($"tipo {(byte)type}"),
             };
             if (r.BaseStream.Position != data.Length) throw new FormatException("sobra no pacote");
@@ -310,6 +347,22 @@ public static class Codec
         var slots = new SaveEntry[n];
         for (int i = 0; i < n; i++) slots[i] = new SaveEntry(Slot(r), Save(r));
         return new SaveReply(id, ok, msg, slots);
+    }
+
+    static void Items(BinaryWriter w, TradeItem[] items)
+    {
+        if (items.Length > Protocol.MaxTradeItems) throw new ArgumentException("itens demais na troca");
+        w.Write((byte)items.Length);
+        foreach (var i in items) { Str(w, i.Table, 16); w.Write(i.Row); }
+    }
+
+    static TradeItem[] Items(BinaryReader r)
+    {
+        int n = r.ReadByte();
+        if (n > Protocol.MaxTradeItems) throw new FormatException("itens demais na troca");
+        var items = new TradeItem[n];
+        for (int i = 0; i < n; i++) items[i] = new TradeItem(Str(r, 16), r.ReadInt32());
+        return items;
     }
 
     static ChatTo Channel(BinaryReader r)

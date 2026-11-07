@@ -227,9 +227,20 @@ public static class Session
         var s = CharacterSave.Capture(ram, 0, c.Name, stage, entry);
         s.Starter = c.Starter;
         s.Model = Fatia.PlayerModel; // muda na evolução
+        s.TradeSeq = c.TradeSeq; // só o servidor sobe (troca de itens)
         Character = s;
         if (Account is not { } account) return Task.FromResult(false);
         return Persist(account, Slot, s);
+    }
+
+    /// <summary>
+    /// Troca de itens feita pelo servidor no save guardado (TradeLedger): a vaga passa a ter esse número de trocas, e o que estava
+    /// esperando para gravar (de antes da troca) é descartado: o servidor recusaria, e a gravação seguinte já leva a troca.
+    /// </summary>
+    public static void TradeApplied(int seq)
+    {
+        if (Character is { } c && seq > c.TradeSeq) c.TradeSeq = seq;
+        s_unsaved = null;
     }
 
     /// <summary>

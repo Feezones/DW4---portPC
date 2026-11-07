@@ -9,7 +9,7 @@ namespace DW4.Server;
 /// Laço do servidor: aceita conexões com a chave do DW4, confere o ticket na DMO.API, repassa posições pela <see cref="World"/>
 /// e manda o heartbeat de presença. Tudo roda numa thread; as respostas da API voltam por uma fila.
 /// </summary>
-public sealed class GameServer
+public sealed partial class GameServer
 {
     static readonly TimeSpan HelloTimeout = TimeSpan.FromSeconds(10);
     static readonly TimeSpan HeartbeatEvery = TimeSpan.FromSeconds(30);
@@ -58,6 +58,7 @@ public sealed class GameServer
                 p.Disconnect();
             }
         if (now >= _nextHeartbeat) { _nextHeartbeat = now + HeartbeatEvery; Heartbeat(); }
+        TickTrades(now);
     }
 
     public void Stop()
@@ -94,6 +95,9 @@ public sealed class GameServer
                 break;
             case ChatSend x when _world.IsOnline(p.Id):
                 OnChat(p, x);
+                break;
+            case TradeCmd x when _world.IsOnline(p.Id):
+                OnTrade(p, x);
                 break;
             case PlayerState s when _world.IsOnline(p.Id):
                 if (!Allow(p.Id)) return;
@@ -245,24 +249,50 @@ public sealed class GameServer
                     Send(p, new SaveReply(reqId, false, "Save inválido.", []), true);
                     return;
                 }
-                work = async () => { await _api.SaveCharacterAsync(who.AccountId, x.Slot, name, json); return new SaveReply(reqId, true, "", []); };
+                int seq = DW4.Gameplay.Online.TradeLedger.SeqOf(json);
+                work = async () =>
+                {
+                    // Gravação de antes de uma troca chegando depois dela: desfaria a troca (item duplicado). Conferido aqui, na
+                    // fila da conta, porque a troca também grava nessa fila.
+                    if (_tradeSeqs.TryGetValue((who.AccountId, x.Slot), out var min) && seq < min)
+                        return new SaveReply(reqId, false, StaleTradeSave, []);
+                    await _api.SaveCharacterAsync(who.AccountId, x.Slot, name, json);
+                    return new SaveReply(reqId, true, "", []);
+                };
                 break;
             case SaveDelete x:
-                work = async () => { await _api.DeleteCharacterAsync(who.AccountId, x.Slot); return new SaveReply(reqId, true, "", []); };
+                work = async () =>
+                {
+                    await _api.DeleteCharacterAsync(who.AccountId, x.Slot);
+                    _tradeSeqs.TryRemove((who.AccountId, x.Slot), out _); // personagem novo nessa vaga começa do 0
+                    return new SaveReply(reqId, true, "", []);
+                };
                 break;
             default: return;
         }
-        var prev = _saveChain.TryGetValue(who.AccountId, out var t) ? t : Task.CompletedTask;
-        var next = prev.ContinueWith(async _ =>
+        Chain([who.AccountId], async () =>
         {
             SaveReply reply;
             try { reply = await work(); }
             catch (Exception ex) { Log($"API (save {who.Tamer}): {ex.Message}"); reply = new SaveReply(reqId, false, "Servidor da conta fora do ar. Tente de novo em instantes.", []); }
             // A resposta vai para quem pediu, se ainda está conectado (a gravação vale mesmo se ele já saiu).
             _main.Enqueue(() => { if (_peers.TryGetValue(p.Id, out var peer)) Send(peer, reply, true); });
-        }, TaskScheduler.Default).Unwrap();
-        _saveChain[who.AccountId] = next;
-        _ = next.ContinueWith(_ => _main.Enqueue(() => { if (_saveChain.TryGetValue(who.AccountId, out var cur) && cur == next) _saveChain.Remove(who.AccountId); }));
+        });
+    }
+
+    /// <summary>
+    /// Põe o trabalho na fila de gravação das contas (depois de tudo o que já estava nelas). A troca entra nas filas das duas contas
+    /// ao mesmo tempo, então lê os saves só depois das gravações que os jogadores mandaram antes de confirmar.
+    /// </summary>
+    void Chain(long[] accounts, Func<Task> work)
+    {
+        var prev = Task.WhenAll(accounts.Select(a => _saveChain.TryGetValue(a, out var t) ? t : Task.CompletedTask));
+        var next = prev.ContinueWith(_ => work(), TaskScheduler.Default).Unwrap();
+        foreach (var a in accounts) _saveChain[a] = next;
+        _ = next.ContinueWith(_ => _main.Enqueue(() =>
+        {
+            foreach (var a in accounts) if (_saveChain.TryGetValue(a, out var cur) && cur == next) _saveChain.Remove(a);
+        }));
     }
 
     /// <summary>Descomprime e confere o save; devolve o JSON e o nome do Digimon (para a API).</summary>
@@ -287,6 +317,7 @@ public sealed class GameServer
         _lastInteract.Remove(id);
         _coopRate.Remove(id);
         _saveRate.Remove(id);
+        TradeGone(id);
         if (_world.Who(id) is { } who)
         {
             Log($"[{id}] saiu: {who.Tamer}");

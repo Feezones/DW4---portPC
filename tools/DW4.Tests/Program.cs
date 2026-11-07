@@ -255,29 +255,68 @@ Test("Online: menu do F (jogador mais perto e opções conforme grupo e amizade)
     True(b.Get(InputBindings.Pad, "interagir").SequenceEqual(new[] { "botao:3" }), "Y no controle");
 });
 
-Test("Online: troca de itens (travar, confirmar, tudo ou nada, mudança destrava, impItem fora)", () =>
+Test("Online: troca de itens (travar, confirmar, mudança destrava, impItem fora, conferência e troca)", () =>
 {
     var a = new Inventory { Bit = 500 }; var b = new Inventory { Bit = 100 };
     var sword = new ItemRef("weapon", 3); var disk = new ItemRef("conItem", 0);
     a.Add(sword); b.Add(disk); b.Add(disk);
-    var t = new DW4.Gameplay.Online.TradeSession("Gui", "Ana");
-    True(t.AddItem("Gui", sword, a).Ok, "oferece arma");
-    True(!t.AddItem("Gui", sword, a).Ok, "não oferece o que não tem duas vezes");
-    True(!t.AddItem("Gui", new ItemRef("impItem", 1), a).Ok, "item de enredo não");
-    True(t.AddItem("Ana", disk, b).Ok && t.AddItem("Ana", disk, b).Ok, "dois discos");
-    True(t.SetBit("Gui", 200, a).Ok && !t.SetBit("Ana", 999, b).Ok, "BIT só o que tem");
-    Equal("NaoTravada", t.Confirm("Gui", a, b).Code, "confirmar exige travar");
-    t.Lock("Gui"); t.Lock("Ana");
-    True(t.Confirm("Gui", a, b).Ok && t.State == DW4.Gameplay.Online.TradeState.Open, "um confirmou");
-    t.RemoveItem("Ana", disk);
+    var t = new DW4.Gameplay.Online.TradeSession(1, 2);
+    True(t.AddItem(1, sword).Ok, "oferece arma");
+    True(!t.AddItem(1, new ItemRef("impItem", 1)).Ok, "item de enredo não");
+    True(t.AddItem(2, disk).Ok && t.AddItem(2, disk).Ok, "dois discos");
+    True(t.SetBit(1, 200).Ok && !t.SetBit(2, -5).Ok, "BIT negativo não");
+    Equal("NaoTravada", t.Confirm(1).Code, "confirmar exige travar");
+    t.Lock(1); t.Lock(2);
+    True(t.Confirm(1).Ok && t.State == DW4.Gameplay.Online.TradeState.Open, "um confirmou");
+    t.RemoveItem(2, disk);
     True(!t.OfferA.Locked && !t.OfferA.Confirmed, "mudança destrava os dois");
-    t.Lock("Gui"); t.Lock("Ana"); t.Confirm("Gui", a, b);
-    True(t.Confirm("Ana", a, b).Ok && t.State == DW4.Gameplay.Online.TradeState.Done, "troca feita");
+    t.Lock(1); t.Lock(2); t.Confirm(1);
+    True(t.Confirm(2).Ok && t.State == DW4.Gameplay.Online.TradeState.Committing, "os dois confirmaram: grava");
+    True(!t.Cancel(), "gravando não cancela");
+    Equal<string?>(null, DW4.Gameplay.Online.TradeSession.Check(t.OfferA, a, null, t.OfferB), "A tem o que dá");
+    Equal<string?>(null, DW4.Gameplay.Online.TradeSession.Check(t.OfferB, b, null, t.OfferA), "B tem o que dá");
+    DW4.Gameplay.Online.TradeSession.Move(t.OfferA, t.OfferB, a);
+    DW4.Gameplay.Online.TradeSession.Move(t.OfferB, t.OfferA, b);
+    t.Finish(true);
+    True(t.State == DW4.Gameplay.Online.TradeState.Done, "feita");
     True(!a.Has(sword) && b.Has(sword) && a.Disks(0) == 1 && b.Disks(0) == 1 && a.Bit == 300 && b.Bit == 300, "inventários trocados");
-    var t2 = new DW4.Gameplay.Online.TradeSession("Gui", "Ana");
-    t2.AddItem("Ana", sword, b); t2.Lock("Gui"); t2.Lock("Ana"); t2.Confirm("Gui", a, b);
-    b.Remove(sword);
-    True(!t2.Confirm("Ana", a, b).Ok && t2.State == DW4.Gameplay.Online.TradeState.Cancelled && !a.Has(sword), "item sumiu antes: nada muda");
+    // Equipada não vai; com uma cópia livre, vai.
+    var c = new Inventory(); c.Add(sword);
+    var eq = new Equipment(3);
+    var give = new DW4.Gameplay.Online.TradeOffer(); give.Items.Add(sword);
+    True(DW4.Gameplay.Online.TradeSession.Check(give, c, eq, new()) != null, "arma equipada não troca");
+    c.Add(sword);
+    Equal<string?>(null, DW4.Gameplay.Online.TradeSession.Check(give, c, eq, new()), "a cópia livre troca");
+    var get = new DW4.Gameplay.Online.TradeOffer(); for (int i = 0; i < 8; i++) get.Items.Add(new ItemRef("conItem", 5));
+    var full = new Inventory(); for (int i = 0; i < 5; i++) full.Add(new ItemRef("conItem", 5));
+    True(DW4.Gameplay.Online.TradeSession.Check(new(), full, null, get) != null, "passa de 9 discos: recusa");
+});
+
+Test("Online: troca no save do servidor (TradeLedger: só inventário muda, TradeSeq sobe, equipada recusada)", () =>
+{
+    var sa = DW4.Script.Save.CharacterSave.New("Guilmon", 2, "p_girumon", 0, "stagml11", 0);
+    sa.Bit = 1000; sa.Devices.Add(new("weapon", 7)); sa.Devices.Add(new("abChip", 4)); sa.Disks[2] = 3;
+    var sb = DW4.Script.Save.CharacterSave.New("Agumon", 0, "p_agumon", 0, "stagml11", 0);
+    sb.Bit = 50; sb.Disks[9] = 1; sb.TradeSeq = 4;
+    var oa = new DW4.Gameplay.Online.TradeOffer { Bit = 300 }; oa.Items.Add(new ItemRef("weapon", 7)); oa.Items.Add(new ItemRef("conItem", 2));
+    var ob = new DW4.Gameplay.Online.TradeOffer(); ob.Items.Add(new ItemRef("conItem", 9));
+    var r = DW4.Gameplay.Online.TradeLedger.Commit(sa.ToJson(), oa, sb.ToJson(), ob);
+    Equal<string?>(null, r.Error, "aceita");
+    var na = DW4.Script.Save.CharacterSave.FromJson(r.JsonA)!; var nb = DW4.Script.Save.CharacterSave.FromJson(r.JsonB)!;
+    True(na.Bit == 700 && nb.Bit == 350, "BIT trocado");
+    True(!na.Devices.Contains(new("weapon", 7)) && nb.Devices.Contains(new("weapon", 7)) && na.Devices.Contains(new("abChip", 4)), "arma passou, chip ficou");
+    True(na.Disks[2] == 2 && nb.Disks[2] == 1 && na.Disks[9] == 1 && !nb.Disks.ContainsKey(9), "discos trocados");
+    True(na.Name == "Guilmon" && nb.Model == "p_agumon" && na.Flags == sa.Flags && na.Forms.Count == sa.Forms.Count, "resto do save igual");
+    True(r.SeqA == 1 && r.SeqB == 5 && na.TradeSeq == 1 && nb.TradeSeq == 5, "TradeSeq sobe");
+    Equal(5, DW4.Gameplay.Online.TradeLedger.SeqOf(r.JsonB), "lê o TradeSeq");
+    // A arma inicial está equipada (WeaponRow): não sai.
+    var oe = new DW4.Gameplay.Online.TradeOffer(); oe.Items.Add(new ItemRef("weapon", sa.WeaponRow));
+    if (sa.WeaponRow >= 0 && sa.Devices.Count(d => d.Table == "weapon" && d.Row == sa.WeaponRow) <= 1)
+        True(DW4.Gameplay.Online.TradeLedger.Commit(sa.ToJson(), oe, sb.ToJson(), new()).Error != null, "equipada recusada no servidor");
+    var sem = new DW4.Gameplay.Online.TradeOffer(); sem.Items.Add(new ItemRef("armor1", 99));
+    True(DW4.Gameplay.Online.TradeLedger.Commit(sa.ToJson(), sem, sb.ToJson(), new()).Error != null, "item que não tem: recusa");
+    var muito = new DW4.Gameplay.Online.TradeOffer { Bit = 5000 };
+    True(DW4.Gameplay.Online.TradeLedger.Commit(sa.ToJson(), muito, sb.ToJson(), new()).Error != null, "BIT que não tem: recusa");
 });
 
 Test("Online: protocolo de rede (ida e volta de cada pacote, pacote quebrado recusado)", () =>
@@ -1951,6 +1990,120 @@ Test("Saves no servidor: servidor de verdade (UDP local, DevApi) lista, grava, a
     }
     finally
     {
+        Volatile.Write(ref stop, true);
+        loop.Join();
+        server.Stop();
+        Environment.SetEnvironmentVariable("DW4_DEV_SAVES", null);
+        if (Directory.Exists(dir)) Directory.Delete(dir, true);
+    }
+});
+
+Test("Troca de itens: servidor de verdade com dois jogadores (pedido, ofertas, troca no save, save velho recusado)", () =>
+{
+    var dir = Path.Combine(Path.GetTempPath(), "dw4-teste-troca-" + Guid.NewGuid().ToString("N"));
+    Environment.SetEnvironmentVariable("DW4_DEV_SAVES", dir);
+    var server = new DW4.Server.GameServer(new DW4.Server.DevApi());
+    True(server.Start(0), "servidor abriu");
+    var stop = false;
+    var loop = new Thread(() => { while (!Volatile.Read(ref stop)) { server.Tick(); Thread.Sleep(5); } }) { IsBackground = true };
+    loop.Start();
+    var nets = new List<LiteNetLib.NetManager>();
+    try
+    {
+        (LiteNetLib.NetManager Net, LiteNetLib.NetPeer Peer, System.Collections.Concurrent.ConcurrentQueue<object> Inbox) Client(string ticket, string character)
+        {
+            var inbox = new System.Collections.Concurrent.ConcurrentQueue<object>();
+            var l = new LiteNetLib.EventBasedNetListener();
+            l.NetworkReceiveEvent += (_, reader, _, _) => inbox.Enqueue(DW4.Net.Codec.Read(reader.GetRemainingBytes()));
+            var net = new LiteNetLib.NetManager(l) { AutoRecycle = true };
+            net.Start();
+            nets.Add(net);
+            var peer = net.Connect("127.0.0.1", server.Port, DW4.Net.Protocol.ConnectionKey);
+            l.PeerConnectedEvent += p => p.Send(DW4.Net.Codec.Write(new DW4.Net.Hello(DW4.Net.Protocol.Version, ticket, character, "p_girumon", 10)), LiteNetLib.DeliveryMethod.ReliableOrdered);
+            return (net, peer, inbox);
+        }
+        T Wait<T>((LiteNetLib.NetManager Net, LiteNetLib.NetPeer Peer, System.Collections.Concurrent.ConcurrentQueue<object> Inbox) c, Func<T, bool>? ok = null) where T : class
+        {
+            var until = DateTime.UtcNow.AddSeconds(5);
+            while (DateTime.UtcNow < until)
+            {
+                c.Net.PollEvents();
+                while (c.Inbox.TryDequeue(out var m)) if (m is T t && (ok == null || ok(t))) return t;
+                Thread.Sleep(5);
+            }
+            throw new InvalidOperationException($"não chegou {typeof(T).Name}");
+        }
+        void Send((LiteNetLib.NetManager Net, LiteNetLib.NetPeer Peer, System.Collections.Concurrent.ConcurrentQueue<object> Inbox) c, object m) =>
+            c.Peer.Send(DW4.Net.Codec.Write(m), LiteNetLib.DeliveryMethod.ReliableOrdered);
+        var here = new DW4.Net.PlayerState("stagml11", 0, 0, 0, 0, "wait01", "p_girumon", 10);
+
+        var a = Client("dev:Gui", "Guilmon"); var b = Client("dev:Ana", "Agumon");
+        int idA = Wait<DW4.Net.Welcome>(a).PlayerId, idB = Wait<DW4.Net.Welcome>(b).PlayerId;
+        var sa = DW4.Script.Save.CharacterSave.New("Guilmon", 2, "p_girumon", 0, "stagml11", 0);
+        sa.Bit = 1000; sa.Devices.Add(new("armor1", 3)); sa.Disks[2] = 2;
+        var sb = DW4.Script.Save.CharacterSave.New("Agumon", 0, "p_agumon", 0, "stagml11", 0);
+        sb.Bit = 10; sb.Disks[6] = 1;
+        Send(a, new DW4.Net.SaveWrite(1, 0, DW4.Net.SaveData.Pack(sa.ToJson())));
+        Send(b, new DW4.Net.SaveWrite(1, 2, DW4.Net.SaveData.Pack(sb.ToJson())));
+        True(Wait<DW4.Net.SaveReply>(a).Ok && Wait<DW4.Net.SaveReply>(b).Ok, "vagas gravadas");
+        Send(a, here); Send(b, here);
+        Wait<DW4.Net.Spawn>(a, s => s.PlayerId == idB);
+
+        // Pedido e recusa.
+        Send(a, new DW4.Net.TradeCmd("ask", idB, 0));
+        True(Wait<DW4.Net.TradeView>(b).State == "ask", "Ana recebe o pedido");
+        Send(b, new DW4.Net.TradeCmd("decline", idA, 2));
+        True(Wait<DW4.Net.TradeView>(a, v => v.State == "cancelled").Message.Contains("recusou"), "Gui vê a recusa");
+
+        // Pedido aceito, ofertas, travar e confirmar.
+        Send(a, new DW4.Net.TradeCmd("ask", idB, 0));
+        Wait<DW4.Net.TradeView>(b, v => v.State == "ask");
+        Send(b, new DW4.Net.TradeCmd("accept", idA, 2));
+        True(Wait<DW4.Net.TradeView>(a, v => v.State == "open").OtherName == "Agumon", "troca aberta com o nome da placa");
+        Send(a, new DW4.Net.TradeCmd("add", Table: "armor1", Row: 3));
+        Send(a, new DW4.Net.TradeCmd("add", Table: "conItem", Row: 2));
+        Send(a, new DW4.Net.TradeCmd("bit", Bit: 400));
+        Send(b, new DW4.Net.TradeCmd("add", Table: "conItem", Row: 6));
+        var seen = Wait<DW4.Net.TradeView>(b, v => v.TheirBit == 400 && v.MyItems.Length == 1);
+        True(seen.TheirItems.Length == 2, "Ana vê a oferta do Gui");
+        Send(a, new DW4.Net.TradeCmd("confirm"));
+        True(Wait<DW4.Net.TradeView>(a, v => v.Message.Length > 0).Message.Contains("travar"), "confirmar antes de travar: aviso");
+        Send(a, new DW4.Net.TradeCmd("lock")); Send(b, new DW4.Net.TradeCmd("lock"));
+        Wait<DW4.Net.TradeView>(a, v => v.MyLocked && v.TheirLocked);
+        // Gravação de antes da troca (o cliente grava ao confirmar) e depois as confirmações.
+        Send(a, new DW4.Net.SaveWrite(2, 0, DW4.Net.SaveData.Pack(sa.ToJson())));
+        Send(a, new DW4.Net.TradeCmd("confirm")); Send(b, new DW4.Net.TradeCmd("confirm"));
+        var doneA = Wait<DW4.Net.TradeView>(a, v => v.State is "done" or "cancelled");
+        var doneB = Wait<DW4.Net.TradeView>(b, v => v.State is "done" or "cancelled");
+        True(doneA.State == "done" && doneB.State == "done", "troca feita: " + doneA.Message);
+        True(doneA.Seq == 1 && doneB.Seq == 1, "TradeSeq 1 nas duas vagas");
+        Send(a, new DW4.Net.SaveList(3));
+        var ga = DW4.Script.Save.CharacterSave.FromJson(DW4.Net.SaveData.Unpack(Wait<DW4.Net.SaveReply>(a, r => r.ReqId == 3).Slots.Single(x => x.Slot == 0).Data))!;
+        Send(b, new DW4.Net.SaveList(4));
+        var gb = DW4.Script.Save.CharacterSave.FromJson(DW4.Net.SaveData.Unpack(Wait<DW4.Net.SaveReply>(b, r => r.ReqId == 4).Slots.Single(x => x.Slot == 2).Data))!;
+        True(ga.Bit == 600 && gb.Bit == 410, "BIT no save do servidor");
+        True(!ga.Devices.Contains(new("armor1", 3)) && gb.Devices.Contains(new("armor1", 3)), "armadura passou");
+        True(ga.Disks[2] == 1 && gb.Disks[2] == 1 && ga.Disks[6] == 1 && !gb.Disks.ContainsKey(6), "discos passaram");
+
+        // Save velho (de antes da troca) não desfaz a troca; o novo (com TradeSeq) grava.
+        Send(a, new DW4.Net.SaveWrite(5, 0, DW4.Net.SaveData.Pack(sa.ToJson())));
+        var stale = Wait<DW4.Net.SaveReply>(a, r => r.ReqId == 5);
+        True(!stale.Ok && stale.Message == DW4.Server.GameServer.StaleTradeSave, "save velho recusado");
+        ga.Bit = 650;
+        Send(a, new DW4.Net.SaveWrite(6, 0, DW4.Net.SaveData.Pack(ga.ToJson())));
+        True(Wait<DW4.Net.SaveReply>(a, r => r.ReqId == 6).Ok, "save novo grava");
+
+        // Trocar de fase cancela a troca aberta.
+        Send(a, new DW4.Net.TradeCmd("ask", idB, 0));
+        Wait<DW4.Net.TradeView>(b, v => v.State == "ask");
+        Send(b, new DW4.Net.TradeCmd("accept", idA, 2));
+        Wait<DW4.Net.TradeView>(a, v => v.State == "open");
+        Send(b, here with { Stage = "stag0101" });
+        True(Wait<DW4.Net.TradeView>(a, v => v.State == "cancelled").Message.Contains("mesma fase"), "saiu da fase: cancelada");
+    }
+    finally
+    {
+        foreach (var n in nets) n.Stop();
         Volatile.Write(ref stop, true);
         loop.Join();
         server.Stop();
