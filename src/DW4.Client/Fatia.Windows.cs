@@ -96,7 +96,7 @@ public partial class Fatia
 
     bool TalkWindowOpen => _windows.Keys.Any(k => k.Item1 is "i_talkwn" or "i_messwn" or "i_messwnsp");
 
-    static bool IsWindowName(string name) => name != "i_fadewn01" && (name.StartsWith("i_", StringComparison.Ordinal) || name.EndsWith("ic", StringComparison.Ordinal));
+    static bool IsWindowName(string name) => name != "i_fadewn01" && !name.StartsWith("i_bosshp", StringComparison.Ordinal) && (name.StartsWith("i_", StringComparison.Ordinal) || name.EndsWith("ic", StringComparison.Ordinal));
 
     bool DeliverToWindows(BeMessage m)
     {
