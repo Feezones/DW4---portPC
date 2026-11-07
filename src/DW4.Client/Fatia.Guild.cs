@@ -214,6 +214,86 @@ public partial class Fatia
         return rect;
     }
 
+    // ---------- visual ----------
+
+    static readonly Color GuildDim = new(0.72f, 0.73f, 0.86f), GuildBlue = new(0.55f, 0.85f, 1f), GuildOnline = new(0.45f, 0.95f, 0.55f);
+
+    static Color RankColor(int rank) => rank switch
+    {
+        1 => QuickGold,
+        2 => new Color(0.82f, 0.68f, 1f),
+        3 => GuildBlue,
+        _ => new Color(0.7f, 0.7f, 0.75f),
+    };
+
+    static StyleBoxFlat GuildBox(Color bg, Color border, int borderW = 1, int radius = 8, int margin = 8)
+    {
+        var st = new StyleBoxFlat { BgColor = bg, BorderColor = border, CornerDetail = 6 };
+        st.SetBorderWidthAll(borderW);
+        st.SetCornerRadiusAll(radius);
+        st.ContentMarginLeft = st.ContentMarginRight = margin + 4;
+        st.ContentMarginTop = st.ContentMarginBottom = margin;
+        return st;
+    }
+
+    // Botões da janela: fundo escuro, borda fina; foco/mouse acendem a borda; ativo (aba) fica dourado.
+    static void GuildStyle(Button b, bool active = false, Color? accent = null)
+    {
+        var a = accent ?? QuickBorder;
+        var normal = active ? GuildBox(new Color(0.32f, 0.26f, 0.08f, 0.95f), QuickGold, 2) : GuildBox(new Color(0.13f, 0.13f, 0.28f, 0.92f), a with { A = 0.55f });
+        var hover = active ? normal : GuildBox(new Color(0.19f, 0.19f, 0.4f, 0.95f), a, 2);
+        var focus = GuildBox(new Color(0, 0, 0, 0), QuickGold, 2);
+        focus.DrawCenter = false;
+        var disabled = GuildBox(new Color(0.1f, 0.1f, 0.18f, 0.7f), new Color(0.3f, 0.3f, 0.4f, 0.5f));
+        b.AddThemeStyleboxOverride("normal", normal);
+        b.AddThemeStyleboxOverride("hover", hover);
+        b.AddThemeStyleboxOverride("pressed", active ? normal : GuildBox(new Color(0.25f, 0.22f, 0.5f, 0.95f), QuickGold, 2));
+        b.AddThemeStyleboxOverride("focus", focus);
+        b.AddThemeStyleboxOverride("disabled", disabled);
+        b.AddThemeColorOverride("font_color", active ? QuickGold : Colors.White);
+        b.AddThemeColorOverride("font_hover_color", active ? QuickGold : Colors.White);
+        b.AddThemeColorOverride("font_focus_color", active ? QuickGold : Colors.White);
+        b.AddThemeColorOverride("font_disabled_color", new Color(0.5f, 0.5f, 0.6f));
+    }
+
+    // Plaquinha colorida (cargo, bônus, membros).
+    static PanelContainer GuildChip(string text, Color color, int size)
+    {
+        var chip = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
+        var st = GuildBox(color with { A = 0.16f }, color with { A = 0.75f }, 1, 10, 2);
+        st.ContentMarginLeft = st.ContentMarginRight = 10;
+        chip.AddThemeStyleboxOverride("panel", st);
+        var l = new Label { Text = text, MouseFilter = Control.MouseFilterEnum.Ignore };
+        l.AddThemeFontSizeOverride("font_size", size);
+        l.AddThemeColorOverride("font_color", color);
+        chip.AddChild(l);
+        return chip;
+    }
+
+    // Emblema sem logo: quadrado com a tag.
+    static PanelContainer GuildEmblem(string tag, float size, int font)
+    {
+        var p = new PanelContainer { CustomMinimumSize = new Vector2(size, size), MouseFilter = Control.MouseFilterEnum.Ignore };
+        p.AddThemeStyleboxOverride("panel", GuildBox(new Color(0.22f, 0.17f, 0.05f, 0.95f), QuickGold, 2, 10, 0));
+        var l = new Label { Text = tag, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore };
+        l.AddThemeFontSizeOverride("font_size", font);
+        l.AddThemeColorOverride("font_color", QuickGold);
+        p.AddChild(l);
+        return p;
+    }
+
+    static ProgressBar GuildBar(double value, double max, float height)
+    {
+        var bar = new ProgressBar { MinValue = 0, MaxValue = Math.Max(1, max), Value = Math.Clamp(value, 0, Math.Max(1, max)), ShowPercentage = false,
+            CustomMinimumSize = new Vector2(0, height), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore };
+        var bg = GuildBox(new Color(0.05f, 0.05f, 0.12f, 0.95f), QuickBorder with { A = 0.6f }, 1, 5, 0);
+        var fill = GuildBox(QuickGold, QuickGold, 0, 5, 0);
+        bar.AddThemeStyleboxOverride("background", bg);
+        bar.AddThemeStyleboxOverride("fill", fill);
+        return bar;
+    }
+
     // ---------- janela ----------
 
     void RefreshGuild()
@@ -230,13 +310,37 @@ public partial class Fatia
         center.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         _guildLayer.AddChild(center);
         var panel = new PanelContainer();
-        panel.AddThemeStyleboxOverride("panel", QuickBox(QuickBorder));
+        var frame = QuickBox(QuickBorder, 3);
+        frame.BgColor = new Color(0.06f, 0.06f, 0.16f, 0.94f);
+        frame.SetContentMarginAll(touch ? 22 : 18);
+        frame.ShadowColor = new Color(0, 0, 0, 0.5f);
+        frame.ShadowSize = 12;
+        panel.AddThemeStyleboxOverride("panel", frame);
         center.AddChild(panel);
         var box = new VBoxContainer { CustomMinimumSize = new Vector2(touch ? 1100 : 860, 0) };
-        box.AddThemeConstantOverride("separation", touch ? 10 : 6);
+        box.AddThemeConstantOverride("separation", touch ? 12 : 8);
         panel.AddChild(box);
         Control? firstFocus = null;
-        var dim = new Color(0.75f, 0.75f, 0.85f);
+        var dim = GuildDim;
+        void Line(Control parent)
+        {
+            var sep = new HSeparator();
+            var st = new StyleBoxLine { Color = QuickBorder with { A = 0.45f }, Thickness = 1 };
+            sep.AddThemeStyleboxOverride("separator", st);
+            parent.AddChild(sep);
+        }
+        // Linha de lista: botão sem texto com nome à esquerda e plaquinhas/infos à direita.
+        Button ListRow(string name, Action act, bool enabled = true)
+        {
+            var b = Btn(name, "", enabled, act);
+            var h = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+            h.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+            h.OffsetLeft = 14; h.OffsetRight = -14;
+            h.AddThemeConstantOverride("separation", 10);
+            b.AddChild(h);
+            return b;
+        }
+        HBoxContainer RowBox(Button b) => b.GetChild<HBoxContainer>(0);
 
         Label Text(string s, int size, Color? color = null, HorizontalAlignment align = HorizontalAlignment.Left)
         {
@@ -249,6 +353,7 @@ public partial class Fatia
         {
             var b = new Button { Name = name, Text = label, Disabled = !enabled || _guildBusy, CustomMinimumSize = new Vector2(0, rowH) };
             b.AddThemeFontSizeOverride("font_size", font);
+            GuildStyle(b);
             b.Pressed += act;
             return b;
         }
@@ -257,6 +362,8 @@ public partial class Fatia
             var e = new LineEdit { Name = name, Text = text, PlaceholderText = placeholder, MaxLength = max, CustomMinimumSize = new Vector2(width, rowH),
                 SizeFlagsHorizontal = width > 0 ? Control.SizeFlags.Fill : Control.SizeFlags.ExpandFill };
             e.AddThemeFontSizeOverride("font_size", font);
+            e.AddThemeStyleboxOverride("normal", GuildBox(new Color(0.04f, 0.04f, 0.1f, 0.95f), QuickBorder with { A = 0.7f }));
+            e.AddThemeStyleboxOverride("focus", GuildBox(new Color(0, 0, 0, 0), QuickGold, 2));
             return e;
         }
         HBoxContainer Row(Control parent)
@@ -279,7 +386,8 @@ public partial class Fatia
         if (g is not { Id: > 0 })
         {
             // ---- sem guilda: criar ----
-            box.AddChild(Text("Guilda", font + 6, QuickGold, HorizontalAlignment.Center));
+            box.AddChild(Text("GUILDA", font + 8, QuickGold, HorizontalAlignment.Center));
+            Line(box);
             box.AddChild(Text("Você não está em uma guilda. Crie uma (você vira o Mestre) ou peça um convite a um Mestre ou Sub-mestre: " +
                 "perto da pessoa, use Interagir.", small, dim));
             var nameRow = Row(box);
@@ -294,6 +402,7 @@ public partial class Fatia
                 GuildAsk(new GuildCmd("create", Text: name.Text.Trim(), Text2: tag.Text.Trim()), busy: true));
             name.TextSubmitted += _ => tag.GrabFocus();
             tag.TextSubmitted += _ => create.EmitSignal(BaseButton.SignalName.Pressed);
+            GuildStyle(create, active: true);
             box.AddChild(create);
             box.AddChild(Btn("fechar", "Fechar", true, CloseGuild));
             firstFocus = name;
@@ -306,29 +415,60 @@ public partial class Fatia
 
         // ---- cabeçalho ----
         var head = Row(box);
-        if (GuildLogo(g.Id, g.LogoVersion, touch ? 72 : 56) is { } logo) head.AddChild(logo);
+        head.AddThemeConstantOverride("separation", 14);
+        float emblem = touch ? 96 : 76;
+        head.AddChild(GuildLogo(g.Id, g.LogoVersion, emblem) is { Texture: not null } logo ? logo : GuildEmblem(g.Tag, emblem, font));
         var title = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        title.AddThemeConstantOverride("separation", 4);
         head.AddChild(title);
-        title.AddChild(Text($"{g.Name}  <{g.Tag}>", font + 6, QuickGold));
-        string next = g.NextXp > 0 ? $"XP {g.Xp - g.LevelXp}/{g.NextXp - g.LevelXp} para o nível {g.Level + 1}" : "nível máximo";
-        title.AddChild(Text($"Nível {g.Level} · {next} · +{g.Bonus}% de EXP e BIT · {g.Members.Length}/{g.MaxMembers} membros · você é {RankName(myRank)}", small, dim));
-        if (g.Notice.Length > 0) box.AddChild(Text("Aviso: " + g.Notice, small, new Color(0.55f, 0.85f, 1f)));
+        var titleRow = new HBoxContainer();
+        titleRow.AddThemeConstantOverride("separation", 10);
+        title.AddChild(titleRow);
+        titleRow.AddChild(Text(g.Name, font + 8, QuickGold));
+        titleRow.AddChild(GuildChip($"<{g.Tag}>", GuildBlue, small));
+        var xpRow = new HBoxContainer();
+        xpRow.AddThemeConstantOverride("separation", 10);
+        title.AddChild(xpRow);
+        xpRow.AddChild(Text($"Nível {g.Level}", font, Colors.White));
+        bool maxLevel = g.NextXp <= 0;
+        var bar = GuildBar(maxLevel ? 1 : g.Xp - g.LevelXp, maxLevel ? 1 : g.NextXp - g.LevelXp, touch ? 18 : 14);
+        bar.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+        xpRow.AddChild(bar);
+        xpRow.AddChild(Text(maxLevel ? "nível máximo" : $"{g.Xp - g.LevelXp}/{g.NextXp - g.LevelXp} XP", small, dim));
+        var chips = new HBoxContainer();
+        chips.AddThemeConstantOverride("separation", 8);
+        title.AddChild(chips);
+        chips.AddChild(GuildChip($"+{g.Bonus}% EXP e BIT", GuildOnline, small));
+        chips.AddChild(GuildChip($"{g.Members.Length}/{g.MaxMembers} membros", GuildBlue, small));
+        chips.AddChild(GuildChip($"Você: {RankName(myRank)}", RankColor(myRank), small));
+        if (g.Notice.Length > 0)
+        {
+            var notice = new PanelContainer();
+            var st = GuildBox(new Color(0.1f, 0.2f, 0.3f, 0.6f), GuildBlue with { A = 0.0f }, 0, 6, 8);
+            st.BorderWidthLeft = 4;
+            st.BorderColor = GuildBlue;
+            notice.AddThemeStyleboxOverride("panel", st);
+            notice.AddChild(Text("Aviso: " + g.Notice, small, GuildBlue));
+            box.AddChild(notice);
+        }
 
         // ---- abas ----
         var tabs = Row(box);
         foreach (var (page, label) in new[] { ("membros", "Membros"), ("bau", "Baú"), ("historico", "Histórico") })
         {
             bool on = _guildPage == page || page == "membros" && _guildPage is "membro" or "aviso" or "convidar" || page == "bau" && _guildPage == "guardar";
-            var b = Btn("aba_" + page, on ? $"[ {label} ]" : label, true, () =>
+            var b = Btn("aba_" + page, label, true, () =>
             {
                 _guildPage = page;
                 if (page == "historico") Online.SendGuild(new GuildCmd("log"));
                 RefreshGuild();
             });
             b.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+            GuildStyle(b, active: on);
             tabs.AddChild(b);
             if (on) firstFocus ??= b;
         }
+        Line(box);
 
         switch (_guildPage)
         {
@@ -336,9 +476,19 @@ public partial class Fatia
             {
                 bool online = m.PlayerId >= 0;
                 bool self = m.PlayerId == Online.MyId && online;
-                box.AddChild(Text($"{m.Name} · {RankName(m.Rank)}", font + 2, QuickGold));
-                box.AddChild(Text(online ? $"Online {StageName(m.Stage)}" + (m.Level > 0 ? $", nível {m.Level}" : "") : LastSeen(m.LastSeen), small, dim));
-                box.AddChild(Text($"Contribuição: {m.Contribution} XP", small, dim));
+                var card = new PanelContainer();
+                card.AddThemeStyleboxOverride("panel", GuildBox(new Color(0.12f, 0.12f, 0.27f, 0.8f), RankColor(m.Rank) with { A = 0.6f }, 1, 8, 10));
+                box.AddChild(card);
+                var cardCol = new VBoxContainer();
+                cardCol.AddThemeConstantOverride("separation", 6);
+                card.AddChild(cardCol);
+                var top = Row(cardCol);
+                top.AddThemeConstantOverride("separation", 10);
+                top.AddChild(Text(m.Name, font + 6, QuickGold));
+                top.AddChild(GuildChip(RankName(m.Rank), RankColor(m.Rank), small));
+                cardCol.AddChild(Text((online ? "● Online " + StageName(m.Stage) + (m.Level > 0 ? $" · nível {m.Level}" : "") : "● " + LastSeen(m.LastSeen)),
+                    small, online ? GuildOnline : dim));
+                cardCol.AddChild(Text($"Contribuição para a guilda: {m.Contribution} XP", small, dim));
                 var acts = new VBoxContainer();
                 acts.AddThemeConstantOverride("separation", 6);
                 box.AddChild(acts);
@@ -413,8 +563,18 @@ public partial class Fatia
             case "bau":
             {
                 bool items = myRank is >= 1 and <= 3, bits = manager;
-                box.AddChild(Text($"BIT no baú: {g.BankBit}   ·   você tem {_inventory.Bit} BIT", font));
-                var bitRow = Row(box);
+                var bitCard = new PanelContainer();
+                bitCard.AddThemeStyleboxOverride("panel", GuildBox(new Color(0.2f, 0.16f, 0.04f, 0.6f), QuickGold with { A = 0.6f }, 1, 8, 10));
+                box.AddChild(bitCard);
+                var bitCol = new VBoxContainer();
+                bitCol.AddThemeConstantOverride("separation", 8);
+                bitCard.AddChild(bitCol);
+                var bitHead = Row(bitCol);
+                var bankBit = Text($"{g.BankBit:N0} BIT no baú".Replace(',', '.'), font + 2, QuickGold);
+                bankBit.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+                bitHead.AddChild(bankBit);
+                bitHead.AddChild(Text($"você tem {_inventory.Bit:N0} BIT".Replace(',', '.'), small, dim));
+                var bitRow = Row(bitCol);
                 var amount = Field("bit_campo", "", "Quantia", 9, touch ? 200 : 160);
                 amount.VirtualKeyboardType = LineEdit.VirtualKeyboardTypeEnum.Number;
                 bitRow.AddChild(amount);
@@ -424,7 +584,8 @@ public partial class Fatia
                 putBit.SizeFlagsHorizontal = takeBit.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
                 bitRow.AddChild(putBit);
                 bitRow.AddChild(takeBit);
-                if (!bits) box.AddChild(Text("Só o Mestre e os Sub-mestres tiram BIT.", small, dim));
+                if (!bits) bitCol.AddChild(Text("Só o Mestre e os Sub-mestres tiram BIT.", small, dim));
+                box.AddChild(Text($"Itens ({g.Bank.Length}/60)" + (items ? $" · {(touch ? "toque" : "clique")} para tirar 1" : ""), small, dim));
                 var list = new VBoxContainer();
                 list.AddThemeConstantOverride("separation", 4);
                 box.AddChild(Scroll(list, listH - rowH * 2));
@@ -432,13 +593,20 @@ public partial class Fatia
                 foreach (var it in g.Bank)
                 {
                     var item = new ItemRef(it.Table, it.Row);
-                    var b = Btn($"tirar_{it.Table}_{it.Row}", $"{ItemName(item)}  x{it.Count}" + (items ? "   (tirar 1)" : ""), items, () => GuildWithdraw(item, 1, 0));
-                    b.Alignment = HorizontalAlignment.Left;
+                    var b = ListRow($"tirar_{it.Table}_{it.Row}", () => GuildWithdraw(item, 1, 0), items);
+                    var h = RowBox(b);
+                    var nm = Text(ItemName(item), font, items ? Colors.White : dim);
+                    nm.AutowrapMode = TextServer.AutowrapMode.Off;
+                    nm.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+                    nm.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+                    h.AddChild(nm);
+                    h.AddChild(GuildChip($"x{it.Count}", QuickGold, small));
                     list.AddChild(b);
                     firstFocus ??= items ? b : null;
                 }
                 if (!items) list.AddChild(Text("Novatos ainda não tiram itens do baú. Peça ao Mestre para mudar seu cargo.", small, dim));
                 var put = Btn("guardar", "+ Guardar itens da pasta", true, () => { _guildPage = "guardar"; RefreshGuild(); });
+                GuildStyle(put, accent: QuickGold);
                 box.AddChild(put);
                 firstFocus = put;
                 break;
@@ -453,8 +621,14 @@ public partial class Fatia
                 if (cands.Count == 0) list.AddChild(Text("Nada livre para guardar.", font, dim));
                 foreach (var (item, room) in cands)
                 {
-                    var b = Btn($"guardar_{item.Table}_{item.Row}", room > 1 ? $"{ItemName(item)}  (x{room})" : ItemName(item), true, () => GuildDeposit(item, 1, 0));
-                    b.Alignment = HorizontalAlignment.Left;
+                    var b = ListRow($"guardar_{item.Table}_{item.Row}", () => GuildDeposit(item, 1, 0));
+                    var h = RowBox(b);
+                    var nm = Text(ItemName(item), font);
+                    nm.AutowrapMode = TextServer.AutowrapMode.Off;
+                    nm.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+                    nm.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+                    h.AddChild(nm);
+                    if (room > 1) h.AddChild(GuildChip($"tem {room}", GuildBlue, small));
                     list.AddChild(b);
                     firstFocus ??= b;
                 }
@@ -469,7 +643,28 @@ public partial class Fatia
                 list.AddThemeConstantOverride("separation", 2);
                 box.AddChild(Scroll(list, listH));
                 if (_guildLog.Length == 0) list.AddChild(Text("Carregando...", small, dim));
-                foreach (var line in _guildLog) list.AddChild(Text(GuildLogLine(line), small));
+                int n = 0;
+                foreach (var line in _guildLog)
+                {
+                    var rowP = new PanelContainer();
+                    rowP.AddThemeStyleboxOverride("panel", GuildBox(n++ % 2 == 0 ? new Color(1, 1, 1, 0.04f) : new Color(0, 0, 0, 0), new Color(0, 0, 0, 0), 0, 4, 4));
+                    var full = GuildLogLine(line);
+                    var hr = new HBoxContainer();
+                    hr.AddThemeConstantOverride("separation", 12);
+                    rowP.AddChild(hr);
+                    // "dd/MM HH:mm  texto": data à parte, em cinza
+                    if (full.Length > 13 && full[2] == '/' && full[11] == ' ')
+                    {
+                        var when = Text(full[..11], small, dim);
+                        when.AutowrapMode = TextServer.AutowrapMode.Off;
+                        hr.AddChild(when);
+                        full = full[13..];
+                    }
+                    var what = Text(full, small);
+                    what.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+                    hr.AddChild(what);
+                    list.AddChild(rowP);
+                }
                 break;
             }
             default:
@@ -478,20 +673,36 @@ public partial class Fatia
                 var list = new VBoxContainer();
                 list.AddThemeConstantOverride("separation", 4);
                 int online = g.Members.Count(m => m.PlayerId >= 0);
-                box.AddChild(Text($"{online} online · toque / clique num membro para ver as ações", small, dim));
+                box.AddChild(Text($"{online} de {g.Members.Length} online · {(touch ? "toque" : "clique")} num membro para ver as ações", small, dim));
                 box.AddChild(Scroll(list, listH - (manager ? rowH : 0)));
                 foreach (var m in g.Members.OrderBy(m => m.PlayerId >= 0 ? 0 : 1).ThenBy(m => m.Rank).ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase))
                 {
                     bool on = m.PlayerId >= 0;
-                    string where = on ? "online " + StageName(m.Stage) + (m.Level > 0 ? $" · Lv {m.Level}" : "") : LastSeen(m.LastSeen);
-                    var b = Btn($"membro_{m.Account}", $"{(on ? "● " : "○ ")}{m.Name}  ·  {RankName(m.Rank)}  ·  {where}", true, () =>
+                    string where = on ? (StageName(m.Stage) is { Length: > 0 } st ? st : "online") + (m.Level > 0 ? $" · Lv {m.Level}" : "") : LastSeen(m.LastSeen);
+                    var b = ListRow($"membro_{m.Account}", () =>
                     {
                         _guildMember = m.Account;
                         _guildPage = "membro";
                         RefreshGuild();
                     });
-                    b.Alignment = HorizontalAlignment.Left;
-                    if (!on) b.AddThemeColorOverride("font_color", dim);
+                    var h = RowBox(b);
+                    var dot = Text(on ? "●" : "●", font, on ? GuildOnline : new Color(0.4f, 0.4f, 0.5f));
+                    dot.VerticalAlignment = VerticalAlignment.Center;
+                    h.AddChild(dot);
+                    var who = Text(m.Name + (m.PlayerId == Online.MyId && on ? "  (você)" : ""), font, on ? Colors.White : dim);
+                    who.VerticalAlignment = VerticalAlignment.Center;
+                    who.AutowrapMode = TextServer.AutowrapMode.Off;
+                    who.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+                    who.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+                    h.AddChild(who);
+                    var place = Text(where, small, on ? GuildOnline with { A = 0.85f } : dim);
+                    place.AutowrapMode = TextServer.AutowrapMode.Off;
+                    place.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+                    h.AddChild(place);
+                    var rank = GuildChip(RankName(m.Rank), RankColor(m.Rank), small);
+                    rank.CustomMinimumSize = new Vector2(touch ? 170 : 130, 0);
+                    ((Label)rank.GetChild(0)).HorizontalAlignment = HorizontalAlignment.Center;
+                    h.AddChild(rank);
                     list.AddChild(b);
                 }
                 var bottom = Row(box);
