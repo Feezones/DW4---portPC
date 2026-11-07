@@ -408,13 +408,16 @@ public partial class Fatia
         if (!FindAll<MeshInstance3D>(model).Any()) _problems.Add($"{o.Name}: personagem sem malha (pele igSkin sem igBlendMatrixSelect, formato ainda não lido)");
         o.Actor.Root.AddChild(model);
         o.CharacterAnim = FindAll<AnimationPlayer>(model).FirstOrDefault();
+        // Fecho do ciclo (TrimWrapSample), como no jogador e nos inimigos. FATO (varredura 2026-11-07 dos 14 NPCs): só o n_digilfm
+        // shok01 tem a última amostra voltando à pose 0 com salto (58°).
+        if (o.CharacterAnim != null) TrimWrapSamples(o.CharacterAnim);
         // modelo do Cyber Sleuth; a variante é o número do arquivo do NPC naquela fase (ndmw_0825_n_vmon_gltf → 0825)
         var variant = System.Text.RegularExpressions.Regex.Match(Path.GetFileName(Path.GetDirectoryName(file) ?? ""), @"^ndmw_(\d+)_");
         CsSkin.TryAttach(model, o.Name, o.CharacterAnim, variant.Success ? variant.Groups[1].Value : null);
         // DEPURAÇÃO (DW4_DIAG_NPC=1): o que cada NPC tem e o que recebe (T-pose dos NPCs).
         if (DiagNpc) GD.Print($"[npc] {o.Name}/{o.Index}: AnimationPlayer {(o.CharacterAnim != null ? string.Join(",", o.CharacterAnim.GetAnimationList()) : "nenhum")}, esqueletos {FindAll<Skeleton3D>(model).Count()}");
         if (o.CharacterAnim is { } ca && o.Seq != null)
-            o.Seq.MotionLength = m => ca.HasAnimation(m) ? (float)ca.GetAnimation(m).Length * ObjectSequencer.FramesPerSecond : null;
+            o.Seq.MotionLength = m => ca.HasAnimation(m) ? SourceLength(ca.GetAnimation(m)) * ObjectSequencer.FramesPerSecond : null;
     }
 
     // Segue o movimento (MOTIONSET) da sequência, que continua nas ações sem MOTIONSET (DELAY01 depois do WALK01).
