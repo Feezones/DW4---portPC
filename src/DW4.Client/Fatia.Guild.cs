@@ -166,7 +166,7 @@ public partial class Fatia
     static string RankName(int rank) => rank switch { 1 => "Mestre", 2 => "Sub-mestre", 3 => "Membro", _ => "Novato" };
 
     static string StageName(string stage) => stage.StartsWith("stagml", StringComparison.OrdinalIgnoreCase) ? "na cidade"
-        : stage.Length > 0 ? $"em {stage}" : "";
+        : stage.Length > 0 ? "em missão" : "";
 
     // Histórico: "unix TAB texto", com {item:tabela:linha} trocado pelo nome do item.
     string GuildLogLine(string line)
@@ -257,6 +257,8 @@ public partial class Fatia
     }
 
     // Plaquinha colorida (cargo, bônus, membros).
+    static Button GuildRed(Button b) { GuildStyle(b, accent: new Color(1f, 0.45f, 0.45f)); b.AddThemeColorOverride("font_color", new Color(1f, 0.7f, 0.7f)); return b; }
+
     static PanelContainer GuildChip(string text, Color color, int size)
     {
         var chip = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
@@ -344,9 +346,17 @@ public partial class Fatia
 
         Label Text(string s, int size, Color? color = null, HorizontalAlignment align = HorizontalAlignment.Left)
         {
-            var l = new Label { Text = s, HorizontalAlignment = align, AutowrapMode = TextServer.AutowrapMode.WordSmart };
+            var l = new Label { Text = s, HorizontalAlignment = align, AutowrapMode = TextServer.AutowrapMode.Off };
             l.AddThemeFontSizeOverride("font_size", size);
             if (color is { } c) l.AddThemeColorOverride("font_color", c);
+            return l;
+        }
+        // Parágrafo: quebra a linha (só dentro de coluna; numa linha deitada sem ExpandFill ficaria com largura 0).
+        Label Para(string s, int size, Color? color = null)
+        {
+            var l = Text(s, size, color);
+            l.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            l.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
             return l;
         }
         Button Btn(string name, string label, bool enabled, Action act)
@@ -388,16 +398,21 @@ public partial class Fatia
             // ---- sem guilda: criar ----
             box.AddChild(Text("GUILDA", font + 8, QuickGold, HorizontalAlignment.Center));
             Line(box);
-            box.AddChild(Text("Você não está em uma guilda. Crie uma (você vira o Mestre) ou peça um convite a um Mestre ou Sub-mestre: " +
+            box.AddChild(Para("Você não está em uma guilda. Crie uma (você vira o Mestre) ou peça um convite a um Mestre ou Sub-mestre: " +
                 "perto da pessoa, use Interagir.", small, dim));
             var nameRow = Row(box);
             nameRow.AddChild(Text("Nome", font));
+            ((Label)nameRow.GetChild(0)).CustomMinimumSize = new Vector2(touch ? 110 : 80, 0);
             var name = Field("nome", "", "3 a 16 letras ou números", 16);
             nameRow.AddChild(name);
             var tagRow = Row(box);
             tagRow.AddChild(Text("Tag", font));
-            var tag = Field("tag", "", "2 a 4 letras (aparece na placa)", 4, touch ? 300 : 240);
+            ((Label)tagRow.GetChild(0)).CustomMinimumSize = new Vector2(touch ? 110 : 80, 0);
+            var tag = Field("tag", "", "ex.: TBR", 4, touch ? 220 : 170);
             tagRow.AddChild(tag);
+            var tagHint = Text("2 a 4 letras ou números; aparece na placa como <TAG>", small, dim);
+            tagHint.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+            tagRow.AddChild(tagHint);
             var create = Btn("criar", _guildBusy ? "Criando..." : "Criar guilda", true, () =>
                 GuildAsk(new GuildCmd("create", Text: name.Text.Trim(), Text2: tag.Text.Trim()), busy: true));
             name.TextSubmitted += _ => tag.GrabFocus();
@@ -448,7 +463,7 @@ public partial class Fatia
             st.BorderWidthLeft = 4;
             st.BorderColor = GuildBlue;
             notice.AddThemeStyleboxOverride("panel", st);
-            notice.AddChild(Text("Aviso: " + g.Notice, small, GuildBlue));
+            notice.AddChild(Para("Aviso: " + g.Notice, small, GuildBlue));
             box.AddChild(notice);
         }
 
@@ -486,9 +501,9 @@ public partial class Fatia
                 top.AddThemeConstantOverride("separation", 10);
                 top.AddChild(Text(m.Name, font + 6, QuickGold));
                 top.AddChild(GuildChip(RankName(m.Rank), RankColor(m.Rank), small));
-                cardCol.AddChild(Text((online ? "● Online " + StageName(m.Stage) + (m.Level > 0 ? $" · nível {m.Level}" : "") : "● " + LastSeen(m.LastSeen)),
+                cardCol.AddChild(Para((online ? "Online " + StageName(m.Stage) + (m.Level > 0 ? $" · nível {m.Level}" : "") : LastSeen(m.LastSeen)),
                     small, online ? GuildOnline : dim));
-                cardCol.AddChild(Text($"Contribuição para a guilda: {m.Contribution} XP", small, dim));
+                cardCol.AddChild(Para($"Contribuição para a guilda: {m.Contribution} XP", small, dim));
                 var acts = new VBoxContainer();
                 acts.AddThemeConstantOverride("separation", 6);
                 box.AddChild(acts);
@@ -515,14 +530,14 @@ public partial class Fatia
                     if (myRank == 1)
                         acts.AddChild(Btn("mestre", "Passar o cargo de Mestre", true, () => GuildConfirm($"Passar o cargo de Mestre para {m.Name}? Você vira Sub-mestre.",
                             "Passar", () => GuildAsk(new GuildCmd("transfer", Account: m.Account)))));
-                    acts.AddChild(Btn("tirar", "Tirar da guilda", true, () => GuildConfirm($"Tirar {m.Name} da guilda?", "Tirar",
-                        () => GuildAsk(new GuildCmd("kick", Account: m.Account)))));
+                    acts.AddChild(GuildRed(Btn("tirar", "Tirar da guilda", true, () => GuildConfirm($"Tirar {m.Name} da guilda?", "Tirar",
+                        () => GuildAsk(new GuildCmd("kick", Account: m.Account))))));
                 }
                 if (self)
-                    acts.AddChild(Btn("sair", "Sair da guilda", true, () => GuildConfirm(
+                    acts.AddChild(GuildRed(Btn("sair", "Sair da guilda", true, () => GuildConfirm(
                         myRank == 1 && g.Members.Length > 1 ? "O Mestre só sai depois de passar o cargo. Passe o Mestre a outro membro primeiro." :
                         myRank == 1 ? $"Sair e acabar com a guilda {g.Name}? O baú some junto." : $"Sair da guilda {g.Name}?",
-                        "Sair", () => GuildAsk(new GuildCmd("leave")))));
+                        "Sair", () => GuildAsk(new GuildCmd("leave"))))));
                 var back = Btn("voltar", "Voltar", true, () => { _guildPage = "membros"; RefreshGuild(); });
                 box.AddChild(back);
                 firstFocus ??= acts.GetChildren().OfType<Button>().FirstOrDefault(b => !b.Disabled) ?? back;
@@ -530,7 +545,7 @@ public partial class Fatia
             }
             case "aviso":
             {
-                box.AddChild(Text("Aviso da guilda (aparece para todos ao entrar no jogo):", small, dim));
+                box.AddChild(Para("Aviso da guilda (aparece para todos ao entrar no jogo):", small, dim));
                 var notice = Field("aviso_campo", g.Notice, "Até 120 letras", 120);
                 box.AddChild(notice);
                 var save = Btn("gravar", "Gravar aviso", true, () => { GuildAsk(new GuildCmd("notice", Text: notice.Text)); _guildPage = "membros"; });
@@ -546,7 +561,7 @@ public partial class Fatia
             }
             case "convidar":
             {
-                box.AddChild(Text("Convidar pelo nome de um jogador online (o personagem ou o Tamer). Perto da pessoa, também dá pelo Interagir.", small, dim));
+                box.AddChild(Para("Convidar pelo nome de um jogador online (o personagem ou o Tamer). Perto da pessoa, também dá pelo Interagir.", small, dim));
                 var who = Field("convidar_campo", "", "Nome do jogador", 32);
                 box.AddChild(who);
                 var send = Btn("enviar", "Enviar convite", true, () => { GuildAsk(new GuildCmd("invite", Text: who.Text.Trim())); _guildPage = "membros"; RefreshGuild(); });
@@ -604,7 +619,7 @@ public partial class Fatia
                     list.AddChild(b);
                     firstFocus ??= items ? b : null;
                 }
-                if (!items) list.AddChild(Text("Novatos ainda não tiram itens do baú. Peça ao Mestre para mudar seu cargo.", small, dim));
+                if (!items) list.AddChild(Para("Novatos ainda não tiram itens do baú. Peça ao Mestre para mudar seu cargo.", small, dim));
                 var put = Btn("guardar", "+ Guardar itens da pasta", true, () => { _guildPage = "guardar"; RefreshGuild(); });
                 GuildStyle(put, accent: QuickGold);
                 box.AddChild(put);
@@ -613,7 +628,7 @@ public partial class Fatia
             }
             case "guardar":
             {
-                box.AddChild(Text("Escolha o que guardar (toque / clique guarda 1). Itens equipados e de enredo não vão.", small, dim));
+                box.AddChild(Para("Escolha o que guardar (toque / clique guarda 1). Itens equipados e de enredo não vão.", small, dim));
                 var list = new VBoxContainer();
                 list.AddThemeConstantOverride("separation", 4);
                 box.AddChild(Scroll(list, listH));
@@ -660,7 +675,7 @@ public partial class Fatia
                         hr.AddChild(when);
                         full = full[13..];
                     }
-                    var what = Text(full, small);
+                    var what = Para(full, small);
                     what.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
                     hr.AddChild(what);
                     list.AddChild(rowP);
@@ -673,7 +688,7 @@ public partial class Fatia
                 var list = new VBoxContainer();
                 list.AddThemeConstantOverride("separation", 4);
                 int online = g.Members.Count(m => m.PlayerId >= 0);
-                box.AddChild(Text($"{online} de {g.Members.Length} online · {(touch ? "toque" : "clique")} num membro para ver as ações", small, dim));
+                box.AddChild(Para($"{online} de {g.Members.Length} online · {(touch ? "toque" : "clique")} num membro para ver as ações", small, dim));
                 box.AddChild(Scroll(list, listH - (manager ? rowH : 0)));
                 foreach (var m in g.Members.OrderBy(m => m.PlayerId >= 0 ? 0 : 1).ThenBy(m => m.Rank).ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase))
                 {
@@ -686,8 +701,10 @@ public partial class Fatia
                         RefreshGuild();
                     });
                     var h = RowBox(b);
-                    var dot = Text(on ? "●" : "●", font, on ? GuildOnline : new Color(0.4f, 0.4f, 0.5f));
-                    dot.VerticalAlignment = VerticalAlignment.Center;
+                    var dot = new Panel { CustomMinimumSize = new Vector2(touch ? 16 : 12, touch ? 16 : 12), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+                        MouseFilter = Control.MouseFilterEnum.Ignore };
+                    var dotColor = on ? GuildOnline : new Color(0.4f, 0.4f, 0.5f);
+                    dot.AddThemeStyleboxOverride("panel", GuildBox(dotColor, dotColor, 0, 8, 0));
                     h.AddChild(dot);
                     var who = Text(m.Name + (m.PlayerId == Online.MyId && on ? "  (você)" : ""), font, on ? Colors.White : dim);
                     who.VerticalAlignment = VerticalAlignment.Center;
@@ -714,12 +731,12 @@ public partial class Fatia
                     bottom.AddChild(inv);
                     bottom.AddChild(notice);
                 }
-                var leave = Btn("sair", "Sair da guilda", true, () =>
+                var leave = GuildRed(Btn("sair", "Sair da guilda", true, () =>
                 {
                     _guildMember = g.Members.FirstOrDefault(x => x.PlayerId == Online.MyId)?.Account ?? 0;
                     _guildPage = "membro";
                     RefreshGuild();
-                });
+                }));
                 leave.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
                 bottom.AddChild(leave);
                 break;
@@ -791,7 +808,7 @@ public partial class Fatia
         ]);
     }
 
-    // DEPURAÇÃO (DW4_ABRIR=guilda | guilda-bau | guilda-membro | guilda-criar): janela com uma guilda de exemplo, sem servidor, para
+    // DEPURAÇÃO (DW4_ABRIR=guilda | guilda-bau | guilda-guardar | guilda-membro | guilda-historico | guilda-criar): janela com uma guilda de exemplo, sem servidor, para
     // o DW4_PRINT fotografar no PC e no celular (DW4_TOQUE=1).
     void OpenGuildDemo(string page)
     {
@@ -803,7 +820,11 @@ public partial class Fatia
              new(4, "Agumon", 4, 0, -1, "", 0, DateTimeOffset.Now.AddDays(-3).ToUnixTimeSeconds())],
             [new("conItem", 0, 12), new("weapon", 5, 1), new("armor1", 2, 2)]));
         _guildOpen = true;
-        _guildPage = page switch { "bau" => "bau", "membro" => "membro", "criar" => "criar", _ => "membros" };
+        _guildPage = page switch { "bau" => "bau", "membro" => "membro", "criar" => "criar", "historico" => "historico", "guardar" => "guardar", _ => "membros" };
+        long now = DateTimeOffset.Now.ToUnixTimeSeconds();
+        _guildLog = [$"{now - 300}\tRenamon guardou 2x {{item:conItem:0}} no baú.", $"{now - 1800}\tA guilda chegou ao nível 3!",
+            $"{now - 3600}\t{PlayerName} mudou o aviso.", $"{now - 7200}\tPatamon agora é Membro.", $"{now - 86400}\tAgumon entrou na guilda.",
+            $"{now - 90000}\t{PlayerName} criou a guilda Tamers BR."];
         _guildMember = 2;
         RefreshGuild();
     }
