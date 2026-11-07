@@ -70,7 +70,7 @@ Três peças, cada uma com um papel:
 | EXP: cada membro vivo na fase recebe a parte do P2EEXPUP (sozinho 100%; em 4, quem mata 80% e os outros 40%) | FATO | `PartyRewards.Exp` |
 | BIT: quantia como no original (nível e BITRITSU de quem pegou), dividida igual entre os membros vivos na fase; o resto fica com quem pegou | port (no original vai inteiro para quem pega) | `PartyRewards.Bit` |
 | Chat: canais geral, grupo e privada; `/g`, `/p`, `/w nome`, `/r`; prefixos `[Grupo]`, `[De X]`, `[Para X]` | port | `ChatChannel`, `ChatCommand`, `ChatFlood` |
-| F perto de outro jogador (até 128 unidades): convidar (só o líder, só amigos; não se cheio ou em outro grupo), adicionar amigo (não se já é ou já pediu), trocar | port | `PlayerInteraction`, ação `interagir` |
+| G perto de outro jogador (até 128 unidades; era o F até a 0.6.22; Y no controle, botão JOGADOR no celular): convidar (só o líder, só amigos; não se cheio ou em outro grupo), adicionar amigo (não se já é ou já pediu), trocar | port | `PlayerInteraction`, ação `interagir` |
 | Troca: até 8 itens + BIT de cada lado; travar, depois confirmar; mudar algo destrava os dois; tudo ou nada, conferindo posse e espaço na hora; itens de enredo (impItem) fora | port | `TradeSession` |
 
 ## Andamento

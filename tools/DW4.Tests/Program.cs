@@ -252,6 +252,7 @@ Test("Online: menu do F (jogador mais perto e opções conforme grupo e amizade)
     True(o[0].Enabled && o[2].Enabled, "amigo e sem grupo: convida e troca");
     var b = new InputBindings();
     True(b.Get(InputBindings.Keyboard, "interagir").SequenceEqual(new[] { "tecla:G" }), "G no teclado (o F é da 4ª técnica)");
+    True(b.Get(InputBindings.Pad, "interagir").SequenceEqual(new[] { "botao:3" }), "Y no controle");
 });
 
 Test("Online: troca de itens (travar, confirmar, tudo ou nada, mudança destrava, impItem fora)", () =>
@@ -764,12 +765,21 @@ Test("Port: mapa de controles (padrão, salvar e carregar no config, conflito, r
     True(old.Bindings.Get(InputBindings.Keyboard, "tecnica").SequenceEqual(new[] { "tecla:K" }) && old.Bindings.Get(InputBindings.Keyboard, "guarda").SequenceEqual(new[] { "mouse:2", "tecla:L" })
         && old.Bindings.Get(InputBindings.Keyboard, "tecnica1").Count == 0 && old.Bindings.Get(InputBindings.Keyboard, "tecnica2").SequenceEqual(new[] { "tecla:Q" })
         && old.Bindings.Get(InputBindings.Keyboard, "tecnica3").SequenceEqual(new[] { "tecla:R" })
-        && old.Bindings.Get(InputBindings.Keyboard, "item1").SequenceEqual(new[] { "tecla:Key1" }) && old.ControlsVersion == 3, "migração dos padrões do teclado");
+        && old.Bindings.Get(InputBindings.Keyboard, "item1").SequenceEqual(new[] { "tecla:Key1" }) && old.ControlsVersion == 4, "migração dos padrões do teclado");
     // Config da 0.6.22 (versão 2, padrões de 2026-11-02): técnicas diretas vão para Q E R F C V, a escolhida fica no K, interagir no G.
     var mig = PortConfig.FromIni("[jogo]\ncontroles=2\n[teclado]\ntecnica=\"tecla:E,tecla:K\"\ninteragir=\"tecla:F\"\n"
         + string.Concat(Enumerable.Range(1, 6).Select(i => $"tecnica{i}=\"\"\n"))).Bindings;
     Equal("Q,E,R,F,C,V", string.Join(",", Enumerable.Range(1, 6).Select(i => InputBindings.Describe(mig.Get(InputBindings.Keyboard, $"tecnica{i}").FirstOrDefault() ?? "-"))), "técnicas diretas migradas");
     True(mig.Get(InputBindings.Keyboard, "tecnica").SequenceEqual(new[] { "tecla:K" }) && mig.Get(InputBindings.Keyboard, "interagir").SequenceEqual(new[] { "tecla:G" }), "escolhida no K e interagir no G");
+    // Config da 0.6.28 (versão 3): interagir sem botão no controle ganha o Y; se o jogador pôs o Y em outra ação, fica sem.
+    var fresh0 = new InputBindings();
+    var pad3 = PortConfig.FromIni("[jogo]\ncontroles=3\n[controle]\ninteragir=\"\"\n").Bindings;
+    True(pad3.Get(InputBindings.Pad, "interagir").SequenceEqual(new[] { "botao:3" }), "interagir ganha o Y no controle");
+    var pad3b = PortConfig.FromIni("[jogo]\ncontroles=3\n[controle]\ninteragir=\"\"\npulo=\"botao:3\"\n").Bindings;
+    True(pad3b.Get(InputBindings.Pad, "interagir").Count == 0 && pad3b.Get(InputBindings.Pad, "pulo").SequenceEqual(new[] { "botao:3" }), "Y do jogador não é roubado");
+    foreach (var a in InputBindings.Actions)
+        foreach (var k in fresh0.Get(InputBindings.Pad, a.Id))
+            True(fresh0.Conflicts(InputBindings.Pad, k, a.Id).Count == 0, $"{a.Id} sem conflito no controle em {k}");
     // Padrão novo: nenhuma ação do jogo divide tecla com outra.
     var fresh = new InputBindings();
     foreach (var a in InputBindings.Actions)

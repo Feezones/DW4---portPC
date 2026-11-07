@@ -57,7 +57,8 @@ public sealed class InputBindings
         // pela tradução dos ícones da fonte).
         ["item1"] = [], ["item2"] = [], ["item3"] = [], ["item4"] = [], ["item5"] = [], ["itens"] = ["botao:1"],
         ["status"] = ["botao:6"], ["confirmar"] = ["botao:0"], ["cancelar"] = ["botao:1"],
-        ["chat"] = [], ["interagir"] = [], ["pausa"] = ["botao:4"],
+        // Interagir com jogador no Y (2026-11-07: estava sem botão no controle; o Y não tem outra ação no port).
+        ["chat"] = [], ["interagir"] = ["botao:3"], ["pausa"] = ["botao:4"],
         ["salvar_rapido"] = [], ["acelerar"] = ["eixo:5+"],
     };
 
@@ -142,6 +143,17 @@ public sealed class InputBindings
             var keys = KeyboardDefaults[action].Where(k => Conflicts(Keyboard, k, action).Count == 0).ToList();
             map[action] = keys;
         }
+    }
+
+    /// <summary>
+    /// Migração única de 2026-11-07: "interagir com jogador" ganha o Y no controle (antes ficava sem botão). Só se ainda estava
+    /// vazio e o Y não está em outra ação do jogo.
+    /// </summary>
+    public void MigratePad4()
+    {
+        var map = _maps[Pad];
+        if (map.TryGetValue("interagir", out var cur) && cur.Count > 0) return;
+        if (Conflicts(Pad, "botao:3", "interagir").Count == 0) map["interagir"] = ["botao:3"];
     }
 
     /// <summary>Linhas "id=\"a,b\"" de um aparelho, para a seção dele no config.cfg.</summary>

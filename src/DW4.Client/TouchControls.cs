@@ -31,6 +31,10 @@ public partial class TouchControls : CanvasLayer
         new("chat", "CHAT", -90, 95, 46),
     ];
 
+    // Interagir com outro jogador (amizade/grupo, Fatia.Interact.cs): só aparece com alguém perto (2026-11-07; antes o celular
+    // não tinha como abrir esse menu). Fica na fileira de cima, à esquerda do ITENS.
+    static readonly Pad Interact = new("interagir", "JOGADOR", -330, 95, 46);
+
     const string Gear = "⚙";
     // Com uma janela aberta (menu, itens, chat, loja, pausa) só fica este: manda o Esc, que fecha a janela como no PC.
     static readonly Pad Close = new(Esc, "FECHAR", -90, 95, 46);
@@ -40,6 +44,8 @@ public partial class TouchControls : CanvasLayer
     public Func<bool>? Blocked;
     /// <summary>Ponto da tela em cima de algo da interface que se toca (atalhos de itens): o analógico não começa ali.</summary>
     public Func<Vector2, bool>? UiAt;
+    /// <summary>Outro jogador perto: mostra o botão JOGADOR (Fatia liga).</summary>
+    public Func<bool>? Near;
 
     const float StickRadius = 120;
 
@@ -73,6 +79,7 @@ public partial class TouchControls : CanvasLayer
         bool blocked = Blocked?.Invoke() == true;
         if (blocked != _surface.BlockedMode) { _surface.ReleaseAll(); _surface.BlockedMode = blocked; }
         _surface.UiAt = UiAt;
+        _surface.Near = Near?.Invoke() == true;
         _surface.QueueRedraw();
     }
 
@@ -87,7 +94,8 @@ public partial class TouchControls : CanvasLayer
         readonly Dictionary<int, string> _held = []; // dedo → ação do botão
         public bool BlockedMode;
         public Func<Vector2, bool>? UiAt;
-        Pad[] Current => BlockedMode ? [Close] : Pads;
+        public bool Near;
+        Pad[] Current => BlockedMode ? [Close] : Near ? [.. Pads, Interact] : Pads;
 
         // Aperta/solta como um evento de verdade (InputEventAction): o jogo pergunta tanto "está apertado" (Input) quanto
         // "acabou de apertar" (o evento, ex.: MENU, DEF, CHAT, ITENS); o Input.ActionPress só fazia o primeiro.

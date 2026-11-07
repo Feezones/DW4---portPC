@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using DW4.Gameplay;
 using DW4.Gameplay.Online;
 using DW4.Net;
@@ -8,10 +9,11 @@ using Godot;
 namespace DW4.Client;
 
 /// <summary>
-/// Menu do F (DECISÃO DO PORT, pedido do responsável em 2026-11-02; ADR 0003): perto de outro jogador, F pergunta ao servidor a
-/// relação (amigo, pedido, party, pela DMO.API) e abre o menu de <see cref="PlayerInteraction.Options(InteractView)"/>:
+/// Menu de interagir (DECISÃO DO PORT, pedido do responsável em 2026-11-02; ADR 0003; era o F até a 0.6.22, G desde a 0.6.23,
+/// Y no controle e botão JOGADOR no celular desde 2026-11-07): perto de outro jogador, a tecla pergunta ao servidor a relação (amigo, pedido, party, pela DMO.API) e abre o menu de <see cref="PlayerInteraction.Options(InteractView)"/>:
 /// convidar para o grupo, adicionar amigo e trocar itens. Quem recebe um pedido de amizade ou um convite de grupo vê uma
-/// pergunta com aceitar e recusar. Mouse ou cima/baixo e Enter; Esc ou F fecha.
+/// pergunta com aceitar e recusar. Mouse/toque ou cima/baixo e Enter; Esc ou a mesma tecla fecha.
+/// Perto de alguém aparece a dica "[G] Interagir com Fulano" (com a tecla que estiver no mapa de controles).
 /// A troca fica desligada até os saves irem para o servidor (sem isso, item duplicado vira trapaça).
 /// </summary>
 public partial class Fatia
@@ -33,6 +35,21 @@ public partial class Fatia
         if (!PortInput.Pressed(e, "interagir")) return false;
         if (_menuOpen || ShopOpen || SubWindowOpen || _choice >= 0 || InCutscene || !_playerCtrl) return false;
         if (Online.State != Online.Status.Online) { Toast("Você não está online."); return true; }
+        int best = NearestPlayer();
+        if (best < 0 || !Online.Remotes.TryGetValue(best, out var r)) { Toast("Chegue mais perto de outro jogador."); return true; }
+        double now = Time.GetTicksMsec() / 1000.0;
+        if (now - _interactAskedAt < 0.5) return true;
+        _interactAskedAt = now;
+        _interactTarget = best;
+        _interactName = r.Character;
+        Online.Interact(best, "relation");
+        return true;
+    }
+
+    // Jogador online mais perto dentro do alcance do menu (PlayerInteraction.Range), ou -1.
+    int NearestPlayer()
+    {
+        if (_avatars.Count == 0) return -1;
         var me = _player.GlobalPosition;
         int best = -1;
         float bestD = PlayerInteraction.Range * PlayerInteraction.Range;
@@ -42,14 +59,48 @@ public partial class Fatia
             float dx = p.X - me.X, dz = p.Z - me.Z, d = dx * dx + dz * dz;
             if (d <= bestD) (bestD, best) = (d, id);
         }
-        if (best < 0 || !Online.Remotes.TryGetValue(best, out var r)) { Toast("Chegue mais perto de outro jogador."); return true; }
-        double now = Time.GetTicksMsec() / 1000.0;
-        if (now - _interactAskedAt < 0.5) return true;
-        _interactAskedAt = now;
-        _interactTarget = best;
-        _interactName = r.Character;
-        Online.Interact(best, "relation");
-        return true;
+        return best;
+    }
+
+    Label? _interactHint;
+    int _interactHintTarget = -1;
+
+    /// <summary>Tem alguém perto para o botão JOGADOR do celular (TouchControls).</summary>
+    bool InteractAvailable => _interactHintTarget >= 0;
+
+    // Por quadro: dica de interagir quando há outro jogador perto e nada aberto (no alto, logo abaixo dos avisos do Toast, longe das
+    // barras do pé e dos botões do celular).
+    void TickInteractHint()
+    {
+        bool can = Online.State == Online.Status.Online && _playerCtrl && !_interactOpen && !_menuOpen && !ShopOpen && !SubWindowOpen
+            && _choice < 0 && !InCutscene && !ChatOpen && !TalkWindowOpen && !_spectating && (_pf == null || _hp > 0);
+        int target = can ? NearestPlayer() : -1;
+        if (target >= 0 && !Online.Remotes.ContainsKey(target)) target = -1;
+        _interactHintTarget = target;
+        if (target < 0) { if (_interactHint != null) _interactHint.Visible = false; return; }
+        if (_interactHint == null)
+        {
+            var layer = new CanvasLayer { Layer = 15 };
+            _interactHint = new Label { AnchorLeft = 0.5f, AnchorRight = 0.5f, OffsetLeft = -360, OffsetRight = 360,
+                OffsetTop = 108, OffsetBottom = 140, HorizontalAlignment = HorizontalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore };
+            _interactHint.AddThemeFontSizeOverride("font_size", 22);
+            _interactHint.AddThemeConstantOverride("outline_size", 7);
+            _interactHint.AddThemeColorOverride("font_outline_color", new Color(0, 0, 0));
+            _interactHint.AddThemeColorOverride("font_color", QuickGold);
+            layer.AddChild(_interactHint);
+            AddChild(layer);
+            UseGameFont(_interactHint);
+        }
+        string name = Online.Remotes[target].Character;
+        _interactHint.Text = Touch && !_usingPad ? $"Toque em JOGADOR para interagir com {name}" : $"[{InteractKeyName()}] Interagir com {name}";
+        _interactHint.Visible = true;
+    }
+
+    // Tecla de "interagir" do aparelho em uso (padrão: G no teclado, Y no controle).
+    string InteractKeyName()
+    {
+        var device = _usingPad ? InputBindings.Pad : InputBindings.Keyboard;
+        return PortSettings.Current.Bindings.Get(device, "interagir").FirstOrDefault() is { } b ? InputBindings.Describe(b) : "sem tecla";
     }
 
     void OnInteractResult(InteractResult r)
