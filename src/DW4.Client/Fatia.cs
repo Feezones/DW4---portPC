@@ -381,6 +381,8 @@ public partial class Fatia : Node3D
             if (_tick < 3) input = new Vector2(0, 0);
         }
         if (_bot) BotInput(ref dir, ref attackDown);
+        // DEPURAÇÃO: DW4_PULAR=1 faz o bot pular a cada 40 quadros (conferir pulo entre plataformas, ex.: andaimes da dng103f2).
+        if (_bot && OS.GetEnvironment("DW4_PULAR") == "1") jumpDown = _tick % 40 < 3;
         // Decisão do port PC: sem foco na janela, nada do controle/teclado move o jogador (controle pareado dava entrada fantasma).
         if (!_demo && !_bot && (!_hasFocus || ChatOpen)) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; }
         if (_pf != null && _hp <= 0) { input = Vector2.Zero; dir = Vector3.Zero; attackDown = jumpDown = false; } // caído: Fatia.Death.cs volta ao lobby

@@ -2952,6 +2952,7 @@ if (args.Length == 1)
     {
         True(RideLand.IsVehicle(0x1405) && RideLand.IsVehicle(0x1403), "barco e blindado");
         True(!RideLand.IsVehicle(0x402) && !RideLand.IsVehicle(0x401), "g_box e andaime não");
+        True(RideLand.IsFloor(0x401) && !RideLand.IsFloor(0x402) && !RideLand.IsFloor(0x1405), "andaime é chão parado; g_box e barco não");
         var min = new System.Numerics.Vector3(-17, 0, -23);
         var max = new System.Numerics.Vector3(17, 100, 23);
         True(RideLand.Inside(new(0, 0, 0), min, max), "no meio do chão");
