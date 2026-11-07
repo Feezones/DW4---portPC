@@ -227,7 +227,8 @@ public partial class Fatia : Node3D
                 if (_actions.Count == 0) _problems.Add("o *_seq.json não tem ações: regere com o igb-seq atual");
                 var sequences = SeqCommand.LoadAll(json);
                 _playerBody = HitBody.Load(json);
-                _runner = new SequenceRunner(sequences, AnimFrames);
+                // Caixas de golpe do jogador em quadros de 60 Hz (SequenceRunner.HitBoxFrameScale).
+                _runner = new SequenceRunner(sequences, AnimFrames) { HitBoxFrameScale = 0.5f };
                 SetupJump(_runner);
                 // Parado e andando: pelo bloco da arma equipada (Fatia.Weapon.cs, depois do LoadCombat).
             }

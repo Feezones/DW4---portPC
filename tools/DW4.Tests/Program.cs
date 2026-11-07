@@ -699,6 +699,34 @@ Test("Port: vaga gravada no meio do tutorial volta ao começo dele (FLG 503 desl
     True(other.FlagOn(503) == 1, "flag fica fora do tutorial");
 });
 
+Test("Port: caixas de golpe do jogador em quadros de 60 Hz (bloco \"dual\" da Grand Blade: VATCD1 de 8 quadros, caixas 10..14)", () =>
+{
+    var json = """
+    {"sequences": {"SQ_ATCK1": [
+      {"k": "LABEL", "v": ["dual"]},
+      {"k": "HITBOX", "v": ["Set", 10000, 10, 2, [-9, 4, 6], [8, 8, 8]]},
+      {"k": "HITBOX", "v": ["Set", 10000, 12, 2, [0, 4, 10], [8, 8, 8]]},
+      {"k": "HITBOX", "v": ["Set", 10000, 14, 2, [9, 4, 6], [8, 8, 8]]},
+      {"k": "ACTION", "v": ["VATCD1"]},
+      {"k": "WCHECK", "v": ["Action"]}
+    ]}}
+    """;
+    int Active(float scale)
+    {
+        var r = new SequenceRunner(SeqCommand.LoadAll(json), a => a == "VATCD1" ? 8f : null) { HitBoxFrameScale = scale };
+        True(r.Start("SQ_ATCK1", "dual"), "SQ_ATCK1/dual não começou");
+        var seen = new HashSet<float>();
+        for (int i = 0; i < 40 && r.Running; i++)
+        {
+            foreach (var h in r.ActiveHitBoxes().Where(h => h.Type == 10000)) seen.Add(h.Position.X);
+            r.Tick(1f / 60, false);
+        }
+        return seen.Count;
+    }
+    Equal(0, Active(1f), "caixas lidas a 30 Hz (o erro: todas depois do fim da ação)");
+    Equal(3, Active(0.5f), "caixas lidas a 60 Hz");
+});
+
 Test("Port: cursor do mouse (estilo e tamanho) volta do config e respeita a faixa", () =>
 {
     var b = PortConfig.FromIni(new PortConfig { CursorStyle = 2, CursorSize = 1.5f }.ToIni());
