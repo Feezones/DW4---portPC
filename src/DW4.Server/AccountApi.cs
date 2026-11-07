@@ -9,8 +9,8 @@ public interface IAccountApi
 {
     /// <summary>Resgata o ticket do launcher; null se não vale.</summary>
     Task<Identity?> RedeemAsync(string ticket, string ip);
-    /// <summary>Heartbeat de presença ("no DW4" para os amigos). Devolve a party atual (id) ou null.</summary>
-    Task<string?> PresenceAsync(long accountId, bool online);
+    /// <summary>Heartbeat de presença ("no DW4" para os amigos). Devolve a party atual (id e conta do líder) ou null.</summary>
+    Task<PartyInfo?> PresenceAsync(long accountId, bool online);
     /// <summary>Menu do F (api/dw4/social): a ação em nome de <paramref name="me"/> sobre <paramref name="target"/>.</summary>
     Task<SocialReply> SocialAsync(Identity me, string action, Identity target, string inviteId);
     /// <summary>Vagas ocupadas da conta (api/dw4/characters): número da vaga e o JSON do save.</summary>
@@ -19,6 +19,9 @@ public interface IAccountApi
     Task SaveCharacterAsync(long accountId, int slot, string name, string json);
     Task DeleteCharacterAsync(long accountId, int slot);
 }
+
+/// <summary>Party da conta pela DMO.API: id e a conta do líder (0 = a resposta não disse).</summary>
+public sealed record PartyInfo(string Id, long LeaderAccountId);
 
 /// <summary>Resposta de api/dw4/social já do jeito do <see cref="InteractResult"/>.</summary>
 public sealed record SocialReply(bool Ok, string Message, string Relation = "", bool HasParty = false, bool AmLeader = false,
@@ -41,12 +44,25 @@ public sealed class DmoApi(Uri baseUri, string serviceKey) : IAccountApi
         return new Identity(r.GetProperty("accountId").GetInt64(), tamer, PartyId(r), hasTamer);
     }
 
-    public async Task<string?> PresenceAsync(long accountId, bool online)
+    public async Task<PartyInfo?> PresenceAsync(long accountId, bool online)
     {
         using var resp = await _http.PostAsJsonAsync("api/dw4/presence", new { accountId, online });
         if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"api/dw4/presence respondeu {(int)resp.StatusCode}");
         using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-        return PartyId(doc.RootElement);
+        return ParseParty(doc.RootElement);
+    }
+
+    /// <summary>{ party: { id, members: [{ accountId, isLeader }] } } (members com accountId: a API manda para o serviço).</summary>
+    public static PartyInfo? ParseParty(JsonElement r)
+    {
+        if (PartyId(r) is not { } id) return null;
+        long leader = 0;
+        if (r.GetProperty("party").TryGetProperty("members", out var ms) && ms.ValueKind == JsonValueKind.Array)
+            foreach (var m in ms.EnumerateArray())
+                if (m.TryGetProperty("isLeader", out var l) && l.ValueKind == JsonValueKind.True
+                    && m.TryGetProperty("accountId", out var a) && a.ValueKind == JsonValueKind.Number)
+                    leader = a.GetInt64();
+        return new PartyInfo(id, leader);
     }
 
     public async Task<SocialReply> SocialAsync(Identity me, string action, Identity target, string inviteId)
@@ -127,12 +143,13 @@ public sealed class DevApi : IAccountApi
         Task.FromResult(ticket.StartsWith("dev:", StringComparison.Ordinal) && ticket.Length > 4
             ? new Identity((long)(uint)ticket[4..].ToLowerInvariant().GetHashCode() + 1, ticket[4..], null) : null);
 
-    public Task<string?> PresenceAsync(long accountId, bool online)
+    public Task<PartyInfo?> PresenceAsync(long accountId, bool online)
     {
         lock (_lock)
         {
             if (!online) Leave(accountId);
-            return Task.FromResult(_partyOf.GetValueOrDefault(accountId));
+            var party = _partyOf.GetValueOrDefault(accountId);
+            return Task.FromResult(party == null ? null : new PartyInfo(party, _leaderOf.GetValueOrDefault(party)));
         }
     }
 
@@ -160,6 +177,20 @@ public sealed class DevApi : IAccountApi
                     }
                     _partyOf[me.AccountId] = theirs;
                     return Task.FromResult(new SocialReply(true, "", Accepted: true));
+                // Gestão do grupo (mesmas regras do PartyService da DMO.API): só o líder expulsa e passa a liderança.
+                case "party-leave":
+                    if (mine == null) return Task.FromResult(new SocialReply(false, "Você não está em uma party."));
+                    Leave(me.AccountId);
+                    return Task.FromResult(new SocialReply(true, ""));
+                case "party-kick":
+                case "party-promote":
+                    if (mine == null) return Task.FromResult(new SocialReply(false, "Você não está em uma party."));
+                    if (_leaderOf[mine] != me.AccountId) return Task.FromResult(new SocialReply(false, "Só o líder do grupo pode fazer isso."));
+                    if (theirs != mine) return Task.FromResult(new SocialReply(false, $"{target.Tamer} não está no seu grupo."));
+                    if (target.AccountId == me.AccountId) return Task.FromResult(new SocialReply(false, "Você não pode fazer isso consigo mesmo."));
+                    if (action == "party-kick") Leave(target.AccountId);
+                    else _leaderOf[mine] = target.AccountId;
+                    return Task.FromResult(new SocialReply(true, ""));
                 case "friend-request":
                     if (_friends.Contains(Pair(me, target))) return Task.FromResult(new SocialReply(false, $"{target.Tamer} já é seu amigo."));
                     // O outro já tinha pedido: vira amizade na hora (como no launcher), sem pergunta para ele.

@@ -153,7 +153,7 @@ public partial class Fatia : Node3D
     public override void _Ready()
     {
         PortSettings.ApplyLanguage(PortSettings.Current); // a fase pode abrir direto (DW4_FASE), sem passar pelo menu inicial
-        if (Touch) AddChild(new TouchControls { Blocked = () => _menuOpen || ShopOpen || SubWindowOpen || ChatOpen, UiAt = QuickSlotAt, Near = () => InteractAvailable }); // celular: botões na tela (some com o controle Bluetooth)
+        if (Touch) AddChild(new TouchControls { Blocked = () => _menuOpen || ShopOpen || SubWindowOpen || ChatOpen, UiAt = p => QuickSlotAt(p) || PartyHudAt(p), Spectating = () => _spectating && !ChatOpen, Tech = TouchTech, UseTech = TouchUseTech, Near = () => InteractAvailable }); // celular: botões na tela (some com o controle Bluetooth)
         ChooseStage();
         var env = new Godot.Environment { AmbientLightSource = Godot.Environment.AmbientSource.Color, AmbientLightColor = new Color(0.6f, 0.6f, 0.65f), BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black };
         // FATO (stag0102 #621): igFogAttr 60..300 com cor (0,8 0,7 0,8). Fundo na cor da neblina e neblina por profundidade.
@@ -214,10 +214,11 @@ public partial class Fatia : Node3D
         {
             _player.AddChild(_model);
             _anim = FindAll<AnimationPlayer>(_model).FirstOrDefault();
+            // Mesmo corte da amostra que fecha o ciclo usado nos inimigos (Fatia.Enemies TrimWrapSample). FATO (p_metalgaru #861):
+            // katcD03/katcS03/katcA03 (soltura do golpe carregado) terminam com a pose 0 (RotateRoot girado 90° e 17 unidades no
+            // alto); a ação espera o "TurnY" do pulo e a pose ficava parada nela: MetalGarurumon deitado no ar (relato 2026-11-07).
+            if (_anim != null) TrimWrapSamples(_anim);
             CsSkin.TryAttach(_model, PlayerModel, _anim); // teste local, só com DW4_CS_MODELOS
-            if (_anim != null)
-            {
-            }
             var seqFile = SeqFile(PlayerFolder);
             if (seqFile == null) _problems.Add($"falta o *_seq.json de {PlayerModel} em {PlayerFolder} (dw4 igb-seq)");
             else
@@ -227,7 +228,8 @@ public partial class Fatia : Node3D
                 if (_actions.Count == 0) _problems.Add("o *_seq.json não tem ações: regere com o igb-seq atual");
                 var sequences = SeqCommand.LoadAll(json);
                 _playerBody = HitBody.Load(json);
-                _runner = new SequenceRunner(sequences, AnimFrames);
+                // Caixas de golpe do jogador em quadros de 60 Hz (SequenceRunner.HitBoxFrameScale).
+                _runner = new SequenceRunner(sequences, AnimFrames) { HitBoxFrameScale = 0.5f };
                 SetupJump(_runner);
                 // Parado e andando: pelo bloco da arma equipada (Fatia.Weapon.cs, depois do LoadCombat).
             }
@@ -583,7 +585,7 @@ public partial class Fatia : Node3D
     }
 
     float? AnimFrames(string action) => ActionAnimations.Length(_actions, action, motion =>
-        _anim != null && _anim.HasAnimation(motion) ? (float)_anim.GetAnimation(motion).Length * SequenceRunner.FramesPerSecond : null);
+        _anim != null && _anim.HasAnimation(motion) ? SourceLength(_anim.GetAnimation(motion)) * SequenceRunner.FramesPerSecond : null);
 
     // Caixa local (x lateral, y altura, z à frente) no mundo, girada pela direção do personagem.
     // Com o modelo do CS maior (teste local, "golpe" no cs_modelos.json), a caixa de golpe do jogador cresce só no tamanho; a

@@ -32,6 +32,8 @@ public sealed class World
     readonly Dictionary<string, List<int>> _groups = [];
     // Último quadro da party mandado (party → texto do conteúdo), para só mandar quando muda.
     readonly Dictionary<string, string> _rosters = [];
+    // Líder de cada party (party → conta), como a DMO.API disse por último.
+    readonly Dictionary<string, long> _leaders = [];
 
     public int Count => _players.Count;
     public bool IsOnline(int id) => _players.ContainsKey(id);
@@ -82,11 +84,17 @@ public sealed class World
         return res;
     }
 
-    /// <summary>A party da conta mudou (a DMO.API avisa no heartbeat). A visão não muda (é por fase); muda o grupo de combate.</summary>
-    public List<Outgoing> SetParty(int id, string? partyId)
+    /// <summary>
+    /// A party da conta mudou (a DMO.API avisa no heartbeat). A visão não muda (é por fase); muda o grupo de combate.
+    /// <paramref name="leader"/> = conta do líder da party (0 = não sabe): troca de líder manda o quadro de novo.
+    /// </summary>
+    public List<Outgoing> SetParty(int id, string? partyId, long leader = 0)
     {
         var res = new List<Outgoing>();
-        if (!_players.TryGetValue(id, out var p) || p.Who.PartyId == partyId) return res;
+        if (!_players.TryGetValue(id, out var p)) return res;
+        bool newLeader = partyId is { Length: > 0 } && leader != 0 && _leaders.GetValueOrDefault(partyId) != leader;
+        if (newLeader) _leaders[partyId!] = leader;
+        if (p.Who.PartyId == partyId) { if (newLeader) Roster(partyId, res); return res; }
         var old = p.Who.PartyId;
         p.Who = p.Who with { PartyId = partyId };
         Roster(old, res);
@@ -142,9 +150,10 @@ public sealed class World
     {
         if (party is not { Length: > 0 }) return;
         var members = _players.Values.Where(m => m.Who.PartyId == party && m.State != null).OrderBy(m => m.Id).ToList();
-        if (members.Count == 0) { _rosters.Remove(party); return; }
+        if (members.Count == 0) { _rosters.Remove(party); _leaders.Remove(party); return; }
+        long leader = _leaders.GetValueOrDefault(party);
         var entries = members.Take(Protocol.MaxGroup).Select(m => new PartyEntry(m.Id, m.Character, m.State!.Model, m.State.Level,
-            m.State.Hp, m.State.MaxHp, m.State.Mp, m.State.MaxMp, m.State.Stage.ToLowerInvariant())).ToArray();
+            m.State.Hp, m.State.MaxHp, m.State.Mp, m.State.MaxMp, m.State.Stage.ToLowerInvariant(), m.Who.AccountId == leader)).ToArray();
         var key = string.Join("|", entries.Select(e => e.ToString()));
         if (_rosters.TryGetValue(party, out var last) && last == key) return;
         _rosters[party] = key;
@@ -153,6 +162,14 @@ public sealed class World
     }
 
     public Identity? Who(int id) => _players.TryGetValue(id, out var p) ? p.Who : null;
+
+    /// <summary>É o líder da party dele (pelo que a DMO.API disse por último)?</summary>
+    public bool IsLeader(int id) =>
+        _players.TryGetValue(id, out var p) && p.Who.PartyId is { Length: > 0 } party && _leaders.GetValueOrDefault(party) == p.Who.AccountId;
+
+    /// <summary>Jogadores no DW4 da party (ids), em qualquer fase.</summary>
+    public List<(int Id, long AccountId)> PartyMembers(string? party) => party is not { Length: > 0 } ? []
+        : _players.Values.Where(m => m.Who.PartyId == party).Select(m => (m.Id, m.Who.AccountId)).ToList();
 
     // Nome no chat: o personagem da placa; sem personagem (só o ticket gasto), o Tamer.
     /// <summary>Nome que os outros veem (personagem; sem personagem, o Tamer). Vazio se o jogador não está no mundo.</summary>

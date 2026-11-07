@@ -187,6 +187,14 @@ public sealed class SequenceRunner
     /// Desligado no jogador: o arco do VATCS1 não deve vazar para a pose de carregar.
     /// </summary>
     public bool CarryHitBoxes { get; init; }
+    /// <summary>
+    /// Quadros por quadro de HITBOX: 1 = o quadro do HITBOX é de 30 Hz (inimigos, como antes); 0,5 = é de 60 Hz (jogador).
+    /// FATO (seq.json dos 16 p_* × animações): lido a 30 Hz, nenhuma das 5 caixas do VATCD1 do bloco "dual" (quadros 10..14, ação de
+    /// 8 quadros) cai dentro da ação, e sobram caixas fora em slash, axe, arm, maul e saber; lido a 60 Hz, todas as caixas de todos
+    /// os estilos caem dentro da ação. O disparador do jogador já era lido a 60 Hz (Fatia.Shots.cs). HIPÓTESE forte: o quadro do
+    /// HITBOX do jogador é de 60 Hz. Relato 2026-11-07: Grand Blade (w_glave01, bloco "dual") não dava dano no golpe normal.
+    /// </summary>
+    public float HitBoxFrameScale { get; init; } = 1f;
     /// <summary>As caixas que passaram da ação anterior para a atual (CarryHitBoxes).</summary>
     public IReadOnlyList<HitBox> CarriedHitBoxes { get; private set; } = [];
     /// <summary>A sonda de conversa (60000) da última ACTION pulada, até quem confere conversa consumi-la (TakeTalkProbe).</summary>
@@ -251,6 +259,8 @@ public sealed class SequenceRunner
     public IEnumerable<HitBox> ActiveHitBoxes() =>
         ActionHitBoxes.Where(h => ActionFrame >= h.StartFrame && ActionFrame < h.StartFrame + h.Frames);
 
+    HitBox BoxOf(SeqCommand c) => new(c.I(1), c.F(2) * HitBoxFrameScale, c.F(3) * HitBoxFrameScale, c.V(4), c.V(5));
+
     void Advance()
     {
         while (Running)
@@ -262,8 +272,8 @@ public sealed class SequenceRunner
                 case "HITBOX":
                     if (c.S(0) == "AllClear") _pending.Clear();
                     else if (Action != null && !ActionFollows(_pc))
-                        ActionHitBoxes = [.. ActionHitBoxes, new HitBox(c.I(1), c.F(2), c.F(3), c.V(4), c.V(5))];
-                    else _pending.Add(new HitBox(c.I(1), c.F(2), c.F(3), c.V(4), c.V(5)));
+                        ActionHitBoxes = [.. ActionHitBoxes, BoxOf(c)];
+                    else _pending.Add(BoxOf(c));
                     break;
                 case "ACTION" when _pending.Any(h => h.Type == TalkProbe):
                     TalkProbeBox = _pending.First(h => h.Type == TalkProbe);

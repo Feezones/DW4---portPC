@@ -46,6 +46,18 @@ public partial class Fatia
             case "cartas": OpenCardShop(); break;
             case "avaliar": OpenAppraisal(); break;
             case "troca" or "troca-lista": OpenTradeDemo(what == "troca-lista"); break;
+            // Grupo falso de 3 (você + Bia na fase + Caio em outra fase); "grupo" = você líder, "grupo-membro" = Bia líder.
+            case "grupo" or "grupo-membro":
+            {
+                bool lead = what == "grupo";
+                Online.DebugFakeParty(1,
+                [
+                    new(1, "Você", PlayerModel, _level, _hp, _pf?.MaxHp ?? 100, _mp, _pf?.MaxMp ?? 50, _stageName.ToLowerInvariant(), lead),
+                    new(2, "Bia", "p_vmon", 12, 80, 120, 30, 40, _stageName.ToLowerInvariant(), !lead),
+                    new(3, "Caio", "p_agumon", 9, 60, 60, 10, 30, "dng101b1"),
+                ]);
+                break;
+            }
             case "salvar": MenuStageInPlace("stagIS12"); break;
             // Atalhos de item: 3 discos de HP e 2 de MP nos atalhos 1 e 2, e a janela de itens aberta.
             case "itens" when _db != null:
@@ -100,6 +112,15 @@ public partial class Fatia
                 if (key.StartsWith("mover@", StringComparison.Ordinal)) continue;
                 Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = pos, GlobalPosition = pos });
                 _keysUp.Add((3, new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = pos, GlobalPosition = pos }));
+                continue;
+            }
+            if (key.StartsWith("direito@", StringComparison.Ordinal))
+            {
+                var xy = key[(key.IndexOf('@') + 1)..].Split(';');
+                var pos = new Vector2(float.Parse(xy[0], System.Globalization.CultureInfo.InvariantCulture), float.Parse(xy[1], System.Globalization.CultureInfo.InvariantCulture));
+                Input.ParseInputEvent(new InputEventMouseMotion { Position = pos, GlobalPosition = pos });
+                Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = true, Position = pos, GlobalPosition = pos });
+                _keysUp.Add((3, new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = false, Position = pos, GlobalPosition = pos }));
                 continue;
             }
             if (key == "direito")
