@@ -2633,11 +2633,42 @@ if (args.Length == 1)
         var jump = new SeqCommand("MOVE", ["Jump", 2f, 2]);
         True(m.Apply(new SeqCommand("MOVE", ["Push", 0.9f, 100])) && m.Apply(jump), "aplica");
         float z = 0, y = 0, peak = 0;
-        // 250 quadros do WAITCHECK "Frame" no relógio de 60 Hz = 125 quadros de 30 Hz do MOVE.
-        for (int i = 0; i < 125; i++) { var (local, _) = m.Step(1); z += local.Z; y += local.Y; peak = Math.Max(peak, y); }
-        True(m[2].Active && Math.Abs(m[2].Velocity - (0.9f - 125 * 0.9f / 5000)) < 1e-4f, $"ainda rolando a {m[2].Velocity:0.000}/quadro");
-        True(z > 105 && z < 113, $"andou {z:0.0} (o barril desce a ladeira do lançador até o fim dela)");
+        // 250 quadros do WAITCHECK "Frame": o MOVE anda no mesmo relógio (KEIKATIMER, ObjectSequencer.MotionFrames).
+        for (int i = 0; i < 250; i++) { var (local, _) = m.Step(1); z += local.Z; y += local.Y; peak = Math.Max(peak, y); }
+        True(m[2].Active && Math.Abs(m[2].Velocity - (0.9f - 250 * 0.9f / 5000)) < 1e-4f, $"ainda rolando a {m[2].Velocity:0.000}/quadro");
+        True(z > 215 && z < 222, $"andou {z:0.0}");
         True(peak <= JumpMotion.PeakHeight(jump) + 1e-3f && !m[1].Active, $"pulinho de {peak:0.00}");
+    });
+
+    Test("Jogo: barril do lançador (stag0102) só estoura no fim da ação: ~219 adiante em ~4,2 s, MOVE no relógio do WAITCHECK", () =>
+    {
+        // Relato (0.6.29): "os barril estão explodindo muito antes". O MOVE andava a 30 Hz e a espera da ação a 60 Hz: ~111 em 4,2 s.
+        // FATO (seq do g_bbarrelmz01): SQ_ATCK01 = ACTION WAIT01 (JOINTSET 40..100 LP, WAITCHECK "Frame" 250), MOVE "Push" 0.9 100,
+        // MOVE "Jump" 2 2, WCHECK "Action", JUMP SQ_DDMG.
+        static SeqCommand C(string k, params object[] v) => new(k, v);
+        var seqs = new Dictionary<string, List<SeqCommand>>
+        {
+            ["SQ_ATCK01"] = [C("ACTION", "WAIT01"), C("MOVE", "Push", 0.9f, 100f), C("MOVE", "Jump", 2f, 2f), C("WCHECK", "Action"), C("JUMP", "SQ_DDMG")],
+            ["SQ_DDMG"] = [C("ACTION", "DEAD01"), C("WCHECK", "Action"), C("JUMP", "SQ_ERAS")],
+        };
+        var actions = new Dictionary<string, List<SeqCommand>>
+        {
+            ["WAIT01"] = [C("JOINTSET", "", 40f, 100f, "LP"), C("WAITCHECK", "Frame", 250f)],
+            ["DEAD01"] = [C("JOINTSET", "", 110f, 120f, "OS"), C("WAITCHECK", "Joint", 0f)],
+        };
+        var s = new ObjectSequencer(seqs, actions);
+        s.Start("SQ_ATCK01");
+        const float dt = 1 / 60f;
+        float z = 0, t = 0;
+        for (int i = 0; i < 1000 && s.Sequence == "SQ_ATCK01"; i++)
+        {
+            s.Tick(dt);
+            t += dt;
+            if (s.Sequence == "SQ_ATCK01" && s.Motion.AnyActive) z += s.Motion.Step(ObjectSequencer.MotionFrames(dt)).Item1.Z;
+        }
+        Equal("SQ_DDMG", s.Sequence, "quebra pelo JUMP do fim da ação");
+        True(Math.Abs(t - 250 / 60f) < 0.05f, $"em {t:0.00} s");
+        True(z > 213 && z < 222, $"andou {z:0.0} (a 30 Hz eram ~111)");
     });
 
     Test("Jogo: MOVEEX/MOVE pelos canais do executor (0x8030A1F4/0x8030A2D8): texto → canal e modo, acelera, freia, troca de sequência", () =>
@@ -2952,6 +2983,7 @@ if (args.Length == 1)
     {
         True(RideLand.IsVehicle(0x1405) && RideLand.IsVehicle(0x1403), "barco e blindado");
         True(!RideLand.IsVehicle(0x402) && !RideLand.IsVehicle(0x401), "g_box e andaime não");
+        True(RideLand.IsFloor(0x401) && !RideLand.IsFloor(0x402) && !RideLand.IsFloor(0x1405), "andaime é chão parado; g_box e barco não");
         var min = new System.Numerics.Vector3(-17, 0, -23);
         var max = new System.Numerics.Vector3(17, 100, 23);
         True(RideLand.Inside(new(0, 0, 0), min, max), "no meio do chão");
@@ -3843,6 +3875,143 @@ Test("Online: gestão do grupo de verdade (UDP local, DevApi: passar líder, exp
         Volatile.Write(ref stop, true);
         loop.Join();
         server.Stop();
+    }
+});
+
+Test("Online: guilda no fio (protocolo 8: comando, janela, baú, histórico, tag, chat)", () =>
+{
+    var view = new DW4.Net.GuildView(5, "Tamers BR", "TBR", 3, 3500, 3000, 6000, 30, 2, "Reunião às 20h", 1234, 9, 1,
+        [new DW4.Net.GuildMemberEntry(161297, "Guilmon", 1, 3500, 7, "stagml11", 42, 1700000000), new DW4.Net.GuildMemberEntry(2, "Renamon", 4, 0, -1, "", 0, 0)],
+        [new DW4.Net.GuildBankEntry("conItem", 3, 5)], "Guilda criada.");
+    var back = (DW4.Net.GuildView)DW4.Net.Codec.Read(DW4.Net.Codec.Write(view));
+    True(back.Members.SequenceEqual(view.Members) && back.Bank.SequenceEqual(view.Bank) && back with { Members = view.Members, Bank = view.Bank } == view, "GuildView");
+    object[] all = [new DW4.Net.GuildCmd("create", 0, 0, "Tamers BR", "TBR"), new DW4.Net.GuildCmd("deposit", 0, 0, "", "", 2, "conItem", 3, 1),
+        new DW4.Net.GuildBankDone(true, "withdraw", "bit", 0, 0, 500, 4, ""), new DW4.Net.PlayerTag(3, "TBR"),
+        new DW4.Net.ChatSend(DW4.Net.ChatTo.Guild, "", "oi guilda"),
+        new DW4.Net.Spawn(3, "Ana", "Lia", new DW4.Net.PlayerState("stagml11", 1, 2, 3, 0, "", "p_girumon", 5), "TBR")];
+    foreach (var m in all) Equal(m, DW4.Net.Codec.Read(DW4.Net.Codec.Write(m)), m.GetType().Name);
+    var log = (DW4.Net.GuildLog)DW4.Net.Codec.Read(DW4.Net.Codec.Write(new DW4.Net.GuildLog(["1\tAna entrou na guilda.", "2\tx"])));
+    Equal(2, log.Lines.Length, "GuildLog");
+    Equal("[Guilda] Ana: oi - 10:00", new DW4.Gameplay.ChatMessage("Ana", "oi", new DateTime(2026, 11, 7, 10, 0, 0), DW4.Gameplay.ChatChannel.Guild).Format(), "linha do chat da guilda");
+    Equal(DW4.Gameplay.ChatChannel.Guild, DW4.Gameplay.ChatCommand.Parse("/gu bora").Channel, "/gu");
+    Equal((int)DW4.Net.ChatTo.Guild, (int)DW4.Gameplay.ChatChannel.Guild, "canal da guilda com o mesmo número no fio");
+    var line = DW4.Server.GameServer.FormatLog(new DW4.Server.GuildLogData(DateTime.UnixEpoch.AddSeconds(100), "Ana", "deposit", "conItem", 3, 2, 0, null));
+    Equal("100\tAna guardou 2x {item:conItem:3} no baú.", line, "linha do histórico");
+});
+
+Test("Online: guilda de verdade (UDP local, DevApi: criar, convidar, tag, chat, cargos, baú, sair)", () =>
+{
+    var saves = Path.Combine(Path.GetTempPath(), "dw4-guilda-" + Guid.NewGuid().ToString("N"));
+    Environment.SetEnvironmentVariable("DW4_DEV_SAVES", saves);
+    var server = new DW4.Server.GameServer(new DW4.Server.DevApi());
+    True(server.Start(0), "servidor abriu");
+    var stop = false;
+    var loop = new Thread(() => { while (!Volatile.Read(ref stop)) { server.Tick(); Thread.Sleep(5); } }) { IsBackground = true };
+    loop.Start();
+    try
+    {
+        (LiteNetLib.NetManager Net, LiteNetLib.NetPeer Peer, System.Collections.Concurrent.ConcurrentQueue<object> Inbox) Client(string ticket, string character)
+        {
+            var inbox = new System.Collections.Concurrent.ConcurrentQueue<object>();
+            var l = new LiteNetLib.EventBasedNetListener();
+            l.NetworkReceiveEvent += (_, reader, _, _) => inbox.Enqueue(DW4.Net.Codec.Read(reader.GetRemainingBytes()));
+            var net = new LiteNetLib.NetManager(l) { AutoRecycle = true };
+            net.Start();
+            l.PeerConnectedEvent += p => p.Send(DW4.Net.Codec.Write(new DW4.Net.Hello(DW4.Net.Protocol.Version, ticket, character, "p_girumon", 1)), LiteNetLib.DeliveryMethod.ReliableOrdered);
+            var peer = net.Connect("127.0.0.1", server.Port, DW4.Net.Protocol.ConnectionKey);
+            return (net, peer, inbox);
+        }
+        T Wait<T>((LiteNetLib.NetManager Net, LiteNetLib.NetPeer Peer, System.Collections.Concurrent.ConcurrentQueue<object> Inbox) c, Func<T, bool>? ok = null) where T : class
+        {
+            var until = DateTime.UtcNow.AddSeconds(5);
+            while (DateTime.UtcNow < until)
+            {
+                c.Net.PollEvents();
+                while (c.Inbox.TryDequeue(out var m)) if (m is T t && (ok == null || ok(t))) return t;
+                Thread.Sleep(5);
+            }
+            throw new InvalidOperationException($"não chegou {typeof(T).Name}");
+        }
+        void Send((LiteNetLib.NetManager Net, LiteNetLib.NetPeer Peer, System.Collections.Concurrent.ConcurrentQueue<object> Inbox) c, object m) =>
+            c.Peer.Send(DW4.Net.Codec.Write(m), LiteNetLib.DeliveryMethod.ReliableOrdered);
+
+        var a = Client("dev:Lia", "Ana");
+        var b = Client("dev:Beto", "Bia");
+        int idA = Wait<DW4.Net.Welcome>(a).PlayerId, idB = Wait<DW4.Net.Welcome>(b).PlayerId;
+        True(Wait<DW4.Net.GuildView>(a).Id == 0, "começa sem guilda");
+        Send(a, new DW4.Net.PlayerState("stagml11", 0, 0, 0, 0, "", "p_girumon", 1));
+        Send(b, new DW4.Net.PlayerState("stagml11", 1, 0, 0, 0, "", "p_girumon", 1));
+        Wait<DW4.Net.Spawn>(b, s => s.PlayerId == idA && s.Guild == "");
+
+        Send(b, new DW4.Net.GuildCmd("invite", idA));
+        Equal("Crie uma guilda ou entre em uma primeiro.", Wait<DW4.Net.GuildView>(b, v => v.Message.Length > 0).Message, "sem guilda não convida");
+        Send(a, new DW4.Net.GuildCmd("create", 0, 0, "Tamers BR", "tbr"));
+        var created = Wait<DW4.Net.GuildView>(a, v => v.Id != 0);
+        True(created.Tag == "TBR" && created.MyRank == 1 && created.Message == "Guilda Tamers BR [TBR] criada.", "criou e é o Mestre");
+        Equal("TBR", Wait<DW4.Net.PlayerTag>(b, t => t.PlayerId == idA).Tag, "quem está perto vê a tag");
+
+        Send(a, new DW4.Net.GuildCmd("invite", idB));
+        var prompt = Wait<DW4.Net.SocialPrompt>(b, p => p.Kind == "guild");
+        True(prompt.FromId == idA && prompt.InviteId == "Tamers BR [TBR]", "convite com o nome da guilda");
+        Send(b, new DW4.Net.GuildCmd("accept", idA));
+        var joined = Wait<DW4.Net.GuildView>(b, v => v.Id == created.Id);
+        True(joined.MyRank == 4 && joined.Members.Length == 2 && joined.Members.All(m => m.PlayerId >= 0), "entrou como Novato e os dois aparecem online");
+        Equal("Bia entrou na guilda.", Wait<DW4.Net.ChatFrom>(a, c => c.Channel == DW4.Net.ChatTo.Guild).Text, "aviso no chat da guilda");
+
+        Send(b, new DW4.Net.ChatSend(DW4.Net.ChatTo.Guild, "", "oi guilda"));
+        Equal("oi guilda", Wait<DW4.Net.ChatFrom>(a, c => c.Channel == DW4.Net.ChatTo.Guild && c.FromId == idB).Text, "chat da guilda");
+
+        Send(a, new DW4.Net.GuildCmd("notice", 0, 0, "Reunião às 20h"));
+        Equal("Reunião às 20h", Wait<DW4.Net.ChatFrom>(b, c => c.Sender == "Aviso da guilda").Text, "aviso novo vai para o chat");
+
+        // baú: Ana tem 5 discos 3 e 500 BIT no save do servidor
+        Send(a, new DW4.Net.SaveWrite(1, 0, DW4.Net.SaveData.Pack("{\"Name\":\"Ana\",\"Bit\":500,\"Devices\":[{\"Table\":\"weapon\",\"Row\":12}],\"Disks\":{\"3\":5}}")));
+        Wait<DW4.Net.SaveReply>(a, r => r.ReqId == 1 && r.Ok);
+        Send(b, new DW4.Net.SaveWrite(2, 1, DW4.Net.SaveData.Pack("{\"Name\":\"Bia\",\"Bit\":0,\"Devices\":[],\"Disks\":{}}")));
+        Wait<DW4.Net.SaveReply>(b, r => r.ReqId == 2 && r.Ok);
+        Send(a, new DW4.Net.GuildCmd("deposit", 0, 0, "", "", 2, "conItem", 3, 0));
+        var dep = Wait<DW4.Net.GuildBankDone>(a);
+        True(dep.Ok && dep.Count == 2 && dep.Seq == 1, "guardou 2 discos");
+        Wait<DW4.Net.GuildView>(b, v => v.Bank.Any(i => i is { Table: "conItem", Row: 3, Count: 2 }));
+        Send(a, new DW4.Net.GuildCmd("deposit", 0, 0, "", "", 9, "conItem", 3, 0));
+        True(Wait<DW4.Net.GuildBankDone>(a) is { Ok: false }, "não guarda o que não tem");
+        Send(a, new DW4.Net.GuildCmd("deposit", 0, 0, "", "", 300, "bit", 0, 0));
+        True(Wait<DW4.Net.GuildBankDone>(a) is { Ok: true, Bit: 300 }, "guardou BIT");
+        var stale = DW4.Net.SaveData.Pack("{\"Name\":\"Ana\",\"Bit\":500,\"Disks\":{\"3\":5}}");
+        Send(a, new DW4.Net.SaveWrite(3, 0, stale));
+        True(Wait<DW4.Net.SaveReply>(a, r => r.ReqId == 3) is { Ok: false }, "save de antes do baú é recusado (não duplica)");
+
+        Send(b, new DW4.Net.GuildCmd("withdraw", 0, 0, "", "", 1, "conItem", 3, 1));
+        Equal("Novatos ainda não tiram itens do baú.", Wait<DW4.Net.GuildBankDone>(b).Message, "novato não tira");
+        Send(a, new DW4.Net.GuildCmd("rank", 0, joined.Members.Single(m => m.PlayerId == idB).Account, "", "", 3));
+        Wait<DW4.Net.GuildView>(b, v => v.MyRank == 3);
+        Send(b, new DW4.Net.GuildCmd("withdraw", 0, 0, "", "", 1, "conItem", 3, 1));
+        True(Wait<DW4.Net.GuildBankDone>(b) is { Ok: true, Count: 1 }, "membro tira 1 disco");
+        Send(b, new DW4.Net.SaveList(4));
+        var bia = DW4.Net.SaveData.Unpack(Wait<DW4.Net.SaveReply>(b, r => r.ReqId == 4).Slots.Single(x => x.Slot == 1).Data);
+        True(bia.Contains("\"3\":1") && bia.Contains("\"TradeSeq\":1"), "o disco entrou no save do servidor");
+        Send(b, new DW4.Net.GuildCmd("withdraw", 0, 0, "", "", 100, "bit", 0, 1));
+        Equal("Só o Mestre e os Sub-mestres tiram BIT do baú.", Wait<DW4.Net.GuildBankDone>(b).Message, "membro não tira BIT");
+
+        Send(a, new DW4.Net.GuildCmd("log"));
+        var hist = Wait<DW4.Net.GuildLog>(a);
+        True(hist.Lines[0].EndsWith("Bia tirou {item:conItem:3} do baú.") && hist.Lines.Any(l => l.EndsWith("Bia entrou na guilda.")), "histórico");
+
+        Send(a, new DW4.Net.GuildCmd("leave"));
+        Equal("Passe o cargo de Mestre para outro membro antes de sair.", Wait<DW4.Net.GuildView>(a, v => v.Message.Length > 0 && v.Message.StartsWith("Passe")).Message, "Mestre não sai com gente");
+        Send(b, new DW4.Net.GuildCmd("leave"));
+        True(Wait<DW4.Net.GuildView>(b, v => v.Id == 0).Message.StartsWith("Você saiu"), "membro sai");
+        Equal("", Wait<DW4.Net.PlayerTag>(a, t => t.PlayerId == idB).Tag, "a tag some");
+        Wait<DW4.Net.GuildView>(a, v => v.Members.Length == 1);
+        foreach (var n in new[] { a.Net, b.Net }) n.Stop();
+    }
+    finally
+    {
+        Volatile.Write(ref stop, true);
+        loop.Join();
+        server.Stop();
+        Environment.SetEnvironmentVariable("DW4_DEV_SAVES", null);
+        try { Directory.Delete(saves, true); } catch (IOException) { }
     }
 });
 

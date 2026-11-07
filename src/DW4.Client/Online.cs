@@ -13,6 +13,8 @@ public sealed class RemotePlayer
     public required int Id;
     public required string Character;
     public required string Tamer;
+    /// <summary>Tag da guilda do DW4 ("" = sem guilda), na placa embaixo do nome.</summary>
+    public string Guild = "";
     public PlayerState State = null!;
     public double ReceivedAt;
 }
@@ -90,6 +92,30 @@ public static class Online
         Send(new Interact(target, action, inviteId), true);
         return true;
     }
+
+    /// <summary>Guilda do DW4 (protocolo 8): a janela atual (Id 0 = sem guilda); null antes de o servidor mandar.</summary>
+    public static GuildView? Guild { get; private set; }
+    /// <summary>Tag da guilda na própria placa ("" = sem guilda).</summary>
+    public static string MyGuildTag { get; private set; } = "";
+    /// <summary>A janela da guilda mudou (ou chegou o resultado de uma ação, em Message).</summary>
+    public static event Action<GuildView>? GuildIn;
+    /// <summary>DEPURAÇÃO (DW4_ABRIR=guilda*): põe uma guilda de exemplo sem servidor, só para fotografar a janela.</summary>
+    public static void DebugFakeGuild(GuildView v) { Guild = v; MyGuildTag = v.Tag; }
+    /// <summary>Guardar/tirar do baú da guilda terminou.</summary>
+    public static event Action<GuildBankDone>? GuildBankIn;
+    /// <summary>Histórico da guilda (linhas "unix TAB texto").</summary>
+    public static event Action<GuildLog>? GuildLogIn;
+
+    /// <summary>Guilda: manda a ação ao servidor (false se não está online).</summary>
+    public static bool SendGuild(GuildCmd cmd)
+    {
+        if (State != Status.Online) return false;
+        Send(cmd, true);
+        return true;
+    }
+
+    /// <summary>Site do RE:DIGITAL (logo das guildas em /guild-marks/).</summary>
+    public const string SiteBase = "https://api.redigitalon.com";
 
     /// <summary>Troca de itens: como está a troca (pedido, ofertas, feita ou cancelada), vinda do servidor.</summary>
     public static event Action<TradeView>? TradeIn;
@@ -211,7 +237,7 @@ public static class Online
         if (Ticket is not { } ticket || ServerAddress is not { } address) { State = Status.Off; return; }
         s_net?.Stop(); // tentativa anterior que falhou, ou a conexão do menu virando a do jogo
         (s_net, s_server) = (null, null);
-        Remotes.Clear(); Group = null; Party = [];
+        Remotes.Clear(); Group = null; Party = []; Guild = null; MyGuildTag = "";
         var (host, port) = Split(address);
         s_menu = character.Length == 0;
         s_hello = new Hello(Protocol.Version, ticket, character, model, level);
@@ -285,7 +311,22 @@ public static class Online
                 Fail(r.Reason);
                 break;
             case Spawn s:
-                Remotes[s.PlayerId] = new RemotePlayer { Id = s.PlayerId, Character = s.Character, Tamer = s.Tamer, State = s.State, ReceivedAt = Now };
+                Remotes[s.PlayerId] = new RemotePlayer { Id = s.PlayerId, Character = s.Character, Tamer = s.Tamer, State = s.State, ReceivedAt = Now, Guild = s.Guild };
+                break;
+            case PlayerTag pt:
+                if (pt.PlayerId == MyId) MyGuildTag = pt.Tag;
+                else if (Remotes.TryGetValue(pt.PlayerId, out var tagged)) tagged.Guild = pt.Tag;
+                break;
+            case GuildView gv:
+                Guild = gv;
+                MyGuildTag = gv.Tag;
+                GuildIn?.Invoke(gv);
+                break;
+            case GuildBankDone gb:
+                GuildBankIn?.Invoke(gb);
+                break;
+            case GuildLog gl:
+                GuildLogIn?.Invoke(gl);
                 break;
             case InteractResult ir:
                 Result?.Invoke(ir);
@@ -326,7 +367,7 @@ public static class Online
     {
         State = Status.Failed;
         Error = why;
-        Remotes.Clear(); Group = null; Party = [];
+        Remotes.Clear(); Group = null; Party = []; Guild = null; MyGuildTag = "";
         GD.PushWarning("[online] " + why);
         if (!s_menu) Notice?.Invoke(why + (s_kicked ? "" : " Jogando sem os outros jogadores; o progresso grava quando a conexão voltar."));
         s_server = null;
@@ -366,7 +407,7 @@ public static class Online
         s_net?.Stop();
         s_net = null;
         s_server = null;
-        Remotes.Clear(); Group = null; Party = [];
+        Remotes.Clear(); Group = null; Party = []; Guild = null; MyGuildTag = "";
         if (State != Status.Failed) State = Status.Off;
     }
 }

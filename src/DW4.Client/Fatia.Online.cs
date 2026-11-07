@@ -34,6 +34,7 @@ public partial class Fatia
         Online.Result += OnInteractResult;
         Online.Prompt += OnSocialPrompt;
         Online.TradeIn += OnTradeView;
+        SetupGuild();
         Online.Coop += OnCoop;
         Online.Coop += OnSpectatorCoop;
         Online.KickedOut += OnKicked;
@@ -91,6 +92,7 @@ public partial class Fatia
             if (a.Anim != null && r.State.Anim.Length > 0 && a.Anim.CurrentAnimation != r.State.Anim && a.Anim.HasAnimation(r.State.Anim))
                 a.Anim.Play(r.State.Anim, 0.13f);
             a.Plate?.Set(r.Character, r.State.Level);
+            a.Plate?.SetGuild(r.Guild);
             UpdateMateChip(a, r);
         }
     }

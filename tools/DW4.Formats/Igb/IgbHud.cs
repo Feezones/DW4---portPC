@@ -86,8 +86,13 @@ public sealed class IgbHud
             // Colisão própria do ator (beHitLandModelInfo com o mesmo nome: @8 = igSwitch com as peças, @10 = tipo).
             // FATO (stag0103): g_boatz01 tem @8 → beCopyTransform → caixa aberta 34 × 100 × 46 (chão em y 0 e quatro paredes) e
             // @10 = 5125 (0x1405); g_soukouz02 (stag0203) tem 0x1403; g_box e os outros objetos quebráveis têm 0x402.
-            if (f.Slots.OfType<IgbObject>().FirstOrDefault(o => o.TypeName == "beHitLandModelInfo" && Text(o, 2) == name) is { } land
-                && h.Obj(h.Ref(land, 8)) is { } landRoot)
+            // FATO (dng103f2, ndmw #226): o g_dskyscaffold (andaimes sobre o buraco do matt05) tem a colisão num beHitLandModelInfo
+            // SEM nome (#3243, @10 = 0x401) cujo @8 é o igSwitch #13607, filho da raiz do ator (quadrado 20 × 20 no topo, y 0).
+            // Sem nome igual, vale o beHitLandModelInfo sem nome que aponta para dentro da árvore do ator.
+            var lands = f.Slots.OfType<IgbObject>().Where(o => o.TypeName == "beHitLandModelInfo").ToList();
+            var land = lands.FirstOrDefault(o => Text(o, 2) == name)
+                ?? lands.FirstOrDefault(o => string.IsNullOrEmpty(Text(o, 2)) && h.Obj(h.Ref(o, 8)) is { } r && h.InTree(root, r.Index));
+            if (land != null && h.Obj(h.Ref(land, 8)) is { } landRoot)
             {
                 h.Visit(landRoot);
                 entry["land"] = new JsonObject { ["node"] = landRoot.Index, ["kind"] = h.Int(land, 10) };
@@ -105,6 +110,22 @@ public sealed class IgbHud
             ["notes"] = new JsonArray(h.Notes.Select(n => (JsonNode?)n).ToArray()),
         };
         return (json, h);
+    }
+
+    /// <summary>O nó <paramref name="index"/> está na árvore (filhos do igObjectList @7) que começa em <paramref name="root"/>?</summary>
+    bool InTree(IgbObject root, int index)
+    {
+        var seen = new HashSet<int>();
+        var stack = new Stack<IgbObject>([root]);
+        while (stack.Count > 0)
+        {
+            var n = stack.Pop();
+            if (!seen.Add(n.Index)) continue;
+            if (n.Index == index) return true;
+            if (Obj(Ref(n, 7)) is { } list && _f.Is(list, "igObjectList"))
+                foreach (var c in _scene.ObjectList(list).Where(c => _f.Is(c, "igNode"))) stack.Push(c);
+        }
+        return false;
     }
 
     void Visit(IgbObject node)

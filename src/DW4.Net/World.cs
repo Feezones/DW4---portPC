@@ -25,6 +25,9 @@ public sealed class World
         public PlayerState? State;
         public string? Instance;
         public string? Group;
+        /// <summary>Guilda do DW4 (0 = sem guilda) e a tag que aparece na placa (protocolo 8).</summary>
+        public long GuildId;
+        public string GuildTag = "";
     }
 
     readonly Dictionary<int, Player> _players = [];
@@ -161,6 +164,48 @@ public sealed class World
         foreach (var m in members) res.Add(new(m.Id, msg, true));
     }
 
+    /// <summary>
+    /// Guilda do jogador mudou (entrou, saiu, criou, a guilda acabou): guarda para o chat da guilda e manda a tag nova para quem o
+    /// vê na fase (e para ele mesmo, que mostra a própria placa).
+    /// </summary>
+    public List<Outgoing> SetGuild(int id, long guildId, string tag)
+    {
+        var res = new List<Outgoing>();
+        if (!_players.TryGetValue(id, out var p)) return res;
+        p.GuildId = guildId;
+        if (p.GuildTag == tag) return res;
+        p.GuildTag = tag;
+        var msg = new PlayerTag(id, tag);
+        res.Add(new(id, msg, true));
+        if (p.Instance != null) foreach (var o in In(p.Instance)) if (o.Id != id) res.Add(new(o.Id, msg, true));
+        return res;
+    }
+
+    public long GuildOf(int id) => _players.TryGetValue(id, out var p) ? p.GuildId : 0;
+
+    /// <summary>Jogadores da guilda no DW4 agora (em qualquer fase).</summary>
+    public List<int> GuildOnline(long guildId) => guildId == 0 ? [] : _players.Values.Where(p => p.GuildId == guildId).Select(p => p.Id).ToList();
+
+    /// <summary>Tem colega da mesma guilda no grupo de combate (party na mesma fase)? Para o XP da guilda em dobro.</summary>
+    public bool GuildmateInGroup(int id)
+    {
+        long g = GuildOf(id);
+        return g != 0 && GroupOf(id).Any(m => m != id && GuildOf(m) == g);
+    }
+
+    /// <summary>Jogador online pelo nome do personagem (ou do Tamer), sem diferença de maiúsculas; -1 se não está.</summary>
+    public int FindByName(string name)
+    {
+        var cmp = StringComparer.OrdinalIgnoreCase;
+        var p = _players.Values.FirstOrDefault(p => p.Character.Length > 0 && cmp.Equals(p.Character, name))
+             ?? _players.Values.FirstOrDefault(p => cmp.Equals(p.Who.Tamer, name));
+        return p?.Id ?? -1;
+    }
+
+    /// <summary>Fase e nível do jogador (do último estado), para a lista da guilda.</summary>
+    public (string Stage, int Level) Where(int id) =>
+        _players.TryGetValue(id, out var p) && p.State != null ? (p.State.Stage.ToLowerInvariant(), p.State.Level) : ("", 0);
+
     public Identity? Who(int id) => _players.TryGetValue(id, out var p) ? p.Who : null;
 
     /// <summary>É o líder da party dele (pelo que a DMO.API disse por último)?</summary>
@@ -198,6 +243,11 @@ public sealed class World
                 foreach (var p in _players.Values)
                     if (p.Who.PartyId == party) res.Add(new(p.Id, new ChatFrom(channel, from, name, "", text), true));
                 break;
+            case ChatTo.Guild:
+                if (me.GuildId == 0) { notice = "Você não está em uma guilda."; break; }
+                foreach (var p in _players.Values)
+                    if (p.GuildId == me.GuildId) res.Add(new(p.Id, new ChatFrom(channel, from, name, "", text), true));
+                break;
             case ChatTo.Whisper:
                 var cmp = StringComparer.OrdinalIgnoreCase;
                 var target = _players.Values.FirstOrDefault(p => p.Character.Length > 0 && cmp.Equals(p.Character, to))
@@ -226,8 +276,8 @@ public sealed class World
         foreach (var o in In(instance))
             if (o.Id != p.Id && o.State != null)
             {
-                res.Add(new(o.Id, new Spawn(p.Id, p.Character, p.Who.Tamer, p.State!), true));
-                res.Add(new(p.Id, new Spawn(o.Id, o.Character, o.Who.Tamer, o.State), true));
+                res.Add(new(o.Id, new Spawn(p.Id, p.Character, p.Who.Tamer, p.State!, p.GuildTag), true));
+                res.Add(new(p.Id, new Spawn(o.Id, o.Character, o.Who.Tamer, o.State, o.GuildTag), true));
             }
     }
 

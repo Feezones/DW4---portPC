@@ -129,7 +129,7 @@ public partial class Fatia
     void OnSocialPrompt(SocialPrompt p)
     {
         _prompts.Enqueue(p);
-        if (!_interactOpen) ShowNextPrompt();
+        if (!_interactOpen && !_guildOpen) ShowNextPrompt();
     }
 
     void ShowInteractMenu(int target, InteractView view, string relation)
@@ -151,6 +151,14 @@ public partial class Fatia
             if (o.Action == InteractAction.Trade && !Session.Active) (enabled, reason) = (false, "Entre com um personagem para trocar itens.");
             rows.Add((label, enabled, reason, act));
         }
+        // Guilda do DW4: Mestre e Sub-mestre convidam quem não tem guilda (o servidor confere de novo).
+        if (Online.Guild is { Id: > 0, MyRank: <= 2 } g)
+        {
+            string theirs = Online.Remotes.TryGetValue(target, out var rp) ? rp.Guild : "";
+            string? why = theirs.Length > 0 ? (theirs == g.Tag ? "Já está na sua guilda." : "Já está em outra guilda.")
+                : g.Members.Length >= g.MaxMembers ? "A guilda está cheia." : null;
+            rows.Add(("Convidar para a guilda", why == null, why, () => Online.SendGuild(new GuildCmd("invite", target))));
+        }
         OpenInteractWindow(_interactName, rows);
     }
 
@@ -158,6 +166,7 @@ public partial class Fatia
     {
         if (!_prompts.TryDequeue(out var p)) return;
         if (p.Kind == "trade") { ShowTradePrompt(p); return; }
+        if (p.Kind == "guild") { ShowGuildPrompt(p); return; }
         bool party = p.Kind == "party";
         string question = party ? $"{p.FromTamer} convidou você para o grupo." : $"{p.FromTamer} quer ser seu amigo.";
         OpenInteractWindow(question,

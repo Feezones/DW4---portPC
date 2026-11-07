@@ -15,6 +15,14 @@ public static class RideLand
 
     public static bool IsVehicle(int kind) => (kind & VehicleBit) != 0;
 
+    /// <summary>
+    /// Chão parado do objeto (tipo baixo 1, como o "piso" da colisão da fase; 0x401 no g_dskyscaffold e no g_drailscaffold).
+    /// FATO (dng103f2): os andaimes g_dskyscaffold sobre o buraco do matt05 só têm chão no beHitLandModelInfo (a colisão da fase
+    /// traz as quatro paredes dos pilares, sem tampa). HIPÓTESE: o jogador fica em cima de qualquer objeto com esse tipo.
+    /// Os quebráveis (0x402) já têm corpo próprio (SpawnBox/MakeHittable) e ficam de fora.
+    /// </summary>
+    public static bool IsFloor(int kind) => !IsVehicle(kind) && (kind & 0xFF) == 1;
+
     /// <summary>Ponto (no espaço do veículo) dentro da caixa da colisão, com folga nas laterais e abaixo do chão.</summary>
     public static bool Inside(Vector3 local, Vector3 min, Vector3 max, float margin = 2f) =>
         local.X >= min.X - margin && local.X <= max.X + margin

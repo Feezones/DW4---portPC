@@ -18,7 +18,28 @@ public interface IAccountApi
     /// <summary>Grava a vaga (a DMO.API guarda a gravação anterior).</summary>
     Task SaveCharacterAsync(long accountId, int slot, string name, string json);
     Task DeleteCharacterAsync(long accountId, int slot);
+    /// <summary>Guilda do DW4 (api/dw4/guild): a ação em nome da conta e a guilda como ficou.</summary>
+    Task<GuildReply> GuildAsync(GuildRequest request);
 }
+
+/// <summary>Pedido para api/dw4/guild (as ações do Dw4GuildService da DMO.API).</summary>
+public sealed record GuildRequest(long AccountId, string Action, string Name = "", string GuildName = "", string Tag = "", string Text = "",
+    long TargetAccountId = 0, int Rank = 0, long GuildId = 0, long InviterAccountId = 0, long Amount = 0, IReadOnlyList<GuildBankEntry>? Items = null,
+    long Bit = 0, int Take = 0);
+
+public sealed record GuildMemberData(long AccountId, string Name, int Rank, long Contribution, DateTime LastSeen);
+
+/// <summary>A guilda como a DMO.API devolve (nível, XP, vagas e bônus já calculados lá).</summary>
+public sealed record GuildData(long Id, string Name, string Tag, string Notice, int Level, long Xp, long LevelXp, long NextXp, int MaxMembers,
+    int Bonus, long BankBit, long LogoVersion, IReadOnlyList<GuildMemberData> Members, IReadOnlyList<GuildBankEntry> Bank)
+{
+    public GuildMemberData? Member(long accountId) => Members.FirstOrDefault(m => m.AccountId == accountId);
+}
+
+public sealed record GuildLogData(DateTime At, string Name, string Kind, string? Table, int? Row, int Count, long Bit, string? Text);
+
+/// <summary>Resposta de api/dw4/guild: deu certo ou o motivo; Guild = a guilda da conta depois da ação (null = sem guilda).</summary>
+public sealed record GuildReply(bool Ok, string Message, GuildData? Guild, IReadOnlyList<GuildLogData>? Log = null);
 
 /// <summary>Party da conta pela DMO.API: id e a conta do líder (0 = a resposta não disse).</summary>
 public sealed record PartyInfo(string Id, long LeaderAccountId);
@@ -118,6 +139,49 @@ public sealed class DmoApi(Uri baseUri, string serviceKey) : IAccountApi
         if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"api/dw4/characters (apagar) respondeu {(int)resp.StatusCode}");
     }
 
+    public async Task<GuildReply> GuildAsync(GuildRequest request)
+    {
+        using var resp = await _http.PostAsJsonAsync("api/dw4/guild", request);
+        if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"api/dw4/guild respondeu {(int)resp.StatusCode}");
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+        return ParseGuildReply(doc.RootElement);
+    }
+
+    /// <summary>{ success, message, guild: { id, name, tag, ..., members: [...], bank: [...] } | null, log?: [...] }.</summary>
+    public static GuildReply ParseGuildReply(JsonElement r)
+    {
+        bool ok = r.TryGetProperty("success", out var s) && s.ValueKind == JsonValueKind.True;
+        string message = r.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String ? m.GetString() ?? "" : "";
+        GuildData? guild = null;
+        if (r.TryGetProperty("guild", out var g) && g.ValueKind == JsonValueKind.Object)
+        {
+            var members = new List<GuildMemberData>();
+            if (g.TryGetProperty("members", out var ms) && ms.ValueKind == JsonValueKind.Array)
+                foreach (var x in ms.EnumerateArray())
+                    members.Add(new GuildMemberData(L(x, "accountId"), S(x, "name"), (int)L(x, "rank"), L(x, "contribution"),
+                        x.TryGetProperty("lastSeen", out var ls) && ls.TryGetDateTime(out var at) ? at : DateTime.MinValue));
+            var bank = new List<GuildBankEntry>();
+            if (g.TryGetProperty("bank", out var bs) && bs.ValueKind == JsonValueKind.Array)
+                foreach (var x in bs.EnumerateArray()) bank.Add(new GuildBankEntry(S(x, "table"), (int)L(x, "row"), (int)L(x, "count")));
+            guild = new GuildData(L(g, "id"), S(g, "name"), S(g, "tag"), S(g, "notice"), (int)L(g, "level"), L(g, "xp"), L(g, "levelXp"), L(g, "nextXp"),
+                (int)L(g, "maxMembers"), (int)L(g, "bonus"), L(g, "bankBit"), L(g, "logoVersion"), members, bank);
+        }
+        List<GuildLogData>? log = null;
+        if (r.TryGetProperty("log", out var lg) && lg.ValueKind == JsonValueKind.Array)
+        {
+            log = [];
+            foreach (var x in lg.EnumerateArray())
+                log.Add(new GuildLogData(x.TryGetProperty("createdAt", out var c) && c.TryGetDateTime(out var at) ? at : DateTime.MinValue,
+                    S(x, "name"), S(x, "kind"), x.TryGetProperty("table", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null,
+                    x.TryGetProperty("row", out var rw) && rw.ValueKind == JsonValueKind.Number ? rw.GetInt32() : null, (int)L(x, "count"), L(x, "bit"),
+                    x.TryGetProperty("text", out var tx) && tx.ValueKind == JsonValueKind.String ? tx.GetString() : null));
+        }
+        return new GuildReply(ok, message, guild, log);
+
+        static long L(JsonElement e, string k) => e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetInt64() : 0;
+        static string S(JsonElement e, string k) => e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+    }
+
     static string? PartyId(JsonElement r) =>
         r.TryGetProperty("party", out var p) && p.ValueKind == JsonValueKind.Object && p.TryGetProperty("id", out var id) ? id.GetString() : null;
 }
@@ -128,7 +192,7 @@ public sealed class DmoApi(Uri baseUri, string serviceKey) : IAccountApi
 /// aceitar juntam os dois na party, até 4; sair do jogo tira da party. Para testar o quadro e o combate em grupo. Nunca ligar em
 /// produção.
 /// </summary>
-public sealed class DevApi : IAccountApi
+public sealed partial class DevApi : IAccountApi
 {
     readonly object _lock = new();
     readonly Dictionary<long, string> _partyOf = [];

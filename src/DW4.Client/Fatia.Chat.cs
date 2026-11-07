@@ -8,7 +8,7 @@ namespace DW4.Client;
 /// Chat e placa do jogador (DECISÃO DO PORT; regras em <see cref="ChatLog"/>). Enter abre a caixa; Enter envia e Esc cancela.
 /// Enquanto a caixa está aberta, nenhuma tecla anda, ataca, confirma diálogo nem abre menu (<see cref="ChatOpen"/>). As mensagens
 /// vão pelo servidor do DW4 (<see cref="Session.Chat"/>, 0.6.8). Canais (pedido do responsável, 2026-11-04): geral (branco), grupo
-/// (verde), privada (rosa) e avisos do jogo (amarelo). Tab, com a caixa aberta, troca o canal; /g, /p, /w nome e /r também
+/// (verde), guilda (azul, 2026-11-07, /gu), privada (rosa) e avisos do jogo (amarelo). Tab, com a caixa aberta, troca o canal; /g, /p, /w nome e /r também
 /// trocam (<see cref="ChatCommand"/>).
 /// </summary>
 public partial class Fatia
@@ -26,11 +26,12 @@ public partial class Fatia
     {
         ChatChannel.Party => new Color(0.45f, 1f, 0.45f),
         ChatChannel.Whisper => new Color(1f, 0.55f, 0.85f),
+        ChatChannel.Guild => new Color(0.55f, 0.85f, 1f),
         ChatChannel.System => new Color(1f, 0.88f, 0.3f),
         _ => Colors.White,
     };
     // A janela de itens rápida (Fatia.QuickItems) também segura os comandos do jogo, como o chat.
-    bool ChatOpen => _chat.Typing || _quickOpen || _interactOpen || _tradeOpen;
+    bool ChatOpen => _chat.Typing || _quickOpen || _interactOpen || _tradeOpen || _guildOpen;
 
     string PlayerName => Session.Character?.Name is { Length: > 0 } n ? n : FormName;
 
@@ -99,10 +100,17 @@ public partial class Fatia
         CloseChat();
     }
 
-    // Tab: geral → grupo → privada (para quem falou por último) → geral.
+    // Tab: geral → grupo → guilda (se tem) → privada (para quem falou por último) → geral.
     void NextChatChannel()
     {
-        _chatChannel = _chatChannel switch { ChatChannel.Global => ChatChannel.Party, ChatChannel.Party => ChatChannel.Whisper, _ => ChatChannel.Global };
+        bool guild = Online.Guild is { Id: > 0 };
+        _chatChannel = _chatChannel switch
+        {
+            ChatChannel.Global => ChatChannel.Party,
+            ChatChannel.Party => guild ? ChatChannel.Guild : ChatChannel.Whisper,
+            ChatChannel.Guild => ChatChannel.Whisper,
+            _ => ChatChannel.Global,
+        };
         if (_chatChannel == ChatChannel.Whisper) _chatTo ??= _lastWhisperFrom;
         UpdateChatTag();
     }
@@ -113,6 +121,7 @@ public partial class Fatia
         _chatTag.Text = _chatChannel switch
         {
             ChatChannel.Party => "[Grupo]",
+            ChatChannel.Guild => "[Guilda]",
             ChatChannel.Whisper => _chatTo is { Length: > 0 } to ? $"[Para {to}]" : "[Privado]",
             _ => "[Geral]",
         };
@@ -129,6 +138,13 @@ public partial class Fatia
         if (_chat.Typing) return true; // a caixa de texto consome o que precisa; o resto não chega ao jogo
         if (!PortInput.Pressed(e, "chat") && e is not InputEventKey { Pressed: true, Echo: false, Keycode: Key.KpEnter }) return false;
         if (_menuOpen || ShopOpen || SubWindowOpen || _choice >= 0) return false;
+        OpenChatBox();
+        return true;
+    }
+
+    void OpenChatBox()
+    {
+        if (_chatInput == null) return;
         _chat.Open();
         ((Control)_chatInput!.GetParent()).Visible = true;
         _chatInput.Text = "";
@@ -136,7 +152,6 @@ public partial class Fatia
         _chatInput.GrabFocus();
         if (DataPaths.Mobile) DisplayServer.VirtualKeyboardShow(""); // celular: abre o teclado do Android
         RefreshChat();
-        return true;
     }
 
     void CloseChat()
@@ -170,5 +185,6 @@ public partial class Fatia
         _chat.Tick(dt);
         if (was != _chat.Visible && _chatBox != null) _chatBox.Visible = _chat.Visible;
         _plate?.Set(PlayerName, _level);
+        _plate?.SetGuild(Online.State == Online.Status.Online ? Online.MyGuildTag : "");
     }
 }

@@ -2,9 +2,10 @@ namespace DW4.Gameplay;
 
 /// <summary>
 /// Canal da mensagem (DECISÃO DO PORT, online): todos, só o grupo ou privada para um jogador. <see cref="System"/> são os avisos
-/// do próprio jogo ("Online como X", "Ana não está online."): só locais, nunca vão para o servidor.
+/// do próprio jogo ("Online como X", "Ana não está online."): só locais, nunca vão para o servidor. <see cref="Guild"/> (2026-11-07):
+/// os membros da guilda do DW4 online, em qualquer fase. Os números são os mesmos do fio (DW4.Net.ChatTo).
 /// </summary>
-public enum ChatChannel { Global, Party, Whisper, System }
+public enum ChatChannel { Global, Party, Whisper, System, Guild }
 
 /// <summary>
 /// Chat do port (DECISÃO DO PORT, pedido do responsável; docs/decisoes-port-pc.md). Não existe no original. Cada linha é
@@ -19,6 +20,7 @@ public sealed record ChatMessage(string Sender, string Text, DateTime Time, Chat
         string prefix = Channel switch
         {
             ChatChannel.Party => "[Grupo] ",
+            ChatChannel.Guild => "[Guilda] ",
             ChatChannel.Whisper when me != null && string.Equals(Sender, me, StringComparison.OrdinalIgnoreCase) => $"[Para {To}] ",
             ChatChannel.Whisper => $"[De {Sender}] ",
             _ => "",
@@ -31,7 +33,7 @@ public sealed record ChatMessage(string Sender, string Text, DateTime Time, Chat
 public readonly record struct ChatCommand(ChatChannel Channel, string? To, string Text, string? Error)
 {
     /// <summary>
-    /// Lê a linha digitada. Comandos (DECISÃO DO PORT): "/g texto" geral, "/p texto" grupo, "/w nome texto" privada,
+    /// Lê a linha digitada. Comandos (DECISÃO DO PORT): "/g texto" geral, "/p texto" grupo, "/gu texto" guilda, "/w nome texto" privada,
     /// "/r texto" responde a última privada recebida. Sem comando, vai para o canal atual da caixa (<paramref name="current"/>;
     /// na privada, para <paramref name="currentTo"/>).
     /// </summary>
@@ -48,6 +50,7 @@ public readonly record struct ChatCommand(ChatChannel Channel, string? To, strin
         {
             case "/g" or "/geral" or "/global": return new(ChatChannel.Global, null, rest, null);
             case "/p" or "/grupo" or "/party": return new(ChatChannel.Party, null, rest, null);
+            case "/gu" or "/guilda" or "/guild": return new(ChatChannel.Guild, null, rest, null);
             case "/r":
                 return lastWhisperFrom == null ? new(ChatChannel.Whisper, null, rest, "Ninguém mandou mensagem privada ainda.")
                                                : new(ChatChannel.Whisper, lastWhisperFrom, rest, null);
@@ -55,7 +58,7 @@ public readonly record struct ChatCommand(ChatChannel Channel, string? To, strin
                 int s2 = rest.IndexOf(' ');
                 string to = s2 < 0 ? rest : rest[..s2], body = s2 < 0 ? "" : rest[(s2 + 1)..].Trim();
                 return to.Length == 0 ? new(ChatChannel.Whisper, null, body, "Use /w nome mensagem") : new(ChatChannel.Whisper, to, body, null);
-            default: return new(current, currentTo, text, $"Comando desconhecido: {cmd} (use /g, /p, /w nome ou /r)");
+            default: return new(current, currentTo, text, $"Comando desconhecido: {cmd} (use /g, /p, /gu, /w nome ou /r)");
         }
     }
 }

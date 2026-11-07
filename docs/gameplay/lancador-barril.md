@@ -47,3 +47,23 @@ jogador em (57,6, 112,8, 25,5), gatilho `matf00`), mas nenhum barril sai.
   `hit_g_bbarrelmz01.lua` quebra o barril na hora.
 - O pacote da fase precisa ser regerado (`dw4 fase-exportar … stag0102` e `dw4 empacotar`) para ter `objetos/g_bbarrelmz01` e
   `objetos/g_bbarrelgz01`.
+
+## Barris estourando cedo (relato da 0.6.29, 2026-11-07)
+
+Relato: "os barril estão explodindo muito antes" (jogador em (189,9; 73,1; 32,6), no pé da ladeira).
+
+- Reprodução sem janela (`DW4_FASE=stag0102 DW4_INICIO=190,74,32 DW4_DIAG_BARRIL=1`): todos os barris quebravam em x ≈ 150,
+  y 85, **pelo fim da ação** (WAITCHECK 250), 40 antes do jogador, que nunca era atingido. Nenhum quebrou por parede.
+- **Causa:** o MOVE do barril andava a 30 Hz (`SequenceRunner.FramesPerSecond`) e a espera da ação a 60 Hz
+  (`ObjectSequencer`): em 250 quadros de 60 Hz (4,17 s) o "Push" só dava 125 passos → ~111 de caminho.
+- **FATO (main.dol):** o executor do modelo (0x8030A448) lê o "KEIKATIMER" do próprio modelo (0x8031E4C4 em 0x8030A498) e
+  passa esse mesmo tempo aos três canais de translação (0x8030A2D8, chamadas em 0x8030A624/0x8030A63C/0x8030A654); não há relógio
+  separado para o MOVE. **HIPÓTESE:** a unidade é a dos quadros da ação (60 Hz, a do JOINTSET), como já se viu no tiro do jogador.
+- **FATO (main.dol, 0x80309C74):** com a checagem de parede ligada (0xD8, padrão em 0x8030EA00, ONWALL/OFFWALL) o modelo passa
+  pelo HITLANDDELIVER "HITWALL" (ou "HITWALLFULL" com 0xCC), que o tira da parede; algo a mais só roda se houver LUACALL "WHit"
+  (campo 0x34, 0x8030B6EC), e o g_bbarrelmz01/gz01 não tem LUACALL. Ou seja: **o barril não quebra na parede**.
+- **O que mudou:** `ObjectSequencer.MotionFrames` (mesmo relógio da ação) no barril e no tiro do jogador; a DECISÃO DO PORT de
+  quebrar na parede saiu — o barril desliza pela parede (tira a parte do passo que entra nela). O diagnóstico mostra o motivo da
+  quebra (fim da ação, golpe, sem chão), quanto andou, em quanto tempo e as batidas de parede.
+- **Depois:** quebram em x ≈ 258, y 58 (fim da ladeira), **219 no plano em 4,17 s**; o jogador em x 190 leva ~700 por barril (5%).
+- Código comum (`DW4.Gameplay` e `DW4.Client` sem `#if`): vale igual no build Android; nenhum dado novo.
