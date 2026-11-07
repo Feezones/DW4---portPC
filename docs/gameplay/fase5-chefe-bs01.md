@@ -190,3 +190,19 @@ Bot sem janela: `DW4_FASE=stagbs01 DW4_BOT=1 DW4_ALVO=objetos DW4_NIVEL=60` (que
   COUNTERset(2, 0)).
 - **DESCONHECIDO:** o bot não sobe no pedestal (fica no chão da arena), então a derrota não foi refeita por ele nesta revisão;
   o passeio da fase 2 (run03) não apareceu nas amostras do log.
+
+## Revisão de 2026-11-07 (relato: jogo congela depois de vencer o Apocalymon)
+
+- **Causa (FATO, reproduzido sem janela na nuvem com o bot, F9 e F8):** o f_bit nasce preso ao corpo do chefe (GENERATE com
+  dono). Quando a onda GENE-00 acaba, o corpo do chefe é liberado (`RemoveEnemy`) e leva junto o nó do f_bit, mas o objeto
+  continuava na lista `_objects`. A cada quadro o `WorldObject.Tick` dava `ObjectDisposedException` e o resto do
+  `_PhysicsProcess` não rodava: a câmera da vitória ("dead", 7 s) não andava, a fila da demo ficava presa no
+  `DMchkSD ISDEMOCAMERA "!=0"`, e o `SETBOXCAMERA`, os `g_b01base* SQ_SWON` e o `MODELCTRL -1 ONCTRL` nunca chegavam.
+- **Correção:** `RemoveEnemy` apaga também as peças presas ao corpo (`Owner`), e o `TickObjects` tira da lista qualquer objeto
+  cujo nó já foi liberado. Conferido: depois da derrota a câmera volta, o controle volta, o portal g_dreturngate e as caixas
+  GBOX-01 aparecem.
+- **FATO (hit_f_apocaly.lua):** a cena de vitória só roda se a soma do HP dos jogadores do grupo for maior que 0
+  (SYSisJoinPlayer/SYSctlPlayer HP GETHP); a ordem e os atrasos (BT_WIN02 240, SQ_ENJOY 330, portal 450/480, GBOX-01 450) batem
+  com o port.
+- **Modelo:** o Apocalymon voltou ao modelo do DW4 (pedido do usuário): saiu do `ident/trocas.tsv` e do `cs_modelos.json` dos
+  modelos do Cyber Sleuth (só dados, fora do Git).

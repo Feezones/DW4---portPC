@@ -397,6 +397,8 @@ public partial class Fatia
         for (int i = _objects.Count - 1; i >= 0; i--)
         {
             var o = _objects[i];
+            // Rede de segurança: nó já liberado por fora (pai apagado) sai da lista em vez de derrubar o quadro inteiro.
+            if (!GodotObject.IsInstanceValid(o.Actor.Root)) { _objects.RemoveAt(i); continue; }
             o.Tick(dt);
             if (o.Seq?.Motion.Attached is { } rl && AttachTarget(rl, o.Name) is { } at) o.Actor.Root.GlobalTransform = at;
             UpdateObjectAi(o, dt);

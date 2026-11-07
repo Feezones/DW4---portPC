@@ -161,6 +161,17 @@ public partial class Fatia
     void RemoveEnemy(Enemy e)
     {
         e.Dead = true;
+        // Peças presas ao corpo (GENERATE com dono, ex.: o f_bit do Apocalymon) somem junto: o QueueFree do corpo leva os nós
+        // delas, e o objeto que ficava na lista dava ObjectDisposedException a cada quadro no TickObjects, que parava o resto do
+        // _PhysicsProcess (relato de 2026-11-07: jogo congelado depois de vencer o Apocalymon, câmera da vitória sem fim).
+        for (int i = _objects.Count - 1; i >= 0; i--)
+        {
+            if (_objects[i].Owner != e) continue;
+            _objects[i].Dead = true;
+            _objects[i].Body?.QueueFree();
+            _objects[i].Actor.Root.QueueFree();
+            _objects.RemoveAt(i);
+        }
         e.Body.QueueFree();
         _enemies.Remove(e);
         _byNetId.Remove(e.NetId);
