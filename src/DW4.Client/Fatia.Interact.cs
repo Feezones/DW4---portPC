@@ -120,7 +120,7 @@ public partial class Fatia
             "party-invite" => "Convite para o grupo enviado.",
             "friend-accept" => "Agora vocês são amigos.",
             "party-accept" => "Você entrou no grupo.",
-            _ => "",
+            _ => PartyManageDone(r),
         };
         if (!r.Ok) Toast(r.Message.Length > 0 ? r.Message : "Não deu certo.");
         else if (done.Length > 0) Toast(done);

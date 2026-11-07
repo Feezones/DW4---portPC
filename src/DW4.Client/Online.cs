@@ -73,6 +73,16 @@ public static class Online
         return true;
     }
 
+    /// <summary>
+    /// DEPURAÇÃO (só no build Debug, DW4_ABRIR=grupo*): quadro de grupo falso, "online" sem servidor, para fotografar o quadro e o
+    /// menu do grupo. As ações não vão a lugar nenhum (sem conexão).
+    /// </summary>
+    public static void DebugFakeParty(int myId, PartyEntry[] roster)
+    {
+        if (!OS.IsDebugBuild()) return;
+        (MyId, Party, State) = (myId, roster, Status.Online);
+    }
+
     /// <summary>Menu do F: pede ao servidor (false se não está online).</summary>
     public static bool Interact(int target, string action, string inviteId = "")
     {

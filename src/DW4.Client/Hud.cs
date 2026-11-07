@@ -354,6 +354,8 @@ public sealed class HudOverlay
     readonly SubViewport _vp;
     readonly Node3D _holder;
     readonly Node _owner;
+    readonly TextureRect _rect;
+    MeshInstance3D[]? _iconMeshes;
 
     // FATO (i_stpnl02, SQ_WAIT01): LABEL do Digimon → WAITk = JOINTSET 2 + 10k; a ordem segue o atlas charaicon.
     static readonly Dictionary<string, int> FaceWait = new()
@@ -398,12 +400,41 @@ public sealed class HudOverlay
         _lvNum = h.Numbers.GetValueOrDefault("lvnm")?.FirstOrDefault();
         var layer = new CanvasLayer { Layer = 1 };
         // A tela do jogo é escalada para a altura da janela; com a SubViewport na proporção da janela, cobre a janela toda.
-        var rect = new TextureRect { Texture = vp.GetTexture(), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+        var rect = _rect = new TextureRect { Texture = vp.GetTexture(), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = Control.MouseFilterEnum.Ignore };
         rect.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         layer.AddChild(vp);
         layer.AddChild(rect);
         owner.AddChild(layer);
+    }
+
+    /// <summary>
+    /// Onde o rosto do Digimon (i_stpnl02) está na tela, em coordenadas da tela do jogo (as mesmas dos Control): a caixa das malhas
+    /// do ator na projeção 640 × 480 (x para a direita a partir do meio, y para cima), levada pela TextureRect que mostra a HUD.
+    /// Para o clique no próprio ícone (sair do grupo). Null antes de entrar na árvore.
+    /// </summary>
+    public Rect2? IconScreenRect()
+    {
+        if (_icon == null || !_rect.IsInsideTree()) return null;
+        var inv = _holder.GlobalTransform.AffineInverse();
+        float x0 = float.MaxValue, y0 = float.MaxValue, x1 = float.MinValue, y1 = float.MinValue;
+        _iconMeshes ??= _icon.Root.FindChildren("*", "MeshInstance3D", true, false).OfType<MeshInstance3D>().ToArray();
+        foreach (var mi in _iconMeshes)
+        {
+            if (!mi.IsVisibleInTree()) continue;
+            var box = (inv * mi.GlobalTransform) * mi.GetAabb();
+            x0 = Math.Min(x0, box.Position.X); x1 = Math.Max(x1, box.End.X);
+            y0 = Math.Min(y0, box.Position.Y); y1 = Math.Max(y1, box.End.Y);
+        }
+        if (x0 > x1) return null;
+        var vp = new Vector2(_vp.Size.X, _vp.Size.Y);
+        var r = _rect.GetGlobalRect();
+        float s = Math.Min(r.Size.X / vp.X, r.Size.Y / vp.Y);
+        var origin = r.Position + (r.Size - vp * s) / 2;
+        Vector2 Screen(float wx, float wy) => origin + new Vector2(vp.X / 2 + _holder.Position.X + wx, vp.Y / 2 - (_holder.Position.Y + wy)) * s;
+        var a = Screen(x0, y1);
+        var b = Screen(x1, y0);
+        return new Rect2(a, b - a);
     }
 
     /// <summary>

@@ -9,10 +9,11 @@ namespace DW4.Net;
 public static class Protocol
 {
     /// <summary>Muda quando o formato muda; cliente e servidor de versões diferentes não conversam.</summary>
-    public const int Version = 6; // 2 (0.6.1): arma, menu do F; 3 (0.6.2): combate em grupo (CoopGroup, CoopRelay), HP/MP e PartyRoster;
+    public const int Version = 7; // 2 (0.6.1): arma, menu do F; 3 (0.6.2): combate em grupo (CoopGroup, CoopRelay), HP/MP e PartyRoster;
                                   // 4: vagas de personagem no servidor (SaveList, SaveWrite, SaveDelete, SaveReply);
                                   // 5 (0.6.8): chat pelo servidor (ChatSend, ChatFrom, ChatNotice)
                                   // 6: troca de itens entre jogadores (TradeCmd, TradeView)
+                                  // 7: líder no quadro da party (PartyEntry.Leader); party-leave/kick/promote no Interact
     /// <summary>Chave de conexão da LiteNetLib (recusa quem não é o DW4 antes de qualquer pacote).</summary>
     public const string ConnectionKey = "DW4-online-1";
     public const int DefaultPort = 7031;
@@ -114,7 +115,9 @@ public sealed record PlayerState(string Stage, float X, float Y, float Z, float 
     int Hp = 0, int MaxHp = 0, int Mp = 0, int MaxMp = 0);
 
 /// <summary>Um membro da party online no DW4 (em qualquer fase): para o quadro do grupo no canto esquerdo da tela.</summary>
-public sealed record PartyEntry(int PlayerId, string Character, string Model, int Level, int Hp, int MaxHp, int Mp, int MaxMp, string Stage);
+/// <see cref="Leader"/> (protocolo 7): é o líder da party (quem criou o grupo ou recebeu a liderança).
+public sealed record PartyEntry(int PlayerId, string Character, string Model, int Level, int Hp, int MaxHp, int Mp, int MaxMp, string Stage,
+    bool Leader = false);
 
 /// <summary>
 /// Servidor → membros da party: quem da party está no DW4 agora, com nível, HP e MP (vem quando algo disso muda; vazio = sem party).
@@ -131,7 +134,8 @@ public sealed record RemoteState(int PlayerId, PlayerState State);
 /// <summary>
 /// Menu do F (cliente → servidor): <see cref="Action"/> sobre o jogador <see cref="TargetId"/>. Ações: relation (montar o menu),
 /// friend-request, party-invite; e as respostas a um <see cref="SocialPrompt"/>: friend-accept, friend-decline, party-accept,
-/// party-decline (o alvo é quem perguntou; <see cref="InviteId"/> no convite de grupo).
+/// party-decline (o alvo é quem perguntou; <see cref="InviteId"/> no convite de grupo). Gestão do grupo (protocolo 7, quadro da
+/// party): party-kick e party-promote (só o líder; alvo = membro da party, em qualquer fase) e party-leave (alvo = você mesmo).
 /// </summary>
 public sealed record Interact(int TargetId, string Action, string InviteId = "");
 
@@ -241,7 +245,7 @@ public static class Codec
                 foreach (var m in x.Members.Take(Protocol.MaxGroup))
                 {
                     w.Write(m.PlayerId); Str(w, m.Character); Str(w, m.Model); w.Write(m.Level);
-                    w.Write(m.Hp); w.Write(m.MaxHp); w.Write(m.Mp); w.Write(m.MaxMp); Str(w, m.Stage);
+                    w.Write(m.Hp); w.Write(m.MaxHp); w.Write(m.Mp); w.Write(m.MaxMp); Str(w, m.Stage); w.Write(m.Leader);
                 }
                 break;
             case SocialPrompt x: w.Write((byte)MsgType.SocialPrompt); Str(w, x.Kind, 16); w.Write(x.FromId); Str(w, x.FromTamer); Str(w, x.InviteId, 64); break;
@@ -333,7 +337,8 @@ public static class Codec
         if (n > Protocol.MaxGroup) throw new FormatException("party grande demais");
         var m = new PartyEntry[n];
         for (int i = 0; i < n; i++)
-            m[i] = new PartyEntry(r.ReadInt32(), Str(r), Str(r), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), Str(r));
+            m[i] = new PartyEntry(r.ReadInt32(), Str(r), Str(r), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32(), Str(r),
+                r.ReadBoolean());
         return new PartyRoster(m);
     }
 

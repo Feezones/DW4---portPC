@@ -3691,6 +3691,133 @@ Test("Online: chat de verdade (UDP local, DevApi: geral, amizade e grupo pelo F,
     }
 });
 
+Test("Online: líder no quadro da party e conferência de expulsar/passar líder/sair", () =>
+{
+    var w = new DW4.Net.World();
+    DW4.Net.PlayerState S(string stage) => new(stage, 0, 0, 0, 0, "", "p_girumon", 3, "", 50, 100, 20, 40);
+    w.Join(1, new(10, "A", null), "Ana");
+    w.Join(2, new(20, "B", null), "Bia");
+    w.Join(3, new(30, "C", null), "Caio");
+    w.Update(1, S("stagml11")); w.Update(2, S("dng101b1")); w.Update(3, S("stagml11"));
+    w.SetParty(1, "p", 10);
+    var o = w.SetParty(2, "p", 10);
+    var roster = o.Select(x => x.Message).OfType<DW4.Net.PartyRoster>().Last();
+    True(roster.Members.Single(m => m.Character == "Ana").Leader && !roster.Members.Single(m => m.Character == "Bia").Leader, "quem criou é o líder");
+    True(w.IsLeader(1) && !w.IsLeader(2) && !w.IsLeader(3), "IsLeader");
+    var back = (DW4.Net.PartyRoster)DW4.Net.Codec.Read(DW4.Net.Codec.Write(roster));
+    True(back.Members.SequenceEqual(roster.Members), "ida e volta com o líder");
+    Equal(null, DW4.Server.GameServer.PartyManageCheck(w, 1, 2, "party-kick"), "líder expulsa membro (mesmo em outra fase)");
+    Equal(null, DW4.Server.GameServer.PartyManageCheck(w, 1, 2, "party-promote"), "líder passa a liderança");
+    Equal("Só o líder do grupo pode fazer isso.", DW4.Server.GameServer.PartyManageCheck(w, 2, 1, "party-kick"), "membro não expulsa");
+    Equal("Só o líder do grupo pode fazer isso.", DW4.Server.GameServer.PartyManageCheck(w, 2, 1, "party-promote"), "membro não passa líder");
+    Equal("Esse jogador não está no seu grupo.", DW4.Server.GameServer.PartyManageCheck(w, 1, 3, "party-kick"), "fora do grupo");
+    Equal("Você não pode fazer isso consigo mesmo.", DW4.Server.GameServer.PartyManageCheck(w, 1, 1, "party-kick"), "a si mesmo");
+    Equal(null, DW4.Server.GameServer.PartyManageCheck(w, 2, 2, "party-leave"), "membro sai");
+    Equal("Pedido inválido.", DW4.Server.GameServer.PartyManageCheck(w, 1, 2, "party-leave"), "sair é só de si mesmo");
+    Equal("Você não está em um grupo.", DW4.Server.GameServer.PartyManageCheck(w, 3, 3, "party-leave"), "sem grupo");
+    o = w.SetParty(2, "p", 20);
+    True(o.Any(x => x.To == 1 && x.Message is DW4.Net.PartyRoster r && r.Members.Single(m => m.Character == "Bia").Leader), "líder novo: quadro de novo");
+    True(w.IsLeader(2) && !w.IsLeader(1), "liderança passou");
+});
+
+Test("Online: party da presença da DMO.API traz o líder pela conta", () =>
+{
+    using var doc = System.Text.Json.JsonDocument.Parse("""{"success":true,"party":{"id":"abc","leader":"Lia","members":[{"name":"Lia","isLeader":false,"accountId":5},{"name":"Beto","isLeader":true,"accountId":9}]}}""");
+    Equal(new DW4.Server.PartyInfo("abc", 9), DW4.Server.DmoApi.ParseParty(doc.RootElement), "id e líder");
+    using var none = System.Text.Json.JsonDocument.Parse("""{"success":true,"party":null}""");
+    Equal(null, DW4.Server.DmoApi.ParseParty(none.RootElement), "sem party");
+});
+
+Test("Online: gestão do grupo de verdade (UDP local, DevApi: passar líder, expulsar, sair)", () =>
+{
+    var server = new DW4.Server.GameServer(new DW4.Server.DevApi());
+    True(server.Start(0), "servidor abriu");
+    var stop = false;
+    var loop = new Thread(() => { while (!Volatile.Read(ref stop)) { server.Tick(); Thread.Sleep(5); } }) { IsBackground = true };
+    loop.Start();
+    try
+    {
+        (LiteNetLib.NetManager Net, LiteNetLib.NetPeer Peer, System.Collections.Concurrent.ConcurrentQueue<object> Inbox) Client(string ticket, string character)
+        {
+            var inbox = new System.Collections.Concurrent.ConcurrentQueue<object>();
+            var l = new LiteNetLib.EventBasedNetListener();
+            l.NetworkReceiveEvent += (_, reader, _, _) => inbox.Enqueue(DW4.Net.Codec.Read(reader.GetRemainingBytes()));
+            var net = new LiteNetLib.NetManager(l) { AutoRecycle = true };
+            net.Start();
+            l.PeerConnectedEvent += p => p.Send(DW4.Net.Codec.Write(new DW4.Net.Hello(DW4.Net.Protocol.Version, ticket, character, "p_girumon", 1)), LiteNetLib.DeliveryMethod.ReliableOrdered);
+            var peer = net.Connect("127.0.0.1", server.Port, DW4.Net.Protocol.ConnectionKey);
+            return (net, peer, inbox);
+        }
+        T Wait<T>((LiteNetLib.NetManager Net, LiteNetLib.NetPeer Peer, System.Collections.Concurrent.ConcurrentQueue<object> Inbox) c, Func<T, bool>? ok = null) where T : class
+        {
+            var until = DateTime.UtcNow.AddSeconds(5);
+            while (DateTime.UtcNow < until)
+            {
+                c.Net.PollEvents();
+                while (c.Inbox.TryDequeue(out var m)) if (m is T t && (ok == null || ok(t))) return t;
+                Thread.Sleep(5);
+            }
+            throw new InvalidOperationException($"não chegou {typeof(T).Name}");
+        }
+        void Send((LiteNetLib.NetManager Net, LiteNetLib.NetPeer Peer, System.Collections.Concurrent.ConcurrentQueue<object> Inbox) c, object m) =>
+            c.Peer.Send(DW4.Net.Codec.Write(m), LiteNetLib.DeliveryMethod.ReliableOrdered);
+
+        var a = Client("dev:Lia", "Ana");
+        var b = Client("dev:Beto", "Bia");
+        var c = Client("dev:Cris", "Caio");
+        int idA = Wait<DW4.Net.Welcome>(a).PlayerId, idB = Wait<DW4.Net.Welcome>(b).PlayerId, idC = Wait<DW4.Net.Welcome>(c).PlayerId;
+        Send(a, new DW4.Net.PlayerState("stagml11", 0, 0, 0, 0, "", "p_girumon", 1));
+        Send(b, new DW4.Net.PlayerState("stagml11", 1, 0, 0, 0, "", "p_girumon", 1));
+        Send(c, new DW4.Net.PlayerState("stagml11", 2, 0, 0, 0, "", "p_girumon", 1));
+        Wait<DW4.Net.Spawn>(a, s => s.PlayerId == idC);
+        foreach (var (x, id) in new[] { (b, idB), (c, idC) })
+        {
+            Send(a, new DW4.Net.Interact(id, "friend-request"));
+            Wait<DW4.Net.SocialPrompt>(x, p => p.Kind == "friend");
+            Send(x, new DW4.Net.Interact(idA, "friend-accept"));
+            Wait<DW4.Net.InteractResult>(x, r => r.Action == "friend-accept" && r.Ok);
+            Thread.Sleep(450);
+            Send(a, new DW4.Net.Interact(id, "party-invite"));
+            var inv = Wait<DW4.Net.SocialPrompt>(x, p => p.Kind == "party");
+            Send(x, new DW4.Net.Interact(idA, "party-accept", inv.InviteId));
+            Thread.Sleep(450);
+        }
+        var full = Wait<DW4.Net.PartyRoster>(a, r => r.Members.Length == 3);
+        True(full.Members.Single(m => m.PlayerId == idA).Leader && full.Members.Count(m => m.Leader) == 1, "quem convidou primeiro é o líder");
+
+        Send(b, new DW4.Net.Interact(idC, "party-kick"));
+        True(Wait<DW4.Net.InteractResult>(b, r => r.Action == "party-kick") is { Ok: false, Message: "Só o líder do grupo pode fazer isso." }, "membro não expulsa");
+
+        Send(a, new DW4.Net.Interact(idB, "party-promote"));
+        True(Wait<DW4.Net.InteractResult>(a, r => r.Action == "party-promote").Ok, "líder passa a liderança");
+        Equal("Ana passou a liderança do grupo para você.", Wait<DW4.Net.ChatNotice>(b).Text, "aviso para o novo líder");
+        Equal("Bia agora é o líder do grupo.", Wait<DW4.Net.ChatNotice>(c).Text, "aviso para os outros");
+        Wait<DW4.Net.PartyRoster>(c, r => r.Members.Any(m => m.PlayerId == idB && m.Leader));
+        Thread.Sleep(450);
+        Send(a, new DW4.Net.Interact(idC, "party-kick"));
+        True(Wait<DW4.Net.InteractResult>(a, r => r.Action == "party-kick") is { Ok: false }, "o líder antigo não expulsa mais");
+
+        Send(b, new DW4.Net.Interact(idC, "party-kick"));
+        True(Wait<DW4.Net.InteractResult>(b, r => r.Action == "party-kick").Ok, "líder novo expulsa");
+        Equal("Bia tirou você do grupo.", Wait<DW4.Net.ChatNotice>(c).Text, "aviso para o expulso");
+        Wait<DW4.Net.PartyRoster>(c, r => r.Members.Length == 0);
+        Wait<DW4.Net.PartyRoster>(a, r => r.Members.Length == 2);
+
+        Thread.Sleep(450);
+        Send(a, new DW4.Net.Interact(idA, "party-leave"));
+        True(Wait<DW4.Net.InteractResult>(a, r => r.Action == "party-leave").Ok, "membro sai");
+        Wait<DW4.Net.PartyRoster>(a, r => r.Members.Length == 0);
+        Wait<DW4.Net.PartyRoster>(b, r => r.Members.Length == 0); // sobrou 1: o grupo acaba
+        foreach (var n in new[] { a.Net, b.Net, c.Net }) n.Stop();
+    }
+    finally
+    {
+        Volatile.Write(ref stop, true);
+        loop.Join();
+        server.Stop();
+    }
+});
+
 Test("Online: pacotes do combate em grupo (ida e volta, limites)", () =>
 {
     object[] all = [new DW4.Net.EnemySpawn(7, 12, 1, 2, 3, 0.5f, 340, "GENE-03"), new DW4.Net.EnemySeq(7, "SQ_ATCK1", "common"),

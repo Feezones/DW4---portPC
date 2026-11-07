@@ -38,6 +38,24 @@ Primeira etapa do coop (ADR 0003): os jogadores se veem e andam juntos. Combate,
 - Trocar itens aparece desligado até os saves irem para o servidor.
 - Cliente e servidor precisam da mesma versão do protocolo; o servidor recusa a versão antiga com aviso para atualizar.
 
+## Líder do grupo (protocolo 7)
+
+Pedido do responsável em 2026-11-07. Quem manda o primeiro convite aceito cria a party e é o líder (regra da DMO.API, que já
+existia: só o líder convida).
+
+- O quadro da party (`PartyRoster`) leva `Leader` em cada membro; o cartão do líder mostra LÍDER. O servidor do DW4 sabe o
+  líder pela presença (`api/dw4/presence` devolve a party com `isLeader` e `accountId` dos membros).
+- Líder: botão direito no cartão de um membro → "Passar líder" (`party-promote`) ou "Expulsar do grupo" (`party-kick`, com
+  confirmação). Membro (e o líder também): clique no ícone do próprio Digimon no painel de status → "Sair do grupo"
+  (`party-leave`, com confirmação; se o líder sai, a liderança passa para quem entrou primeiro). No celular, tocar no cartão
+  ou no ícone faz o mesmo; essas áreas não mexem o joystick.
+- Conferência em dois lugares: `GameServer.PartyManageCheck` (você na party; para expulsar e passar, você é o líder e o alvo
+  está na sua party, em qualquer fase) e de novo no `PartyService` da DMO.API (`KickAsync`/`PromoteAsync`, códigos
+  `SoLiderGerencia` e `ForaDaParty`). Depois da ação, todos do grupo perguntam a party de novo e recebem aviso no chat.
+- Ordem de publicação: DMO.API (ações `party-kick`/`party-promote`) → `dw4-servidor` (protocolo 7) → jogo (PC e APK).
+- Teste local: `DW4_ABRIR=grupo` (você líder) ou `grupo-membro` fotografa o quadro com um grupo falso, sem servidor;
+  `DW4_TECLAS="4:direito@60;190"` aperta o botão direito num ponto.
+
 ## Combate em grupo (protocolo 3)
 
 Só entre membros da mesma party na mesma fase (decisão do responsável, 2026-11-03). O servidor manda `CoopGroup`

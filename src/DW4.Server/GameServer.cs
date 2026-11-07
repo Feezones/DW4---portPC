@@ -128,11 +128,36 @@ public sealed partial class GameServer
         }
         Log($"[{p.Id}] entrou: {who.Tamer} (conta {who.AccountId}) com {h.Character}");
         Send(p, new Welcome(p.Id, who.Tamer), true);
-        _ = SafeAsync(async () => { var party = await _api.PresenceAsync(who.AccountId, true); _main.Enqueue(() => Send(_world.SetParty(p.Id, party))); });
+        RefreshParty(p.Id, who.AccountId);
     }
 
     static readonly HashSet<string> Actions =
-        ["relation", "friend-request", "party-invite", "friend-accept", "friend-decline", "party-accept", "party-decline"];
+        ["relation", "friend-request", "party-invite", "friend-accept", "friend-decline", "party-accept", "party-decline",
+         "party-leave", "party-kick", "party-promote"];
+
+    /// <summary>Pergunta a party da conta à DMO.API (presença) e atualiza o mundo: grupo de combate e quadro com o líder.</summary>
+    void RefreshParty(int id, long accountId) =>
+        _ = SafeAsync(async () =>
+        {
+            var party = await _api.PresenceAsync(accountId, true);
+            _main.Enqueue(() => Send(_world.SetParty(id, party?.Id, party?.LeaderAccountId ?? 0)));
+        });
+
+    /// <summary>
+    /// Gestão do grupo pelo quadro da party (protocolo 7): confere aqui antes de ir à DMO.API (que confere de novo). Sair = você
+    /// numa party; expulsar e passar a liderança = você é o líder e o alvo está na sua party (em qualquer fase). Devolve o motivo
+    /// da recusa, ou null.
+    /// </summary>
+    public static string? PartyManageCheck(World world, int me, int target, string action)
+    {
+        var who = world.Who(me);
+        if (who?.PartyId is not { Length: > 0 } party) return "Você não está em um grupo.";
+        if (action == "party-leave") return target == me ? null : "Pedido inválido.";
+        if (target == me) return "Você não pode fazer isso consigo mesmo.";
+        if (!world.IsLeader(me)) return "Só o líder do grupo pode fazer isso.";
+        if (world.Who(target)?.PartyId != party) return "Esse jogador não está no seu grupo.";
+        return null;
+    }
     readonly Dictionary<int, DateTime> _lastInteract = [];
     // Contra spam no chat: 5 mensagens a cada 5 s por conta (a mesma regra do jogo, ChatFlood).
     readonly DW4.Gameplay.ChatFlood _chatFlood = new();
@@ -167,6 +192,24 @@ public sealed partial class GameServer
         _lastInteract[p.Id] = now;
         if (!Actions.Contains(x.Action)) { Log($"[{p.Id}] ação {x.Action} desconhecida"); return; }
         var me = _world.Who(p.Id)!;
+        if (x.Action is "party-leave" or "party-kick" or "party-promote")
+        {
+            if (PartyManageCheck(_world, p.Id, x.TargetId, x.Action) is { } refused)
+            {
+                Send(p, new InteractResult(x.TargetId, x.Action, false, refused), true);
+                return;
+            }
+            var tw = _world.Who(x.TargetId)!;
+            var members = _world.PartyMembers(me.PartyId);
+            _ = Task.Run(async () =>
+            {
+                SocialReply r;
+                try { r = await _api.SocialAsync(me, x.Action, tw, ""); }
+                catch (Exception ex) { Log("API: " + ex.Message); r = new SocialReply(false, "Servidor da conta fora do ar. Tente de novo em instantes."); }
+                _main.Enqueue(() => AfterPartyManage(p, x, me, tw, members, r));
+            });
+            return;
+        }
         bool answer = x.Action.EndsWith("-accept") || x.Action.EndsWith("-decline");
         if (_world.Who(x.TargetId) is not { } target || x.TargetId == p.Id || (!answer && !_world.SameInstance(p.Id, x.TargetId)))
         {
@@ -206,7 +249,33 @@ public sealed partial class GameServer
         if (x.Action == "party-invite" && tp != null) Send(tp, new SocialPrompt("party", p.Id, me.Tamer, r.InviteId), true);
         if (x.Action is "party-accept")
             foreach (var (id, acc) in new[] { (p.Id, me.AccountId), (x.TargetId, target.AccountId) })
-                _ = SafeAsync(async () => { var party = await _api.PresenceAsync(acc, true); _main.Enqueue(() => Send(_world.SetParty(id, party))); });
+                RefreshParty(id, acc);
+    }
+
+    // Depois de sair/expulsar/passar a liderança: todos que estavam no grupo perguntam a party de novo (quem saiu fica sem quadro,
+    // o líder novo aparece com a coroa) e os outros recebem um aviso no chat.
+    void AfterPartyManage(NetPeer p, Interact x, Identity me, Identity target, List<(int Id, long AccountId)> members, SocialReply r)
+    {
+        if (_peers.ContainsKey(p.Id)) Send(p, new InteractResult(x.TargetId, x.Action, r.Ok, r.Message), true);
+        if (!r.Ok) return;
+        Log($"[{p.Id}] {me.Tamer}: {x.Action} {target.Tamer}");
+        foreach (var (id, acc) in members) RefreshParty(id, acc);
+        string myName = _world.Name(p.Id), targetName = _world.Name(x.TargetId);
+        string? toTarget = x.Action switch
+        {
+            "party-kick" => $"{myName} tirou você do grupo.",
+            "party-promote" => $"{myName} passou a liderança do grupo para você.",
+            _ => null,
+        };
+        if (toTarget != null && _peers.TryGetValue(x.TargetId, out var tp)) Send(tp, new ChatNotice(toTarget), true);
+        string toOthers = x.Action switch
+        {
+            "party-kick" => $"{targetName} saiu do grupo.",
+            "party-promote" => $"{targetName} agora é o líder do grupo.",
+            _ => $"{myName} saiu do grupo.",
+        };
+        foreach (var (id, _) in members)
+            if (id != p.Id && id != x.TargetId && _peers.TryGetValue(id, out var op)) Send(op, new ChatNotice(toOthers), true);
     }
 
     // ---------- vagas de personagem (saves no servidor) ----------
@@ -329,7 +398,7 @@ public sealed partial class GameServer
     void Heartbeat()
     {
         foreach (var (id, acc) in _world.Accounts.ToList())
-            _ = SafeAsync(async () => { var party = await _api.PresenceAsync(acc, true); _main.Enqueue(() => Send(_world.SetParty(id, party))); });
+            RefreshParty(id, acc);
     }
 
     // Combate em grupo: até 120 pacotes por segundo por jogador (sincronia a 10 Hz + golpes e sequências de vários inimigos).
