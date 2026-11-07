@@ -45,6 +45,7 @@ public partial class Fatia
             case "labo": OpenEvolve(); break;
             case "cartas": OpenCardShop(); break;
             case "avaliar": OpenAppraisal(); break;
+            case "troca" or "troca-lista": OpenTradeDemo(what == "troca-lista"); break;
             case "salvar": MenuStageInPlace("stagIS12"); break;
             // Atalhos de item: 3 discos de HP e 2 de MP nos atalhos 1 e 2, e a janela de itens aberta.
             case "itens" when _db != null:

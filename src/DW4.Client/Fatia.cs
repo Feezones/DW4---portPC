@@ -287,6 +287,7 @@ public partial class Fatia : Node3D
         if (_ending != null) { GetViewport().SetInputAsHandled(); return; } // créditos: Fatia.Ending.cs lê as teclas
         if (ChatInput(e)) { GetViewport().SetInputAsHandled(); return; } // chat aberto: nada chega ao jogo
         if (SaveWindowInput(e)) { if (IsInsideTree()) GetViewport().SetInputAsHandled(); return; } // a escolha pode trocar de fase
+        if (TradeInput(e)) { GetViewport().SetInputAsHandled(); return; } // janela de troca aberta: nada chega ao jogo
         if (TechBarInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (MenuInput(e)) { GetViewport().SetInputAsHandled(); return; }
         if (QuickItemInput(e)) { GetViewport().SetInputAsHandled(); return; }

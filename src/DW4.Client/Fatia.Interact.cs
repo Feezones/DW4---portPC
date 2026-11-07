@@ -14,7 +14,7 @@ namespace DW4.Client;
 /// convidar para o grupo, adicionar amigo e trocar itens. Quem recebe um pedido de amizade ou um convite de grupo vê uma
 /// pergunta com aceitar e recusar. Mouse/toque ou cima/baixo e Enter; Esc ou a mesma tecla fecha.
 /// Perto de alguém aparece a dica "[G] Interagir com Fulano" (com a tecla que estiver no mapa de controles).
-/// A troca fica desligada até os saves irem para o servidor (sem isso, item duplicado vira trapaça).
+/// "Trocar itens" abre a janela de troca (Fatia.Trade.cs), feita pelo servidor nos saves da conta.
 /// </summary>
 public partial class Fatia
 {
@@ -142,12 +142,13 @@ public partial class Fatia
                 InteractAction.InviteToParty => () => Online.Interact(target, "party-invite"),
                 InteractAction.AddFriend when relation == "requestReceived" => () => Online.Interact(target, "friend-accept"),
                 InteractAction.AddFriend => () => Online.Interact(target, "friend-request"),
+                InteractAction.Trade => () => AskTrade(target),
                 _ => null,
             };
             string label = o.Action == InteractAction.AddFriend && relation == "requestReceived" && o.Enabled ? "Aceitar pedido de amizade" : o.Label;
             bool enabled = o.Enabled;
             string? reason = o.Reason;
-            if (o.Action == InteractAction.Trade) (enabled, reason) = (false, "Em breve: a troca chega quando os saves forem para o servidor.");
+            if (o.Action == InteractAction.Trade && !Session.Active) (enabled, reason) = (false, "Entre com um personagem para trocar itens.");
             rows.Add((label, enabled, reason, act));
         }
         OpenInteractWindow(_interactName, rows);
@@ -156,6 +157,7 @@ public partial class Fatia
     void ShowNextPrompt()
     {
         if (!_prompts.TryDequeue(out var p)) return;
+        if (p.Kind == "trade") { ShowTradePrompt(p); return; }
         bool party = p.Kind == "party";
         string question = party ? $"{p.FromTamer} convidou você para o grupo." : $"{p.FromTamer} quer ser seu amigo.";
         OpenInteractWindow(question,
