@@ -163,11 +163,12 @@ public partial class Fatia
             UseGameFont(_spectateLabel);
         }
         string who = Online.Remotes.TryGetValue(_spectateId, out var r) ? r.Character : "";
-        string side = $"{DeviceIcons.Of("esquerda")}/{DeviceIcons.Of("direita")}";
+        bool touch = TouchControls.Showing; // celular: os botões ◀ ▶ e LOBBY da tela
+        string side = touch ? "◀ ▶" : $"{DeviceIcons.Of("esquerda")}/{DeviceIcons.Of("direita")}";
         _spectateLabel.Text = who.Length == 0
             ? "Você caiu. Esperando o grupo..."
             : $"Você caiu. Assistindo: {who}   [{side} troca]\n" +
-              $"Um colega pode te reviver usando um Raise Disk no seu cristal.   [segure {DeviceIcons.Of("pulo")}: voltar ao lobby" +
+              $"Um colega pode te reviver usando um Raise Disk no seu cristal.   [segure {(touch ? "LOBBY" : DeviceIcons.Of("pulo"))}: voltar ao lobby" +
               (_giveUpTimer > 0 ? $" {GiveUpHold - _giveUpTimer:0.0} s" : "") + "]";
         _spectateLabel.Visible = true;
     }
