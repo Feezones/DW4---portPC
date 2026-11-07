@@ -9,7 +9,7 @@ config_version=5
 config/quit_on_go_back=false
 
 config/name="Digimon World 4"
-config/version="0.6.30-android.14"
+config/version="0.6.31-android.15"
 run/main_scene="res://MainMenu.tscn"
 config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 boot_splash/show_image=false
