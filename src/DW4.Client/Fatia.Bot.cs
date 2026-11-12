@@ -29,7 +29,7 @@ public partial class Fatia
             attackDown = phase < 300;
             if (phase == 300) _dashFrom = _player.GlobalPosition;
             if (phase == 479) GD.Print($"[carregado] avanço {new Vector2(_player.GlobalPosition.X - _dashFrom.X, _player.GlobalPosition.Z - _dashFrom.Z).Length():0.0} (de {_dashFrom.Round()} a {_player.GlobalPosition.Round()}), sequência {_runner?.Sequence}");
-            if (phase is > 300 and < 350 && _tick % 5 == 0) GD.Print($"[carregado] q{phase - 300} {_runner?.Sequence} {_runner?.Action} pos {_player.GlobalPosition.Round()}");
+            if (phase > 300 && _tick % 15 == 0) GD.Print($"[carregado] q{phase - 300} {_runner?.Sequence} {_runner?.Action} {_runner?.ActionFrame:0}/{_runner?.ActionLength:0} pos {_player.GlobalPosition.Round()}");
             return;
         }
         if (OS.GetEnvironment("DW4_ANDAR") == "frente")

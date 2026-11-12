@@ -34,18 +34,20 @@ public partial class Fatia
 
     void SetupJump(SequenceRunner runner)
     {
-        runner.Condition = w => w switch
+        runner.Condition = w => DiagCondition(w, w switch
         {
             "TurnY" => _jump.VelocityY <= 0,
             // DECISÃO DO PORT (segurança, relato de 2026-11-02: Dorumon preso no ar encostado numa mureta depois do carregado): parado
             // no ar sem descer por 0,25 s (apoiado numa borda que a física não chama de chão) também conta como pouso.
             "Landing" => (_player.IsOnFloor() || _airStill >= 0.25f) && _jump.VelocityY <= 0,
             _ => true,
-        };
+        });
         runner.MoveStarted = m =>
         {
             if (!InAirSequence) return;
-            _jump.Apply(m, _player.Velocity.Y);
+            // O "Push" (canal Z) não mexe no pulo: antes ele desligava o JumpMotion logo depois do "Jump", a velocidade vertical ficava
+            // em 30 e o WCHECK "TurnY" do golpe carregado nunca passava (o jogador ficava preso, relato de 2026-11-02).
+            if (m.S(0) is not "Push" and not "Back" and not "Move") _jump.Apply(m, _player.Velocity.Y);
             if (_runner?.Sequence == SequenceRunner.ChargedSequence && m.S(0) is "Push" or "Stop") _dash.Apply(m);
         };
         // PDMOVE "Move" 0,7 6 no começo do SQ_JUMP: HIPÓTESE = controle no ar a 70% da velocidade de andar.
@@ -53,6 +55,12 @@ public partial class Fatia
         {
             if (c.Kind == "PDMOVE") _airControl = c.S(0) == "Move" ? c.F(1) : 0;
         };
+    }
+
+    bool DiagCondition(string w, bool ok)
+    {
+        if (DiagNpc && !ok && _tick % 30 == 0) GD.Print($"[espera] {_runner?.Sequence} {_runner?.Action} WCHECK {w}: chão {_player.IsOnFloor()} vy {_jump.VelocityY:0.0} ativo {_jump.Active} parado {_airStill:0.00}");
+        return ok;
     }
 
     static bool JumpDown() => PortInput.Down("pulo");
