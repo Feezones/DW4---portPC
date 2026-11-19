@@ -1,0 +1,629 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using Godot;
+using DW4.Gameplay;
+
+namespace DW4.Client;
+
+/// <summary>
+/// HUD do jogo a partir de <c>dw4 igb-hud ndmw.afs 179 area.afs 9 &lt;fatia&gt;\hud</c> (atores i_* do IGB da fase com o
+/// grafo de nós, sequências, medidores e números; texturas do usa_pack). Levantamento: docs/gameplay/fase4-inventario-interface.md.
+/// Regras usadas (FATO salvo indicação):
+///   - matrizes do Alchemy em linhas com a translação na última linha; quatérnios conjugados para a Godot (como nos personagens);
+///   - JOINTSET "" a b das ações põe o tempo (quadros de 60 Hz) de todas as igTransformSequence do ator;
+///   - nós sob igTextureMatrixStateAttr são matriz de TEXTURA: mexem na UV das geometrias abaixo, não na posição;
+///   - número: o dígito k (0 = unidade) é um quad cuja UV anda U += dígito × _offsetNext na faixa de 10 dígitos;
+///   - painéis de status do jogador n em V&lt;−260 + 150n, −160, 0&gt; numa projeção ortográfica 640 × 480 (Lua: GENERATE).
+/// </summary>
+public sealed class HudData
+{
+    public sealed record Seq(int Mask, float Duration, float[] Times, Vector3[] T, Quaternion[] R, Vector3[] S);
+    public sealed record MeshData(Vector3[] Positions, Vector2[] Uvs, int[] Triangles);
+    public sealed record NodeData(int Id, string Type, string Name, Transform3D? Matrix, Seq? Sequence, int[] Children,
+        string? Texture, bool TextureMatrix, MeshData[] Meshes, bool Billboard, bool? Additive = null);
+    public sealed record MeterData(string Name, int Node, float MaxValue, float NonZeroTime, float NonMaxTime, bool Notch);
+    public sealed record NumberRam(int Geometry, float OffsetNext, int MaxValue, int[][] DigitVertices, int[][] DigitKinds);
+
+    public string Dir { get; }
+    public Dictionary<int, NodeData> Nodes { get; } = [];
+    public Dictionary<string, int> Actors { get; } = [];
+    public Dictionary<string, List<MeterData>> Meters { get; } = [];
+    public Dictionary<string, List<NumberRam>> Numbers { get; } = [];
+    /// <summary>Colisão própria do ator (beHitLandModelInfo: nó do igSwitch @8 e o tipo @10), quando o exportador achou.</summary>
+    public Dictionary<string, (int Node, int Kind)> Lands { get; } = [];
+    readonly Dictionary<string, Texture2D?> _textures = [];
+
+    HudData(string dir) => Dir = dir;
+
+    public static HudData? Load(string dir, List<string> problems, string pattern = "*_hud.json", string? missing = null)
+    {
+        var file = GameFiles.DirExists(dir) ? GameFiles.EnumerateFiles(dir, pattern).FirstOrDefault() : null;
+        if (file == null) { problems.Add(missing ?? $"falta o *_hud.json (dw4 igb-hud ndmw.afs 179 area.afs 9 <fatia>\\hud): HUD em texto"); return null; }
+        var h = new HudData(dir);
+        using var doc = JsonDocument.Parse(GameFiles.ReadAllText(file));
+        var root = doc.RootElement;
+        foreach (var a in root.GetProperty("actors").EnumerateArray())
+        {
+            var name = a.GetProperty("name").GetString()!;
+            h.Actors[name] = a.GetProperty("root").GetInt32();
+            if (a.TryGetProperty("land", out var land)) h.Lands[name] = (land.GetProperty("node").GetInt32(), land.GetProperty("kind").GetInt32());
+        }
+        foreach (var p in root.GetProperty("nodes").EnumerateObject()) h.Nodes[int.Parse(p.Name)] = ReadNode(int.Parse(p.Name), p.Value);
+        foreach (var m in root.GetProperty("meters").EnumerateArray())
+            h.Meters[m.GetProperty("name").GetString()!] = m.GetProperty("data").EnumerateArray().Select(d => new MeterData(
+                d.GetProperty("name").GetString()!, d.GetProperty("node").GetInt32(), d.GetProperty("maxValue").GetSingle(),
+                d.GetProperty("nonZeroTime").GetSingle(), d.GetProperty("nonMaxTime").GetSingle(), d.GetProperty("isNotchMode").GetBoolean())).ToList();
+        foreach (var n in root.GetProperty("numbers").EnumerateArray())
+            h.Numbers[n.GetProperty("name").GetString()!] = n.GetProperty("rams").EnumerateArray().Select(r =>
+            {
+                var digits = r.GetProperty("digits").EnumerateArray().Select(d => d.GetProperty("vertices").EnumerateArray().Select(v => (v[0].GetInt32(), v[1].GetInt32())).ToArray()).ToArray();
+                return new NumberRam(r.GetProperty("geometry").GetInt32(), r.GetProperty("offsetNext").GetSingle(), r.GetProperty("maxValue").GetInt32(),
+                    digits.Select(d => d.Select(v => v.Item1).ToArray()).ToArray(), digits.Select(d => d.Select(v => v.Item2).ToArray()).ToArray());
+            }).ToList();
+        return h;
+    }
+
+    static NodeData ReadNode(int id, JsonElement e)
+    {
+        Transform3D? matrix = e.TryGetProperty("matrix", out var m) ? FromAlchemy(Floats(m)) : null;
+        Seq? seq = null;
+        if (e.TryGetProperty("sequence", out var s))
+        {
+            var t = s.TryGetProperty("translation", out var tt) ? Vec3s(Floats(tt)) : [];
+            var r = s.TryGetProperty("rotation", out var rr) ? Quats(Floats(rr)) : [];
+            var sc = s.TryGetProperty("scale", out var ss) ? Vec3s(Floats(ss)) : [];
+            seq = new Seq(s.GetProperty("mask").GetInt32(), s.GetProperty("duration").GetSingle(), Floats(s.GetProperty("times")), t, r, sc);
+        }
+        string? texture = e.TryGetProperty("texture", out var tx) && tx.ValueKind == JsonValueKind.String ? tx.GetString() : null;
+        bool texMatrix = false;
+        bool? additive = null;
+        if (e.TryGetProperty("attrs", out var attrs))
+            foreach (var a in attrs.EnumerateArray())
+            {
+                var type = a.GetProperty("type").GetString();
+                // igBlendFunctionAttr: destino 1 (ONE) = mistura aditiva (brilhos do j_startback); 5 = transparência normal.
+                if (type == "igBlendFunctionAttr" && a.TryGetProperty("dst", out var dst)) additive = dst.GetInt32() == 1;
+                if (type == "igTextureBindAttr" && texture == null && a.TryGetProperty("texture", out var bt) && bt.ValueKind == JsonValueKind.String) texture = bt.GetString();
+                if (type == "igTextureMatrixStateAttr" && a.GetProperty("enabled").GetBoolean()) texMatrix = true;
+            }
+        var meshes = new List<MeshData>();
+        if (e.TryGetProperty("meshes", out var ms))
+            foreach (var mm in ms.EnumerateArray().Where(x => x.TryGetProperty("positions", out _)))
+            {
+                var pos = Vec3s(Floats(mm.GetProperty("positions")));
+                var uv = mm.TryGetProperty("uvs", out var u) ? Floats(u) : new float[pos.Length * 2];
+                // UV do IGB com origem embaixo; as PNG saem com a primeira linha no topo.
+                var uvs = Enumerable.Range(0, pos.Length).Select(i => new Vector2(uv[2 * i], 1 - uv[2 * i + 1])).ToArray();
+                meshes.Add(new MeshData(pos, uvs, mm.GetProperty("triangles").EnumerateArray().Select(x => x.GetInt32()).ToArray()));
+            }
+        return new NodeData(id, e.GetProperty("type").GetString()!, e.GetProperty("name").GetString() ?? "", matrix, seq,
+            e.GetProperty("children").EnumerateArray().Select(c => c.GetInt32()).ToArray(), texture, texMatrix, meshes.ToArray(), e.TryGetProperty("billboard", out _), additive);
+    }
+
+    static float[] Floats(JsonElement a) => a.EnumerateArray().Select(x => x.GetSingle()).ToArray();
+    static Vector3[] Vec3s(float[] f) => Enumerable.Range(0, f.Length / 3).Select(i => new Vector3(f[3 * i], f[3 * i + 1], f[3 * i + 2])).ToArray();
+    // Conjugado: mesma convenção dos quatérnios dos personagens (docs/formatos/personagens-e-fases.md).
+    static Quaternion[] Quats(float[] f) => Enumerable.Range(0, f.Length / 4).Select(i => new Quaternion(-f[4 * i], -f[4 * i + 1], -f[4 * i + 2], f[4 * i + 3]).Normalized()).ToArray();
+
+    /// <summary>Matriz do Alchemy (linhas, v' = v · M) → Transform3D (colunas da base = linhas de M).</summary>
+    public static Transform3D FromAlchemy(float[] m) => new(new Basis(new Vector3(m[0], m[1], m[2]), new Vector3(m[4], m[5], m[6]), new Vector3(m[8], m[9], m[10])), new Vector3(m[12], m[13], m[14]));
+
+    /// <summary>Transformação de um nó no tempo t (s): a sequência substitui só os canais da máscara (bit 0 T, 1 R, 3 S).</summary>
+    public static Transform3D Evaluate(NodeData n, float t)
+    {
+        var baseT = n.Matrix ?? Transform3D.Identity;
+        if (n.Sequence is not { } s || s.Times.Length == 0) return baseT;
+        var origin = baseT.Origin;
+        var scale = baseT.Basis.Scale;
+        var rot = scale.X * scale.Y * scale.Z != 0 ? baseT.Basis.Orthonormalized().GetRotationQuaternion() : Quaternion.Identity;
+        int i = 0;
+        while (i + 1 < s.Times.Length && s.Times[i + 1] <= t) i++;
+        int j = Math.Min(i + 1, s.Times.Length - 1);
+        float span = s.Times[j] - s.Times[i];
+        float w = t <= s.Times[0] ? 0 : span > 0 ? Math.Clamp((t - s.Times[i]) / span, 0, 1) : 0;
+        if ((s.Mask & 1) != 0 && s.T.Length > j) origin = s.T[i].Lerp(s.T[j], w);
+        if ((s.Mask & 2) != 0 && s.R.Length > j) rot = s.R[i].Slerp(s.R[j], w);
+        if ((s.Mask & 8) != 0 && s.S.Length > j) scale = s.S[i].Lerp(s.S[j], w);
+        return new Transform3D(new Basis(rot) * Basis.FromScale(scale), origin);
+    }
+
+    public Texture2D? Texture(string? file)
+    {
+        if (file == null) return null;
+        if (_textures.TryGetValue(file, out var t)) return t;
+        var path = System.IO.Path.Combine(Dir, file);
+        Texture2D? tex = null;
+        if (GameFiles.Exists(path)) { var img = Image.LoadFromFile(GameFiles.GodotPath(path)); tex = ImageTexture.CreateFromImage(img); }
+        return _textures[file] = tex;
+    }
+}
+
+/// <summary>
+/// Um ator de UI montado em nós da Godot. O tempo do ator (JOINTSET) anima os nós; um medidor (beMeterCtrlNode) tem tempo
+/// próprio; números trocam a UV dos dígitos. Os igSwitch mostram só o filho <c>slot</c> (instância do jogador ou do número).
+/// </summary>
+public sealed class HudActor
+{
+    sealed record Animated(Node3D Node, HudData.NodeData Data, int Meter);
+    sealed record TexMapped(StandardMaterial3D Material, HudData.NodeData[] Chain, int Meter);
+
+    public Node3D Root { get; } = new();
+    /// <summary>Nó do igTransformRecorder do ator (trilhos r_*), se houver.</summary>
+    public Node3D? Recorder { get; private set; }
+    public float Time { get; set; }
+    readonly HudData _h;
+    readonly List<Animated> _animated = [];
+    readonly List<TexMapped> _texMapped = [];
+    readonly Dictionary<int, float> _meterTime = [];
+    readonly Dictionary<int, (ArrayMesh Mesh, HudData.MeshData Data)> _geometry = [];
+    readonly List<StandardMaterial3D> _materials = [];
+    int _drawOrder = -1;
+    readonly bool _billboard;
+    readonly bool _skipFlat;
+    readonly bool _world;
+    readonly float _widen, _widenFull;
+    readonly List<(Node3D Node, float Shift)> _shifted = [];
+
+    /// <param name="drawOrder">Se ≥ 0, os materiais ganham RenderPriority crescente a partir dele na ordem do grafo (o Alchemy desenha
+    /// na ordem da árvore; a Godot ordena transparentes pela distância e a moldura do i_stdigiface, z 20..230, cobria o rosto em z 80).</param>
+    /// <param name="skipFlat">Desenha primeiro (atrás de tudo) as malhas com todas as UVs no mesmo texel (planos de cor lisa). No fundo do
+    /// título (j_startback) o plano branco em z −1200, a luz do fim do túnel, ficava por cima dele: o Alchemy desenha com teste de
+    /// profundidade, e a Godot ordena os transparentes pela prioridade (HIPÓTESE).</param>
+    /// <param name="widen">Tela larga (DECISÃO DO PORT, janelas de fala): metade da largura extra em unidades da tela de 480 linhas. Malhas
+    /// largas (mais de 400 de largura, como as faixas da caixa de fala e o escurecido i_bgclear) esticam só no meio: os vértices
+    /// com |x| > 200 andam ±widen. Peças fora do centro (|x| entre 150 e 480 em repouso, como o rosto e a placa do nome) andam
+    /// ±widen inteiras. Cantos, rosto e setas ficam na proporção.</param>
+    /// <param name="world">Modelo 3D no mundo (baú do item): transformação com giro 3D ou deslocamento grande debaixo da matriz de
+    /// textura é do desenho, não da UV (ver Build).</param>
+    public HudActor(HudData h, int root, int slot, bool billboard = false, int drawOrder = -1, bool skipFlat = false, float widen = 0, float widenFull = -1, bool world = false)
+    {
+        _world = world;
+        _widen = widen;
+        _widenFull = widenFull < 0 ? widen : widenFull;
+        _skipFlat = skipFlat;
+        _h = h;
+        _billboard = billboard;
+        _drawOrder = drawOrder;
+        Build(root, Root, null, false, [], -1, slot, false);
+    }
+
+    void Build(int id, Node3D parent, string? texture, bool texSpace, List<HudData.NodeData> texChain, int meter, int slot, bool additive)
+    {
+        if (!_h.Nodes.TryGetValue(id, out var n)) return;
+        texture = n.Texture ?? texture;
+        additive = n.Additive ?? additive;
+        if (n.TextureMatrix) { texSpace = true; texChain = []; }
+        if (n.Type == "beMeterCtrlNode") meter = n.Id;
+        var here = parent;
+        if (n.Type == "igTransform")
+        {
+            // Sob a matriz de textura, a transformação com translação em pixels inteiros (cursor selcur do i_zzstchgwn: 54 → 18;
+            // i_stcursor01: −6, −25, …) é de posição; as de UV andam em frações (0..0,75, pivô 0,5) ou rolam a textura com valores
+            // quebrados (fundo i_stback: −280,58…). HIPÓTESE tirada dos dados; a regra do Alchemy não foi lida.
+            static bool Whole(float v) => Math.Abs(v - MathF.Round(v)) < 1e-3f;
+            bool positional = texSpace && n.Sequence is { } sq && sq.T.Any(v => Math.Abs(v.X) > 1.5f || Math.Abs(v.Y) > 1.5f)
+                && sq.T.All(v => Whole(v.X) && Whole(v.Y));
+            // Modelo de mundo (baús g_000*): debaixo do igTextureMatrixStateAttr do g_000bit/xdata1/xdata2 ficam tanto o giro e o pulo
+            // do desenho (coin: rotação em Y e y 0 → −3 → −2,32 …; xdataup y 4 → 2,5 → 6; xmark e arrowhead giram em X/Y) quanto a
+            // rolagem do brilho (|t| ≤ 1, sem rotação fora do eixo Z). HIPÓTESE tirada dos dados: com rotação fora do eixo Z (a UV só
+            // gira em Z) ou translação acima de 1,5, é posição. Antes os baús de BIT e de X-Data ficavam parados no chão.
+            if (_world && texSpace && !positional && n.Sequence is { } wq)
+                positional = wq.R.Any(q => Math.Abs(q.X) > 1e-3f || Math.Abs(q.Y) > 1e-3f) || wq.T.Any(v => v.Length() > 1.5f);
+            if (texSpace && !positional) texChain = [.. texChain, n];
+            else
+            {
+                var node = new Node3D { Name = n.Name.Length > 0 ? n.Name : $"n{n.Id}", Transform = n.Matrix ?? Transform3D.Identity };
+                parent.AddChild(node);
+                here = node;
+                if (n.Sequence != null) _animated.Add(new Animated(node, n, meter));
+                // Posição de repouso: a última chave da animação (a caixa de fala entra deslizando de ±764 até 0) ou a matriz.
+                float rest = n.Sequence is { T.Length: > 0 } rs ? rs.T[^1].X : node.Position.X;
+                if (_widen > 0 && Math.Abs(rest) is > 150 and < 480)
+                {
+                    float shift = MathF.Sign(rest) * _widen;
+                    _shifted.Add((node, shift));
+                    if (n.Sequence == null) node.Position += new Vector3(shift, 0, 0);
+                }
+            }
+        }
+        // igTransformRecorder (folha sem malha): guarda a matriz acumulada do pai. FATO (r_boatz01 da stag0103): o trilho é só
+        // "route00" (igTransform animado) com um gravador embaixo; o MOVERL "JOINT" pede GETTRCDATA à peça (Fatia.Boss AttachTarget).
+        if (n.Type == "igTransformRecorder" && Recorder == null)
+        {
+            Recorder = new Node3D { Name = "igTransformRecorder" };
+            here.AddChild(Recorder);
+        }
+        foreach (var m in n.Meshes)
+        {
+            var mesh = new ArrayMesh();
+            var arrays = new Godot.Collections.Array();
+            arrays.Resize((int)Mesh.ArrayType.Max);
+            // Malha da altura da tela (o escurecido i_bgclear, 480 de altura) estica até as bordas, mesmo além de 16:9 (widenFull).
+            float stretch = m.Positions.Length > 0 && m.Positions.Max(p => p.Y) - m.Positions.Min(p => p.Y) >= 400 ? _widenFull : _widen;
+            arrays[(int)Mesh.ArrayType.Vertex] = stretch > 0 && m.Positions.Length > 0 && m.Positions.Max(p => p.X) - m.Positions.Min(p => p.X) > 400
+                ? m.Positions.Select(p => Math.Abs(p.X) > 200 ? p + new Vector3(MathF.Sign(p.X) * stretch, 0, 0) : p).ToArray()
+                : m.Positions;
+            arrays[(int)Mesh.ArrayType.TexUV] = m.Uvs.ToArray();
+            arrays[(int)Mesh.ArrayType.Index] = m.Triangles;
+            if (m.Triangles.Length == 0) continue;
+            bool flat = _skipFlat && m.Uvs.Length > 0 && m.Uvs.All(u => u == m.Uvs[0]);
+            mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+            // igBlendFunctionAttr 4/5 (SRC_ALPHA, ONE_MINUS_SRC_ALPHA) nos atores do #179: transparência normal.
+            var mat = new StandardMaterial3D
+            {
+                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded, Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+                CullMode = BaseMaterial3D.CullModeEnum.Disabled, AlbedoTexture = _h.Texture(texture), NoDepthTest = _billboard,
+                BillboardMode = _billboard ? BaseMaterial3D.BillboardModeEnum.Enabled : BaseMaterial3D.BillboardModeEnum.Disabled,
+                TextureFilter = BaseMaterial3D.TextureFilterEnum.Linear,
+                BlendMode = additive ? BaseMaterial3D.BlendModeEnum.Add : BaseMaterial3D.BlendModeEnum.Mix,
+            };
+            if (texture == null) mat.AlbedoColor = new Color(1, 1, 1, 0.3f);
+            if (flat) mat.RenderPriority = -128;
+            else if (_drawOrder >= 0) mat.RenderPriority = Math.Min(127, _drawOrder++);
+            _materials.Add(mat);
+            here.AddChild(new MeshInstance3D { Mesh = mesh, MaterialOverride = mat });
+            _geometry[n.Id] = (mesh, m);
+            if (texSpace && texChain.Count > 0) _texMapped.Add(new TexMapped(mat, texChain.ToArray(), meter));
+        }
+        var children = n.Children;
+        if (n.Type == "igSwitch" && children.Length > 0) children = [children[Math.Clamp(slot, 0, children.Length - 1)]];
+        foreach (var c in children) Build(c, here, texture, texSpace, texChain, meter, slot, additive);
+    }
+
+    public void SetMeterTime(int meterNode, float t) => _meterTime[meterNode] = t;
+
+    public void SetAlpha(float a) { foreach (var m in _materials) m.AlbedoColor = new Color(m.AlbedoColor, a); }
+
+    float TimeFor(int meter) => meter >= 0 && _meterTime.TryGetValue(meter, out var t) ? t : Time;
+
+    public void Update()
+    {
+        foreach (var a in _animated)
+        {
+            var tr = HudData.Evaluate(a.Data, TimeFor(a.Meter));
+            // FATO (i_getitempnl01): as peças 2D animam escala (x, y, 0). Em billboard de mundo a base com z = 0 é singular e a Godot não
+            // desenha a malha; o z vira 1 (as malhas são planas, o z não muda nada).
+            if (_billboard && tr.Basis.Z.LengthSquared() < 1e-8f && tr.Basis.X.LengthSquared() > 1e-8f) tr.Basis = new Basis(tr.Basis.X, tr.Basis.Y, new Vector3(0, 0, 1));
+            a.Node.Transform = tr;
+        }
+        foreach (var (node, shift) in _shifted)
+            if (_animated.Any(a => a.Node == node)) node.Position += new Vector3(shift, 0, 0);
+        foreach (var tm in _texMapped)
+        {
+            // Matriz de textura no espaço de UV do IGB (origem embaixo): u' = a·u + b. Com a UV invertida (1 − v) da malha,
+            // vira escala (a_u, a_v) e deslocamento (b_u, 1 − a_v − b_v).
+            var t = Transform3D.Identity;
+            foreach (var n in tm.Chain) t *= HudData.Evaluate(n, TimeFor(tm.Meter));
+            float au = t.Basis.X.X, av = t.Basis.Y.Y, bu = t.Origin.X, bv = t.Origin.Y;
+            tm.Material.Uv1Scale = new Vector3(au, av, 1);
+            // −1e-4: com escala 0 a UV crua (0, 0) cai em v = 1, que com repetição daria a volta para a primeira linha da PNG;
+            // no IGB (linhas de baixo para cima) esse texel é o da última linha.
+            tm.Material.Uv1Offset = new Vector3(bu, 1 - av - bv - 1e-4f, 0);
+        }
+    }
+
+    /// <summary>Número no beNumberCtrlInfoRam: dígito k (0 = unidade) com U += dígito × offsetNext; zeros à esquerda somem.</summary>
+    public void SetNumber(HudData.NumberRam ram, int value)
+    {
+        if (!_geometry.TryGetValue(ram.Geometry, out var g)) return;
+        value = Math.Clamp(value, 0, ram.MaxValue);
+        var uvs = g.Data.Uvs.ToArray();
+        var pos = g.Data.Positions.ToArray();
+        int len = Math.Max(1, value.ToString().Length);
+        for (int k = 0; k < ram.DigitVertices.Length; k++)
+        {
+            int d = value / (int)Math.Pow(10, k) % 10;
+            for (int v = 0; v < ram.DigitVertices[k].Length; v++)
+            {
+                int vi = ram.DigitVertices[k][v];
+                if (vi < 0 || vi >= uvs.Length) continue;
+                uvs[vi] = new Vector2(g.Data.Uvs[vi].X + d * ram.OffsetNext, g.Data.Uvs[vi].Y);
+                // HIPÓTESE (_mode 1): sem zeros à esquerda; o quad do dígito vazio é desmontado num ponto.
+                if (k >= len) pos[vi] = g.Data.Positions[ram.DigitVertices[k][0]];
+            }
+        }
+        var arrays = new Godot.Collections.Array();
+        arrays.Resize((int)Mesh.ArrayType.Max);
+        arrays[(int)Mesh.ArrayType.Vertex] = pos;
+        arrays[(int)Mesh.ArrayType.TexUV] = uvs;
+        arrays[(int)Mesh.ArrayType.Index] = g.Data.Triangles;
+        var mat = g.Mesh.SurfaceGetMaterial(0);
+        g.Mesh.ClearSurfaces();
+        g.Mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+        if (mat != null) g.Mesh.SurfaceSetMaterial(0, mat);
+    }
+}
+
+/// <summary>
+/// Painel de status do jogador 1 (i_stpnl01..04) numa SubViewport ortográfica de 480 linhas desenhada por cima da tela.
+/// DECISÃO DO PORT (tela larga): a SubViewport acompanha a proporção da janela e o painel fica preso à borda esquerda, à mesma
+/// distância dela que tem na tela 4:3 (<see cref="ScreenLayout"/>); a arte não estica.
+/// </summary>
+public sealed class HudOverlay
+{
+    // FATO (Lua, GENERATE "V<−260,−160,0>" no laço dos jogadores): posição do painel do jogador 1; os outros a +150 em x.
+    static readonly Vector3 Panel1 = new(-260, -160, 0);
+    readonly HudData _h;
+    readonly List<HudActor> _panels = [];
+    HudActor? _meters, _numbers, _icon, _ring;
+    readonly HudData.MeterData? _hp, _mp;
+    readonly HudData.NumberRam? _hpNum, _mpNum, _lvNum;
+    float _ringTime;
+    readonly SubViewport _vp;
+    readonly Node3D _holder;
+    readonly Node _owner;
+    readonly TextureRect _rect;
+    MeshInstance3D[]? _iconMeshes;
+
+    // FATO (i_stpnl02, SQ_WAIT01): LABEL do Digimon → WAITk = JOINTSET 2 + 10k; a ordem segue o atlas charaicon.
+    static readonly Dictionary<string, int> FaceWait = new()
+    {
+        ["agumon"] = 1, ["vmon"] = 2, ["girumon"] = 3, ["dorumon"] = 4, ["angelr"] = 5, ["alpha"] = 6, ["beelzeb"] = 7, ["hekabut"] = 8,
+        ["weregaru"] = 9, ["wargrey"] = 10, ["impdrafm"] = 11, ["impdrapm"] = 12, ["dukecrim"] = 13, ["susanoo"] = 14, ["metalgaru"] = 15,
+        ["bwargrey"] = 16,
+    };
+
+    /// <summary>Rosto do painel pela forma atual (nome do modelo sem "p_", o LABEL do jogo).</summary>
+    public string Face
+    {
+        set { if (_icon != null && FaceWait.TryGetValue(value, out int k)) _icon.Time = (2 + 10 * k) / 60f; }
+    }
+
+    public HudOverlay(HudData h, Node owner)
+    {
+        _h = h;
+        _owner = owner;
+        var vp = _vp = new SubViewport { Size = new Vector2I(640, 480), TransparentBg = true, OwnWorld3D = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Always };
+        // Projeção do igProjectionMatrixAttr: diag(2/640, 2/480), z de −10 a −10010 (FATO no #179).
+        vp.AddChild(new Camera3D { Projection = Camera3D.ProjectionType.Orthogonal, Size = 480, KeepAspect = Camera3D.KeepAspectEnum.Height, Near = 1, Far = 20000, Current = true });
+        var holder = _holder = new Node3D { Position = Panel1 };
+        vp.AddChild(holder);
+        // Ordem de desenho: a mesma do Lua (01, 02, 03, 04).
+        foreach (var name in new[] { "i_stpnl01", "i_stpnl02", "i_stpnl03", "i_stpnl04" })
+        {
+            if (!h.Actors.TryGetValue(name, out int root)) continue;
+            var a = new HudActor(h, root, slot: 0);
+            holder.AddChild(a.Root);
+            _panels.Add(a);
+            if (name == "i_stpnl01") _ring = a;
+            if (name == "i_stpnl02") _icon = a;
+            if (name == "i_stpnl03") _meters = a;
+            if (name == "i_stpnl04") _numbers = a;
+        }
+        Face = "girumon"; // até o Fatia passar a forma (Face)
+        _hp = h.Meters.GetValueOrDefault("hpmt")?.FirstOrDefault();
+        _mp = h.Meters.GetValueOrDefault("mpmt")?.FirstOrDefault();
+        _hpNum = h.Numbers.GetValueOrDefault("hpnm")?.FirstOrDefault();
+        _mpNum = h.Numbers.GetValueOrDefault("mpnm")?.FirstOrDefault();
+        _lvNum = h.Numbers.GetValueOrDefault("lvnm")?.FirstOrDefault();
+        var layer = new CanvasLayer { Layer = 1 };
+        // A tela do jogo é escalada para a altura da janela; com a SubViewport na proporção da janela, cobre a janela toda.
+        var rect = _rect = new TextureRect { Texture = vp.GetTexture(), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            MouseFilter = Control.MouseFilterEnum.Ignore };
+        rect.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        layer.AddChild(vp);
+        layer.AddChild(rect);
+        owner.AddChild(layer);
+    }
+
+    /// <summary>
+    /// Onde o rosto do Digimon (i_stpnl02) está na tela, em coordenadas da tela do jogo (as mesmas dos Control): a caixa das malhas
+    /// do ator na projeção 640 × 480 (x para a direita a partir do meio, y para cima), levada pela TextureRect que mostra a HUD.
+    /// Para o clique no próprio ícone (sair do grupo). Null antes de entrar na árvore.
+    /// </summary>
+    public Rect2? IconScreenRect()
+    {
+        if (_icon == null || !_rect.IsInsideTree()) return null;
+        var inv = _holder.GlobalTransform.AffineInverse();
+        float x0 = float.MaxValue, y0 = float.MaxValue, x1 = float.MinValue, y1 = float.MinValue;
+        _iconMeshes ??= _icon.Root.FindChildren("*", "MeshInstance3D", true, false).OfType<MeshInstance3D>().ToArray();
+        foreach (var mi in _iconMeshes)
+        {
+            if (!mi.IsVisibleInTree()) continue;
+            var box = (inv * mi.GlobalTransform) * mi.GetAabb();
+            x0 = Math.Min(x0, box.Position.X); x1 = Math.Max(x1, box.End.X);
+            y0 = Math.Min(y0, box.Position.Y); y1 = Math.Max(y1, box.End.Y);
+        }
+        if (x0 > x1) return null;
+        var vp = new Vector2(_vp.Size.X, _vp.Size.Y);
+        var r = _rect.GetGlobalRect();
+        float s = Math.Min(r.Size.X / vp.X, r.Size.Y / vp.Y);
+        var origin = r.Position + (r.Size - vp * s) / 2;
+        Vector2 Screen(float wx, float wy) => origin + new Vector2(vp.X / 2 + _holder.Position.X + wx, vp.Y / 2 - (_holder.Position.Y + wy)) * s;
+        var a = Screen(x0, y1);
+        var b = Screen(x1, y0);
+        return new Rect2(a, b - a);
+    }
+
+    /// <summary>
+    /// HIPÓTESE (medidor): as chaves dos gomos do MP e do hpmetr cobrem 1 s → 3 s; tempo = 1 + 2 × valor/máximo, com o
+    /// valor diferente de zero em pelo menos 1 + _nonZeroTime e o valor abaixo do máximo em no máximo 1 + _nonMaxTime.
+    /// A fórmula do SETPERCENT no DOL ainda não foi lida.
+    /// </summary>
+    public static float MeterTime(HudData.MeterData m, float value, float max)
+    {
+        if (max <= 0 || value <= 0) return 1;
+        if (value >= max) return 3;
+        return 1 + Math.Clamp(2 * value / max, m.NonZeroTime, m.NonMaxTime);
+    }
+
+    public void Update(float dt, int hp, int maxHp, int mp, int maxMp, int level)
+    {
+        if (_owner.IsInsideTree())
+        {
+            var win = _owner.GetViewport().GetVisibleRect().Size;
+            var fit = ScreenLayout.Fit(win.X, win.Y);
+            var size = new Vector2I((int)Math.Round(fit.WideWidth), 480);
+            if (_vp.Size != size) _vp.Size = size;
+            _holder.Position = new Vector3(fit.AnchorX(Panel1.X), Panel1.Y, Panel1.Z);
+        }
+        // i_stpnl01: WAIT01 = JOINTSET 0..360 "LP" (FATO).
+        _ringTime = (_ringTime + dt) % 6f;
+        if (_ring != null) _ring.Time = _ringTime;
+        if (_meters != null)
+        {
+            if (_hp != null) _meters.SetMeterTime(_hp.Node, MeterTime(_hp, hp, maxHp));
+            if (_mp != null) _meters.SetMeterTime(_mp.Node, MeterTime(_mp, mp, maxMp));
+        }
+        if (_numbers != null)
+        {
+            if (_hpNum != null) _numbers.SetNumber(_hpNum, hp);
+            if (_mpNum != null) _numbers.SetNumber(_mpNum, mp);
+            if (_lvNum != null) _numbers.SetNumber(_lvNum, level);
+        }
+        foreach (var p in _panels) p.Update();
+        foreach (var (node, at, a) in _stagePanels)
+        {
+            if (_owner.IsInsideTree())
+            {
+                var win = _owner.GetViewport().GetVisibleRect().Size;
+                node.Position = new Vector3(ScreenLayout.Fit(win.X, win.Y).AnchorX(at.X), at.Y, at.Z + StagePanelDepth);
+            }
+            a.Update();
+        }
+    }
+
+    // Painéis especiais da fase (FATO, stag0103: start.lua gera i_stpnlsp04 e i_stpnlsp05 em V<-296,225,0>, o first.lua manda
+    // SQ_OPEN, e o 05 tem o medidor "boathp" que o hit_p_*.lua acerta com METERCTRL boathp SETPERCENT a cada golpe no jogador).
+    // DECISÃO DO PORT: aparecem já abertos no GENERATE (as sequências SQ_OPEN deles não foram exportadas), presos à borda
+    // esquerda como o painel do jogador.
+    readonly List<(Node3D Node, Vector3 At, HudActor Actor)> _stagePanels = [];
+    // FATO (hud da stag0103): as malhas do i_stpnlsp04/05 ficam em z 0..60, e as do painel do jogador em z −90..−143. A câmera
+    // ortográfica do port olha para −z a partir de z 0 (near 1), então o painel do barco ficava atrás dela e não aparecia (relato
+    // do usuário na 0.6.14). DECISÃO DO PORT: o painel vai 200 para dentro; a ordem entre a moldura e o medidor fica a mesma.
+    const float StagePanelDepth = -200;
+
+    public bool ShowStagePanel(string name, Vector3 at)
+    {
+        if (_stagePanels.Any(p => p.Node.Name == name)) return true;
+        if (!_h.Actors.TryGetValue(name, out int root)) return false;
+        var node = new Node3D { Name = name, Position = at + new Vector3(0, 0, StagePanelDepth) };
+        var a = new HudActor(_h, root, slot: 0);
+        node.AddChild(a.Root);
+        _vp.AddChild(node);
+        _stagePanels.Add((node, at, a));
+        foreach (var (meterNode, t) in _stageMeterTimes) a.SetMeterTime(meterNode, t);
+        a.Update();
+        return true;
+    }
+
+    readonly Dictionary<int, float> _stageMeterTimes = [];
+
+    public bool HasMeter(string meter) => _h.Meters.ContainsKey(meter);
+
+    public bool HasStagePanel(string name) => _stagePanels.Any(p => p.Node.Name == name);
+
+    /// <summary>METERCTRL &lt;medidor&gt; SETPERCENT: o tempo do medidor pela mesma regra do HP (máximo 100).</summary>
+    public void SetStageMeter(string meter, float percent)
+    {
+        if (_h.Meters.GetValueOrDefault(meter)?.FirstOrDefault() is not { } m) return;
+        _stageMeterTimes[m.Node] = MeterTime(m, percent, 100);
+        foreach (var (_, _, a) in _stagePanels) a.SetMeterTime(m.Node, _stageMeterTimes[m.Node]);
+    }
+}
+
+/// <summary>
+/// Números de dano i_dmgnum (no inimigo, laranja) e i_pcdmgnum (no jogador, rosa) no mundo: um ator por número, billboard.
+/// FATO (igb-seq): SQ_DMGNMnn → OPENnn = JOINTSET "" a..b "OS" (trechos 10–30, 40–60, 70–90, 100–120, 130–150 da
+/// animação do dmgnmtrans) + FADESET IN 12 + espera 20 + FADESET OUT 20 + espera 20, depois SQ_ERAS.
+/// </summary>
+public sealed class DamageNumbers
+{
+    static readonly (int A, int B)[] Open = [(10, 30), (40, 60), (70, 90), (100, 120), (130, 150)];
+    readonly HudData _h;
+    readonly Node3D _owner;
+    readonly List<(HudActor Actor, int Open, float Age)> _live = [];
+    readonly Random _rng = new();
+
+    public DamageNumbers(HudData h, Node3D owner) { _h = h; _owner = owner; }
+
+    public bool Show(bool onPlayer, int value, Vector3 at)
+    {
+        string actor = onPlayer ? "i_pcdmgnum" : "i_dmgnum", number = onPlayer ? "dmgnm1" : "dmgnm0";
+        if (!_h.Actors.TryGetValue(actor, out int root) || _h.Numbers.GetValueOrDefault(number)?.FirstOrDefault() is not { } ram) return false;
+        var a = new HudActor(_h, root, slot: 0, billboard: true);
+        _owner.AddChild(a.Root);
+        a.Root.GlobalPosition = at;
+        a.SetNumber(ram, value);
+        // DECISÃO DA FATIA: qual OPEN01..05 o jogo usa não foi lido; aqui é sorteado.
+        _live.Add((a, _rng.Next(Open.Length), 0));
+        Update(0);
+        return true;
+    }
+
+    // FATO (tabela de números em 0x804DD2E0: "i_expnum", "expnm0", SQ_EXPNM01..04; seq do i_expnum: DELAY01 = 40 quadros escondido,
+    // OPEN01..04 = JOINTSET 10..30 / 40..60 / 70..90 / 100..120, FADESET IN 12, espera 20, OUT 20): a EXP ganha sobe como os números
+    // de dano. O ator fica nos dados das janelas (janelas/*_hud.json). HIPÓTESE: qual OPEN pelo número de dígitos (1..4).
+    static readonly (int A, int B)[] ExpOpen = [(10, 30), (40, 60), (70, 90), (100, 120)];
+    readonly List<(HudActor Actor, int Open, float Age)> _exp = [];
+
+    public bool ShowExp(HudData? win, int value, Vector3 at)
+    {
+        if (win == null || !win.Actors.TryGetValue("i_expnum", out int root) || win.Numbers.GetValueOrDefault("expnm0")?.FirstOrDefault() is not { } ram) return false;
+        var a = new HudActor(win, root, slot: 0, billboard: true);
+        _owner.AddChild(a.Root);
+        a.Root.GlobalPosition = at;
+        a.SetNumber(ram, value);
+        a.SetAlpha(0);
+        _exp.Add((a, Math.Clamp(value.ToString().Length, 1, 4) - 1, 0));
+        return true;
+    }
+
+    // FATO (i_getitempnl01 dos dados das janelas): o painel de subida é um igBillboard em unidades de mundo ("maintrans" y 10, anéis
+    // G_lvring, "lv", "up"), preso sobre o personagem; SQ_LVUP = DELAY01 (50 quadros escondido) → LVUP (FADESET IN 12, JOINTSET
+    // 290..320, depois 320..360 com FADESET OUT 40) → SQ_ERAS.
+    readonly List<(HudActor Actor, Node3D Follow, float Age)> _lvup = [];
+
+    public bool ShowLevelUp(HudData? win, Node3D follow)
+    {
+        if (win == null || !win.Actors.TryGetValue("i_getitempnl01", out int root)) return false;
+        var a = new HudActor(win, root, slot: 0, billboard: true);
+        _owner.AddChild(a.Root);
+        a.Root.GlobalPosition = follow.GlobalPosition;
+        a.SetAlpha(0);
+        _lvup.Add((a, follow, 0));
+        return true;
+    }
+
+    public void Update(float dt)
+    {
+        for (int i = _lvup.Count - 1; i >= 0; i--)
+        {
+            var (a, follow, age) = _lvup[i];
+            age += dt;
+            float frame = age * 60 - 50; // DELAY01
+            if (frame >= 70 || !GodotObject.IsInstanceValid(follow)) { a.Root.QueueFree(); _lvup.RemoveAt(i); continue; }
+            a.Root.GlobalPosition = follow.GlobalPosition;
+            a.Time = (290 + Math.Clamp(frame, 0, 70)) / 60f;
+            a.SetAlpha(frame < 0 ? 0 : frame < 12 ? frame / 12 : frame < 30 ? 1 : 1 - (frame - 30) / 40);
+            a.Update();
+            _lvup[i] = (a, follow, age);
+        }
+        for (int i = _exp.Count - 1; i >= 0; i--)
+        {
+            var (a, open, age) = _exp[i];
+            age += dt;
+            float frame = age * 60 - 40; // DELAY01
+            if (frame >= 52) { a.Root.QueueFree(); _exp.RemoveAt(i); continue; }
+            var (from, to) = ExpOpen[open];
+            a.Time = Math.Clamp(from + frame, from, to) / 60f;
+            a.SetAlpha(frame < 0 ? 0 : frame < 12 ? frame / 12 : frame < 32 ? 1 : 1 - (frame - 32) / 20);
+            a.Update();
+            _exp[i] = (a, open, age);
+        }
+        for (int i = _live.Count - 1; i >= 0; i--)
+        {
+            var (a, open, age) = _live[i];
+            age += dt;
+            float frame = age * 60;
+            if (frame >= 72) { a.Root.QueueFree(); _live.RemoveAt(i); continue; } // 12 + 20 + 20 + 20 quadros
+            var (from, to) = Open[open];
+            a.Time = Math.Min(from + frame, to) / 60f;
+            a.SetAlpha(frame < 12 ? frame / 12 : frame < 32 ? 1 : frame < 52 ? 1 - (frame - 32) / 20 : 0);
+            a.Update();
+            _live[i] = (a, open, age);
+        }
+    }
+}

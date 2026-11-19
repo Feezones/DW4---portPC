@@ -1,0 +1,371 @@
+using System.Numerics;
+
+namespace DW4.Gameplay;
+
+/// <summary>
+/// Sequências dos objetos de cenário (portas, pisos, gravador, caixas: KIND_OBJECT sem esqueleto). Valores dos comandos são
+/// FATO (igb-seq do #179, docs/gameplay/fase4-objetos-dng1.md); a semântica é HIPÓTESE, pelo fluxo dos dados:
+///  · cada sequência guarda o rótulo atual (LABEL); começar uma sequência executa só o bloco desse rótulo;
+///  · LABELCTRL &lt;rótulo&gt; [sequência] troca o rótulo guardado de outra sequência (padrão: SQ_WAIT);
+///  · ACTION liga o JOINTSET a..b da ação (quadros de 60 Hz; "LP" repete, senão para no fim) e o FADESET dela;
+///  · a ação roda os comandos dela (JOINTSET, FADESET, WAITCHECK "Frame" n / "Joint"); WCHECK "Action" espera a ação
+///    passar por todos (as esperas do piso ficam nas ações: WIT2ON 30, ONSW01 120, WAIT02 180);
+///  · HITBOX "Set" tipo início duração posição tamanho: caixa ativa por "duração" quadros (−1 = sempre), na unidade do
+///    WAITCHECK (HITBOX 120 ↔ espera 120 no piso);
+///  · JUMP vai para outra sequência no rótulo guardado dela (assim o ciclo do piso ligado se repete).
+/// </summary>
+public sealed class ObjectSequencer
+{
+    public const float FramesPerSecond = 60f;
+
+    /// <summary>
+    /// Quadros do MOVE de um objeto que anda sozinho (barril do lançador, tiro do jogador) em <paramref name="dt"/> segundos: o
+    /// mesmo relógio do WAITCHECK "Frame" da ação dele.
+    /// FATO (main.dol): o executor do modelo (0x8030A448) passa aos canais do MOVE (0x8030A2D8, chamadas em 0x8030A624..0x8030A654)
+    /// o valor "KEIKATIMER" do próprio modelo (0x8031E4C4 em 0x8030A498), o tempo decorrido do quadro; não há conta própria de 30 Hz.
+    /// HIPÓTESE: esse tempo está na unidade dos quadros da ação (60 Hz, a do JOINTSET). Bate com o relato do tiro do jogador (lento
+    /// a 30 Hz) e com o do barril (estourava na metade da ladeira: espera de 250 quadros a 60 Hz com o "Push" andando a 30 Hz).
+    /// </summary>
+    public static float MotionFrames(float dt) => dt * FramesPerSecond;
+
+    readonly IReadOnlyDictionary<string, List<SeqCommand>> _seqs;
+    readonly IReadOnlyDictionary<string, List<SeqCommand>> _actions;
+    readonly Dictionary<string, string> _labels = [];
+    // Caixa e quadros desde que foi armada (começa a valer no quadro inicial do HITBOX e dura os quadros pedidos; −1 = até limpar).
+    readonly List<(HitBox Box, float Age)> _boxes = [];
+    List<SeqCommand> _cmds = [];
+    int _pc, _end, _jumps;
+    float _wait;
+    bool _waitAction;
+    float _from, _to, _fadeFrom = 1, _fadeTo = 1, _fadeLen, _fadeT;
+    bool _loop;
+    bool _hidden; // o último FADESET foi um "HIDE" de ação (ver PlayAction)
+    // A ação também é um pequeno programa: JOINTSET, FADESET e as esperas dela (WAITCHECK "Frame" n / "Joint").
+    List<SeqCommand> _act = [];
+    int _apc;
+    float _actWait;
+    bool _actWaitJoint, _actWaitMotion;
+
+    public ObjectSequencer(IReadOnlyDictionary<string, List<SeqCommand>> sequences, IReadOnlyDictionary<string, List<SeqCommand>> actions)
+    {
+        _seqs = sequences;
+        _actions = actions;
+        HasLiveGate = sequences.Values.Any(l => l.Any(c => c.Kind == "CTRL" && c.S(0) == "isLive"));
+    }
+
+    public string? Sequence { get; private set; }
+    public string? Action { get; private set; }
+    /// <summary>Quadro do JOINTSET (60 Hz) para o tempo das igTransformSequence do objeto.</summary>
+    public float Frame { get; private set; }
+    /// <summary>Quadros (60 Hz) desde o começo da ação atual (disparadores de ação: o quadro do beActionStarterData).</summary>
+    public float ActionTime { get; private set; }
+    public float Alpha { get; private set; } = 1;
+    public bool Running { get; private set; }
+    /// <summary>
+    /// O bloco atual executou CTRL "isLive" (IA do objeto ligada). FATO (seq dos g_sbutton, g_cannon01, g_dbutton1…): no SQ_WAIT,
+    /// os rótulos DEF (desligado) e ONLOOP/ON de botão travado não têm CTRL "isLive"; OFF e ON (que reagem a quem chega perto) têm.
+    /// HIPÓTESE forte: o mapa de IA só decide enquanto o bloco atual ligou o isLive (botão sem as ID Passes não reage).
+    /// </summary>
+    public bool Live { get; private set; }
+    /// <summary>Alguma sequência do objeto usa CTRL "isLive": a IA dele depende de <see cref="Live"/>.</summary>
+    public bool HasLiveGate { get; }
+    /// <summary>Conta os FLASHSET "Damage" executados (pisca de dano; quem desenha compara com o último visto).</summary>
+    public int FlashSerial { get; private set; }
+    /// <summary>SQ_ERAS: o objeto deve sumir.</summary>
+    public bool Erased { get; private set; }
+    public IEnumerable<HitBox> ActiveHitBoxes => _boxes.Where(b => b.Age >= b.Box.StartFrame).Select(b => b.Box);
+    /// <summary>Último AIMAP executado (ex.: SQ_PHASE2 do f_bit troca para MAP01); quem roda a IA consome com <see cref="TakeAiMap"/>.</summary>
+    public string? AiMap { get; private set; }
+    public string? TakeAiMap() { var m = AiMap; AiMap = null; return m; }
+    /// <summary>Volta ao SQ_WAIT quando uma sequência acaba sem JUMP (ligado nos NPCs n_*).</summary>
+    public bool ReturnToWaitAtEnd { get; set; }
+    /// <summary>
+    /// Movimento do modelo de personagem (MOTIONSET da ação): nome, laço, quadros passados e contador de troca. FATO (seq das NPCs):
+    /// a ação seguinte pode não ter MOTIONSET (WALK01 → DELAY01 com WAITCHECK "Frame"), e o movimento continua; por isso quem desenha
+    /// segue o movimento, não a ação.
+    /// </summary>
+    public string? CurrentMotion { get; private set; }
+    public bool MotionLoop { get; private set; }
+    public float MotionFrame { get; private set; }
+    public float MotionBlend { get; private set; }
+    public int MotionSerial { get; private set; }
+    /// <summary>Duração de um movimento em quadros (a 60 Hz); quem desenha responde pela animação. Null = desconhecida.</summary>
+    public Func<string, float?>? MotionLength { get; set; }
+    float? _motionLen;
+    /// <summary>Canais do MOVE/MOVEEX (FATO, executor do jogo); quem desenha o objeto aplica o deslocamento.</summary>
+    public MotionChannels Motion { get; } = new();
+    readonly Queue<(string Name, string Call)> _luaCalls = new();
+    /// <summary>LUACALL da sequência (ex.: f_devl1f2 "bmh"): quem roda os scripts consome um por vez.</summary>
+    public string? TakeLuaCall() => TakeLuaCallWithName()?.Name;
+    /// <summary>LUACALL com o 2º valor (nome de chamada que o script testa com MDLisCallName, ex. "gr2" "GROUND").</summary>
+    public (string Name, string Call)? TakeLuaCallWithName() => _luaCalls.Count > 0 ? _luaCalls.Dequeue() : null;
+    /// <summary>Contador de caixas ligadas (muda a cada HITBOX "Set"): um acerto por caixa.</summary>
+    public int BoxSerial { get; private set; }
+
+    public string? Label(string sequence) => _labels.GetValueOrDefault(sequence);
+
+    /// <summary>Alguma sequência faz LUACALL <paramref name="name"/> (ex.: g_sbutton/g_dbutton1 chamam o "hit" ao acender).</summary>
+    public bool CallsLua(string name) => _seqs.Values.Any(l => l.Any(c => c.Kind == "LUACALL" && c.S(0) == name));
+
+    /// <summary>
+    /// O bloco de <paramref name="sequence"/> no rótulo guardado só faz JUMP de volta para a sequência atual (ex.: g_sbutton já
+    /// ligado: SQ_SWON/ON = JUMP "SQ_WAIT"). Recomeçar seria igual a ficar; o port não recomeça para a ação em laço não reiniciar
+    /// a cada quadro (o anel ficava parado no 1º quadro).
+    /// </summary>
+    public bool OnlyJumpsBack(string sequence)
+    {
+        if (Sequence == null || !_seqs.TryGetValue(sequence, out var cmds)) return false;
+        int start = BlockStart(sequence, cmds);
+        if (start >= cmds.Count) return false;
+        if (cmds[start].Kind == "JUMP") return cmds[start].S(0) == Sequence;
+        // Também: só LABELCTRL que põem o rótulo que já está valendo e o JUMP de volta (FATO, g_numepodz01 da stag0103: SQ_SWON =
+        // LABELCTRL "ON" "SQ_WAIT" + JUMP "SQ_WAIT", e o SQ_WAIT/ON espera o WAIT02 de 3 s antes do JUMP "SQ_FIRE"). Recomeçando a
+        // cada quadro que a IA escolhe SQ_SWON, o pod nunca chegava ao tiro.
+        for (int i = start; i < cmds.Count; i++)
+        {
+            var c = cmds[i];
+            if (c.Kind == "LABEL") return false;
+            if (c.Kind == "JUMP") return c.S(0) == Sequence;
+            if (c.Kind != "LABELCTRL") return false;
+            var texts = c.Values.OfType<string>().ToList();
+            string target = texts.FirstOrDefault(t => t.StartsWith("SQ_", StringComparison.Ordinal)) ?? "SQ_WAIT";
+            string? label = texts.FirstOrDefault(t => !t.StartsWith("SQ_", StringComparison.Ordinal));
+            if (label == null || _labels.GetValueOrDefault(target) != label) return false;
+        }
+        return false;
+    }
+
+    int BlockStart(string sequence, List<SeqCommand> cmds)
+    {
+        if (!cmds.Any(c => c.Kind == "LABEL")) return 0;
+        var label = _labels.GetValueOrDefault(sequence);
+        int at = label == null ? -1 : cmds.FindIndex(c => c.Kind == "LABEL" && c.S(0) == label);
+        return at >= 0 ? at + 1 : cmds.FindIndex(c => c.Kind == "LABEL") + 1;
+    }
+    public void SetLabel(string sequence, string label) => _labels[sequence] = label;
+
+    /// <summary>Começa a sequência no rótulo guardado (ou do começo, sem rótulos). false se não existe.</summary>
+    public bool Start(string sequence)
+    {
+        _jumps = 0;
+        return Begin(sequence);
+    }
+
+    bool Begin(string sequence)
+    {
+        if (sequence == "SQ_ERAS") { Erased = true; Running = false; return true; }
+        if (!_seqs.TryGetValue(sequence, out var cmds)) return false;
+        int start = BlockStart(sequence, cmds);
+        int end = cmds.FindIndex(start, c => c.Kind == "LABEL");
+        Motion.SequenceChanged(); // 0x8030EA38
+        _cmds = cmds;
+        _pc = start;
+        _end = end < 0 ? cmds.Count : end;
+        _wait = 0;
+        _waitAction = false;
+        Sequence = sequence;
+        Running = true;
+        Live = false;
+        Advance();
+        return true;
+    }
+
+    /// <summary>Avança <paramref name="dt"/> segundos.</summary>
+    public void Tick(float dt)
+    {
+        float frames = dt * FramesPerSecond;
+        if (Action != null)
+        {
+            ActionTime += frames;
+            Frame += frames;
+            if (Frame >= _to)
+                Frame = _loop && _to > _from ? _from + (Frame - _to) % (_to - _from) : _to;
+        }
+        if (_fadeLen > 0 && _fadeT < _fadeLen)
+        {
+            _fadeT = Math.Min(_fadeLen, _fadeT + frames);
+            Alpha = _fadeFrom + (_fadeTo - _fadeFrom) * _fadeT / _fadeLen;
+        }
+        for (int i = _boxes.Count - 1; i >= 0; i--)
+        {
+            var (box, age) = _boxes[i];
+            age += frames;
+            if (box.Frames >= 0 && age >= box.StartFrame + box.Frames) _boxes.RemoveAt(i); else _boxes[i] = (box, age);
+        }
+        if (_actWait > 0) _actWait -= frames;
+        if (CurrentMotion != null) MotionFrame += frames;
+        RunAction();
+        if (!Running) return;
+        if (_wait > 0) _wait -= frames;
+        _jumps = 0;
+        Advance();
+    }
+
+    void Advance()
+    {
+        while (Running)
+        {
+            if (_wait > 0) return;
+            if (_waitAction)
+            {
+                if (!ActionDone) return;
+                _waitAction = false;
+            }
+            if (_pc >= _end)
+            {
+                // HIPÓTESE (NPCs): sequência que acaba sem JUMP fica no último movimento enquanto ele está em laço (SQ_TALK → talk01 até a
+                // conversa mandar SQ_WAIT pelo funcCloseMessage, FATO do func.lua); com um movimento de uma vez só, volta ao SQ_WAIT
+                // quando ele acaba.
+                if (ReturnToWaitAtEnd && Sequence != "SQ_WAIT" && _seqs.ContainsKey("SQ_WAIT") && !(CurrentMotion != null && MotionLoop))
+                {
+                    if (CurrentMotion != null && !MotionEnded) return; // espera o movimento (confere de novo no próximo quadro)
+                    if (++_jumps <= 16) { Begin("SQ_WAIT"); return; }
+                }
+                Running = false;
+                return;
+            }
+            var c = _cmds[_pc++];
+            switch (c.Kind)
+            {
+                case "ACTION":
+                    PlayAction(c.S(0));
+                    break;
+                case "WCHECK" when c.S(0) == "Action":
+                    _waitAction = true;
+                    break;
+                case "WAITCHECK" when c.S(0) == "Frame":
+                    _wait = c.F(1);
+                    break;
+                case "HITBOX" when c.S(0) == "AllClear":
+                    _boxes.Clear();
+                    break;
+                case "HITBOX":
+                    _boxes.Add((new HitBox(c.I(1), c.F(2), c.F(3), c.V(4), c.V(5)), 0));
+                    BoxSerial++;
+                    break;
+                case "LABELCTRL":
+                {
+                    // Valores: rótulo e, opcionalmente, a sequência alvo (a ordem exata ainda não foi conferida).
+                    var texts = c.Values.OfType<string>().ToList();
+                    string? target = texts.FirstOrDefault(t => t.StartsWith("SQ_", StringComparison.Ordinal));
+                    string? label = texts.FirstOrDefault(t => !t.StartsWith("SQ_", StringComparison.Ordinal));
+                    if (label != null) _labels[target ?? "SQ_WAIT"] = label;
+                    break;
+                }
+                case "JUMP":
+                    if (++_jumps > 16) { Running = false; return; } // laço sem espera
+                    var next = c.S(0);
+                    if (!Begin(next)) Running = false;
+                    return;
+                case "CTRL" when c.S(0) == "isLive":
+                    Live = true;
+                    break;
+                case "AIMAP":
+                    AiMap = c.S(0);
+                    break;
+                case "LUACALL":
+                    _luaCalls.Enqueue((c.S(0), c.S(1)));
+                    break;
+                case "MOVE" or "MOVEEX" or "MOVERL":
+                    Motion.Apply(c);
+                    break;
+                case "FADESET":
+                    Fade(c);
+                    _hidden = false; // HIDE da sequência (SQ_HIDE dos tiros) não é da ação: fica
+                    break;
+            }
+        }
+    }
+
+    void PlayAction(string name)
+    {
+        Action = name;
+        ActionTime = 0;
+        _loop = false;
+        _act = _actions.TryGetValue(name, out var cmds) ? cmds : [];
+        // HIPÓTESE forte: o FADESET "HIDE" vale só na ação que o pôs; ação nova sem FADESET volta a aparecer. FATO (seqs): o laser
+        // g_dbarrierw1..9 tem SQ_WAIT = HIDE_ACTION e SQ_POWERON → ONSW01 só com JOINTSET; o g_dbasewall esconde no OFSW01 e
+        // volta no OF2WIT; a mina g_minez04 esconde no WAIT03 e salta no WAIT02; o g_dtrailmon esconde no WAIT02 e anda no
+        // START1; o f_luce2 some no TRNS1x e volta no DAMAGE/GURD. Antes o HIDE ficava para sempre: laser invisível com
+        // colisão (barrierwall01) parecendo parede invisível. FADESET "OUT" continua valendo (porta aberta, inimigo sumindo).
+        if (_hidden && !_act.Any(c => c.Kind == "FADESET"))
+        {
+            (_fadeLen, Alpha, _hidden) = (0, 1, false);
+        }
+        _apc = 0;
+        _actWait = 0;
+        _actWaitJoint = false;
+        _actWaitMotion = false;
+        RunAction();
+    }
+
+    // FATO: as esperas ficam dentro das ações (WIT2ON: JOINTSET 40–70 LP + WAITCHECK "Frame" 30; ONSW01: … "Frame" 120;
+    // OFF2ON: "Frame" 20, FADESET OUT, "Joint" 0). HIPÓTESE: o WCHECK "Action" da sequência espera a ação passar por todas.
+    void RunAction()
+    {
+        while (_apc < _act.Count)
+        {
+            if (_actWait > 0) return;
+            if (_actWaitJoint)
+            {
+                if (!_loop && Frame < _to) return;
+                _actWaitJoint = false;
+            }
+            if (_actWaitMotion)
+            {
+                if (!MotionEnded) return;
+                _actWaitMotion = false;
+            }
+            var c = _act[_apc++];
+            switch (c.Kind)
+            {
+                case "JOINTSET":
+                    _from = c.F(1);
+                    _to = c.F(2);
+                    _loop = c.S(3) == "LP";
+                    Frame = _from;
+                    break;
+                case "FADESET":
+                    Fade(c);
+                    break;
+                case "FLASHSET" when c.S(0) == "Damage":
+                    FlashSerial++;
+                    break;
+                case "WAITCHECK" when c.S(0) == "Frame":
+                    _actWait = c.F(1);
+                    break;
+                case "WAITCHECK" when c.S(0) == "Joint":
+                    _actWaitJoint = true;
+                    break;
+                case "MOTIONSET":
+                    CurrentMotion = c.S(0);
+                    MotionLoop = c.S(3) == "LP";
+                    MotionBlend = c.F(2);
+                    MotionFrame = 0;
+                    _motionLen = MotionLength?.Invoke(CurrentMotion);
+                    MotionSerial++;
+                    break;
+                // FATO (SHOK01 das NPCs: MOTIONSET "shok01" … "OS" + WAITCHECK "Motion" 0): espera o movimento acabar. HIPÓTESE: sem
+                // a duração (animação que não foi exportada), passa no quadro seguinte, para a sequência ainda ser vista (ISSEQNAME).
+                case "WAITCHECK" when c.S(0) == "Motion":
+                    _actWaitMotion = true;
+                    break;
+            }
+        }
+    }
+
+    bool ActionDone => _apc >= _act.Count && _actWait <= 0 && (!_actWaitJoint || _loop || Frame >= _to) && (!_actWaitMotion || MotionEnded);
+
+    bool MotionEnded => MotionLoop || MotionFrame >= (_motionLen ?? 1f);
+
+    // FADESET "IN"/"OUT" n: transparência em n quadros; "HIDE": escondido (porta aberta).
+    void Fade(SeqCommand c)
+    {
+        switch (c.S(0))
+        {
+            case "IN": (_fadeFrom, _fadeTo, _fadeLen, _fadeT, _hidden) = (0, 1, Math.Max(1, c.F(1)), 0, false); Alpha = 0; break;
+            case "OUT": (_fadeFrom, _fadeTo, _fadeLen, _fadeT, _hidden) = (Alpha, 0, Math.Max(1, c.F(1)), 0, false); break;
+            case "HIDE": (_fadeLen, Alpha, _hidden) = (0, 0, true); break;
+        }
+    }
+}
