@@ -22,7 +22,7 @@ public partial class MobileBoot : Control
     public const string Scene = "res://MobileBoot.tscn";
     public static bool Done { get; private set; }
 
-    const string ApiBase = "https://redigital-api.felipe-brag99.workers.dev/";
+    const string ApiBase = "https://api.redigitalon.com/";
     const string AccountFile = "user://conta.cfg";
     const string ManifestTest = "/games/dw4/manifest.json";
 
@@ -660,7 +660,7 @@ public sealed class AppUpdater(string root)
 
 public sealed class MobileUpdater
 {
-    public const string CdnHost = "redigital-cdn.felipe-brag99.workers.dev";
+    public const string CdnHost = "cdn.redigitalon.com";
     public const string ManifestPath = "/games/dw4/manifest.json";
     const int Workers = 6;
 
